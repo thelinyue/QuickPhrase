@@ -41,7 +41,7 @@
                         <Grid>
                             <Border x:Name="Overlay" Background="#000000" Opacity="0"
                                     CornerRadius="{StaticResource RadiusSmall}" />
-                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusBrush}"
+                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusBorderBrush}"
                                     BorderThickness="2" Opacity="0"
                                     CornerRadius="{StaticResource RadiusSmall}" />
                             <ContentPresenter HorizontalAlignment="Center"
@@ -104,7 +104,7 @@
                         <Grid>
                             <Border x:Name="Overlay" Background="#000000" Opacity="0"
                                     CornerRadius="{StaticResource RadiusSmall}" />
-                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusBrush}"
+                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusBorderBrush}"
                                     BorderThickness="2" Opacity="0"
                                     CornerRadius="{StaticResource RadiusSmall}" />
                             <ContentPresenter HorizontalAlignment="Center"
@@ -169,7 +169,7 @@
                                           VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
                                           HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
                                           VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}" />
-                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusBrush}"
+                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusBorderBrush}"
                                     BorderThickness="2" Opacity="0"
                                     CornerRadius="{StaticResource RadiusSmall}"
                                     IsHitTestVisible="False" />

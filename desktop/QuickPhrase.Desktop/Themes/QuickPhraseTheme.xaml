@@ -76,6 +76,7 @@
     <SolidColorBrush x:Key="SelectionBackgroundBrush" Color="{StaticResource SelectionBackgroundColor}" />
     <SolidColorBrush x:Key="HoverBackgroundBrush" Color="{StaticResource HoverBackgroundColor}" />
     <SolidColorBrush x:Key="FocusBrush" Color="{StaticResource FocusColor}" />
+    <SolidColorBrush x:Key="FocusBorderBrush" Color="{StaticResource FocusColor}" />
     <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}" />
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
     <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
