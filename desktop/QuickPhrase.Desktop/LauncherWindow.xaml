@@ -1,0 +1,146 @@
+<Window x:Class="QuickPhrase.Desktop.LauncherWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:QuickPhrase.Desktop"
+        xmlns:shared="clr-namespace:QuickPhrase.Desktop.Views.Shared"
+        Title=""
+        Width="760"
+        Height="300"
+        MinHeight="260"
+        MaxHeight="520"
+        WindowStartupLocation="Manual"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        ShowActivated="True"
+        Topmost="True"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        SizeChanged="OnWindowSizeChanged">
+    <Window.Resources>
+        <DataTemplate x:Key="LauncherPhraseTemplate">
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource PhraseListRowTemplate}">
+                <ContentControl.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="发送到输入框" InputGestureText="双击" Click="OnInsertContextMenuClick" />
+                        <MenuItem Header="复制内容到剪贴板" Click="OnCopyContextMenuClick" />
+                    </ContextMenu>
+                </ContentControl.ContextMenu>
+            </ContentControl>
+        </DataTemplate>
+    </Window.Resources>
+    <Border CornerRadius="{StaticResource RadiusLauncher}"
+            Background="{StaticResource SurfaceBrush}"
+            BorderBrush="{StaticResource DividerBrush}"
+            BorderThickness="1"
+            Padding="{StaticResource SpaceMd}">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="20" ShadowDepth="6" Opacity="0.18" Color="#3D356B" />
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBox x:Name="QueryBox"
+                     Grid.Row="0"
+                     Style="{StaticResource SearchBoxStyle}"
+                     Background="{StaticResource AppBackgroundBrush}"
+                     BorderBrush="{StaticResource DividerBrush}"
+                     Foreground="{StaticResource TextBrush}"
+                     Tag="搜索标题、正文或拼音..."
+                     AutomationProperties.Name="Launcher搜索框"
+                     GotKeyboardFocus="QueryBox_GotKeyboardFocus"
+                     LostKeyboardFocus="QueryBox_LostKeyboardFocus"
+                     TextChanged="OnQueryChanged" />
+            <Popup x:Name="SearchHistoryPopup"
+                   PlacementTarget="{Binding ElementName=QueryBox}"
+                   Placement="Top"
+                   VerticalOffset="-4"
+                   StaysOpen="False"
+                   AllowsTransparency="True"
+                   Width="{Binding ActualWidth, ElementName=QueryBox}"
+                   PopupAnimation="Fade"
+                   LostKeyboardFocus="SearchHistoryPopup_LostKeyboardFocus">
+                <shared:SearchHistoryView x:Name="SearchHistoryPanel"
+                                          QuerySelected="SearchHistoryPanel_QuerySelected"
+                                          ClearRequested="SearchHistoryPanel_ClearRequested" />
+            </Popup>
+
+            <ListBox x:Name="ResultsList"
+                     Grid.Row="1"
+                     Margin="0,12,0,8"
+                     BorderThickness="0"
+                     Background="Transparent"
+                     Foreground="{StaticResource TextBrush}"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.CanContentScroll="True"
+                     VirtualizingStackPanel.IsVirtualizing="True"
+                     VirtualizingStackPanel.VirtualizationMode="Recycling"
+                     SelectionChanged="OnSelectionChanged"
+                     MouseDoubleClick="OnResultsDoubleClick"
+                     ItemTemplate="{StaticResource LauncherPhraseTemplate}"
+                     local:PhraseListActions.ShowSendButton="False"
+                     local:PhraseListActions.TitleColumnWidth="100"
+                     ItemContainerStyle="{StaticResource PhraseListItemContainerStyle}" />
+
+            <ScrollViewer x:Name="PreviewHost"
+                          Grid.Row="1"
+                          Margin="2,12,2,8"
+                          VerticalScrollBarVisibility="Auto"
+                          Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock x:Name="PreviewTitle" Style="{StaticResource TextH2}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="PreviewCategory" Style="{StaticResource TextCaption}" Margin="0,4,0,10" />
+                    <TextBlock x:Name="PreviewContent" Style="{StaticResource TextBody}" TextWrapping="Wrap" />
+                </StackPanel>
+            </ScrollViewer>
+
+            <shared:StatePresenter x:Name="EmptyState"
+                                   Grid.Row="1"
+                                   StateKind="{x:Static shared:StateKind.Empty}"
+                                   Title="没有找到匹配话术"
+                                   Description="换个关键词试试；也可以按 Enter 创建话术。"
+                                   Visibility="Collapsed" />
+            <shared:StatePresenter x:Name="LoadingState"
+                                   Grid.Row="1"
+                                   StateKind="{x:Static shared:StateKind.Loading}"
+                                   Title="正在准备搜索"
+                                   Description="正在恢复内存搜索索引，请稍候。"
+                                   Visibility="Collapsed" />
+            <shared:StatePresenter x:Name="SearchRetryState"
+                                   Grid.Row="1"
+                                   StateKind="{x:Static shared:StateKind.Error}"
+                                   Title="搜索暂时不可用"
+                                   Description="搜索索引初始化失败，请重试。"
+                                   ActionText="重试"
+                                   Visibility="Collapsed" />
+
+            <DockPanel Grid.Row="2" LastChildFill="False">
+                <StackPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
+                    <TextBlock x:Name="QueueText"
+                               Visibility="Collapsed"
+                               Style="{StaticResource TextEyebrow}"
+                               Foreground="{StaticResource AccentBrush}"
+                               HorizontalAlignment="Right" />
+                    <TextBlock x:Name="TargetText"
+                               Text="未捕获目标 · 仅支持预览或安全复制"
+                               Style="{StaticResource TextEyebrow}"
+                               HorizontalAlignment="Right" />
+                    <TextBlock x:Name="CapabilityText"
+                               Text="无目标 · 插入/发送不可用"
+                               Style="{StaticResource TextCaption}"
+                               HorizontalAlignment="Right"
+                               Margin="0,3,0,0" />
+                </StackPanel>
+                <TextBlock Text="↑ ↓ 选择" Style="{StaticResource TextCaption}" Margin="0,0,14,0" />
+                <TextBlock x:Name="InsertHintText" Text="Enter 插入" Style="{StaticResource TextEyebrow}" Foreground="{StaticResource AccentBrush}" Margin="0,0,14,0" />
+                <TextBlock x:Name="SendHintText" Text="自动发送不支持" Style="{StaticResource TextCaption}" Margin="0,0,14,0" />
+                <TextBlock x:Name="PreviewHintText" Text="Tab 预览 · Esc 关闭" Style="{StaticResource TextCaption}" />
+            </DockPanel>
+        </Grid>
+    </Border>
+</Window>

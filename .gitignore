@@ -1,0 +1,37 @@
+# 操作系统与编辑器本地产物
+.DS_Store
+Thumbs.db
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+
+# .NET / Visual Studio 构建输出
+**/bin/
+**/obj/
+
+# 前端依赖与构建输出
+**/node_modules/
+**/dist/
+/coverage/
+/playwright-report/
+/test-results/
+
+# 仓库根目录的本地构建、诊断和测试临时目录
+/.arch-*/
+/.build*
+/.core-*/
+/.platform-diagnostic/
+/.solution-build*/
+/.test-output*/
+/.desktop-build-*.txt
+/.solution-build-*.txt
+
+# 本地工具状态与运行日志
+/.superpowers/
+/.workbuddy/
+*.log
+
+# 发布、测试和验证生成物；正式源码仍保留在 artifacts 之外的目录中
+/artifacts/

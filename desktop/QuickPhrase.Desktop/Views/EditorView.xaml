@@ -1,0 +1,124 @@
+<UserControl x:Class="QuickPhrase.Desktop.EditorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
+             mc:Ignorable="d">
+    <!-- 配色/字体与话术库页面保持一致：Surface 底、UiFontFamily/TextBrush 文字、控件圆角统一由样式控制 -->
+    <Grid Background="{StaticResource AppBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 表单主体：内边距与话术库一级 chips 条一致（左右 20/24、上下 20/16），字段间距统一 16 -->
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="24,20,24,16">
+            <StackPanel MaxWidth="480" HorizontalAlignment="Stretch">
+                <!-- 弹窗标题：使用 TextH2 与库页 H2 同款 -->
+                <TextBlock Text="{Binding HeaderTitle}" Style="{StaticResource TextH2}" Margin="0,0,0,20" />
+
+                <TextBlock Text="标题" Style="{StaticResource TextEyebrow}" Margin="0,0,0,6" />
+                <TextBox x:Name="TitleBox" Style="{StaticResource BaseTextBox}" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16" />
+
+                <TextBlock Text="正文" Style="{StaticResource TextEyebrow}" Margin="0,0,0,6" />
+                <TextBox Style="{StaticResource BaseTextBox}" Text="{Binding Content, UpdateSourceTrigger=PropertyChanged}"
+                         AcceptsReturn="True" Height="140" TextWrapping="Wrap" VerticalContentAlignment="Top"
+                         Padding="10" Margin="0,0,0,16" />
+
+                <TextBlock Text="分类" Style="{StaticResource TextEyebrow}" Margin="0,0,0,6" />
+                <ComboBox x:Name="CategoryCombo"
+                          Style="{StaticResource ComboBoxFieldStyle}"
+                          DisplayMemberPath="Name"
+                          SelectedValuePath="Id" SelectedValue="{Binding SelectedCategoryId}"
+                          Margin="0,0,0,16">
+                    <!-- 分类下拉分组：一级分类 / 二级分类（对齐 design-system.md 5.7 optgroup） -->
+                    <ComboBox.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.HeaderTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource TextEyebrow}"
+                                               Margin="4,4,0,2" />
+                                </DataTemplate>
+                            </GroupStyle.HeaderTemplate>
+                        </GroupStyle>
+                    </ComboBox.GroupStyle>
+                </ComboBox>
+
+                <TextBlock Text="颜色标记" Style="{StaticResource TextEyebrow}" Margin="0,0,0,6" />
+                <!-- 固定色板：ListBoxItem 负责键盘焦点、单选和选中态，ColorKey 只保存稳定 Key。 -->
+                <ListBox x:Name="ColorPalette"
+                         ItemsSource="{x:Static vm:EditorViewModel.ColorKeys}"
+                         SelectedValuePath="Key"
+                         SelectedValue="{Binding ColorKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         Background="Transparent" BorderThickness="0" Padding="0"
+                         HorizontalContentAlignment="Left"
+                         KeyboardNavigation.DirectionalNavigation="Cycle"
+                         Margin="0,0,0,16"
+                         AutomationProperties.Name="颜色标记色板">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Focusable" Value="True" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0,0,8,0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                            <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="ColorTile" Width="32" Height="32" CornerRadius="16"
+                                                Background="{Binding Brush}" BorderBrush="#5C6772" BorderThickness="1"
+                                                ToolTip="{Binding Label}">
+                                            <Grid>
+                                                <TextBlock x:Name="CheckMark" Text="✓" FontSize="16" FontWeight="Bold"
+                                                           Foreground="#1F2937" HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center" Visibility="Collapsed" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{StaticResource TextBrush}" />
+                                                <Setter TargetName="ColorTile" Property="BorderThickness" Value="3" />
+                                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible" />
+                                            </Trigger>
+                                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{StaticResource FocusRingBrush}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 底部操作栏：与话术库底部 App Footer 同款——Surface 底、上方 1px 分隔、右对齐操作按钮 -->
+        <Border Grid.Row="1" Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="24,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Style="{StaticResource SecondaryButton}" Content="删除"
+                            Command="{Binding DeleteCommand}"
+                            Visibility="{Binding CanDelete, Converter={StaticResource BoolToVisibility}}" Margin="0,0,8,0" />
+                    <Button Style="{StaticResource GhostButton}" Content="取消" Command="{Binding CancelCommand}" Margin="0,0,8,0" />
+                    <Button Style="{StaticResource PrimaryButton}" Content="保存" Command="{Binding SaveCommand}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
+

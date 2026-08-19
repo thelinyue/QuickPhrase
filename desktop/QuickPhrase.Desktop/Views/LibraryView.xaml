@@ -1,0 +1,338 @@
+<!-- 话术库（闪语原型·第七版）：单栏纵向。
+     自上而下：Content Header → Category Chips（一级横向）→ 主列表（内联嵌套树）
+             → Search Footer → App Footer（品牌 + 设置）。
+     无左侧分类边栏、无右侧详情面板。 -->
+<UserControl x:Class="QuickPhrase.Desktop.LibraryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:QuickPhrase.Desktop"
+             xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
+             xmlns:shared="clr-namespace:QuickPhrase.Desktop.Views.Shared"
+             Background="{StaticResource AppBackgroundBrush}">
+
+    <UserControl.Resources>
+        <!-- 话术行模板（三列：序号·发送共享 / 标题 / 内容）
+             序号列 28px 同时作为发送按钮占位：默认显示序号；鼠标悬停整行时隐藏序号、
+             显示发送按钮。一、二级话术行不设额外缩进，水平与垂直方向完全对齐。 -->
+        <!-- 宿主只注入话术库完整管理菜单；序号·标题·正文显示结构来自共享资源。 -->
+        <DataTemplate x:Key="PhraseRowTemplate" DataType="{x:Type vm:PhraseItemViewModel}">
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource PhraseListRowTemplate}">
+                <ContentControl.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="发送到输入区" InputGestureText="双击"
+                                  Command="{Binding Owner.InsertCommand}" CommandParameter="{Binding}" />
+                        <MenuItem Header="直接发送"
+                                  Command="{Binding Owner.InsertSendCommand}" CommandParameter="{Binding}" />
+                        <MenuItem Header="复制内容到剪贴板"
+                                  Command="{Binding Owner.CopyCommand}" CommandParameter="{Binding}" />
+                        <Separator />
+                        <MenuItem Header="新增话术" Command="{Binding Owner.NewCommand}" />
+                        <MenuItem Header="插入一条话术"
+                                  Command="{Binding Owner.InsertCommand}" CommandParameter="{Binding}" />
+                        <MenuItem Header="编辑" Command="{Binding Owner.EditCommand}" CommandParameter="{Binding}" />
+                        <MenuItem Header="排序" IsEnabled="False" />
+                        <MenuItem Header="移动到其它分类" Command="{Binding Owner.MoveCommand}" CommandParameter="{Binding}" />
+                        <MenuItem Header="复制到其它分类" IsEnabled="False" />
+                        <Separator />
+                        <MenuItem Header="删除" Command="{Binding Owner.DeleteCommand}" CommandParameter="{Binding}" />
+                        <Separator />
+                        <MenuItem Header="如何批量操作？" IsEnabled="False" />
+                    </ContextMenu>
+                </ContentControl.ContextMenu>
+            </ContentControl>
+        </DataTemplate>
+
+        <!-- 二级分类标题条模板。
+             注：上下文菜单必须内联（不能引用 UserControl.Resources 里的 SubHeaderContextMenu），
+             因为本模板由 DataTemplateSelector 加载，脱离视觉树，加载时无法向上查找 UserControl
+             作用域的资源，会抛“找不到资源”的 XamlParseException（已在 2026-08-18 复现）。 -->
+        <DataTemplate x:Key="SubHeaderTemplate" DataType="{x:Type vm:SubHeaderItem}">
+            <ToggleButton Style="{StaticResource SubHeaderButton}"
+                          Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                          IsChecked="{Binding IsExpanded, Mode=OneWay}"
+                          Command="{Binding DataContext.ToggleSubCategoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                          CommandParameter="{Binding Id}">
+                <ToggleButton.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="新建话术"
+                                  Command="{Binding PlacementTarget.Tag.NewPhraseInCategoryCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext.Category, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                        <MenuItem Header="重命名分类"
+                                  Command="{Binding PlacementTarget.Tag.RenameCategoryCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext.Category, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                        <MenuItem Header="删除分类" Style="{StaticResource DangerMenuItem}"
+                                  Command="{Binding PlacementTarget.Tag.DeleteCategoryCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext.Category, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    </ContextMenu>
+                </ToggleButton.ContextMenu>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <!-- 左侧仅显示展开/收起箭头：展开朝下（0°），收起朝右（-90°），随 IsExpanded 旋转。
+                         注：必须绑定 RotateTransform.Angle（double→double），
+                         直接把转换结果绑定到 RenderTransform(Transform) 会因类型不匹配而旋转失效。 -->
+                    <Path Grid.Column="0" Style="{StaticResource SubHeaderChevron}">
+                        <Path.RenderTransform>
+                            <RotateTransform Angle="{Binding IsExpanded, Converter={StaticResource BoolToArrowRotation}}" />
+                        </Path.RenderTransform>
+                    </Path>
+                    <!-- 文字颜色继承 SubHeaderButton（默认 TextBrush） -->
+                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               Margin="6,0,0,0" />
+                </Grid>
+            </ToggleButton>
+        </DataTemplate>
+
+        <!-- 混合列表模板选择器（必须定义在两个模板之后，避免同文件前向引用） -->
+        <local:PhraseRowSelector x:Key="PhraseRowSelector"
+                                 PhraseRowTemplate="{StaticResource PhraseRowTemplate}"
+                                 SubHeaderTemplate="{StaticResource SubHeaderTemplate}" />
+
+        <!-- 顶部一级分类 chip 模板 -->
+        <DataTemplate x:Key="CategoryChipTemplate" DataType="{x:Type vm:CategoryItem}">
+            <ToggleButton Style="{StaticResource CategoryChip}"
+                          Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                          ContextMenu="{StaticResource CategoryChipContextMenu}"
+                          IsChecked="{Binding IsSelected, Mode=OneWay}"
+                          Command="{Binding DataContext.SelectCategoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                          CommandParameter="{Binding Id}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                </StackPanel>
+            </ToggleButton>
+        </DataTemplate>
+
+        <!-- 一级分类 chip 右键菜单（对齐 design-system.md 3.1；“常用”亦为真实分类，共用此菜单） -->
+        <ContextMenu x:Key="CategoryChipContextMenu" x:Shared="False">
+            <MenuItem Header="新建二级分类"
+                      Command="{Binding PlacementTarget.Tag.NewSubCategoryCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="在该分类下新建话术"
+                      Command="{Binding PlacementTarget.Tag.NewPhraseInCategoryCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="重命名分类"
+                      Command="{Binding PlacementTarget.Tag.RenameCategoryCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="删除分类" Style="{StaticResource DangerMenuItem}"
+                      Command="{Binding PlacementTarget.Tag.DeleteCategoryCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+        </ContextMenu>
+
+        <!-- 话术库空白区域菜单。仅由 LibraryView 代码在确认未命中节点后打开，
+             不绑定到话术行或分类节点，避免与已有节点级菜单冲突。 -->
+        <ContextMenu x:Key="BlankAreaContextMenu"
+                     Placement="MousePoint"
+                     StaysOpen="False"
+                     Closed="BlankAreaContextMenu_Closed"
+                     PreviewKeyDown="BlankAreaContextMenu_PreviewKeyDown">
+            <MenuItem Header="新增话术"
+                      ToolTip="在当前分类下新建一条空白话术"
+                      Click="BlankAreaNewPhrase_Click" />
+            <MenuItem Header="新增二级分类"
+                      ToolTip="在当前一级分类下新建二级分类"
+                      Click="BlankAreaNewSubCategory_Click" />
+        </ContextMenu>
+
+    </UserControl.Resources>
+
+    <Grid x:Name="RootLayout"
+          PreviewMouseRightButtonDown="RootLayout_PreviewMouseRightButtonDown"
+          PreviewKeyDown="RootLayout_PreviewKeyDown">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />   <!-- Category Chips -->
+            <RowDefinition Height="*" />      <!-- Phrase List -->
+            <RowDefinition Height="Auto" />   <!-- Search Footer -->
+            <RowDefinition Height="Auto" />   <!-- App Footer -->
+        </Grid.RowDefinitions>
+
+        <!-- 1. Category Filter Bar（一级 chips 横向，自动换行）。垂直内边距收窄，缩小标题区与列表内容区间距 -->
+        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="0,0,0,1"
+                Padding="20,8,20,8">
+            <StackPanel Orientation="Horizontal">
+                <!-- 一级分类 chips 列表 —— ListBox + 横向 Wrap 面板，支持 ListBoxItem 拖拽事件 -->
+                <ListBox x:Name="CategoryChipsList"
+                         Background="Transparent" BorderThickness="0" Padding="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ItemsSource="{Binding TopCategories}">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <ContentPresenter />
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="CategoryChip_PreviewMouseLeftButtonDown" />
+                            <EventSetter Event="PreviewMouseMove" Handler="CategoryChip_PreviewMouseMove" />
+                            <EventSetter Event="DragEnter" Handler="CategoryChip_DragOver" />
+                            <EventSetter Event="DragOver" Handler="CategoryChip_DragOver" />
+                            <EventSetter Event="Drop" Handler="CategoryChip_Drop" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:CategoryItem}">
+                            <ToggleButton Style="{StaticResource CategoryChip}"
+                                          Margin="0,0,8,0"
+                                          Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          ContextMenu="{StaticResource CategoryChipContextMenu}"
+                                          IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                          Command="{Binding DataContext.SelectCategoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          CommandParameter="{Binding Id}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <!-- 新建一级 "+" -->
+                <Button Style="{StaticResource CreateCategoryButton}"
+                        Margin="0,0,0,0" VerticalAlignment="Center"
+                        Command="{Binding NewCategoryCommand}"
+                        ToolTip="新建一级分类" Content="+" />
+            </StackPanel>
+        </Border>
+
+        <!-- 2. Phrase List（内联嵌套树）。列表容器不再保留左右内边距，由行内列宽/边距直接控制。 -->
+        <Grid Grid.Row="1">
+            <ListBox x:Name="PhraseList" Grid.Row="1"
+                     Padding="0,0,0,0"
+                     ItemsSource="{Binding VisibleItems}"
+                     SelectedItem="{Binding SelectedPhrase, Mode=TwoWay}"
+                     Foreground="{StaticResource TextBrush}"
+                     BorderThickness="0" Background="Transparent"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.CanContentScroll="True"
+                     VirtualizingStackPanel.IsVirtualizing="True"
+                     VirtualizingStackPanel.VirtualizationMode="Recycling"
+                     SelectionMode="Single"
+                     ItemTemplateSelector="{StaticResource PhraseRowSelector}"
+                     local:PhraseListActions.ShowSendButton="True"
+                     local:PhraseListActions.SendCommand="{Binding DataContext.InsertSendCommand, RelativeSource={RelativeSource Self}}"
+                     local:PhraseListActions.TitleColumnWidth="{Binding DataContext.TitleColumnWidth, RelativeSource={RelativeSource Self}}"
+                     MouseDoubleClick="PhraseList_MouseDoubleClick">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource PhraseListItemContainerStyle}">
+                        <!-- 拖拽排序仍由话术库宿主处理；共享样式只负责行的视觉状态。 -->
+                        <EventSetter Event="PreviewMouseLeftButtonDown" Handler="PhraseItem_PreviewMouseLeftButtonDown" />
+                        <EventSetter Event="PreviewMouseMove" Handler="PhraseItem_PreviewMouseMove" />
+                        <EventSetter Event="DragEnter" Handler="PhraseItem_DragOver" />
+                        <EventSetter Event="DragOver" Handler="PhraseItem_DragOver" />
+                        <EventSetter Event="Drop" Handler="PhraseItem_Drop" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSubHeader}" Value="True">
+                                <Setter Property="Focusable" Value="False" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <ContentPresenter />
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+            </ListBox>
+            <shared:StatePresenter StateKind="{x:Static shared:StateKind.Loading}"
+                                   Title="正在加载话术"
+                                   Description="正在读取话术库，请稍候。"
+                                   Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
+            <shared:StatePresenter StateKind="{x:Static shared:StateKind.Error}"
+                                   Title="话术库加载失败"
+                                   Description="{Binding StatusMessage}"
+                                   ActionText="重试"
+                                   ActionCommand="{Binding RetryLoadCommand}"
+                                   Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
+            <shared:StatePresenter StateKind="{x:Static shared:StateKind.Empty}"
+                                   Title="{Binding EmptyStateTitle}"
+                                   Description="{Binding EmptyStateDescription}"
+                                   ActionText="新建话术"
+                                   ActionCommand="{Binding NewCommand}"
+                                   Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}" />
+        </Grid>
+
+        <!-- 3. Search Footer（左下角不再渲染计数信息；上下间距已压缩为紧凑布局） -->
+        <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0"
+                Padding="16,6,16,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBox x:Name="SearchBox" Style="{StaticResource SearchBoxStyle}"
+                              Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                              KeyDown="SearchBox_KeyDown"
+                              GotKeyboardFocus="SearchBox_GotKeyboardFocus"
+                              LostKeyboardFocus="SearchBox_LostKeyboardFocus"
+                              Tag="搜索标题、正文或拼音...">
+                     </TextBox>
+                     <Popup x:Name="SearchHistoryPopup"
+                            PlacementTarget="{Binding ElementName=SearchBox}"
+                            Placement="Top"
+                            VerticalOffset="-4"
+                            StaysOpen="False"
+                            AllowsTransparency="True"
+                            Width="{Binding ActualWidth, ElementName=SearchBox}"
+                            PopupAnimation="Fade"
+                            LostKeyboardFocus="SearchHistoryPopup_LostKeyboardFocus">
+                         <shared:SearchHistoryView x:Name="SearchHistoryPanel"
+                                                   QuerySelected="SearchHistoryPanel_QuerySelected"
+                                                   ClearRequested="SearchHistoryPanel_ClearRequested" />
+                     </Popup>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 4. App Footer（品牌 + 设置） -->
+        <Border Grid.Row="3" Height="{StaticResource AppFooterHeight}"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0"
+                Padding="20,0,20,0"
+                UseLayoutRounding="True"
+                SnapsToDevicePixels="True">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- 左下角品牌位与窗口、任务栏和托盘统一使用仓库内嵌的用户 ICO 资源。 -->
+                    <Image Source="{StaticResource QuickPhraseBrandIcon}"
+                           Width="22" Height="22" Stretch="Uniform"
+                           UseLayoutRounding="True"
+                           SnapsToDevicePixels="True"
+                           VerticalAlignment="Center"
+                           AutomationProperties.Name="闪语应用图标" />
+                    <TextBlock Text="闪语" Style="{StaticResource TextLauncherTitle}"
+                               FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <Button Grid.Column="1" Style="{StaticResource IconButton}"
+                        Content="⚙" FontSize="16" VerticalAlignment="Center"
+                        ToolTip="设置" AutomationProperties.Name="设置"
+                        Command="{Binding OpenSettingsCommand}" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
+
+
+
+
+
+

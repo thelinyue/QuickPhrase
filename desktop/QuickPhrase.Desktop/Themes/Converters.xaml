@@ -1,0 +1,16 @@
+<!-- 值转换器资源，供控件/页面模板使用 -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:conv="clr-namespace:QuickPhrase.Desktop.Converters">
+
+    <conv:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+    <conv:EnumToLocalizedStringConverter x:Key="EnumToLocalizedString" />
+    <conv:ColorKeyToBrushConverter x:Key="ColorKeyToBrush" />
+    <conv:BoolToArrowRotationConverter x:Key="BoolToArrowRotation" />
+    <conv:InverseBoolConverter x:Key="InverseBool" />
+    <conv:CategoryLevelConverter x:Key="CategoryLevelConverter" />
+    <conv:CategoryColorBrushConverter x:Key="CategoryColorBrush" />
+    <conv:CategoryTintBrushConverter x:Key="CategoryTintBrush" />
+    <conv:CategoryBackgroundBrushConverter x:Key="CategoryBackgroundBrush" />
+
+</ResourceDictionary>

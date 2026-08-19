@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>QuickPhrase</AssemblyName>
+    <Product>闪语</Product>
+    <Company>QuickPhrase Contributors</Company>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <ApplicationIcon>..\..\assets\quickphrase.ico</ApplicationIcon>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 将根目录图标作为 WPF Resource 映射到程序集，供窗口标题栏直接加载。 -->
+    <Resource Include="..\..\assets\quickphrase.ico" Link="Assets\quickphrase.ico" />
+    <ProjectReference Include="..\QuickPhrase.Core\QuickPhrase.Core.csproj" />
+    <ProjectReference Include="..\QuickPhrase.Platform.Windows\QuickPhrase.Platform.Windows.csproj" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+</Project>

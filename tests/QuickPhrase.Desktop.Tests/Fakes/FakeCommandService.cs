@@ -1,0 +1,176 @@
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using QuickPhrase.Core;
+using QuickPhrase.Desktop.Services;
+
+namespace QuickPhrase.Desktop.Tests.Fakes;
+
+/// <summary>
+/// 内存版 ICommandService，供 ViewModel 单元测试使用。不依赖 Windows 平台实现或持久化。
+/// 通过 Seed 注入预设数据，写操作直接反映到内存集合并返回成功结果。
+/// </summary>
+public sealed class FakeCommandService : ICommandService
+{
+    private readonly List<Phrase> _phrases = new();
+    private readonly List<Category> _categories = new();
+    private AppSettings _settings = new(1, false, false, true, "Alt + Space", "alt+space", false, true)
+    {
+        LauncherEnabledAdapters = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["WXWork"] = true },
+    };
+
+    public void Seed(IEnumerable<Phrase> phrases) => _phrases.AddRange(phrases);
+    public int DeleteCategoryCalls { get; private set; }
+    public CreatePhraseCommand? LastCreatedPhraseCommand { get; private set; }
+    public UpdatePhraseCommand? LastUpdatedPhraseCommand { get; private set; }
+    // 测试钩子：允许模拟搜索请求乱序完成，验证 ViewModel 只接受最新查询结果。
+    public Func<string, CancellationToken, Task>? BeforeSearchAsync { get; set; }
+    public event Action<string>? SearchCompleted;
+    public void Seed(IEnumerable<Category> categories) => _categories.AddRange(categories);
+
+    public Task<IReadOnlyList<Phrase>> ListPhrasesAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<Phrase>>(_phrases.ToArray());
+
+    public async Task<IReadOnlyList<Phrase>> SearchPhrasesAsync(string query, int limit, CancellationToken cancellationToken = default)
+    {
+        var q = (query ?? string.Empty).Trim();
+        if (BeforeSearchAsync is not null) await BeforeSearchAsync(q, cancellationToken);
+
+        var result = _phrases
+            .Where(p => p.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
+                     || p.Content.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Take(limit)
+            .ToArray();
+        SearchCompleted?.Invoke(q);
+        return result;
+    }
+
+    public Task<Phrase?> GetPhraseAsync(Guid id, CancellationToken cancellationToken = default)
+        => Task.FromResult(_phrases.FirstOrDefault(p => p.Id == id));
+
+    public Task<RepositoryResult<Phrase>> CreatePhraseAsync(CreatePhraseCommand command, CancellationToken cancellationToken = default)
+    {
+        LastCreatedPhraseCommand = command;
+        var phrase = new Phrase(
+            command.Id, command.Title, command.Content, command.CategoryId,
+            command.Tags.Select(t => new Tag(Guid.NewGuid(), t, t)).ToImmutableArray(),
+            command.Favorite, command.ShortcutMode,
+            command.Shortcut is null ? null : new ShortcutValue(command.Shortcut, command.Shortcut),
+            0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, command.ColorKey,
+            command.SortOrder != 0 ? command.SortOrder : _phrases.Count(p => p.CategoryId == command.CategoryId) + 1);
+        _phrases.Add(phrase);
+        return Task.FromResult(RepositoryResult<Phrase>.Success(phrase));
+    }
+
+    public Task<RepositoryResult<Phrase>> UpdatePhraseAsync(UpdatePhraseCommand command, CancellationToken cancellationToken = default)
+    {
+        LastUpdatedPhraseCommand = command;
+        var index = _phrases.FindIndex(p => p.Id == command.Id);
+        if (index < 0) return Task.FromResult(RepositoryResult<Phrase>.Failure(new DataError("NOT_FOUND", "话术不存在")));
+        var updated = _phrases[index] with
+        {
+            Title = command.Title,
+            Content = command.Content,
+            CategoryId = command.CategoryId,
+            Favorite = command.Favorite,
+            ShortcutMode = command.ShortcutMode,
+            Shortcut = command.Shortcut is null ? null : new ShortcutValue(command.Shortcut, command.Shortcut),
+            ColorKey = command.ColorKey,
+            SortOrder = command.SortOrder,
+            Version = command.ExpectedVersion + 1,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+        _phrases[index] = updated;
+        return Task.FromResult(RepositoryResult<Phrase>.Success(updated));
+    }
+
+    public Task<bool> DeletePhraseAsync(Guid id, long? expectedVersion, CancellationToken cancellationToken = default)
+    {
+        var index = _phrases.FindIndex(p => p.Id == id);
+        if (index < 0) return Task.FromResult(false);
+        _phrases.RemoveAt(index);
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> InsertPhraseAsync(Guid id, CancellationToken cancellationToken = default)
+        => Task.FromResult(_phrases.Any(p => p.Id == id));
+
+    public Task<IReadOnlyList<Category>> ListCategoriesAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<Category>>(_categories.ToArray());
+
+    public Task<RepositoryResult<Category>> CreateCategoryAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default)
+    {
+        var category = new Category(command.Id, command.ParentId, command.Name, command.SortOrder, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        _categories.Add(category);
+        return Task.FromResult(RepositoryResult<Category>.Success(category));
+    }
+
+    public Task<RepositoryResult<Category>> RenameCategoryAsync(RenameCategoryCommand command, CancellationToken cancellationToken = default)
+    {
+        var index = _categories.FindIndex(c => c.Id == command.Id);
+        if (index < 0) return Task.FromResult(RepositoryResult<Category>.Failure(new DataError("NOT_FOUND", "分类不存在")));
+        var updated = _categories[index] with { Name = command.Name, SortOrder = command.SortOrder };
+        _categories[index] = updated;
+        return Task.FromResult(RepositoryResult<Category>.Success(updated));
+    }
+
+    public Task<RepositoryResult<DeleteResult>> DeleteCategoryAsync(Guid id, long? expectedVersion, CancellationToken cancellationToken = default)
+    {
+        DeleteCategoryCalls++;
+        var category = _categories.FirstOrDefault(item => item.Id == id);
+        if (category is null)
+            return Task.FromResult(RepositoryResult<DeleteResult>.Success(new DeleteResult(false, null)));
+        if (expectedVersion.HasValue && category.Version != expectedVersion.Value)
+            return Task.FromResult(RepositoryResult<DeleteResult>.Failure(new DataError("VERSION_CONFLICT", "分类已被其他操作修改。", id, category.Name)));
+
+        var subtreeIds = new HashSet<Guid> { id };
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (var child in _categories.Where(item => item.ParentId.HasValue && subtreeIds.Contains(item.ParentId.Value)))
+                changed |= subtreeIds.Add(child.Id);
+        }
+        var deletedPhraseIds = _phrases.Where(phrase => subtreeIds.Contains(phrase.CategoryId)).Select(phrase => phrase.Id).ToArray();
+        _phrases.RemoveAll(phrase => deletedPhraseIds.Contains(phrase.Id));
+        _categories.RemoveAll(item => subtreeIds.Contains(item.Id));
+        return Task.FromResult(RepositoryResult<DeleteResult>.Success(new DeleteResult(true, null, deletedPhraseIds)));
+    }
+    public Task<RepositoryResult<Category>> MoveCategoryAsync(MoveCategoryCommand command, CancellationToken cancellationToken = default)
+    {
+        var index = _categories.FindIndex(c => c.Id == command.Id);
+        if (index < 0) return Task.FromResult(RepositoryResult<Category>.Failure(new DataError("NOT_FOUND", "分类不存在")));
+        var updated = _categories[index] with { ParentId = command.ParentId, SortOrder = command.SortOrder, Version = command.ExpectedVersion + 1 };
+        _categories[index] = updated;
+        return Task.FromResult(RepositoryResult<Category>.Success(updated));
+    }
+
+    public Task<AppSettings> GetSettingsAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(_settings);
+
+    public Task<RepositoryResult<AppSettings>> UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken = default)
+    {
+        _settings = settings with { Version = settings.Version + 1 };
+        return Task.FromResult(RepositoryResult<AppSettings>.Success(_settings));
+    }
+
+    public Task<PhrasePackageLocalSnapshot> CapturePhrasePackageSnapshotAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(new PhrasePackageLocalSnapshot(_categories.ToArray(), _phrases.ToArray()));
+
+    public Task<PhrasePackageDocument> ReadPhrasePackageAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.FromException<PhrasePackageDocument>(new NotSupportedException("测试替身不读取话术包文件。"));
+
+    public Task WritePhrasePackageAsync(string path, PhrasePackageDocument document, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public Task<PhrasePackageImportResult> ImportPhrasePackageAsync(PhrasePackageImportPlan plan, CancellationToken cancellationToken = default) =>
+        Task.FromException<PhrasePackageImportResult>(new NotSupportedException("测试替身不导入话术包。"));}
+
+
+
+
+
+
+

@@ -1,0 +1,64 @@
+<!--
+  QuickPhrase 暗色主题 — 与 QuickPhraseTheme.xaml 同 key 覆盖 Light 资源。
+  数值权威来源：D:\code\闪语原型\launcher\launcher-design-spec.md（暗色映射）。
+  仅 Color / Brush 资源；Typography / Spacing / Radius / Height 沿用 Light。
+  暗色主色 violet-400（#9974FF），文字反转，底色 slate-900/800。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- 暗色 Color 覆盖（key 必须与 Light 文件完全一致） -->
+    <Color x:Key="AccentColor">#9974FF</Color>          <!-- primary violet-400 -->
+    <Color x:Key="AccentDarkColor">#BBA8FF</Color>     <!-- primary-hover violet-300 -->
+    <Color x:Key="AccentSoftColor">#3A2A6B</Color>     <!-- primary-subtle 深紫底 -->
+    <Color x:Key="AccentRowColor">#3A2A6B</Color>      <!-- 列表选中行底 -->
+    <Color x:Key="BrandStartColor">#9974FF</Color>     <!-- 品牌标渐变起 -->
+    <Color x:Key="BrandEndColor">#4628C4</Color>       <!-- 品牌标渐变止 -->
+    <Color x:Key="DividerColor">#45454E</Color>        <!-- border-default slate-700 -->
+    <Color x:Key="BorderSubtleColor">#2E2E36</Color>   <!-- border-subtle slate-800 -->
+    <Color x:Key="MutedTextColor">#9A9AA3</Color>      <!-- text-secondary slate-400 -->
+    <Color x:Key="TextTertiaryColor">#74747F</Color>   <!-- text-tertiary slate-500 -->
+    <Color x:Key="AppBackgroundColor">#1C1C22</Color>  <!-- surface-subtle slate-900 -->
+    <Color x:Key="SurfaceColor">#2E2E36</Color>        <!-- surface-base / elevated slate-800 -->
+    <Color x:Key="TextColor">#F1F1F4</Color>           <!-- text-primary slate-100 -->
+    <Color x:Key="SuccessColor">#2FA56B</Color>
+    <Color x:Key="WarningColor">#E0B13D</Color>
+    <Color x:Key="DangerColor">#D63A3A</Color>
+    <Color x:Key="FocusRingColor">#9974FF</Color>      <!-- focus-ring 不变 -->
+
+    <!-- 暗色 Brush 覆盖 -->
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentDarkBrush" Color="{StaticResource AccentDarkColor}" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="{StaticResource AccentSoftColor}" />
+    <SolidColorBrush x:Key="ListSelectedBrush" Color="{StaticResource AccentRowColor}" />
+    <LinearGradientBrush x:Key="BrandMarkBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="{StaticResource BrandStartColor}" Offset="0" />
+        <GradientStop Color="{StaticResource BrandEndColor}" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="DividerBrush" Color="{StaticResource DividerColor}" />
+    <SolidColorBrush x:Key="BorderSubtleBrush" Color="{StaticResource BorderSubtleColor}" />
+    <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource MutedTextColor}" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="{StaticResource TextTertiaryColor}" />
+    <SolidColorBrush x:Key="AppBackgroundBrush" Color="{StaticResource AppBackgroundColor}" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
+    <SolidColorBrush x:Key="TextBrush" Color="{StaticResource TextColor}" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}" />
+    <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
+    <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
+    <SolidColorBrush x:Key="FocusRingBrush" Color="{StaticResource FocusRingColor}" />
+
+    <!-- 固定话术颜色色板（默认白色表示无颜色；颜色值在明暗主题中保持一致） -->
+    <SolidColorBrush x:Key="PhraseColorDefault" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PhraseColorOrange" Color="#FF8839" />
+    <SolidColorBrush x:Key="PhraseColorBlue" Color="#178BFF" />
+    <SolidColorBrush x:Key="PhraseColorMagenta" Color="#FF73FF" />
+    <SolidColorBrush x:Key="PhraseColorPurple" Color="#AF60FF" />
+    <SolidColorBrush x:Key="PhraseColorGreen" Color="#41C028" />
+    <SolidColorBrush x:Key="PhraseColorPink" Color="#F67E91" />
+    <SolidColorBrush x:Key="PhraseColorTeal" Color="#00A8A8" />
+    <SolidColorBrush x:Key="PhraseColorTan" Color="#CB9563" />
+    <SolidColorBrush x:Key="PhraseColorGray" Color="#5C6772" />
+
+</ResourceDictionary>
+
+
