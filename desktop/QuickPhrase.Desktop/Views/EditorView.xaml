@@ -5,8 +5,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
              mc:Ignorable="d">
-    <!-- 配色/字体与话术库页面保持一致：Surface 底、UiFontFamily/TextBrush 文字、控件圆角统一由样式控制 -->
-    <Grid Background="{StaticResource AppBackgroundBrush}">
+    <!-- 配色/字体与话术库页面保持一致：WindowBackground 底、UiFontFamily/TextPrimaryBrush 文字、控件圆角统一由样式控制 -->
+    <Grid Background="{StaticResource WindowBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
@@ -73,22 +73,22 @@
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
                                         <Border x:Name="ColorTile" Width="32" Height="32" CornerRadius="16"
-                                                Background="{Binding Brush}" BorderBrush="#5C6772" BorderThickness="1"
+                                                Background="{Binding Brush}" BorderBrush="{StaticResource BorderNormalBrush}" BorderThickness="1"
                                                 ToolTip="{Binding Label}">
                                             <Grid>
                                                 <TextBlock x:Name="CheckMark" Text="✓" FontSize="16" FontWeight="Bold"
-                                                           Foreground="#1F2937" HorizontalAlignment="Center"
+                                                           Foreground="{StaticResource TextPrimaryBrush}" HorizontalAlignment="Center"
                                                            VerticalAlignment="Center" Visibility="Collapsed" />
                                             </Grid>
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{StaticResource TextBrush}" />
+                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{StaticResource TextPrimaryBrush}" />
                                                 <Setter TargetName="ColorTile" Property="BorderThickness" Value="3" />
                                                 <Setter TargetName="CheckMark" Property="Visibility" Value="Visible" />
                                             </Trigger>
                                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{StaticResource FocusRingBrush}" />
+                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{StaticResource FocusBrush}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -102,7 +102,7 @@
 
         <!-- 底部操作栏：与话术库底部 App Footer 同款——Surface 底、上方 1px 分隔、右对齐操作按钮 -->
         <Border Grid.Row="1" Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="24,16">
+                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,1,0,0" Padding="24,16">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />

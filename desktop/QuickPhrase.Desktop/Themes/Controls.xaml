@@ -2,7 +2,7 @@
   QuickPhrase 控件样式 — Windows Native Productivity
   依赖 Themes/QuickPhraseTheme.xaml（颜色/笔刷/排版/间距/圆角/控件高度）。
   由 App.xaml 的 MergedDictionaries 在主题之后加载，确保资源可被解析。
-  设计原则：克制密度、小圆角、淡紫仅用于选中/聚焦/主操作；无强阴影、无大卡片套卡片。
+  设计原则：克制密度、小圆角、品牌蓝仅用于选中/聚焦/主操作；无强阴影、无大卡片套卡片。
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
@@ -26,7 +26,7 @@
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="Cursor" Value="Hand" />
@@ -41,7 +41,7 @@
                         <Grid>
                             <Border x:Name="Overlay" Background="#000000" Opacity="0"
                                     CornerRadius="{StaticResource RadiusSmall}" />
-                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusRingBrush}"
+                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusBrush}"
                                     BorderThickness="2" Opacity="0"
                                     CornerRadius="{StaticResource RadiusSmall}" />
                             <ContentPresenter HorizontalAlignment="Center"
@@ -69,31 +69,31 @@
     </Style>
 
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
-        <Setter Property="Background" Value="{StaticResource AccentBrush}" />
-        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="Background" Value="{StaticResource BrandPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource OnBrandPrimaryBrush}" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BrandPrimaryBrush}" />
     </Style>
 
     <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}" />
     </Style>
 
     <Style x:Key="GhostButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
-        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
     </Style>
 
-    <!-- 方形图标按钮：32×32 圆角，透明底，hover 浅紫底 + 主色图标（对齐 design-system.md 5.9 设置图标按钮） -->
+    <!-- 方形图标按钮：32×32 圆角，透明底，hover 冰蓝底 + 品牌蓝图标（对齐 design-system.md 5.9 设置图标按钮） -->
     <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
         <Setter Property="Width" Value="32" />
         <Setter Property="Height" Value="32" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
-        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
         <Setter Property="FontSize" Value="16" />
         <Setter Property="Template">
             <Setter.Value>
@@ -104,7 +104,7 @@
                         <Grid>
                             <Border x:Name="Overlay" Background="#000000" Opacity="0"
                                     CornerRadius="{StaticResource RadiusSmall}" />
-                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusRingBrush}"
+                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusBrush}"
                                     BorderThickness="2" Opacity="0"
                                     CornerRadius="{StaticResource RadiusSmall}" />
                             <ContentPresenter HorizontalAlignment="Center"
@@ -114,8 +114,8 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentSoftBrush}" />
-                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource HoverBackgroundBrush}" />
+                            <Setter Property="Foreground" Value="{StaticResource BrandPrimaryBrush}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Overlay" Property="Opacity" Value="0.08" />
@@ -137,13 +137,13 @@
         <Setter Property="Height" Value="36" />
         <Setter Property="Padding" Value="10,0" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}" />
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
-        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
-        <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}" />
+        <Setter Property="CaretBrush" Value="{StaticResource BrandPrimaryBrush}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
@@ -164,7 +164,7 @@
                                           VerticalAlignment="Center"
                                           HorizontalScrollBarVisibility="Hidden"
                                           VerticalScrollBarVisibility="Hidden" />
-                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusRingBrush}"
+                            <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusBrush}"
                                     BorderThickness="2" Opacity="0"
                                     CornerRadius="{StaticResource RadiusSmall}"
                                     IsHitTestVisible="False" />
@@ -172,7 +172,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource BrandPrimaryBrush}" />
                             <Setter TargetName="FocusRing" Property="Opacity" Value="1" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
@@ -218,7 +218,7 @@
                                           VerticalAlignment="Center"
                                           HorizontalScrollBarVisibility="Hidden"
                                           VerticalScrollBarVisibility="Hidden" />
-                            <Border x:Name="FocusRing" BorderBrush="{StaticResource AccentBrush}"
+                            <Border x:Name="FocusRing" BorderBrush="{StaticResource BrandPrimaryBrush}"
                                     BorderThickness="2" Opacity="0"
                                     CornerRadius="{StaticResource RadiusMedium}"
                                     IsHitTestVisible="False" />
@@ -226,7 +226,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource BrandPrimaryBrush}" />
                             <Setter TargetName="FocusRing" Property="Opacity" Value="1" />
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -240,7 +240,7 @@
 
     <!-- ====================== TOGGLE（用 CheckBox 样式化为 Windows 开关，避免依赖 ToggleSwitch 控件可用性） ====================== -->
     <Style x:Key="ToggleSwitchStyle" TargetType="CheckBox">
-        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -255,7 +255,7 @@
                         <Border x:Name="Track"
                                 Width="40" Height="22"
                                 CornerRadius="11"
-                                Background="{StaticResource DividerBrush}"
+                                Background="{StaticResource SeparatorBrush}"
                                 VerticalAlignment="Center"
                                 Margin="0,0,8,0">
                             <Ellipse x:Name="Thumb"
@@ -269,7 +269,7 @@
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Track" Property="Background" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Track" Property="Background" Value="{StaticResource BrandPrimaryBrush}" />
                             <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
                             <Setter TargetName="Thumb" Property="Margin" Value="0,0,2,0" />
                         </Trigger>
@@ -281,7 +281,7 @@
                                 <Condition Property="IsKeyboardFocused" Value="True" />
                                 <Condition Property="IsEnabled" Value="True" />
                             </MultiTrigger.Conditions>
-                            <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource BrandPrimaryBrush}" />
                             <Setter TargetName="Track" Property="BorderThickness" Value="2" />
                         </MultiTrigger>
                     </ControlTemplate.Triggers>
@@ -296,7 +296,7 @@
         <Setter Property="Padding" Value="12,0" />
         <Setter Property="Margin" Value="8,2" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="Template">
@@ -307,18 +307,18 @@
                             CornerRadius="{StaticResource RadiusSmall}">
                         <Grid>
                             <Rectangle x:Name="AccentBar" Width="3" HorizontalAlignment="Left"
-                                       Fill="{StaticResource AccentBrush}" Visibility="Collapsed" />
+                                       Fill="{StaticResource BrandPrimaryBrush}" Visibility="Collapsed" />
                             <ContentPresenter Margin="{TemplateBinding Padding}" />
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentSoftBrush}" />
-                            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource HoverBackgroundBrush}" />
+                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentSoftBrush}" />
-                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource SelectionBackgroundBrush}" />
+                            <Setter Property="Foreground" Value="{StaticResource BrandPrimaryBrush}" />
                             <Setter Property="FontWeight" Value="SemiBold" />
                             <Setter TargetName="AccentBar" Property="Visibility" Value="Visible" />
                         </Trigger>
@@ -334,7 +334,7 @@
         <Setter Property="MinHeight" Value="{StaticResource PhraseRowMinHeight}" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="BorderThickness" Value="0,0,0,1" />
-        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}" />
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -348,16 +348,16 @@
                         <Grid>
                             <!-- 左 3px 主色强调条：默认隐藏，选中显示 -->
                             <Rectangle x:Name="AccentBar" Width="3" HorizontalAlignment="Left"
-                                       Fill="{StaticResource AccentBrush}" Visibility="Collapsed" />
+                                       Fill="{StaticResource BrandPrimaryBrush}" Visibility="Collapsed" />
                             <ContentPresenter Margin="{TemplateBinding Padding}" />
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AppBackgroundBrush}" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource WindowBackgroundBrush}" />
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource SelectionBackgroundBrush}" />
                             <Setter TargetName="AccentBar" Property="Visibility" Value="Visible" />
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -368,7 +368,7 @@
 
     <!-- ====================== TAG / SHORTCUT BADGE（定义在 PhraseRowTemplate 之前，避免同文件前向引用） ====================== -->
     <Style x:Key="TagPill" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource AccentSoftBrush}" />
+        <Setter Property="Background" Value="{StaticResource BrandIceLightBrush}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusSmall}" />
         <Setter Property="Padding" Value="8,2" />
         <Setter Property="VerticalAlignment" Value="Center" />
@@ -442,7 +442,7 @@
 
     <Style x:Key="ShortcutBadge" TargetType="Border">
         <Setter Property="Background" Value="#FFFFFF" />
-        <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusSmall}" />
         <Setter Property="Padding" Value="6,2" />
@@ -454,9 +454,9 @@
         <Setter Property="Height" Value="36" />
         <Setter Property="Padding" Value="10,0" />
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -467,7 +467,7 @@
          已天然满足 design-system.md 7 中 "菜单项带 role=menuitem" 的无障碍要求。 -->
     <Style TargetType="ContextMenu">
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="4" />
         <Setter Property="FontSize" Value="14" />
@@ -489,7 +489,7 @@
 
     <Style TargetType="MenuItem">
         <Setter Property="Padding" Value="10,6" />
-        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="MenuItem">
@@ -514,7 +514,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsHighlighted" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource HoverBackgroundBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -525,13 +525,13 @@
     <Style TargetType="Separator">
         <Setter Property="Height" Value="1" />
         <Setter Property="Margin" Value="6,4" />
-        <Setter Property="Background" Value="{StaticResource DividerBrush}" />
+        <Setter Property="Background" Value="{StaticResource SeparatorBrush}" />
     </Style>
 
     <!-- ====================== DIALOG WINDOW ====================== -->
     <Style x:Key="DialogWindow" TargetType="Window">
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
         <Setter Property="ResizeMode" Value="NoResize" />
@@ -552,9 +552,9 @@
         <Setter Property="FontSize" Value="12" />
         <Setter Property="FontWeight" Value="Medium" />
         <!-- 一级分类颜色固定为主题色（引用主题变量，不写死色值）：默认主题主色整块铺满；
-             字体恒为白色，不随选中态变化；选中态仅背景加深为 AccentDarkBrush 以突出 -->
+             字体恒为白色，不随选中态变化；选中态仅背景加深为 BrandPrimaryPressedBrush 以突出 -->
         <Setter Property="Foreground" Value="#FFFFFF" />
-        <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+        <Setter Property="Background" Value="{StaticResource BrandPrimaryBrush}" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Template">
@@ -579,8 +579,8 @@
                             <Setter TargetName="Overlay" Property="Opacity" Value="0.04" />
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentDarkBrush}" />
-                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AccentDarkBrush}" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource BrandPrimaryPressedBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource BrandPrimaryPressedBrush}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Root" Property="Opacity" Value="0.45" />
@@ -597,10 +597,10 @@
         <Setter Property="Height" Value="30" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Margin" Value="4,0,0,0" />
-        <Setter Property="Background" Value="{StaticResource AppBackgroundBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
+        <Setter Property="Background" Value="{StaticResource WindowBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
         <Setter Property="FontSize" Value="15" />
         <Setter Property="FontWeight" Value="Medium" />
         <Setter Property="Template">
@@ -620,9 +620,9 @@
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Root" Property="Stroke" Value="{StaticResource AccentBrush}" />
-                            <Setter TargetName="Root" Property="Fill" Value="{StaticResource AccentSoftBrush}" />
-                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Root" Property="Stroke" Value="{StaticResource BrandPrimaryBrush}" />
+                            <Setter TargetName="Root" Property="Fill" Value="{StaticResource HoverBackgroundBrush}" />
+                            <Setter Property="Foreground" Value="{StaticResource BrandPrimaryBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -639,13 +639,13 @@
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusXs}" />
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
     <Style x:Key="ChipCountText" TargetType="TextBlock">
         <Setter Property="FontSize" Value="11" />
         <Setter Property="FontFamily" Value="{StaticResource UiMonoFontFamily}" />
-        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
@@ -661,8 +661,8 @@
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Cursor" Value="Hand" />
-        <!-- 标题文字保持默认样式（TextBrush），其下方话术行亦为默认文字样式 -->
-        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <!-- 标题文字保持默认样式（TextPrimaryBrush），其下方话术行亦为默认文字样式 -->
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="Background" Value="{StaticResource SubHeaderBlueBrush}" />
         <Setter Property="Template">
             <Setter.Value>
@@ -670,7 +670,7 @@
                     <Border x:Name="Root"
                             Background="{TemplateBinding Background}"
                             BorderThickness="0,0,0,1"
-                            BorderBrush="{StaticResource BorderSubtleBrush}">
+                            BorderBrush="{StaticResource SeparatorBrush}">
                         <ContentPresenter Margin="8,0,16,0" VerticalAlignment="Center" />
                     </Border>
                 </ControlTemplate>
@@ -738,7 +738,7 @@
     <!-- ====================== TOAST CONTAINER（轻提示容器） ====================== -->
     <!-- 底部居中、slate-900 底、白字、radius-lg(8)、shadow-lg。 -->
     <Style x:Key="ToastStyle" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource TextBrush}" />
+        <Setter Property="Background" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
         <Setter Property="Padding" Value="20,12" />
         <Setter Property="HorizontalAlignment" Value="Center" />
@@ -765,7 +765,7 @@
         <Setter Property="Padding" Value="0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
-        <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
@@ -788,8 +788,8 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentSoftBrush}" />
-                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource HoverBackgroundBrush}" />
+                            <Setter Property="Foreground" Value="{StaticResource BrandPrimaryBrush}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Overlay" Property="Opacity" Value="0.08" />
@@ -802,8 +802,8 @@
 
     <!-- ====================== KBD（键盘徽标） ====================== -->
     <Style x:Key="KbdBadge" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource AppBackgroundBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
+        <Setter Property="Background" Value="{StaticResource WindowBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusXs}" />
         <Setter Property="Padding" Value="2,1" />
