@@ -147,6 +147,11 @@ public static class PhrasePackagePlanner
                 errors.Add("话术包包含非法的分类父级关系。");
         }
 
+        if (categories
+            .GroupBy(category => (category.ParentId, Name: NormalizeName(category.Name)))
+            .Any(group => group.Count() > 1))
+            errors.Add("话术包包含同一父分类下的重名分类。");
+
         foreach (var phrase in phrases)
         {
             if (phrase.Id == Guid.Empty) errors.Add("话术标识无效。");
@@ -276,8 +281,8 @@ public static class PhrasePackagePlanner
             .ToHashSet();
         var structural = AddAncestors(selected, packageCategories);
         var localByName = local.Categories
-            .GroupBy(category => NormalizeName(category.Name), StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.OrderBy(category => category.Id).First(), StringComparer.Ordinal);
+            .GroupBy(category => (category.ParentId, Name: NormalizeName(category.Name)))
+            .ToDictionary(group => group.Key, group => group.OrderBy(category => category.Id).First());
         var categoryMappings = new List<PhrasePackageCategoryMapping>();
         var targetByPackage = new Dictionary<Guid, Guid>();
 
@@ -287,13 +292,13 @@ public static class PhrasePackagePlanner
                      .ThenBy(category => category.SortOrder)
                      .ThenBy(category => category.Name, StringComparer.Ordinal))
         {
-            var nameKey = NormalizeName(category.Name);
-            var existing = localByName.TryGetValue(nameKey, out var localCategory) ? localCategory : null;
-            var targetId = existing?.Id ?? Guid.NewGuid();
-            targetByPackage[category.Id] = targetId;
             var parentTarget = category.ParentId.HasValue && targetByPackage.TryGetValue(category.ParentId.Value, out var parent)
                 ? parent
                 : (Guid?)null;
+            var nameKey = NormalizeName(category.Name);
+            var existing = localByName.TryGetValue((parentTarget, nameKey), out var localCategory) ? localCategory : null;
+            var targetId = existing?.Id ?? Guid.NewGuid();
+            targetByPackage[category.Id] = targetId;
             categoryMappings.Add(new PhrasePackageCategoryMapping(
                 category.Id,
                 targetId,
@@ -304,7 +309,7 @@ public static class PhrasePackagePlanner
                 existing is null,
                 !selected.Contains(category.Id)));
             if (existing is null)
-                localByName[nameKey] = new Category(targetId, parentTarget, category.Name.Trim(), category.SortOrder, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+                localByName[(parentTarget, nameKey)] = new Category(targetId, parentTarget, category.Name.Trim(), category.SortOrder, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         }
 
         var localDuplicates = local.Phrases

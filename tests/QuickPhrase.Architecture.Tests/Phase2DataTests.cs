@@ -152,7 +152,7 @@ public sealed class Phase2DataTests
         await using var connection = new SqliteConnection($"Data Source={runtime.DatabasePath};Mode=ReadOnly;Pooling=False");
         await connection.OpenAsync();
 
-        Assert.Equal(9L, await ScalarAsync(connection, "SELECT MAX(version) FROM schema_migrations;"));
+        Assert.Equal(10L, await ScalarAsync(connection, "SELECT MAX(version) FROM schema_migrations;"));
         Assert.Equal(0L, await ScalarAsync(connection, "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name IN ('tags', 'phrase_tags');"));
     }
 
@@ -172,7 +172,7 @@ public sealed class Phase2DataTests
 
         await using var connection = new SqliteConnection($"Data Source={reopened.DatabasePath};Mode=ReadOnly;Pooling=False");
         await connection.OpenAsync();
-        Assert.Equal(9L, await ScalarAsync(connection, "SELECT MAX(version) FROM schema_migrations;"));
+        Assert.Equal(10L, await ScalarAsync(connection, "SELECT MAX(version) FROM schema_migrations;"));
         Assert.Equal(0L, await ScalarAsync(connection, "SELECT COUNT(1) FROM schema_migrations WHERE version = 8 AND checksum = 'legacy-008-remove-tags';"));
     }
     [Fact]
@@ -222,7 +222,7 @@ public sealed class Phase2DataTests
         await using var upgraded = await QuickPhraseDataRuntime.OpenAsync(options);
         await using var verify = new SqliteConnection($"Data Source={upgraded.DatabasePath};Mode=ReadOnly;Pooling=False");
         await verify.OpenAsync();
-        Assert.Equal(9L, await ScalarAsync(verify, "SELECT MAX(version) FROM schema_migrations;"));
+        Assert.Equal(10L, await ScalarAsync(verify, "SELECT MAX(version) FROM schema_migrations;"));
         Assert.Equal(0L, await ScalarAsync(verify, "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name IN ('tags', 'phrase_tags');"));
     }
 
@@ -349,7 +349,7 @@ public sealed class Phase2DataTests
 
             await using var verify = new SqliteConnection($"Data Source={options.DatabasePath};Mode=ReadOnly;Pooling=False");
             await verify.OpenAsync();
-            Assert.Equal(9L, (long)(await ScalarAsync(verify, "SELECT MAX(version) FROM schema_migrations;"))!);
+            Assert.Equal(10L, (long)(await ScalarAsync(verify, "SELECT MAX(version) FROM schema_migrations;"))!);
             Assert.Equal(0L, (long)(await ScalarAsync(verify, "SELECT COUNT(1) FROM phrases WHERE shortcut_mode <> 'None' OR shortcut_display IS NOT NULL OR shortcut_normalized IS NOT NULL;"))!);
         }
 
@@ -439,17 +439,17 @@ public sealed class Phase2DataTests
         var options = new QuickPhraseDataOptions(temp.Path);
         await using (var runtime = await QuickPhraseDataRuntime.OpenAsync(options)) { }
         var factory = new SqliteConnectionFactory(options.DatabasePath);
-        // 内置迁移包含移除标签表的 009，测试用追加迁移顺延为 010/011。
-        var validV2 = new SqliteMigration(10, "010_test", "CREATE TABLE phase2_test(value TEXT);", "test-checksum");
+        // 内置迁移包含分类同级唯一约束的 010，测试用追加迁移顺延为 011/012。
+        var validV2 = new SqliteMigration(11, "011_test", "CREATE TABLE phase2_test(value TEXT);", "test-checksum");
         await new MigrationRunner(options, factory, [validV2]).EnsureMigratedAsync(CancellationToken.None);
         var backup = Assert.Single(Directory.GetFiles(options.BackupDirectory, "*.db"));
         await using (var backupConnection = new SqliteConnection($"Data Source={backup};Mode=ReadOnly;Pooling=False"))
         {
             await backupConnection.OpenAsync();
-            Assert.Equal(9L, await ScalarAsync(backupConnection, "SELECT COUNT(1) FROM schema_migrations;"));
+            Assert.Equal(10L, await ScalarAsync(backupConnection, "SELECT COUNT(1) FROM schema_migrations;"));
         }
 
-        var failing = new SqliteMigration(11, "011_failure", "CREATE TABLE should_rollback(value TEXT); SELECT no_such_function();", "failure-checksum");
+        var failing = new SqliteMigration(12, "012_failure", "CREATE TABLE should_rollback(value TEXT); SELECT no_such_function();", "failure-checksum");
         await Assert.ThrowsAsync<DataStoreException>(() => new MigrationRunner(options, factory, [validV2, failing]).EnsureMigratedAsync(CancellationToken.None));
         await using var connection = await factory.OpenReadAsync(CancellationToken.None);
         Assert.Equal(0L, (long)(await ScalarAsync(connection, "SELECT COUNT(1) FROM sqlite_master WHERE name='should_rollback';"))!);

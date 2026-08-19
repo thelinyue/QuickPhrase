@@ -5,7 +5,7 @@ namespace QuickPhrase.Platform.Windows;
 
 /// <summary>
 /// 分类持久化与二级树校验（分类层级最多支持两级）。
-/// 分类名称继续全库唯一，避免旧数据库升级时重建表；父级关系只影响层级与排序。
+/// 分类名称按 ParentId + normalized_name 在同级内唯一；不同父级下允许复用名称。
 /// </summary>
 internal sealed class SqliteCategoryRepository : SqliteRepositoryBase, ICategoryRepository
 {
@@ -39,7 +39,7 @@ internal sealed class SqliteCategoryRepository : SqliteRepositoryBase, ICategory
             return RepositoryResult<Category>.Failure(NotFound("父分类"));
         if (command.ParentId.HasValue && GetDepth(categories, command.ParentId.Value) >= 2)
             return RepositoryResult<Category>.Failure(new DataError("CATEGORY_DEPTH_EXCEEDED", "分类最多支持二级。", command.ParentId));
-        if (await CategoryNameExistsAsync(connection, transaction, normalized.Normalized, null, cancellationToken))
+        if (await CategoryNameExistsAsync(connection, transaction, command.ParentId, normalized.Normalized, null, cancellationToken))
             return RepositoryResult<Category>.Failure(Validation("分类名称已经存在。"));
 
         var now = Now();
@@ -66,7 +66,7 @@ internal sealed class SqliteCategoryRepository : SqliteRepositoryBase, ICategory
         var current = await ReadCategoryAsync(connection, transaction, command.Id, cancellationToken);
         if (current is null) return RepositoryResult<Category>.Failure(NotFound("分类"));
         if (current.Version != command.ExpectedVersion) return RepositoryResult<Category>.Failure(Conflict(current.Id, current.Name));
-        if (await CategoryNameExistsAsync(connection, transaction, normalized.Normalized, command.Id, cancellationToken))
+        if (await CategoryNameExistsAsync(connection, transaction, current.ParentId, normalized.Normalized, command.Id, cancellationToken))
             return RepositoryResult<Category>.Failure(Validation("分类名称已经存在。"));
         var now = Now();
         await using var update = connection.CreateCommand();
@@ -99,6 +99,8 @@ internal sealed class SqliteCategoryRepository : SqliteRepositoryBase, ICategory
         var subtreeDepth = GetSubtreeDepth(categories, command.Id);
         if (parentDepth + subtreeDepth > 2)
             return RepositoryResult<Category>.Failure(new DataError("CATEGORY_DEPTH_EXCEEDED", "移动后分类树不能超过二级。", command.Id, current.Name));
+        if (await CategoryNameExistsAsync(connection, transaction, command.ParentId, NormalizeName(current.Name).Normalized, command.Id, cancellationToken))
+            return RepositoryResult<Category>.Failure(Validation("目标父分类下已经存在同名分类。"));
 
         var now = Now();
         await using var update = connection.CreateCommand();
@@ -243,13 +245,20 @@ internal sealed class SqliteCategoryRepository : SqliteRepositoryBase, ICategory
         return result;
     }
 
-    private static async Task<bool> CategoryNameExistsAsync(SqliteConnection connection, SqliteTransaction transaction, string normalized, Guid? exceptId, CancellationToken cancellationToken)
+    private static async Task<bool> CategoryNameExistsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid? parentId,
+        string normalized,
+        Guid? exceptId,
+        CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = exceptId.HasValue
-            ? "SELECT id FROM categories WHERE normalized_name=$normalized AND id<>$id LIMIT 1;"
-            : "SELECT id FROM categories WHERE normalized_name=$normalized LIMIT 1;";
+        var parentPredicate = parentId.HasValue ? "parent_id=$parentId" : "parent_id IS NULL";
+        var exceptPredicate = exceptId.HasValue ? " AND id<>$id" : string.Empty;
+        command.CommandText = $"SELECT id FROM categories WHERE {parentPredicate} AND normalized_name=$normalized{exceptPredicate} LIMIT 1;";
+        if (parentId.HasValue) command.Parameters.AddWithValue("$parentId", DbId(parentId.Value));
         command.Parameters.AddWithValue("$normalized", normalized);
         if (exceptId.HasValue) command.Parameters.AddWithValue("$id", DbId(exceptId.Value));
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
