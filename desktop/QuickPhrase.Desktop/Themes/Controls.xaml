@@ -135,14 +135,17 @@
     <!-- ====================== TEXTBOX ====================== -->
     <Style x:Key="BaseTextBox" TargetType="TextBox">
         <Setter Property="Height" Value="36" />
-        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="Padding" Value="12,0" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
         <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
         <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
         <Setter Property="FontSize" Value="14" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Hidden" />
         <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}" />
         <Setter Property="Template">
             <Setter.Value>
@@ -154,16 +157,18 @@
                             CornerRadius="{StaticResource RadiusSmall}">
                         <Grid>
                             <!--
-                                不再依赖 ScrollViewer 的默认内容边界：明确固定输入起点，
-                                避免 Padding、占位文本或图标覆盖层叠加造成光标偏移。
+                                普通 TextBox 不预留图标列；文本起点只由 Padding 决定。
+                                通过 TemplateBinding 同时支持单行默认间距和多行正文的 Padding="12,10"，
+                                并保留 TextBox 的内容对齐与滚动属性，避免模板吞掉页面配置。
                             -->
                             <ScrollViewer x:Name="PART_ContentHost"
-                                          Margin="28,0,16,0"
+                                          Margin="{TemplateBinding Padding}"
                                           HorizontalAlignment="Stretch"
-                                          HorizontalContentAlignment="Left"
-                                          VerticalAlignment="Center"
-                                          HorizontalScrollBarVisibility="Hidden"
-                                          VerticalScrollBarVisibility="Hidden" />
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="Stretch"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                          VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}" />
                             <Border x:Name="FocusRing" BorderBrush="{StaticResource FocusRingBrush}"
                                     BorderThickness="2" Opacity="0"
                                     CornerRadius="{StaticResource RadiusSmall}"
@@ -184,7 +189,16 @@
         </Setter>
     </Style>
 
-    <!-- 搜索框：左侧放大镜图标 + 中圆角 + focus 主色边框 -->
+    <!--
+        普通 TextBox 的隐式入口：引导窗口等未显式指定 Style 的输入框也必须使用同一套
+        无图标模板，避免回退到 WPF 默认模板后重新出现不一致的文本起点。
+    -->
+    <Style TargetType="TextBox" BasedOn="{StaticResource BaseTextBox}" />
+
+    <!--
+        搜索框是带图标输入控件的独立模板：只有这里为图标列保留固定空间，
+        不把 28px 的前置偏移泄漏给普通 TextBox。
+    -->
     <Style x:Key="SearchBoxStyle" TargetType="TextBox" BasedOn="{StaticResource BaseTextBox}">
         <Setter Property="Height" Value="{StaticResource SearchBoxHeight}" />
         <!-- 输入间距只由 PART_ContentHost 的 Margin 提供，避免 Padding 与 Margin 叠加造成光标偏移。 -->
