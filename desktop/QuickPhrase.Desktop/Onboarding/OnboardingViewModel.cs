@@ -21,6 +21,7 @@ public partial class OnboardingViewModel : ObservableObject
     private AppSettings _settings;
     private bool _manualOpen;
     private bool _hasPhrases;
+    private Guid? _createdCategoryId;
     private bool _launchOnStartupDirty;
     private bool _suppressLaunchOnStartupTracking;
 
@@ -34,6 +35,7 @@ public partial class OnboardingViewModel : ObservableObject
     [ObservableProperty] private bool _practiceOpened;
     [ObservableProperty] private bool _practiceSearched;
     [ObservableProperty] private bool _practiceInserted;
+    [ObservableProperty] private bool _practiceStarting;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private bool _launchOnStartup;
@@ -56,10 +58,46 @@ public partial class OnboardingViewModel : ObservableObject
 
     public bool IsManualOpen => _manualOpen;
     public int StepNumber => (int)CurrentStep + 1;
+    public bool CanGoBack => CurrentStep is > OnboardingStep.Welcome and < OnboardingStep.Complete;
+    public bool HasSingleCategory => Categories.Count == 1;
+    public bool HasMultipleCategories => Categories.Count > 1;
+    public string SelectedCategoryDisplayName => SelectedCategory?.Name ?? "请选择分类";
     public event Action? Completed;
     public event Action? Skipped;
-    /// <summary>完成按钮只在真实练习选中话术后可用；跳过引导走独立 Skip 命令。</summary>
-    public bool CanFinish => PracticeInserted;
+    public event Action? PracticeStopRequested;
+    /// <summary>练习页允许继续，避免用户因快捷键或外部窗口状态被首次引导卡死。</summary>
+    public bool CanFinish => CurrentStep == OnboardingStep.Practice && !IsBusy;
+    public bool CanCreateCategory => CurrentStep == OnboardingStep.Category && !IsBusy && !string.IsNullOrWhiteSpace(CategoryName);
+    public bool CanSavePhrase => CurrentStep == OnboardingStep.Phrase
+        && !IsBusy
+        && !string.IsNullOrWhiteSpace(PhraseTitle)
+        && !string.IsNullOrWhiteSpace(PhraseContent)
+        && SelectedCategory is not null;
+    public string PracticeHint => PracticeInserted
+        ? "练习已完成，可以继续。"
+        : "可以先体验一次；也可以稍后在话术库中再次体验。";
+    public string PracticeOpenedStatus => PracticeStarting
+        ? "进行中 · 打开闪念"
+        : PracticeOpened ? "已完成 · 打开闪念" : "待完成 · 打开闪念";
+    public string PracticeSearchedStatus => PracticeSearched ? "已完成 · 找到刚才的话术" : "待完成 · 找到刚才的话术";
+    public string PracticeInsertedStatus => PracticeInserted ? "已完成 · 按 Enter 选择话术" : "待完成 · 按 Enter 选择话术";
+
+    partial void OnCategoryNameChanged(string value) => NotifyFormCommandsChanged();
+    partial void OnPhraseTitleChanged(string value) => NotifyFormCommandsChanged();
+    partial void OnPhraseContentChanged(string value) => NotifyFormCommandsChanged();
+    partial void OnSelectedCategoryChanged(CategoryOption? value)
+    {
+        OnPropertyChanged(nameof(SelectedCategoryDisplayName));
+        NotifyFormCommandsChanged();
+    }
+    partial void OnCategoriesChanged(ObservableCollection<CategoryOption> value)
+    {
+        OnPropertyChanged(nameof(HasSingleCategory));
+        OnPropertyChanged(nameof(HasMultipleCategories));
+        OnPropertyChanged(nameof(SelectedCategoryDisplayName));
+        NotifyFormCommandsChanged();
+    }
+    partial void OnIsBusyChanged(bool value) => NotifyFormCommandsChanged();
     partial void OnLaunchOnStartupChanged(bool value)
     {
         if (!_suppressLaunchOnStartupTracking) _launchOnStartupDirty = true;
@@ -69,6 +107,30 @@ public partial class OnboardingViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(StepTitle));
         OnPropertyChanged(nameof(StepNumber));
+        OnPropertyChanged(nameof(CanFinish));
+        OnPropertyChanged(nameof(CanGoBack));
+        OnPropertyChanged(nameof(CanCreateCategory));
+        OnPropertyChanged(nameof(CanSavePhrase));
+    }
+
+    partial void OnPracticeStartingChanged(bool value) => OnPropertyChanged(nameof(PracticeOpenedStatus));
+
+    partial void OnPracticeOpenedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PracticeOpenedStatus));
+        OnPropertyChanged(nameof(PracticeHint));
+    }
+
+    partial void OnPracticeSearchedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PracticeSearchedStatus));
+        OnPropertyChanged(nameof(PracticeHint));
+    }
+
+    partial void OnPracticeInsertedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PracticeInsertedStatus));
+        OnPropertyChanged(nameof(PracticeHint));
         OnPropertyChanged(nameof(CanFinish));
     }
 
@@ -100,7 +162,7 @@ public partial class OnboardingViewModel : ObservableObject
         OnPropertyChanged(nameof(StepTitle));
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanCreateCategory))]
     private async Task CreateCategoryAndContinue()
     {
         if (IsBusy) return;
@@ -113,7 +175,20 @@ public partial class OnboardingViewModel : ObservableObject
                 ErrorMessage = "请输入分类名称。";
                 return;
             }
-            var result = await _commands.CreateCategoryAsync(new CreateCategoryCommand(Guid.NewGuid(), CategoryName.Trim()));
+            var normalizedName = CategoryName.Trim();
+            var existingCreatedCategory = _createdCategoryId is Guid createdId
+                ? Categories.FirstOrDefault(category => category.Id == createdId &&
+                    string.Equals(category.Name, normalizedName, StringComparison.OrdinalIgnoreCase))
+                : null;
+            if (existingCreatedCategory is not null)
+            {
+                SelectedCategory = existingCreatedCategory;
+                CurrentStep = OnboardingStep.Phrase;
+                OnPropertyChanged(nameof(StepTitle));
+                return;
+            }
+
+            var result = await _commands.CreateCategoryAsync(new CreateCategoryCommand(Guid.NewGuid(), normalizedName));
             if (!result.IsSuccess || result.Value is null)
             {
                 ErrorMessage = result.Error?.Message ?? "分类保存失败，请重试。";
@@ -121,6 +196,8 @@ public partial class OnboardingViewModel : ObservableObject
             }
             await ReloadDataAsync();
             SelectedCategory = Categories.FirstOrDefault(c => c.Id == result.Value.Id) ?? Categories.FirstOrDefault();
+            _createdCategoryId = result.Value.Id;
+            CategoryName = normalizedName;
             CurrentStep = HasPhraseData() ? OnboardingStep.Practice : OnboardingStep.Phrase;
             OnPropertyChanged(nameof(StepTitle));
         }
@@ -131,7 +208,7 @@ public partial class OnboardingViewModel : ObservableObject
         finally { IsBusy = false; }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSavePhrase))]
     private async Task SavePhraseAndContinue()
     {
         if (IsBusy) return;
@@ -163,20 +240,39 @@ public partial class OnboardingViewModel : ObservableObject
     private async Task BeginPractice()
     {
         ErrorMessage = null;
-        if (_startPractice is null)
+        PracticeStarting = true;
+        try
         {
-            PracticeOpened = true;
-            PracticeSearched = true;
-            return;
+            if (_startPractice is null)
+            {
+                PracticeOpened = true;
+                PracticeSearched = true;
+                return;
+            }
+            PracticeOpened = await _startPractice(this);
+            OnPropertyChanged(nameof(CanFinish));
         }
-        PracticeOpened = await _startPractice(this);
-        OnPropertyChanged(nameof(CanFinish));
+        finally
+        {
+            PracticeStarting = false;
+        }
     }
 
     [RelayCommand]
+    private void Back()
+    {
+        if (!CanGoBack) return;
+        if (CurrentStep == OnboardingStep.Practice) PracticeStopRequested?.Invoke();
+        CurrentStep = (OnboardingStep)((int)CurrentStep - 1);
+        ErrorMessage = null;
+        OnPropertyChanged(nameof(StepTitle));
+    }
+
+    [RelayCommand(CanExecute = nameof(CanFinish))]
     private async Task Finish()
     {
         if (IsBusy) return;
+        PracticeStopRequested?.Invoke();
         IsBusy = true;
         ErrorMessage = null;
         try
@@ -288,7 +384,7 @@ public partial class OnboardingViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 同步快捷键保存后的最新设置快照，避免后续完成/跳过操作使用旧版本号。
+    /// 同步快捷键保存后的最新设置快照，避免后续完成/跳过操作使用过期版本号。
     /// 完成页的启动项是尚未提交的页面状态，不能被快捷键保存返回的旧快照覆盖。
     /// </summary>
     public void ApplySettingsSnapshot(AppSettings settings)
@@ -367,12 +463,20 @@ public partial class OnboardingViewModel : ObservableObject
     private async Task ReloadDataAsync(CancellationToken cancellationToken = default)
     {
         var categories = await _commands.ListCategoriesAsync(cancellationToken);
-        Categories = new ObservableCollection<CategoryOption>(categories.Select(c => new CategoryOption(c.Id, c.Name, c.ParentId)));
-        var top = Categories.Where(c => c.ParentId is null).ToArray();
-        if (SelectedCategory is null || Categories.All(c => c.Id != SelectedCategory.Id)) SelectedCategory = top.FirstOrDefault() ?? Categories.FirstOrDefault();
+        Categories = new ObservableCollection<CategoryOption>(categories
+            .Where(c => c.ParentId is null)
+            .Select(c => new CategoryOption(c.Id, c.Name, c.ParentId)));
+        if (SelectedCategory is null || Categories.All(c => c.Id != SelectedCategory.Id)) SelectedCategory = Categories.FirstOrDefault();
         var phrases = await _commands.ListPhrasesAsync(cancellationToken);
         _hasPhrases = phrases.Count > 0;
         OnPropertyChanged(nameof(CanFinish));
+    }
+
+    private void NotifyFormCommandsChanged()
+    {
+        CreateCategoryAndContinueCommand.NotifyCanExecuteChanged();
+        SavePhraseAndContinueCommand.NotifyCanExecuteChanged();
+        FinishCommand.NotifyCanExecuteChanged();
     }
 
     private OnboardingStep GetFirstIncompleteStep(bool skipWelcome)

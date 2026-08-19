@@ -73,6 +73,14 @@ public sealed class OnboardingCoordinator
 
         viewModel.Completed += OnCompleted;
         viewModel.Skipped += OnSkipped;
+        viewModel.PracticeStopRequested += StopPracticeOnce;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            // 返回后再次进入练习页时允许重新执行一次清理，避免第一次返回把后续会话标记为已清理。
+            if (args.PropertyName == nameof(OnboardingViewModel.CurrentStep) &&
+                viewModel.CurrentStep == OnboardingStep.Practice)
+                _practiceCleanupRequested = false;
+        };
         window.Closed += (_, _) =>
         {
             closed = true;

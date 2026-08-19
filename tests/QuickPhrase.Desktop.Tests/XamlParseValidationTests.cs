@@ -35,6 +35,45 @@ public class XamlParseValidationTests
     }
 
     [Fact]
+    public void OnboardingWindow_UsesUnifiedWizardContract()
+    {
+        var root = FindRepoRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "OnboardingWindow.xaml"));
+
+        Assert.DoesNotContain("已打开：False", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("已搜索：False", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("已插入：False", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"保存到\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"话术标题\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"话术内容\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ComboBoxFieldStyle", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ContentRegion\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("RowDefinition Height=\"82\"", xaml, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(xaml, "Content=\"修改快捷键\""));
+
+        var completeSectionStart = xaml.IndexOf("x:Name=\"CompleteStepPanel\"", StringComparison.Ordinal);
+        var footerStart = xaml.IndexOf("<!-- Footer", completeSectionStart, StringComparison.Ordinal);
+        Assert.True(completeSectionStart >= 0 && footerStart > completeSectionStart);
+        Assert.DoesNotContain("跳过", xaml[completeSectionStart..footerStart], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OnboardingHotkey_UsesViewModelPracticeCommand()
+    {
+        var root = FindRepoRoot();
+        var controller = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "ApplicationController.cs"));
+
+        var onboardingBranchStart = controller.IndexOf("if (_onboarding?.ViewModel is { CurrentStep: OnboardingStep.Practice }", StringComparison.Ordinal);
+        Assert.True(onboardingBranchStart >= 0);
+        var nextProductionBranch = controller.IndexOf("var target = _targetDetector.CaptureForeground();", onboardingBranchStart, StringComparison.Ordinal);
+        Assert.True(nextProductionBranch > onboardingBranchStart);
+
+        var branch = controller[onboardingBranchStart..nextProductionBranch];
+        Assert.Contains("BeginPracticeCommand.ExecuteAsync(null)", branch, StringComparison.Ordinal);
+        Assert.DoesNotContain("StartOnboardingPracticeAsync(onboardingViewModel)", branch, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SettingsWindow_LoadedAnimationDoesNotApplyTransformToWindow()
     {
         var root = FindRepoRoot();
@@ -121,6 +160,18 @@ public class XamlParseValidationTests
 
         if (errors.Count > 0)
             throw new Exception("以下窗口/视图存在 XAML 渲染错误:\n" + string.Join("\n----\n", errors));
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+        return count;
     }
 
     private static string FindRepoRoot()

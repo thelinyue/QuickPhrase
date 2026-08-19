@@ -24,6 +24,121 @@ public sealed class OnboardingViewModelTests
     }
 
     [Fact]
+    public async Task CategoryForm_DisablesSubmitUntilNameIsProvided_AndTrimsBeforeSaving()
+    {
+        var fake = new FakeCommandService();
+        var vm = CreateViewModel(fake);
+        await vm.InitializeAsync();
+        vm.StartCommand.Execute(null);
+
+        Assert.False(vm.CreateCategoryAndContinueCommand.CanExecute(null));
+
+        vm.CategoryName = "  客户沟通  ";
+
+        Assert.True(vm.CreateCategoryAndContinueCommand.CanExecute(null));
+        await vm.CreateCategoryAndContinueCommand.ExecuteAsync(null);
+
+        var category = Assert.Single(await fake.ListCategoriesAsync());
+        Assert.Equal("客户沟通", category.Name);
+    }
+
+    [Fact]
+    public async Task BackNavigation_PreservesFormState_AndDoesNotDuplicateCreatedCategory()
+    {
+        var fake = new FakeCommandService();
+        var vm = CreateViewModel(fake);
+        await vm.InitializeAsync();
+        vm.StartCommand.Execute(null);
+        vm.CategoryName = "客户沟通";
+        await vm.CreateCategoryAndContinueCommand.ExecuteAsync(null);
+
+        vm.PhraseTitle = "问题已收到";
+        vm.PhraseContent = "您好，问题已经收到。";
+        vm.BackCommand.Execute(null);
+
+        Assert.Equal(OnboardingStep.Category, vm.CurrentStep);
+        Assert.Equal("客户沟通", vm.CategoryName);
+        await vm.CreateCategoryAndContinueCommand.ExecuteAsync(null);
+
+        Assert.Equal(OnboardingStep.Phrase, vm.CurrentStep);
+        Assert.Single(await fake.ListCategoriesAsync());
+        Assert.Equal("问题已收到", vm.PhraseTitle);
+        Assert.Equal("您好，问题已经收到。", vm.PhraseContent);
+    }
+
+    [Fact]
+    public async Task PhraseForm_UsesCreatedCategoryAndExposesCategoryDisplayMode()
+    {
+        var category = RootCategory("客户沟通");
+        var fake = new FakeCommandService();
+        fake.Seed(new[] { category });
+        var vm = CreateViewModel(fake);
+
+        await vm.InitializeAsync();
+
+        Assert.Equal(OnboardingStep.Phrase, vm.CurrentStep);
+        Assert.Equal(category.Id, vm.SelectedCategory!.Id);
+        Assert.True(vm.HasSingleCategory);
+        Assert.False(vm.HasMultipleCategories);
+        Assert.False(vm.SavePhraseAndContinueCommand.CanExecute(null));
+
+        vm.PhraseTitle = "问题已收到";
+        vm.PhraseContent = "您好，问题已经收到。";
+
+        Assert.True(vm.SavePhraseAndContinueCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task PhraseForm_WithMultipleRootCategories_ExposesSelectionMode()
+    {
+        var first = RootCategory("客户沟通");
+        var second = RootCategory("项目协作");
+        var fake = new FakeCommandService();
+        fake.Seed(new[] { first, second });
+        var vm = CreateViewModel(fake);
+
+        await vm.InitializeAsync();
+
+        Assert.Equal(OnboardingStep.Phrase, vm.CurrentStep);
+        Assert.False(vm.HasSingleCategory);
+        Assert.True(vm.HasMultipleCategories);
+        Assert.Equal(first.Id, vm.SelectedCategory!.Id);
+    }
+
+    [Fact]
+    public async Task BeginPracticeCommand_MarksLauncherOpenedWhenPracticeStarts()
+    {
+        var category = RootCategory("客户沟通");
+        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", "您好", category.Id, false, ShortcutMode.None, null,
+            0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var fake = new FakeCommandService();
+        fake.Seed(new[] { category });
+        fake.Seed(new[] { phrase });
+        var vm = CreateViewModel(fake, _ => Task.FromResult(true));
+
+        await vm.InitializeAsync(manualOpen: true);
+        await vm.BeginPracticeCommand.ExecuteAsync(null);
+
+        Assert.True(vm.PracticeOpened);
+        Assert.Equal("已完成 · 打开闪念", vm.PracticeOpenedStatus);
+        Assert.True(vm.CanFinish);
+    }
+
+    [Fact]
+    public async Task PracticeStatus_UsesProductLanguageInsteadOfBooleanDebugValues()
+    {
+        var fake = new FakeCommandService();
+        var vm = CreateViewModel(fake);
+        await vm.InitializeAsync(manualOpen: true);
+
+        Assert.Contains("待完成", vm.PracticeOpenedStatus, StringComparison.Ordinal);
+        Assert.DoesNotContain("True", vm.PracticeOpenedStatus, StringComparison.OrdinalIgnoreCase);
+        vm.MarkPracticeInserted("练习结果");
+        Assert.Contains("已完成", vm.PracticeInsertedStatus, StringComparison.Ordinal);
+        Assert.DoesNotContain("True", vm.PracticeInsertedStatus, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task AutomaticRestore_WithCategoryButNoPhrase_SkipsWelcome()
     {
         var category = RootCategory("客户沟通");
@@ -124,14 +239,17 @@ public sealed class OnboardingViewModelTests
     }
 
     [Fact]
-    public async Task Finish_RequiresPracticeInsertion_ThenPersistsVersionOne()
+    public async Task Finish_AllowsContinuingWithoutPractice_ThenPersistsVersionOne()
     {
+        var category = RootCategory("客户沟通");
+        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", "您好", category.Id, false, ShortcutMode.None, null,
+            0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var fake = new FakeCommandService();
+        fake.Seed(new[] { category });
+        fake.Seed(new[] { phrase });
         var vm = CreateViewModel(fake);
         await vm.InitializeAsync(manualOpen: true);
 
-        Assert.False(vm.CanFinish);
-        vm.MarkPracticeInserted("练习结果");
         Assert.True(vm.CanFinish);
 
         await vm.FinishCommand.ExecuteAsync(null);
@@ -201,8 +319,10 @@ public sealed class OnboardingViewModelTests
         Assert.Equal("搜索索引正在重建。", vm.ErrorMessage);
     }
 
-    private static OnboardingViewModel CreateViewModel(FakeCommandService fake) =>
-        new(fake, new AppSettings(1, false, false, true, "Alt + Space", "Alt+Space", false, true));
+    private static OnboardingViewModel CreateViewModel(
+        FakeCommandService fake,
+        Func<OnboardingViewModel, Task<bool>>? startPractice = null) =>
+        new(fake, new AppSettings(1, false, false, true, "Alt + Space", "Alt+Space", false, true), startPractice);
 
     private static Category RootCategory(string name) =>
         new(Guid.NewGuid(), null, name, 0, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);

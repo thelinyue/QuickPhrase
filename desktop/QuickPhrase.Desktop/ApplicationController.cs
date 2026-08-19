@@ -554,6 +554,15 @@ internal sealed class ApplicationController : IAsyncDisposable
             _launcher.HideLauncher();
             return;
         }
+
+        // 首次引导的练习页使用真实闪念窗口，但必须走 Practice 上下文，
+        // 这样 Alt + Space 只把选择结果回传给向导，不会进入正式投递链。
+        if (_onboarding?.ViewModel is { CurrentStep: OnboardingStep.Practice } onboardingViewModel)
+        {
+            _ = onboardingViewModel.BeginPracticeCommand.ExecuteAsync(null);
+            return;
+        }
+
         var target = _targetDetector.CaptureForeground();
         var adapter = target is null ? null : _adapterResolver.Resolve(target);
         if (adapter is null || _settings is null || !LauncherEligibilityPolicy.CanOpen(adapter.AdapterId, _settings.LauncherEnabledAdapters)) return;
