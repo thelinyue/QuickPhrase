@@ -24,7 +24,7 @@
                 <TextBlock Text="正文" Style="{StaticResource TextEyebrow}" Margin="0,0,0,6" />
                 <TextBox Style="{StaticResource BaseTextBox}" Text="{Binding Content, UpdateSourceTrigger=PropertyChanged}"
                          AcceptsReturn="True" Height="140" TextWrapping="Wrap" VerticalContentAlignment="Top"
-                         Padding="10" Margin="0,0,0,16" />
+                         Padding="12,10" Margin="0,0,0,16" />
 
                 <TextBlock Text="分类" Style="{StaticResource TextEyebrow}" Margin="0,0,0,6" />
                 <ComboBox x:Name="CategoryCombo"
