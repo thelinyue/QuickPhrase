@@ -203,6 +203,14 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
     private void RootLayout_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        // 话术库是内容管理页面，只有用户明确按下 Ctrl+F 时才主动进入搜索输入。
+        if (e.Key == Key.F && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            SearchBox.Focus();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.Escape && _blankAreaContextMenu.IsOpen)
         {
             e.Handled = true;
@@ -345,8 +353,6 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     {
         AttachLibraryEvents();
         await _viewModel.LoadAsync();
-        // 首次加载后聚焦搜索框，便于直接输入检索（Esc 可从列表焦点返回到此）�?
-        if (!SearchBox.IsKeyboardFocused) SearchBox.Focus();
     }
 
     private void PhraseList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
