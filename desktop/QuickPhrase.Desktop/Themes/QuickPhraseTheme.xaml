@@ -1,63 +1,108 @@
 <!--
   QuickPhrase 设计系统基座 — Windows Native Productivity
   颜色 / 笔刷 / 排版 / 间距 / 圆角 / 控件高度 全部集中在此。
-  数值权威来源：D:\code\闪语原型\话术库\需求设计\design-system.md（第七版）。
+  年轻宙斯主题以天空蓝、冰川蓝、云雾白和少量金色表达品牌；不把人物插画带入生产界面。
   本文件只定义资源，不定义控件模板（控件模板见 Controls.xaml）。
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
-    <!-- ============================================================
-         1. COLORS（原始色值，供笔刷/渐变/不透明度复用）
-         对齐闪语原型 OKLCH violet-500/slate Token（hex 近似值）。
-         暗色对应见 QuickPhraseTheme.Dark.xaml。
-         ============================================================ -->
-    <Color x:Key="AccentColor">#6D45F5</Color>          <!-- primary violet-500 -->
-    <Color x:Key="AccentDarkColor">#5731E8</Color>     <!-- primary-hover violet-600 -->
-    <Color x:Key="AccentSoftColor">#F5F3FF</Color>     <!-- primary-subtle violet-50 -->
-    <Color x:Key="AccentRowColor">#F5F3FF</Color>      <!-- 列表选中行底 = primary-subtle -->
-    <Color x:Key="BrandStartColor">#7858FF</Color>     <!-- 品牌标渐变起 violet-500 倾向 -->
-    <Color x:Key="BrandEndColor">#4628C4</Color>       <!-- 品牌标渐变止 violet-700 -->
-    <Color x:Key="DividerColor">#E4E4E9</Color>        <!-- border-default slate-200 -->
-    <Color x:Key="BorderSubtleColor">#F1F1F4</Color>   <!-- border-subtle slate-100 -->
-    <Color x:Key="MutedTextColor">#74747F</Color>      <!-- text-secondary slate-500 -->
-    <Color x:Key="TextTertiaryColor">#9A9AA3</Color>   <!-- text-tertiary slate-400 -->
-    <Color x:Key="AppBackgroundColor">#FAFAFC</Color>  <!-- surface-subtle slate-50 -->
-    <Color x:Key="SurfaceColor">#FFFFFF</Color>        <!-- surface-base / elevated -->
-    <Color x:Key="TextColor">#1C1C22</Color>           <!-- text-primary slate-900 -->
-    <Color x:Key="SuccessColor">#2FA56B</Color>        <!-- success-500 -->
-    <Color x:Key="WarningColor">#E0B13D</Color>        <!-- warning-500 -->
-    <Color x:Key="DangerColor">#D63A3A</Color>         <!-- error-500 -->
-    <Color x:Key="FocusRingColor">#9974FF</Color>      <!-- focus-ring violet-400（实色） -->
-    <Color x:Key="SubHeaderBlueColor">#E9F2FC</Color>     <!-- 二级分类条固定淡蓝底（默认/展开一致） -->
+    <!--
+        1. 语义化主题 Token
+        Brand/Surface/Text/State 是新代码的首选资源；Accent* 等旧 key 仅作为兼容别名。
+        Light 与 Dark 共用语义名，但使用各自的对比度映射，不要求数值镜像。
+    -->
+    <Color x:Key="BrandPrimaryColor">#4C8DFF</Color>
+    <Color x:Key="BrandPrimaryHoverColor">#3D7FEB</Color>
+    <Color x:Key="BrandPrimaryPressedColor">#326FD6</Color>
+    <Color x:Key="BrandIceColor">#8EC5FF</Color>
+    <Color x:Key="BrandIceLightColor">#E8F4FF</Color>
+    <Color x:Key="BrandGoldColor">#F5B940</Color>
+    <Color x:Key="BrandGoldLightColor">#FFD76A</Color>
 
-    <!-- ============================================================
-         2. BRUSHES
-         ============================================================ -->
-    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
-    <SolidColorBrush x:Key="AccentDarkBrush" Color="{StaticResource AccentDarkColor}" />
-    <SolidColorBrush x:Key="AccentSoftBrush" Color="{StaticResource AccentSoftColor}" />
-    <SolidColorBrush x:Key="ListSelectedBrush" Color="{StaticResource AccentRowColor}" />
+    <Color x:Key="WindowBackgroundColor">#F7F9FC</Color>
+    <Color x:Key="NavigationBackgroundColor">#F2F6FB</Color>
+    <Color x:Key="SurfaceColor">#FFFFFF</Color>
+    <Color x:Key="SurfaceSecondaryColor">#F9FBFE</Color>
+    <Color x:Key="BorderNormalColor">#DDE3EA</Color>
+    <Color x:Key="SeparatorColor">#E8EDF3</Color>
+    <Color x:Key="TextPrimaryColor">#182230</Color>
+    <Color x:Key="TextSecondaryColor">#475467</Color>
+    <Color x:Key="TextMutedColor">#7B8796</Color>
+    <Color x:Key="TextTertiaryColor">#98A6B8</Color>
+    <Color x:Key="SelectionBackgroundColor">#EAF3FF</Color>
+    <Color x:Key="HoverBackgroundColor">#F3F8FF</Color>
+    <Color x:Key="FocusColor">#4C8DFF</Color>
+    <Color x:Key="SuccessColor">#32A66A</Color>
+    <Color x:Key="WarningColor">#E9A23B</Color>
+    <Color x:Key="DangerColor">#D64545</Color>
+    <Color x:Key="OnBrandPrimaryColor">#FFFFFF</Color>
+    <Color x:Key="OverlayColor">#000000</Color>
+    <Color x:Key="ShadowColor">#B8C7D9</Color>
+
+    <!-- 兼容旧 XAML 的 Color key；新代码应直接使用上面的语义 key。 -->
+    <Color x:Key="AccentColor">#4C8DFF</Color>
+    <Color x:Key="AccentDarkColor">#326FD6</Color>
+    <Color x:Key="AccentSoftColor">#E8F4FF</Color>
+    <Color x:Key="AccentRowColor">#EAF3FF</Color>
+    <Color x:Key="BrandStartColor">#8EC5FF</Color>
+    <Color x:Key="BrandEndColor">#326FD6</Color>
+    <Color x:Key="DividerColor">#E8EDF3</Color>
+    <Color x:Key="BorderSubtleColor">#E8EDF3</Color>
+    <Color x:Key="MutedTextColor">#7B8796</Color>
+    <Color x:Key="AppBackgroundColor">#F7F9FC</Color>
+    <Color x:Key="TextColor">#182230</Color>
+    <Color x:Key="FocusRingColor">#4C8DFF</Color>
+    <Color x:Key="SubHeaderBlueColor">#F3F8FF</Color>
+
+    <!-- 2. 语义化 Brush；金色只用于收藏/品牌高光，不承担主操作。 -->
+    <SolidColorBrush x:Key="BrandPrimaryBrush" Color="{StaticResource BrandPrimaryColor}" />
+    <SolidColorBrush x:Key="BrandPrimaryHoverBrush" Color="{StaticResource BrandPrimaryHoverColor}" />
+    <SolidColorBrush x:Key="BrandPrimaryPressedBrush" Color="{StaticResource BrandPrimaryPressedColor}" />
+    <SolidColorBrush x:Key="BrandIceBrush" Color="{StaticResource BrandIceColor}" />
+    <SolidColorBrush x:Key="BrandIceLightBrush" Color="{StaticResource BrandIceLightColor}" />
+    <SolidColorBrush x:Key="BrandGoldBrush" Color="{StaticResource BrandGoldColor}" />
+    <SolidColorBrush x:Key="BrandGoldLightBrush" Color="{StaticResource BrandGoldLightColor}" />
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="{StaticResource WindowBackgroundColor}" />
+    <SolidColorBrush x:Key="NavigationBackgroundBrush" Color="{StaticResource NavigationBackgroundColor}" />
+    <SolidColorBrush x:Key="SurfaceSecondaryBrush" Color="{StaticResource SurfaceSecondaryColor}" />
+    <SolidColorBrush x:Key="BorderNormalBrush" Color="{StaticResource BorderNormalColor}" />
+    <SolidColorBrush x:Key="SeparatorBrush" Color="{StaticResource SeparatorColor}" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimaryColor}" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondaryColor}" />
+    <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMutedColor}" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="{StaticResource TextTertiaryColor}" />
+    <SolidColorBrush x:Key="SelectionBackgroundBrush" Color="{StaticResource SelectionBackgroundColor}" />
+    <SolidColorBrush x:Key="HoverBackgroundBrush" Color="{StaticResource HoverBackgroundColor}" />
+    <SolidColorBrush x:Key="FocusBrush" Color="{StaticResource FocusColor}" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}" />
+    <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
+    <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
+    <SolidColorBrush x:Key="OnBrandPrimaryBrush" Color="{StaticResource OnBrandPrimaryColor}" />
+    <SolidColorBrush x:Key="OverlayBrush" Color="{StaticResource OverlayColor}" />
+    <SolidColorBrush x:Key="ThemeShadowBrush" Color="{StaticResource ShadowColor}" />
+
     <LinearGradientBrush x:Key="BrandMarkBrush" StartPoint="0,0" EndPoint="1,1">
         <GradientStop Color="{StaticResource BrandStartColor}" Offset="0" />
         <GradientStop Color="{StaticResource BrandEndColor}" Offset="1" />
     </LinearGradientBrush>
-    <SolidColorBrush x:Key="DividerBrush" Color="{StaticResource DividerColor}" />
-    <SolidColorBrush x:Key="BorderSubtleBrush" Color="{StaticResource BorderSubtleColor}" />
-    <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource MutedTextColor}" />
-    <SolidColorBrush x:Key="TextTertiaryBrush" Color="{StaticResource TextTertiaryColor}" />
-    <SolidColorBrush x:Key="AppBackgroundBrush" Color="{StaticResource AppBackgroundColor}" />
-    <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
-    <SolidColorBrush x:Key="TextBrush" Color="{StaticResource TextColor}" />
-    <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}" />
-    <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
-    <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
-    <SolidColorBrush x:Key="FocusRingBrush" Color="{StaticResource FocusRingColor}" />
-    <SolidColorBrush x:Key="SubHeaderBlueBrush" Color="{StaticResource SubHeaderBlueColor}" />
 
-    <!-- 固定话术颜色色板（默认白色表示无颜色；颜色值在明暗主题中保持一致） -->
-    <!-- 固定话术颜色色板（默认白色表示无颜色；颜色值在明暗主题中保持一致） -->
+    <!-- 兼容旧 XAML 的 Brush key；新代码应优先使用语义化 Brush。 -->
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource BrandPrimaryColor}" />
+    <SolidColorBrush x:Key="AccentDarkBrush" Color="{StaticResource BrandPrimaryPressedColor}" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="{StaticResource BrandIceLightColor}" />
+    <SolidColorBrush x:Key="ListSelectedBrush" Color="{StaticResource SelectionBackgroundColor}" />
+    <SolidColorBrush x:Key="DividerBrush" Color="{StaticResource SeparatorColor}" />
+    <SolidColorBrush x:Key="BorderSubtleBrush" Color="{StaticResource SeparatorColor}" />
+    <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource TextMutedColor}" />
+    <SolidColorBrush x:Key="AppBackgroundBrush" Color="{StaticResource WindowBackgroundColor}" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
+    <SolidColorBrush x:Key="TextBrush" Color="{StaticResource TextPrimaryColor}" />
+    <SolidColorBrush x:Key="FocusRingBrush" Color="{StaticResource FocusColor}" />
+    <SolidColorBrush x:Key="SubHeaderBlueBrush" Color="{StaticResource HoverBackgroundColor}" />
+
+    <!-- 固定话术颜色色板与应用主题分离，保持既有业务色值和持久化 key。 -->
     <SolidColorBrush x:Key="PhraseColorDefault" Color="#FFFFFF" />
     <SolidColorBrush x:Key="PhraseColorOrange" Color="#FF8839" />
     <SolidColorBrush x:Key="PhraseColorBlue" Color="#178BFF" />

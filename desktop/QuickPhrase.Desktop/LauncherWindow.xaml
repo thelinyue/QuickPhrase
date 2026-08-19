@@ -31,11 +31,11 @@
     </Window.Resources>
     <Border CornerRadius="{StaticResource RadiusLauncher}"
             Background="{StaticResource SurfaceBrush}"
-            BorderBrush="{StaticResource DividerBrush}"
+            BorderBrush="{StaticResource SeparatorBrush}"
             BorderThickness="1"
             Padding="{StaticResource SpaceMd}">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="20" ShadowDepth="6" Opacity="0.18" Color="#3D356B" />
+            <DropShadowEffect BlurRadius="20" ShadowDepth="6" Opacity="0.18" Color="{StaticResource ShadowColor}" />
         </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
@@ -47,9 +47,9 @@
             <TextBox x:Name="QueryBox"
                      Grid.Row="0"
                      Style="{StaticResource SearchBoxStyle}"
-                     Background="{StaticResource AppBackgroundBrush}"
-                     BorderBrush="{StaticResource DividerBrush}"
-                     Foreground="{StaticResource TextBrush}"
+                     Background="{StaticResource WindowBackgroundBrush}"
+                     BorderBrush="{StaticResource SeparatorBrush}"
+                     Foreground="{StaticResource TextPrimaryBrush}"
                      Tag="搜索标题、正文或拼音..."
                      AutomationProperties.Name="Launcher搜索框"
                      GotKeyboardFocus="QueryBox_GotKeyboardFocus"
@@ -74,7 +74,7 @@
                      Margin="0,12,0,8"
                      BorderThickness="0"
                      Background="Transparent"
-                     Foreground="{StaticResource TextBrush}"
+                     Foreground="{StaticResource TextPrimaryBrush}"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.CanContentScroll="True"
@@ -124,7 +124,7 @@
                     <TextBlock x:Name="QueueText"
                                Visibility="Collapsed"
                                Style="{StaticResource TextEyebrow}"
-                               Foreground="{StaticResource AccentBrush}"
+                               Foreground="{StaticResource BrandPrimaryBrush}"
                                HorizontalAlignment="Right" />
                     <TextBlock x:Name="TargetText"
                                Text="未捕获目标 · 仅支持预览或安全复制"
@@ -137,7 +137,7 @@
                                Margin="0,3,0,0" />
                 </StackPanel>
                 <TextBlock Text="↑ ↓ 选择" Style="{StaticResource TextCaption}" Margin="0,0,14,0" />
-                <TextBlock x:Name="InsertHintText" Text="Enter 插入" Style="{StaticResource TextEyebrow}" Foreground="{StaticResource AccentBrush}" Margin="0,0,14,0" />
+                <TextBlock x:Name="InsertHintText" Text="Enter 插入" Style="{StaticResource TextEyebrow}" Foreground="{StaticResource BrandPrimaryBrush}" Margin="0,0,14,0" />
                 <TextBlock x:Name="SendHintText" Text="自动发送不支持" Style="{StaticResource TextCaption}" Margin="0,0,14,0" />
                 <TextBlock x:Name="PreviewHintText" Text="Tab 预览 · Esc 关闭" Style="{StaticResource TextCaption}" />
             </DockPanel>
