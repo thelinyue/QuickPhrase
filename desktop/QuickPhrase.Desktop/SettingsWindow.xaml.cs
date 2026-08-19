@@ -11,7 +11,7 @@ using QuickPhrase.Desktop.ViewModels;
 namespace QuickPhrase.Desktop;
 
 /// <summary>
-/// 设置窗口只负责承载设置视图和关闭确认，不直接访问持久化实现。
+/// 设置窗口只负责承载设置视图和关闭动画，不直接访问持久化实现。
 /// SettingsView 与 SettingsViewModel 通过 ICommandService 保存本地设置。
 /// </summary>
 public partial class SettingsWindow : Window
@@ -66,37 +66,17 @@ public partial class SettingsWindow : Window
     {
         if (_allowClose) return;
 
-        if (ViewModel.HasUnsavedChanges)
-        {
-            e.Cancel = true;
-            var dialog = new NavigationConfirmDialog { Owner = this };
-            _ = dialog.ShowDialog();
-            switch (dialog.Decision)
-            {
-                case NavigationDecision.ContinueEditing:
-                    return;
-                case NavigationDecision.SaveAndLeave:
-                    await ViewModel.SaveAsync();
-                    if (!ViewModel.HasUnsavedChanges)
-                    {
-                        _allowClose = true;
-                        Close();
-                    }
-                    return;
-                default:
-                    ViewModel.DiscardChanges();
-                    break;
-            }
-        }
-
+        // 设置已经逐项即时生效，关闭窗口不再出现“保存/取消”确认。
         e.Cancel = true;
         await CloseWithAnimationAsync();
     }
-
     private async Task CloseWithAnimationAsync()
     {
         if (_closeAnimationStarted) return;
         _closeAnimationStarted = true;
+
+        // 即时保存已经排队的变更后再退出，避免关闭窗口丢失最后一次操作；不显示确认对话框。
+        await ViewModel.ApplyPendingChangesAsync();
 
         var duration = new Duration(TimeSpan.FromMilliseconds(120));
         var fade = new DoubleAnimation(WindowRoot.Opacity, 0, duration);
@@ -124,10 +104,3 @@ public partial class SettingsWindow : Window
         base.OnClosed(e);
     }
 }
-
-
-
-
-
-
-

@@ -440,12 +440,15 @@
         </ContentControl>
     </DataTemplate>
 
-    <Style x:Key="ShortcutBadge" TargetType="Border">
-        <Setter Property="Background" Value="#FFFFFF" />
+    <!-- ====================== SETTINGS KEYCAP ====================== -->
+    <!-- 快捷键展示使用低噪音 Surface，不承担输入或保存职责。 -->
+    <Style x:Key="KeyCap" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{StaticResource RadiusSmall}" />
-        <Setter Property="Padding" Value="6,2" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="MinWidth" Value="72" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
@@ -813,8 +816,3 @@
     </Style>
 
 </ResourceDictionary>
-
-
-
-
-

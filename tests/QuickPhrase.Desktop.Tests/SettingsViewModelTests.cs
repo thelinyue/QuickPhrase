@@ -1,7 +1,7 @@
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using QuickPhrase.Core;
-using QuickPhrase.Desktop.Services;
 using QuickPhrase.Desktop.Tests.Fakes;
 
 namespace QuickPhrase.Desktop.Tests;
@@ -9,70 +9,98 @@ namespace QuickPhrase.Desktop.Tests;
 public class SettingsViewModelTests
 {
     [Fact]
-    public async Task Load_PopulatesAdapters_FromSettings()
+    public async Task Load_PopulatesAdapters_WithoutPersisting()
     {
-        var vm = new SettingsViewModel(new FakeCommandService());
+        var fake = new FakeCommandService();
+        var vm = new SettingsViewModel(fake);
+
         await vm.LoadAsync();
 
         Assert.Contains(vm.Adapters, a => a.Id == "WXWork" && a.Enabled);
-        Assert.False(vm.HasUnsavedChanges);
+        Assert.Equal(0, fake.SettingsUpdateCalls);
     }
 
     [Fact]
-    public async Task ToggleAdapter_ThenSave_Persists()
+    public async Task ToggleSetting_AppliesImmediately()
     {
         var fake = new FakeCommandService();
         var vm = new SettingsViewModel(fake);
         await vm.LoadAsync();
-        var wx = vm.Adapters.First(a => a.Id == "WXWork");
-        wx.Enabled = false;
-        Assert.True(vm.HasUnsavedChanges);
 
-        AppSettings? saved = null;
-        vm.Saved += (_, s) => saved = s;
-        await vm.SaveAsync();
+        vm.LaunchOnStartup = true;
+        await vm.ApplyPendingChangesAsync();
 
-        Assert.NotNull(saved);
-        Assert.False(saved!.LauncherEnabledAdapters["WXWork"]);
-        Assert.False(vm.HasUnsavedChanges);
+        Assert.True((await fake.GetSettingsAsync()).LaunchOnStartup);
+        Assert.Equal(1, fake.SettingsUpdateCalls);
     }
 
     [Fact]
-    public async Task Discard_RestoresAdapterState()
+    public async Task ToggleAdapter_AppliesImmediately()
     {
-        var vm = new SettingsViewModel(new FakeCommandService());
+        var fake = new FakeCommandService();
+        var vm = new SettingsViewModel(fake);
         await vm.LoadAsync();
+
         vm.Adapters.First(a => a.Id == "WXWork").Enabled = false;
-        vm.DiscardChanges();
-        Assert.True(vm.Adapters.First(a => a.Id == "WXWork").Enabled);
-        Assert.False(vm.HasUnsavedChanges);
+        await vm.ApplyPendingChangesAsync();
+
+        Assert.False((await fake.GetSettingsAsync()).LauncherEnabledAdapters["WXWork"]);
     }
 
     [Fact]
-    public async Task Save_NormalizesShortcut_ToLowercaseDeduped()
+    public async Task ShortcutChange_AppliesImmediately_AndNormalizes()
     {
-        var vm = new SettingsViewModel(new FakeCommandService());
+        var fake = new FakeCommandService();
+        var vm = new SettingsViewModel(fake);
         await vm.LoadAsync();
+
         vm.LauncherShortcutDisplay = "ALT + SPACE + ALT";
+        await vm.ApplyPendingChangesAsync();
 
-        AppSettings? saved = null;
-        vm.Saved += (_, s) => saved = s;
-        await vm.SaveAsync();
-
-        Assert.NotNull(saved);
-        Assert.Equal("alt+space", saved!.LauncherShortcutNormalized);
+        var saved = await fake.GetSettingsAsync();
+        Assert.Equal("alt+space", saved.LauncherShortcutNormalized);
     }
 
     [Fact]
-    public async Task Save_PreservesCompletedOnboardingState()
+    public async Task RapidChanges_KeepLatestValue()
+    {
+        var fake = new FakeCommandService();
+        var vm = new SettingsViewModel(fake);
+        await vm.LoadAsync();
+
+        vm.StartMinimized = true;
+        await vm.ApplyPendingChangesAsync();
+        vm.StartMinimized = false;
+        vm.StartMinimized = true;
+        await vm.ApplyPendingChangesAsync();
+
+        Assert.True((await fake.GetSettingsAsync()).StartMinimized);
+    }
+
+    [Fact]
+    public async Task VersionConflict_DoesNotSilentlyOverwrite()
+    {
+        var fake = new FakeCommandService { ReturnSettingsConflictOnce = true };
+        var vm = new SettingsViewModel(fake);
+        await vm.LoadAsync();
+
+        vm.StartMinimized = true;
+        await vm.ApplyPendingChangesAsync();
+
+        Assert.Contains("其他操作", vm.ErrorMessage);
+        Assert.True((await fake.GetSettingsAsync()).StartMinimized);
+    }
+
+    [Fact]
+    public async Task ImmediateApply_PreservesCompletedOnboardingState()
     {
         var fake = new FakeCommandService();
         await fake.UpdateSettingsAsync(new AppSettings(1, false, false, true, "Alt + Space", "Alt+Space", false, true, true, 1));
         var vm = new SettingsViewModel(fake);
         await vm.LoadAsync();
-        vm.StartMinimized = true;
 
-        await vm.SaveAsync();
+        vm.StartMinimized = true;
+        await vm.ApplyPendingChangesAsync();
 
         var saved = await fake.GetSettingsAsync();
         Assert.True(saved.HasCompletedOnboarding);

@@ -28,5 +28,3 @@ public class IndependentSettingsWindowTests
         return current?.FullName ?? throw new DirectoryNotFoundException("找不到 QuickPhrase 仓库根目录。");
     }
 }
-
-

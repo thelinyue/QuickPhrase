@@ -5,183 +5,238 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
              mc:Ignorable="d">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+    <UserControl.Resources>
+        <!-- 设置内容只保留一层低对比度 Surface，避免形成卡片套卡片。 -->
+        <Style x:Key="SettingsSection" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}" />
+            <Setter Property="Padding" Value="20" />
+        </Style>
+        <Style x:Key="SettingsSectionTitle" TargetType="TextBlock" BasedOn="{StaticResource TextH2}">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="LineHeight" Value="22" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+        <Style x:Key="SettingsSectionDescription" TargetType="TextBlock" BasedOn="{StaticResource TextCaption}">
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+        <Style x:Key="SettingsRow" TargetType="Grid">
+            <Setter Property="MinHeight" Value="54" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+        </Style>
+        <Style x:Key="SettingsNavigationLabel" TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </UserControl.Resources>
 
-        <!-- 顶部 -->
-        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,0,1" Padding="20,14">
-            <TextBlock Text="设置" Style="{StaticResource TextH1}" />
-        </Border>
+    <Grid Background="{StaticResource AppBackgroundBrush}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="176" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <!-- 设置主体 -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="24,16">
-            <StackPanel MaxWidth="760" HorizontalAlignment="Left">
-                <!-- 通用 -->
-                <TextBlock Text="通用" Style="{StaticResource TextH2}" Margin="0,0,0,12" />
-
-                <Grid Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="开机启动" Style="{StaticResource TextBody}" />
-                        <TextBlock Text="登录 Windows 后自动启动 QuickPhrase" Style="{StaticResource TextCaption}" />
-                    </StackPanel>
-                    <CheckBox Style="{StaticResource ToggleSwitchStyle}" Grid.Column="1" IsChecked="{Binding LaunchOnStartup}" VerticalAlignment="Center" />
-                </Grid>
-
-                <Grid Margin="0,12,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="关闭窗口后驻留托盘" Style="{StaticResource TextBody}" />
-                        <TextBlock Text="关闭主窗口不退出程序，保留在系统托盘" Style="{StaticResource TextCaption}" />
-                    </StackPanel>
-                    <CheckBox Style="{StaticResource ToggleSwitchStyle}" Grid.Column="1" IsChecked="{Binding StayInTrayOnClose}" VerticalAlignment="Center" />
-                </Grid>
-
-                <Grid Margin="0,12,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="启动时最小化" Style="{StaticResource TextBody}" />
-                        <TextBlock Text="启动后直接进入托盘，不打开主窗口" Style="{StaticResource TextCaption}" />
-                    </StackPanel>
-                    <CheckBox Style="{StaticResource ToggleSwitchStyle}" Grid.Column="1" IsChecked="{Binding StartMinimized}" VerticalAlignment="Center" />
-                </Grid>
-
-                <!-- 使用引导：只请求应用层重新打开向导，不在设置页删除或创建业务数据。 -->
-                <Border Background="{StaticResource AppBackgroundBrush}"
-                        BorderBrush="{StaticResource DividerBrush}"
-                        BorderThickness="1"
-                        CornerRadius="6"
-                        Padding="14"
-                        Margin="0,16,0,4">
-                    <StackPanel>
-                        <TextBlock Text="使用引导" Style="{StaticResource TextBody}" />
-                        <TextBlock Text="重新体验创建分类、添加话术和使用闪念的步骤。已有数据会被保留。"
-                                   Style="{StaticResource TextCaption}"
-                                   Margin="0,4,0,10"
-                                   TextWrapping="Wrap" />
-                        <Button Style="{StaticResource SecondaryButton}"
-                                Content="重新开始使用引导"
-                                Command="{Binding RestartOnboardingCommand}"
-                                HorizontalAlignment="Left" />
-                    </StackPanel>
-                </Border>
-
-                <Border Height="1" Background="{StaticResource DividerBrush}" Margin="0,16,0,4" />
-
-                <!-- 快捷键 -->
-                <TextBlock Text="快捷键" Style="{StaticResource TextH2}" Margin="0,8,0,12" />
-
-                <Grid Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="闪念" Style="{StaticResource TextBody}" />
-                        <TextBlock Text="按快捷键打开闪念" Style="{StaticResource TextCaption}" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border Style="{StaticResource ShortcutBadge}">
-                            <TextBlock Text="{Binding LauncherShortcutDisplay, TargetNullValue=未设置}" Style="{StaticResource TextBody}" />
-                        </Border>
-                        <Button x:Name="EditLauncherShortcut" Style="{StaticResource SecondaryButton}" Content="修改"
-                                Margin="8,0,0,0" Click="EditLauncherShortcut_Click" />
-                    </StackPanel>
-                </Grid>
-
-                <Border Height="1" Background="{StaticResource DividerBrush}" Margin="0,16,0,4" />
-
-                <!-- 发送行为 -->
-                <TextBlock Text="发送行为" Style="{StaticResource TextH2}" Margin="0,8,0,12" />
-
-                <Grid Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="自动发送" Style="{StaticResource TextBody}" />
-                        <TextBlock Text="插入后自动发送（当前目标不支持时不会开启）" Style="{StaticResource TextCaption}" />
-                    </StackPanel>
-                    <CheckBox Style="{StaticResource ToggleSwitchStyle}" Grid.Column="1" IsChecked="{Binding AutoSend}" VerticalAlignment="Center" />
-                </Grid>
-
-                <Grid Margin="0,12,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="剪贴板兼容模式" Style="{StaticResource TextBody}" />
-                        <TextBlock Text="对部分目标使用受保护剪贴板粘贴" Style="{StaticResource TextCaption}" />
-                    </StackPanel>
-                    <CheckBox Style="{StaticResource ToggleSwitchStyle}" Grid.Column="1" IsChecked="{Binding ClipboardCompatibilityMode}" VerticalAlignment="Center" />
-                </Grid>
-
-                <Border Height="1" Background="{StaticResource DividerBrush}" Margin="0,16,0,4" />
-
-                <!-- 应用适配 -->
-                <TextBlock Text="应用适配" Style="{StaticResource TextH2}" Margin="0,8,0,12" />
-
-                <ItemsControl ItemsSource="{Binding Adapters}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:AdapterToggleItem}">
-                            <Grid Margin="0,0,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{Binding DisplayName}" Style="{StaticResource TextBody}" VerticalAlignment="Center" />
-                                <CheckBox Style="{StaticResource ToggleSwitchStyle}" Grid.Column="1" IsChecked="{Binding Enabled}" VerticalAlignment="Center" />
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <Border Height="1" Background="{StaticResource DividerBrush}" Margin="0,20,0,4" />
-
-                <!-- 数据管理：只提供本地话术包入口，不混入标签、颜色或设置数据。 -->
-                <TextBlock Text="数据管理" Style="{StaticResource TextH2}" Margin="0,8,0,4" />
-                <TextBlock Text="管理本机 QuickPhrase 的话术数据。" Style="{StaticResource TextCaption}" Margin="0,0,0,12" />
-                <StackPanel Orientation="Horizontal">
-                    <Button Style="{StaticResource SecondaryButton}" Content="导入话术包"
-                            Command="{Binding DataManagement.RequestImportCommand}" Margin="0,0,8,0" />
-                    <Button Style="{StaticResource SecondaryButton}" Content="导出话术包"
-                            Command="{Binding DataManagement.RequestExportCommand}" />
-                </StackPanel>
-                <TextBlock Text="{Binding DataManagement.StatusMessage}" Style="{StaticResource TextCaption}" Margin="0,10,0,0" />
-                <TextBlock Text="{Binding DataManagement.ErrorMessage}" Foreground="{StaticResource DangerBrush}"
-                           Style="{StaticResource TextCaption}" TextWrapping="Wrap" Margin="0,4,0,0" />
-            </StackPanel>
-        </ScrollViewer>
-
-        <!-- 底部操作栏 -->
-        <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="20,12">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center" />
-                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button Style="{StaticResource GhostButton}" Content="取消" Command="{Binding CancelCommand}" Margin="0,0,8,0" />
-                    <Button Style="{StaticResource PrimaryButton}" Content="保存" Command="{Binding SaveCommand}" />
-                </StackPanel>
+        <!-- 左侧导航保持紧凑，使用现有 NavigationItem 的 Accent 选中态。 -->
+        <Border Grid.Column="0"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderSubtleBrush}"
+                BorderThickness="0,0,1,0">
+            <Grid Margin="8,16,8,16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <ListBox x:Name="SettingsNavigation"
+                         Grid.Row="0"
+                         BorderThickness="0"
+                         Background="Transparent"
+                         SelectedIndex="0"
+                         SelectionMode="Single"
+                         SelectionChanged="SettingsNavigation_SelectionChanged"
+                         KeyboardNavigation.TabNavigation="Local"
+                         AutomationProperties.Name="设置模块导航">
+                    <ListBoxItem Style="{StaticResource NavigationItem}" Content="通用" AutomationProperties.Name="通用设置" />
+                    <ListBoxItem Style="{StaticResource NavigationItem}" Content="快捷键" AutomationProperties.Name="快捷键设置" />
+                    <ListBoxItem Style="{StaticResource NavigationItem}" Content="发送行为" AutomationProperties.Name="发送行为设置" />
+                    <ListBoxItem Style="{StaticResource NavigationItem}" Content="应用适配" AutomationProperties.Name="应用适配设置" />
+                    <ListBoxItem Style="{StaticResource NavigationItem}" Content="数据管理" AutomationProperties.Name="数据管理设置" />
+                </ListBox>
+                <TextBlock Grid.Row="1"
+                           Text="✓ 已自动保存"
+                           Style="{StaticResource TextCaption}"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           Margin="12,16,8,0"
+                           AutomationProperties.Name="设置已自动保存" />
             </Grid>
         </Border>
+
+        <!-- 右侧只呈现当前模块，内容宽度受限以避免窗口变宽后失去阅读节奏。 -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <ScrollViewer Grid.Row="0"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="24,20,24,20"
+                          AutomationProperties.Name="当前设置内容">
+                <Grid MaxWidth="800" HorizontalAlignment="Left">
+                    <!-- 通用 -->
+                    <Border x:Name="GeneralSection"
+                            Style="{StaticResource SettingsSection}"
+                            Visibility="Visible">
+                        <StackPanel>
+                            <TextBlock Text="通用" Style="{StaticResource SettingsSectionTitle}" />
+                            <TextBlock Text="控制闪语的启动方式和窗口行为。" Style="{StaticResource SettingsSectionDescription}" />
+                            <Grid Style="{StaticResource SettingsRow}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="开机启动" Style="{StaticResource TextBody}" />
+                                    <TextBlock Text="登录 Windows 后自动启动 QuickPhrase" Style="{StaticResource TextCaption}" />
+                                </StackPanel>
+                                <CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitchStyle}" IsChecked="{Binding LaunchOnStartup}" VerticalAlignment="Center" AutomationProperties.Name="开机启动" />
+                            </Grid>
+                            <Grid Style="{StaticResource SettingsRow}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="关闭窗口后驻留托盘" Style="{StaticResource TextBody}" />
+                                    <TextBlock Text="关闭主窗口不退出程序，保留在系统托盘" Style="{StaticResource TextCaption}" />
+                                </StackPanel>
+                                <CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitchStyle}" IsChecked="{Binding StayInTrayOnClose}" VerticalAlignment="Center" AutomationProperties.Name="关闭窗口后驻留托盘" />
+                            </Grid>
+                            <Grid Style="{StaticResource SettingsRow}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="启动时最小化" Style="{StaticResource TextBody}" />
+                                    <TextBlock Text="启动后直接进入托盘，不打开主窗口" Style="{StaticResource TextCaption}" />
+                                </StackPanel>
+                                <CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitchStyle}" IsChecked="{Binding StartMinimized}" VerticalAlignment="Center" AutomationProperties.Name="启动时最小化" />
+                            </Grid>
+                            <!-- 使用引导是普通设置行，不再嵌套第二层 Surface。 -->
+                            <Border BorderBrush="{StaticResource BorderSubtleBrush}"
+                                    BorderThickness="0,1,0,0"
+                                    Padding="0,12,0,0"
+                                    Margin="0,8,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="使用引导" Style="{StaticResource TextBody}" />
+                                        <TextBlock Text="重新体验创建分类、添加话术和使用闪念的步骤。已有数据会被保留。" Style="{StaticResource TextCaption}" Margin="0,4,12,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Content="重新开始使用引导" Command="{Binding RestartOnboardingCommand}" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 快捷键 -->
+                    <Border x:Name="HotkeysSection"
+                            Style="{StaticResource SettingsSection}"
+                            Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="快捷键" Style="{StaticResource SettingsSectionTitle}" />
+                            <TextBlock Text="使用全局快捷键快速打开闪念。" Style="{StaticResource SettingsSectionDescription}" />
+                            <Grid Style="{StaticResource SettingsRow}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="闪念" Style="{StaticResource TextBody}" />
+                                    <TextBlock Text="按快捷键打开闪念" Style="{StaticResource TextCaption}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border Style="{StaticResource KeyCap}"><TextBlock Text="{Binding LauncherShortcutDisplay, TargetNullValue=未设置}" Style="{StaticResource TextMono}" /></Border>
+                                    <Button x:Name="EditLauncherShortcut" Style="{StaticResource SecondaryButton}" Content="修改" Margin="8,0,0,0" Click="EditLauncherShortcut_Click" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 发送行为 -->
+                    <Border x:Name="DeliverySection"
+                            Style="{StaticResource SettingsSection}"
+                            Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="发送行为" Style="{StaticResource SettingsSectionTitle}" />
+                            <TextBlock Text="控制话术插入与发送时的兼容行为。" Style="{StaticResource SettingsSectionDescription}" />
+                            <Grid Style="{StaticResource SettingsRow}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="自动发送" Style="{StaticResource TextBody}" />
+                                    <TextBlock Text="插入后自动发送（当前目标不支持时不会开启）" Style="{StaticResource TextCaption}" />
+                                </StackPanel>
+                                <CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitchStyle}" IsChecked="{Binding AutoSend}" VerticalAlignment="Center" AutomationProperties.Name="自动发送" />
+                            </Grid>
+                            <Grid Style="{StaticResource SettingsRow}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="剪贴板兼容模式" Style="{StaticResource TextBody}" />
+                                    <TextBlock Text="对部分目标使用受保护剪贴板粘贴" Style="{StaticResource TextCaption}" />
+                                </StackPanel>
+                                <CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitchStyle}" IsChecked="{Binding ClipboardCompatibilityMode}" VerticalAlignment="Center" AutomationProperties.Name="剪贴板兼容模式" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 应用适配 -->
+                    <Border x:Name="AdaptersSection"
+                            Style="{StaticResource SettingsSection}"
+                            Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="应用适配" Style="{StaticResource SettingsSectionTitle}" />
+                            <TextBlock Text="选择哪些应用可以使用闪语。" Style="{StaticResource SettingsSectionDescription}" />
+                            <ItemsControl ItemsSource="{Binding Adapters}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:AdapterToggleItem}">
+                                        <Grid Style="{StaticResource SettingsRow}">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding DisplayName}" Style="{StaticResource TextBody}" />
+                                                <TextBlock Text="允许在此应用中使用闪语" Style="{StaticResource TextCaption}" />
+                                            </StackPanel>
+                                            <CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitchStyle}" IsChecked="{Binding Enabled}" VerticalAlignment="Center" AutomationProperties.Name="{Binding DisplayName}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 数据管理：只提供本地话术包入口，不混入标签、颜色或设置数据。 -->
+                    <Border x:Name="DataManagementSection"
+                            Style="{StaticResource SettingsSection}"
+                            Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="数据管理" Style="{StaticResource SettingsSectionTitle}" />
+                            <TextBlock Text="管理本机 QuickPhrase 的话术数据。" Style="{StaticResource TextCaption}" Margin="0,0,0,12" />
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource SecondaryButton}" Content="导入话术包" Command="{Binding DataManagement.RequestImportCommand}" Margin="0,0,8,0" />
+                                <Button Style="{StaticResource SecondaryButton}" Content="导出话术包" Command="{Binding DataManagement.RequestExportCommand}" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding DataManagement.StatusMessage}" Style="{StaticResource TextCaption}" Margin="0,10,0,0" />
+                            <TextBlock Text="{Binding DataManagement.ErrorMessage}" Foreground="{StaticResource DangerBrush}" Style="{StaticResource TextCaption}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </ScrollViewer>
+
+            <!-- 全局即时保存状态固定在内容区底部，不遮挡模块滚动内容。 -->
+            <Border Grid.Row="1"
+                    Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource BorderSubtleBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="24,8,24,10">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="正在应用设置…"
+                               Style="{StaticResource TextCaption}"
+                               Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock Text="{Binding ErrorMessage}"
+                               Foreground="{StaticResource DangerBrush}"
+                               Style="{StaticResource TextCaption}"
+                               TextWrapping="Wrap"
+                               Margin="8,0,0,0" />
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

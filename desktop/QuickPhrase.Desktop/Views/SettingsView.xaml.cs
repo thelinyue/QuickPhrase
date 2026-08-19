@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Controls;
 using Microsoft.Win32;
 using QuickPhrase.Core;
 using FileOpenDialog = Microsoft.Win32.OpenFileDialog;
@@ -10,7 +11,7 @@ using QuickPhrase.Desktop.ViewModels;
 
 namespace QuickPhrase.Desktop;
 
-/// <summary>设置页：通用 / 快捷键 / 发送行为 / 应用适配。纯 WPF，Windows Settings 风格。</summary>
+/// <summary>设置页：左侧模块导航与右侧即时生效内容。纯 WPF，保持 Windows 原生效率工具的紧凑层级。</summary>
 public partial class SettingsView : System.Windows.Controls.UserControl
 {
     public SettingsViewModel ViewModel { get; }
@@ -28,9 +29,7 @@ public partial class SettingsView : System.Windows.Controls.UserControl
         InitializeComponent();
         ViewModel = new SettingsViewModel(commands);
         DataContext = ViewModel;
-
-        ViewModel.Saved += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
-        ViewModel.Cancelled += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
+        ShowSection(SettingsNavigation.SelectedIndex);
         ViewModel.RestartOnboardingRequested += ViewModel_RestartOnboardingRequested;
         ViewModel.DataManagement.ImportRequested += DataManagement_ImportRequested;
         ViewModel.DataManagement.ExportRequested += DataManagement_ExportRequested;
@@ -40,12 +39,34 @@ public partial class SettingsView : System.Windows.Controls.UserControl
         {
             if (e.Key == Key.Escape)
             {
-                ViewModel.CancelCommand.Execute(null);
+                CloseRequested?.Invoke(this, EventArgs.Empty);
                 e.Handled = true;
             }
         };
     }
 
+
+    /// <summary>
+    /// 左侧导航只切换当前模块的可见性，不创建新的窗口或 ViewModel，
+    /// 因而保留原有绑定、命令入口和即时保存链路。
+    /// </summary>
+    private void SettingsNavigation_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (GeneralSection is null || HotkeysSection is null || DeliverySection is null ||
+            AdaptersSection is null || DataManagementSection is null)
+            return;
+
+        ShowSection(SettingsNavigation.SelectedIndex);
+    }
+
+    private void ShowSection(int index)
+    {
+        GeneralSection.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
+        HotkeysSection.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
+        DeliverySection.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
+        AdaptersSection.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
+        DataManagementSection.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
+    }
     private void ViewModel_RestartOnboardingRequested(object? sender, EventArgs e) =>
         RestartOnboardingRequested?.Invoke(this, e);
 
