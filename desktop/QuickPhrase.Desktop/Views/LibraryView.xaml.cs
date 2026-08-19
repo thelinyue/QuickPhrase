@@ -149,7 +149,8 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         var message = LibraryBlankAreaMenuPolicy.GetNewPhraseUnavailableMessage(context);
         if (message is not null)
         {
-            ShowBlankAreaHint(message);
+            // 没有一级分类时统一走主窗口的新建话术流程，由它提供“取消/新建分类”分支。
+            RequestNew?.Invoke(this, EventArgs.Empty);
             return;
         }
 

@@ -6,7 +6,7 @@ namespace QuickPhrase.Desktop.Tests;
 public class PhraseItemViewModelTests
 {
     private static Phrase MakePhrase(string title, string content, bool favorite = false)
-        => new(Guid.NewGuid(), title, content, Guid.NewGuid(), ImmutableArray<Tag>.Empty, favorite, ShortcutMode.None, null,
+        => new(Guid.NewGuid(), title, content, Guid.NewGuid(), favorite, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "green");
 
     [Fact]

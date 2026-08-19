@@ -53,7 +53,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
     /// <summary>共享状态呈现器使用的派生状态：没有加载中/错误且当前列表为空。</summary>
     public bool IsEmpty => !IsBusy && !HasError && VisibleItems.Count == 0;
     public string EmptyStateTitle => string.IsNullOrWhiteSpace(SearchQuery) ? "暂无话术" : "没有找到对应关键词";
-    public string EmptyStateDescription => string.IsNullOrWhiteSpace(SearchQuery) ? "创建第一条话术，之后可在 Launcher 中快速插入。" : "换个关键词试试，或清空搜索条件。";
+    public string EmptyStateDescription => string.IsNullOrWhiteSpace(SearchQuery) ? "创建第一条话术，之后可在闪念中快速插入。" : "换个关键词试试，或清空搜索条件。";
 
     // 分类（一级 chips 横向 + 二级内联嵌套）
     [ObservableProperty] private ObservableCollection<CategoryItem> _categories = new();

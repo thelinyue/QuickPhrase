@@ -10,7 +10,7 @@ namespace QuickPhrase.Desktop.Tests;
 public class EditorViewModelTests
 {
     private static Phrase MakePhrase(Guid id, string title, string content, Guid categoryId, string colorKey = "default", ShortcutMode shortcutMode = ShortcutMode.None, string? shortcut = null)
-        => new(id, title, content, categoryId, ImmutableArray<Tag>.Empty, false, shortcutMode,
+        => new(id, title, content, categoryId, false, shortcutMode,
             shortcut is null ? null : new ShortcutValue(shortcut, shortcut),
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, colorKey);
 

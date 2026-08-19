@@ -115,7 +115,7 @@ internal sealed class SqliteCategoryRepository : SqliteRepositoryBase, ICategory
     }
 
     /// <summary>
-    /// 在同一个 SQLite 事务内删除分类子树、话术标签关系和话术，最后再删除分类。
+    /// 在同一个 SQLite 事务内删除分类子树、话术和分类，确保级联删除整体提交或整体回滚。
     /// 这样即使中途某条 SQL 失败，也不会留下半成品数据。
     /// </summary>
     private async Task<RepositoryResult<DeleteResult>> DeleteCoreAsync(SqliteConnection connection, Guid id, long? expectedVersion, CancellationToken cancellationToken)

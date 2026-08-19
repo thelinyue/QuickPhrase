@@ -10,6 +10,9 @@ namespace QuickPhrase.Desktop.ViewModels;
 public partial class SettingsViewModel : ObservableObject, INavigationGuard
 {
     private readonly ICommandService _commands;
+
+    /// <summary>设置页末尾的数据管理入口，内部仍通过 ICommandService 访问话术包服务。</summary>
+    public DataManagementViewModel DataManagement { get; }
     private AppSettings _base = new(0, false, false, true, string.Empty, string.Empty, false, false);
     private Dictionary<string, bool> _baseAdapters = new(StringComparer.OrdinalIgnoreCase);
 
@@ -26,7 +29,18 @@ public partial class SettingsViewModel : ObservableObject, INavigationGuard
     public event EventHandler<AppSettings>? Saved;
     public event EventHandler? Cancelled;
 
-    public SettingsViewModel(ICommandService commands) => _commands = commands;
+    /// <summary>
+    /// 请求重新打开首次使用向导。
+    /// 这里只发布 UI 编排事件，不删除数据、不修改设置，也不依赖 Windows 平台实现；
+    /// 由 ApplicationController 订阅后负责调用 OnboardingCoordinator.OpenAsync(manualOpen: true)。
+    /// </summary>
+    public event EventHandler? RestartOnboardingRequested;
+
+    public SettingsViewModel(ICommandService commands)
+    {
+        _commands = commands;
+        DataManagement = new DataManagementViewModel(commands);
+    }
 
     public async Task LoadAsync()
     {
@@ -42,6 +56,18 @@ public partial class SettingsViewModel : ObservableObject, INavigationGuard
         Adapters = new ObservableCollection<AdapterToggleItem>(
             s.LauncherEnabledAdapters.Select(kv => new AdapterToggleItem(kv.Key, kv.Value)));
         ErrorMessage = null;
+    }
+
+    /// <summary>
+    /// 仅刷新持久化基线，不覆盖当前编辑中的控件值。
+    /// 向导在设置窗口仍打开时更新设置版本后，使用该方法避免后续保存因乐观并发版本过期而失败。
+    /// </summary>
+    public async Task RefreshBaseAsync()
+    {
+        var settings = await _commands.GetSettingsAsync();
+        _base = settings;
+        _baseAdapters = new Dictionary<string, bool>(settings.LauncherEnabledAdapters, StringComparer.OrdinalIgnoreCase);
+        OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
     public bool HasUnsavedChanges =>
@@ -74,11 +100,16 @@ public partial class SettingsViewModel : ObservableObject, INavigationGuard
         try
         {
             var adapters = Adapters.ToDictionary(a => a.Id, a => a.Enabled, StringComparer.OrdinalIgnoreCase);
-            var settings = new AppSettings(
-                _base.Version, LaunchOnStartup, StartMinimized, StayInTrayOnClose,
-                LauncherShortcutDisplay, NormalizeShortcut(LauncherShortcutDisplay),
-                AutoSend, ClipboardCompatibilityMode)
+            // 使用 with 保留引导处理状态和其他未来扩展字段，普通设置保存不能把用户重新判定为首次使用。
+            var settings = _base with
             {
+                LaunchOnStartup = LaunchOnStartup,
+                StartMinimized = StartMinimized,
+                StayInTrayOnClose = StayInTrayOnClose,
+                LauncherShortcutDisplay = LauncherShortcutDisplay,
+                LauncherShortcutNormalized = NormalizeShortcut(LauncherShortcutDisplay),
+                AutoSend = AutoSend,
+                ClipboardCompatibilityMode = ClipboardCompatibilityMode,
                 LauncherEnabledAdapters = adapters,
             };
             var result = await _commands.UpdateSettingsAsync(settings);
@@ -112,6 +143,12 @@ public partial class SettingsViewModel : ObservableObject, INavigationGuard
         DiscardChanges();
         Cancelled?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>
+    /// 发出重新开始使用引导的请求。向导是否打开以及打开后的数据恢复由应用编排层决定。
+    /// </summary>
+    [RelayCommand]
+    private void RestartOnboarding() => RestartOnboardingRequested?.Invoke(this, EventArgs.Empty);
 
     /// <summary>设置页仅保存展示名；归一化用于快捷键冲突比对，不依赖 Win32。</summary>
     private static string NormalizeShortcut(string display)

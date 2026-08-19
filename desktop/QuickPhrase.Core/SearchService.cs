@@ -109,11 +109,12 @@ internal sealed class SearchService : ISearchService
             degraded ? "拼音索引暂不可用，当前已降级为中文搜索。" : null));
     }
 
-    internal void Upsert(SearchEntry entry)
+    internal void Upsert(SearchEntry entry, bool markReady = true)
     {
         var next = Volatile.Read(ref _snapshot).SetItem(entry.Phrase.Id, entry);
         Interlocked.Exchange(ref _snapshot, next);
-        Interlocked.Exchange(ref _status, new SearchIndexStatus(SearchIndexState.Ready, Status.SnapshotVersion + 1));
+        if (markReady)
+            Interlocked.Exchange(ref _status, new SearchIndexStatus(SearchIndexState.Ready, Status.SnapshotVersion + 1));
     }
 
     internal void Remove(Guid id)

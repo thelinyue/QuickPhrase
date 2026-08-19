@@ -91,10 +91,17 @@ internal sealed class MigrationRunner
                     var name = reader.GetString(1);
                     var checksum = reader.GetString(2);
                     if (!migrations.TryGetValue(version, out var known) || known.Name != name)
+                    {
+                        // 旧版本曾执行过会删除标签表的 008_remove_tags；仅在确认旧库确实已删除标签表时兼容该历史记录。
+                        if (await IsCompatibleLegacyMigrationAsync(connection, version, name, cancellationToken))
+                            continue;
                         throw new DataStoreException("MIGRATION_FAILED", $"已执行迁移 {version} 的校验信息不匹配。");
+                    }
                     if (!string.Equals(known.Checksum, checksum, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (!await IsCompatibleAdditiveMigrationAsync(connection, version, name, cancellationToken))
+                        var isCompatibleAdditiveMigration = await IsCompatibleAdditiveMigrationAsync(connection, version, name, cancellationToken);
+                        var isCompatibleLegacyMigration = await IsCompatibleLegacyMigrationAsync(connection, version, name, cancellationToken);
+                        if (!isCompatibleAdditiveMigration && !isCompatibleLegacyMigration)
                             throw new DataStoreException("MIGRATION_FAILED", $"已执行迁移 {version} 的校验信息不匹配。");
                         mismatches.Add((version, name));
                     }
@@ -112,6 +119,29 @@ internal sealed class MigrationRunner
         return current;
     }
 
+    /// <summary>
+    /// 识别旧版本已经记录、但当前迁移脚本内容已更新的兼容迁移。
+    /// 只有标签表已删除时才接受旧版 008_remove_tags，未知版本仍然拒绝启动。
+    /// </summary>
+    private static async Task<bool> IsCompatibleLegacyMigrationAsync(
+        SqliteConnection connection,
+        int version,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        if (version != 8 || !string.Equals(name, "008_remove_tags", StringComparison.Ordinal))
+            return false;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(1)
+            FROM sqlite_master
+            WHERE type = 'table' AND name IN ('tags', 'phrase_tags');
+            """;
+        var tableCount = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+        return tableCount == 0;
+    }
+
     /// <summary>仅对已确认完成结构变更的追加型迁移修复历史校验值，避免换行或注释变化阻断升级。</summary>
     private static async Task<bool> IsCompatibleAdditiveMigrationAsync(SqliteConnection connection, int version, string name, CancellationToken cancellationToken)
     {
@@ -119,6 +149,7 @@ internal sealed class MigrationRunner
         {
             (2, "002_category_hierarchy") => (Table: "categories", Column: "parent_id"),
             (3, "003_phrase_color_key") => (Table: "phrases", Column: "color_key"),
+            (7, "007_search_history") => (Table: "search_history", Column: "normalized_query"),
             _ => default,
         };
         if (requiredColumn == default) return false;

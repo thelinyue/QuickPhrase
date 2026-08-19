@@ -8,7 +8,7 @@ using QuickPhrase.Desktop.ViewModels;
 
 namespace QuickPhrase.Desktop;
 
-/// <summary>话术编辑器：标题/正文/分类/标签/固定颜色/保存/取消/删除。纯 WPF，不依赖外部页面运行时。</summary>
+/// <summary>话术编辑器：标题/正文/分类/固定颜色/保存/取消/删除。纯 WPF，不依赖外部页面运行时。</summary>
 public partial class EditorView : System.Windows.Controls.UserControl
 {
     public EditorViewModel ViewModel { get; }

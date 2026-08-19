@@ -3,7 +3,9 @@ using QuickPhrase.Core;
 
 namespace QuickPhrase.Platform.Windows;
 
-/// <summary>璇濇湳 Repository锛氳鎿嶄綔鐭繛鎺ワ紝鍐欐搷浣滃叏閮ㄨ繘鍏ュ崟鍐欒€呴槦鍒楀苟鍦ㄤ簨鍔℃彁浜ゅ悗鍙戝竷缁撴灉銆?/summary>
+/// <summary>话术 Repository：读操作短连接，写操作全部进入单写者队列，并在事务提交后返回结果。
+/// 创建话术时先执行 Core 纯校验，再在同一事务中确认分类和一级分类业务约束。
+/// </summary>
 internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepository
 {
     public SqlitePhraseRepository(SqliteConnectionFactory connections, SqliteWriteQueue writes, TimeProvider clock) : base(connections, writes, clock) { }
@@ -34,7 +36,8 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
 
     private async Task<RepositoryResult<Phrase>> CreateCoreAsync(SqliteConnection connection, CreatePhraseCommand command, CancellationToken cancellationToken)
     {
-        if (!ValidatePhraseText(command.Title, command.Content, out var validationError)) return RepositoryResult<Phrase>.Failure(validationError!);
+        if (!PhraseRules.Validate(command, out var validationError)) return RepositoryResult<Phrase>.Failure(validationError!);
+        if (!ValidatePhraseText(command.Title, command.Content, out validationError)) return RepositoryResult<Phrase>.Failure(validationError!);
         if (!ValidateColorKey(command.ColorKey, out var colorKey, out validationError)) return RepositoryResult<Phrase>.Failure(validationError!);
         if (!PrepareShortcut(Shortcuts, command.ShortcutMode, command.Shortcut, out var shortcut, out validationError)) return RepositoryResult<Phrase>.Failure(validationError!);
         SqliteTransaction? transaction = null;
@@ -46,7 +49,9 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
                 return SamePhrase(existing, command, shortcut) ? RepositoryResult<Phrase>.Success(existing) : RepositoryResult<Phrase>.Failure(Conflict(existing.Id, existing.Title));
 
             if (!await CategoryExistsAsync(connection, transaction, command.CategoryId, cancellationToken))
-                return RepositoryResult<Phrase>.Failure(NotFound("鍒嗙被"));
+                return RepositoryResult<Phrase>.Failure(NotFound("分类"));
+            if (!await HasRootCategoryAsync(connection, transaction, cancellationToken))
+                return RepositoryResult<Phrase>.Failure(Validation("创建话术前，请先创建一个一级分类。"));
             var shortcutConflict = await FindShortcutConflictAsync(connection, transaction, shortcut?.Normalized, cancellationToken);
             if (shortcutConflict is not null)
                 return RepositoryResult<Phrase>.Failure(new DataError("SHORTCUT_CONFLICT", "快捷键已被其他话术占用。", shortcutConflict.Value.Id, shortcutConflict.Value.Title));
@@ -78,7 +83,8 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
 
     private async Task<RepositoryResult<Phrase>> UpdateCoreAsync(SqliteConnection connection, UpdatePhraseCommand command, CancellationToken cancellationToken)
     {
-        if (!ValidatePhraseText(command.Title, command.Content, out var validationError)) return RepositoryResult<Phrase>.Failure(validationError!);
+        if (!PhraseRules.Validate(command, out var validationError)) return RepositoryResult<Phrase>.Failure(validationError!);
+        if (!ValidatePhraseText(command.Title, command.Content, out validationError)) return RepositoryResult<Phrase>.Failure(validationError!);
         if (!ValidateColorKey(command.ColorKey, out var colorKey, out validationError)) return RepositoryResult<Phrase>.Failure(validationError!);
         if (!PrepareShortcut(Shortcuts, command.ShortcutMode, command.Shortcut, out var shortcut, out validationError)) return RepositoryResult<Phrase>.Failure(validationError!);
         SqliteTransaction? transaction = null;
@@ -88,7 +94,7 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
             var existing = await ReadPhraseAsync(connection, DbId(command.Id), transaction, cancellationToken);
             if (existing is null) return RepositoryResult<Phrase>.Failure(NotFound("璇濇湳"));
             if (existing.Version != command.ExpectedVersion) return RepositoryResult<Phrase>.Failure(Conflict(existing.Id, existing.Title));
-            if (!await CategoryExistsAsync(connection, transaction, command.CategoryId, cancellationToken)) return RepositoryResult<Phrase>.Failure(NotFound("鍒嗙被"));
+            if (!await CategoryExistsAsync(connection, transaction, command.CategoryId, cancellationToken)) return RepositoryResult<Phrase>.Failure(NotFound("分类"));
             var shortcutConflict = await FindShortcutConflictAsync(connection, transaction, shortcut?.Normalized, command.Id, cancellationToken);
             if (shortcutConflict is not null) return RepositoryResult<Phrase>.Failure(new DataError("SHORTCUT_CONFLICT", "快捷键已被其他话术占用。", shortcutConflict.Value.Id, shortcutConflict.Value.Title));
 
@@ -212,6 +218,13 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
 
 
 
+    private static async Task<bool> HasRootCategoryAsync(SqliteConnection connection, SqliteTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT 1 FROM categories WHERE parent_id IS NULL LIMIT 1;";
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
     private static async Task<bool> CategoryExistsAsync(SqliteConnection connection, SqliteTransaction transaction, Guid categoryId, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -240,4 +253,3 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
     private DateTimeOffset NowUtc() => Clock.GetUtcNow();
     private CommittedDataChange Change(Guid id, string operation) => new("phrase", id, operation, NowUtc());
 }
-

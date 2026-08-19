@@ -5,7 +5,7 @@ using QuickPhrase.Core;
 namespace QuickPhrase.Platform.Windows;
 
 /// <summary>
-/// SQLite 仓储共享辅助逻辑：集中处理校验和读模型映射。
+/// SQLite 仓储共享辅助逻辑：集中处理话术校验、颜色键规范化和读模型映射。
 /// </summary>
 internal abstract class SqliteRepositoryBase
 {

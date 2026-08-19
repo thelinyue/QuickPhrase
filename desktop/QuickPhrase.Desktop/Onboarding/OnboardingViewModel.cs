@@ -17,9 +17,12 @@ public partial class OnboardingViewModel : ObservableObject
     private readonly ICommandService _commands;
     private readonly Func<OnboardingViewModel, Task<bool>>? _startPractice;
     private readonly Func<OnboardingViewModel, Task>? _openShortcutEditor;
+    private readonly Func<string?>? _startupWarningProvider;
     private AppSettings _settings;
     private bool _manualOpen;
     private bool _hasPhrases;
+    private bool _launchOnStartupDirty;
+    private bool _suppressLaunchOnStartupTracking;
 
     [ObservableProperty] private OnboardingStep _currentStep;
     [ObservableProperty] private string _categoryName = "";
@@ -40,19 +43,35 @@ public partial class OnboardingViewModel : ObservableObject
         ICommandService commands,
         AppSettings settings,
         Func<OnboardingViewModel, Task<bool>>? startPractice = null,
-        Func<OnboardingViewModel, Task>? openShortcutEditor = null)
+        Func<OnboardingViewModel, Task>? openShortcutEditor = null,
+        Func<string?>? startupWarningProvider = null)
     {
         _commands = commands;
         _settings = settings;
         _startPractice = startPractice;
         _openShortcutEditor = openShortcutEditor;
-        LaunchOnStartup = settings.LaunchOnStartup;
+        _startupWarningProvider = startupWarningProvider;
+        _launchOnStartup = settings.LaunchOnStartup;
     }
 
     public bool IsManualOpen => _manualOpen;
+    public int StepNumber => (int)CurrentStep + 1;
     public event Action? Completed;
     public event Action? Skipped;
-    public bool CanFinish => PracticeInserted || !_manualOpen;
+    /// <summary>完成按钮只在真实练习选中话术后可用；跳过引导走独立 Skip 命令。</summary>
+    public bool CanFinish => PracticeInserted;
+    partial void OnLaunchOnStartupChanged(bool value)
+    {
+        if (!_suppressLaunchOnStartupTracking) _launchOnStartupDirty = true;
+    }
+
+    partial void OnCurrentStepChanged(OnboardingStep value)
+    {
+        OnPropertyChanged(nameof(StepTitle));
+        OnPropertyChanged(nameof(StepNumber));
+        OnPropertyChanged(nameof(CanFinish));
+    }
+
     public string StepTitle => CurrentStep switch
     {
         OnboardingStep.Welcome => "欢迎使用闪语",
@@ -67,7 +86,7 @@ public partial class OnboardingViewModel : ObservableObject
     {
         _manualOpen = manualOpen;
         await ReloadDataAsync(cancellationToken);
-        CurrentStep = manualOpen ? GetFirstIncompleteStep(skipWelcome: true) : OnboardingStep.Welcome;
+        CurrentStep = GetFirstIncompleteStep(skipWelcome: manualOpen ? true : false);
         OnPropertyChanged(nameof(StepTitle));
         OnPropertyChanged(nameof(CanFinish));
     }
@@ -75,7 +94,8 @@ public partial class OnboardingViewModel : ObservableObject
     [RelayCommand]
     private void Start()
     {
-        CurrentStep = GetFirstIncompleteStep(skipWelcome: false);
+        // 欢迎页的“开始设置”应直接进入第一个未完成的数据步骤，避免空数据再次停留在欢迎页。
+        CurrentStep = GetFirstIncompleteStep(skipWelcome: true);
         ErrorMessage = null;
         OnPropertyChanged(nameof(StepTitle));
     }
@@ -161,14 +181,20 @@ public partial class OnboardingViewModel : ObservableObject
         ErrorMessage = null;
         try
         {
-            var next = _settings with { HasCompletedOnboarding = true, OnboardingVersion = CurrentOnboardingVersion, LaunchOnStartup = LaunchOnStartup };
-            var result = await _commands.UpdateSettingsAsync(next);
+            var result = await SaveOnboardingSettingsAsync(settings => settings with
+            {
+                HasCompletedOnboarding = true,
+                OnboardingVersion = CurrentOnboardingVersion,
+                LaunchOnStartup = LaunchOnStartup,
+            });
             if (!result.IsSuccess || result.Value is null)
             {
                 ErrorMessage = result.Error?.Message ?? "引导状态保存失败，请重试。";
                 return;
             }
             _settings = result.Value;
+            _launchOnStartupDirty = false;
+            StartupWarning = _startupWarningProvider?.Invoke();
             CurrentStep = OnboardingStep.Complete;
             OnPropertyChanged(nameof(StepTitle));
         }
@@ -184,8 +210,11 @@ public partial class OnboardingViewModel : ObservableObject
         ErrorMessage = null;
         try
         {
-            var next = _settings with { HasCompletedOnboarding = true, OnboardingVersion = CurrentOnboardingVersion };
-            var result = await _commands.UpdateSettingsAsync(next);
+            var result = await SaveOnboardingSettingsAsync(settings => settings with
+            {
+                HasCompletedOnboarding = true,
+                OnboardingVersion = CurrentOnboardingVersion,
+            });
             if (!result.IsSuccess || result.Value is null)
             {
                 ErrorMessage = result.Error?.Message ?? "跳过引导失败，请重试。";
@@ -210,9 +239,46 @@ public partial class OnboardingViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void CloseComplete()
+    private async Task CloseComplete()
     {
-        if (CurrentStep == OnboardingStep.Complete) Completed?.Invoke();
+        if (CurrentStep != OnboardingStep.Complete || IsBusy) return;
+
+        // 启动项复选框只在完成页显示，因此不能只依赖进入完成页前的保存。
+        // 这里再次提交当前设置，确保用户在完成页做出的选择也会同步到 Windows 启动项。
+        if (_launchOnStartupDirty)
+        {
+            IsBusy = true;
+            ErrorMessage = null;
+            try
+            {
+                var result = await SaveOnboardingSettingsAsync(settings => settings with
+                {
+                    HasCompletedOnboarding = true,
+                    OnboardingVersion = CurrentOnboardingVersion,
+                    LaunchOnStartup = LaunchOnStartup,
+                });
+                if (!result.IsSuccess || result.Value is null)
+                {
+                    ErrorMessage = result.Error?.Message ?? "启动项设置保存失败，请重试。";
+                    return;
+                }
+
+                _settings = result.Value;
+                _launchOnStartupDirty = false;
+                StartupWarning = _startupWarningProvider?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                ErrorMessage = $"启动项设置保存失败：{ex.Message}";
+                return;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        Completed?.Invoke();
     }
 
     [RelayCommand]
@@ -221,8 +287,82 @@ public partial class OnboardingViewModel : ObservableObject
         if (_openShortcutEditor is not null) await _openShortcutEditor(this);
     }
 
+    /// <summary>
+    /// 同步快捷键保存后的最新设置快照，避免后续完成/跳过操作使用旧版本号。
+    /// 完成页的启动项是尚未提交的页面状态，不能被快捷键保存返回的旧快照覆盖。
+    /// </summary>
+    public void ApplySettingsSnapshot(AppSettings settings)
+    {
+        var pendingLaunchOnStartup = LaunchOnStartup;
+        var preservePendingChoice = CurrentStep == OnboardingStep.Complete;
+        _settings = settings;
+        _suppressLaunchOnStartupTracking = true;
+        LaunchOnStartup = preservePendingChoice ? pendingLaunchOnStartup : settings.LaunchOnStartup;
+        _suppressLaunchOnStartupTracking = false;
+        if (!preservePendingChoice) _launchOnStartupDirty = false;
+    }
+
+    /// <summary>把快捷键保存失败转换为向导中的中文错误，而不是静默丢失。</summary>
+    public void SetShortcutError(string message) => ErrorMessage = message;
+
+    /// <summary>初始化读取失败时保留窗口并显示可理解的错误，允许用户稍后重试。</summary>
+    public void SetInitializationError(string message) => ErrorMessage = message;
+
     public void MarkPracticeSearched() { PracticeSearched = true; OnPropertyChanged(nameof(CanFinish)); }
+
+    /// <summary>
+    /// 将 Core 搜索索引状态映射到向导状态。Dirty 仍是可用的降级搜索，Rebuilding 则必须等待后重试。
+    /// </summary>
+    public void MarkPracticeSearched(SearchIndexStatus status)
+    {
+        if (status.State == SearchIndexState.Rebuilding)
+        {
+            ErrorMessage = status.Message ?? "搜索索引正在重建，请稍后重试。";
+            PracticeSearched = false;
+            OnPropertyChanged(nameof(CanFinish));
+            return;
+        }
+
+        PracticeSearched = true;
+        ErrorMessage = status.State == SearchIndexState.Dirty
+            ? status.Message ?? "搜索索引暂不可用，当前已降级为中文搜索。"
+            : null;
+        OnPropertyChanged(nameof(CanFinish));
+    }
+    public void SetPracticeError(string message)
+    {
+        ErrorMessage = message;
+        PracticeOpened = false;
+        OnPropertyChanged(nameof(CanFinish));
+    }
     public void MarkPracticeInserted(string content) { PracticeInput = content; PracticeSearched = true; PracticeInserted = true; OnPropertyChanged(nameof(CanFinish)); }
+
+    /// <summary>
+    /// 在写入前读取最新设置，并在乐观版本冲突时重新合并并重试一次。
+    /// 这样设置窗口与向导并行保存时，向导只覆盖自己负责的字段，不会丢失其他设置。
+    /// </summary>
+    private async Task<RepositoryResult<AppSettings>> SaveOnboardingSettingsAsync(
+        Func<AppSettings, AppSettings> update,
+        CancellationToken cancellationToken = default)
+    {
+        var latest = await _commands.GetSettingsAsync(cancellationToken);
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var result = await _commands.UpdateSettingsAsync(update(latest), cancellationToken);
+            if (result.IsSuccess && result.Value is not null)
+            {
+                _settings = result.Value;
+                return result;
+            }
+
+            if (!string.Equals(result.Error?.Code, "VERSION_CONFLICT", StringComparison.OrdinalIgnoreCase) || attempt == 1)
+                return result;
+
+            latest = await _commands.GetSettingsAsync(cancellationToken);
+        }
+
+        return RepositoryResult<AppSettings>.Failure(new DataError("VERSION_CONFLICT", "设置版本冲突，请重试。"));
+    }
 
     private async Task ReloadDataAsync(CancellationToken cancellationToken = default)
     {
@@ -247,10 +387,3 @@ public partial class OnboardingViewModel : ObservableObject
 
 /// <summary>向导下拉框使用的轻量分类项，避免把 Platform.Windows 类型泄漏到 UI。</summary>
 public sealed record CategoryOption(Guid Id, string Name, Guid? ParentId);
-
-
-
-
-
-
-

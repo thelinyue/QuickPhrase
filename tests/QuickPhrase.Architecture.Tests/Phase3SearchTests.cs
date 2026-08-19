@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
@@ -34,11 +33,9 @@ public sealed class Phase3SearchTests
 
         var initials = runtime.Search.Search(new SearchRequest("hfcc"));
         var multiple = runtime.Search.Search(new SearchRequest("hf"));
-        var tag = runtime.Search.Search(new SearchRequest("sn"));
 
         Assert.Contains(initials.Items, result => result.Phrase.Title == "恢复出厂设置");
         Assert.InRange(multiple.Items.Length, 6, 8);
-        Assert.Contains(tag.Items, result => result.Phrase.Title == "请提供设备序列号");
     }
 
     [Fact]
@@ -46,7 +43,7 @@ public sealed class Phase3SearchTests
     {
         var now = DateTimeOffset.UtcNow;
         var phrases = Enumerable.Range(0, 10_000)
-            .Select(index => Phrase($"perf-{index}", $"恢复出厂设置 {index}", $"请检查设备网络并记录问题 {index}。", [index % 10 == 0 ? "SN" : "设备"], index % 200, now.AddSeconds(-index)))
+            .Select(index => Phrase($"perf-{index}", $"恢复出厂设置 {index}", $"请检查设备网络并记录问题 {index}。", index % 200, now.AddSeconds(-index)))
             .ToArray();
         await using var runtime = await PhraseSearchRuntime.CreateAsync(new FakePhraseRepository(phrases), new PinyinMProvider());
         var queries = new[] { "恢复", "hfcc", "huifuchuchang", "sn", "网络", "没有匹配结果" };
@@ -77,16 +74,15 @@ public sealed class Phase3SearchTests
     }
 
     [Fact]
-    public async Task SearchRanksTitleBeforeTagsPinyinAndContent()
+    public async Task SearchRanksTitleBeforePinyinAndContent()
     {
         var now = DateTimeOffset.UtcNow;
         var phrases = new[]
         {
-            Phrase("title-exact", "恢复", "普通正文", ["其他"], usage: 1, now),
-            Phrase("title-prefix", "恢复出厂设置", "普通正文", ["其他"], usage: 1, now),
-            Phrase("tag-exact", "设备说明", "普通正文", ["恢复"], usage: 1, now),
-            Phrase("pinyin", "设备说明", "普通正文", ["其他"], usage: 1, now),
-            Phrase("content", "其他说明", "请恢复设备后重试。", ["其他"], usage: 1, now),
+            Phrase("title-exact", "恢复", "普通正文", usage: 1, now),
+            Phrase("title-prefix", "恢复出厂设置", "普通正文", usage: 1, now),
+            Phrase("pinyin", "设备说明", "普通正文", usage: 1, now),
+            Phrase("content", "其他说明", "请恢复设备后重试。", usage: 1, now),
         };
         var provider = new MappingPinyinProvider(new Dictionary<string, PinyinSearchTerms>
         {
@@ -97,29 +93,26 @@ public sealed class Phase3SearchTests
 
         var results = runtime.Search.Search(new SearchRequest("恢复", 10));
 
-        Assert.Equal(new[] { "title-exact", "title-prefix", "tag-exact", "content" }.Select(StableId), results.Items.Select(x => x.Phrase.Id));
+        Assert.Equal(new[] { "title-exact", "title-prefix", "content" }.Select(StableId), results.Items.Select(x => x.Phrase.Id));
         Assert.Equal(SearchMatchKind.TitleExact, results.Items[0].MatchKind);
         Assert.Equal(SearchMatchKind.TitlePrefix, results.Items[1].MatchKind);
-        Assert.Equal(SearchMatchKind.TagExact, results.Items[2].MatchKind);
-        Assert.Equal(SearchMatchKind.ContentContains, results.Items[3].MatchKind);
+        Assert.Equal(SearchMatchKind.ContentContains, results.Items[2].MatchKind);
     }
 
     [Fact]
-    public async Task SearchSupportsInitialsFullPinyinAndTagSearch()
+    public async Task SearchSupportsInitialsAndFullPinyin()
     {
-        var phrase = Phrase("factory", "恢复出厂设置", "请先备份数据。", ["设备", "SN"], usage: 1, DateTimeOffset.UtcNow);
+        var phrase = Phrase("factory", "恢复出厂设置", "请先备份数据。", usage: 1, DateTimeOffset.UtcNow);
         var provider = new MappingPinyinProvider(new Dictionary<string, PinyinSearchTerms>
         {
             [phrase.Title] = Terms("huifuchuchangshezh i", "hfccsz"),
-            ["设备"] = Terms("shebei", "sb"),
-            ["SN"] = Terms("sn", "sn"),
+
         });
         await using var runtime = await PhraseSearchRuntime.CreateAsync(new FakePhraseRepository([phrase]), provider);
 
         Assert.Equal(phrase.Id, runtime.Search.Search(new SearchRequest("hfcc")).Items.Single().Phrase.Id);
         Assert.Equal(SearchMatchKind.PinyinInitialsPrefix, runtime.Search.Search(new SearchRequest("hfcc")).Items.Single().MatchKind);
         Assert.Equal(SearchMatchKind.PinyinFullPrefix, runtime.Search.Search(new SearchRequest("huifuchuchang")).Items.Single().MatchKind);
-        Assert.Equal(SearchMatchKind.TagExact, runtime.Search.Search(new SearchRequest("sn")).Items.Single().MatchKind);
     }
 
     [Fact]
@@ -128,11 +121,11 @@ public sealed class Phase3SearchTests
         var now = DateTimeOffset.UtcNow;
         var phrases = new List<Phrase>
         {
-            Phrase("low", "低频", "正文", [], 1, now.AddMinutes(-5)),
-            Phrase("high", "高频", "正文", [], 20, now.AddMinutes(-5)),
-            Phrase("recent", "最近", "正文", [], 2, now),
+            Phrase("low", "低频", "正文", 1, now.AddMinutes(-5)),
+            Phrase("high", "高频", "正文", 20, now.AddMinutes(-5)),
+            Phrase("recent", "最近", "正文", 2, now),
         };
-        phrases.AddRange(Enumerable.Range(0, 120).Select(index => Phrase($"extra-{index}", $"普通话术 {index}", "正文", [], 0, now.AddMinutes(-10))));
+        phrases.AddRange(Enumerable.Range(0, 120).Select(index => Phrase($"extra-{index}", $"普通话术 {index}", "正文", 0, now.AddMinutes(-10))));
         await using var runtime = await PhraseSearchRuntime.CreateAsync(new FakePhraseRepository(phrases), new MappingPinyinProvider());
 
         var result = runtime.Search.Search(new SearchRequest("   ", 500));
@@ -145,7 +138,7 @@ public sealed class Phase3SearchTests
     [Fact]
     public async Task FuzzyMatchingIsOnlyFallbackAndDoesNotSearchContent()
     {
-        var phrase = Phrase("factory", "恢复出厂设置", "网络连接异常", ["设备"], 1, DateTimeOffset.UtcNow);
+        var phrase = Phrase("factory", "恢复出厂设置", "网络连接异常", 1, DateTimeOffset.UtcNow);
         await using var runtime = await PhraseSearchRuntime.CreateAsync(new FakePhraseRepository([phrase]), new MappingPinyinProvider());
 
         var fuzzy = runtime.Search.Search(new SearchRequest("恢复出场设置"));
@@ -161,15 +154,15 @@ public sealed class Phase3SearchTests
     public async Task PhraseMutationsUpdateSearchOnlyAfterCommit()
     {
         var category = Guid.NewGuid();
-        var original = Phrase("original", "原始话术", "原始正文", [], 1, DateTimeOffset.UtcNow, category);
+        var original = Phrase("original", "原始话术", "原始正文", 1, DateTimeOffset.UtcNow, category);
         var repository = new FakePhraseRepository([original]);
         await using var runtime = await PhraseSearchRuntime.CreateAsync(repository, new MappingPinyinProvider());
 
-        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新增话术", "新增正文", category, [], false, ShortcutMode.None, null));
+        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新增话术", "新增正文", category, false, ShortcutMode.None, null));
         Assert.True(created.IsSuccess);
         Assert.Equal(created.Value!.Id, runtime.Search.Search(new SearchRequest("新增话术")).Items.Single().Phrase.Id);
 
-        var updated = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(original.Id, original.Version, "更新话术", "更新正文", category, [], false, ShortcutMode.None, null));
+        var updated = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(original.Id, original.Version, "更新话术", "更新正文", category, false, ShortcutMode.None, null));
         Assert.True(updated.IsSuccess);
         Assert.Empty(runtime.Search.Search(new SearchRequest("原始话术")).Items);
         Assert.Equal(original.Id, runtime.Search.Search(new SearchRequest("更新话术")).Items.Single().Phrase.Id);
@@ -184,7 +177,7 @@ public sealed class Phase3SearchTests
     [Fact]
     public async Task SearchDoesNotReadRepositoryAfterStartup()
     {
-        var repository = new FakePhraseRepository([Phrase("one", "设备说明", "正文", [], 1, DateTimeOffset.UtcNow)]);
+        var repository = new FakePhraseRepository([Phrase("one", "设备说明", "正文", 1, DateTimeOffset.UtcNow)]);
         await using var runtime = await PhraseSearchRuntime.CreateAsync(repository, new MappingPinyinProvider());
         repository.ListCalls = 0;
 
@@ -197,17 +190,17 @@ public sealed class Phase3SearchTests
     [Fact]
     public async Task FailedPinyinUpdateKeepsOldSnapshotAndRecoversFromRepository()
     {
-        var repository = new FakePhraseRepository([Phrase("one", "设备说明", "正文", [], 1, DateTimeOffset.UtcNow)]);
+        var repository = new FakePhraseRepository([Phrase("one", "设备说明", "正文", 1, DateTimeOffset.UtcNow)]);
         var provider = new MappingPinyinProvider { AlwaysFail = true };
         await using var runtime = await PhraseSearchRuntime.CreateAsync(repository, provider);
-        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新话术", "新正文", Guid.NewGuid(), [], false, ShortcutMode.None, null));
+        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新话术", "新正文", Guid.NewGuid(), false, ShortcutMode.None, null));
 
         Assert.True(created.IsSuccess);
         Assert.True(runtime.Search.Status.State is SearchIndexState.Dirty or SearchIndexState.Rebuilding);
         Assert.Empty(runtime.Search.Search(new SearchRequest("新话术")).Items);
 
         provider.AlwaysFail = false;
-        var retry = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "恢复索引", "恢复正文", Guid.NewGuid(), [], false, ShortcutMode.None, null));
+        var retry = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "恢复索引", "恢复正文", Guid.NewGuid(), false, ShortcutMode.None, null));
         Assert.True(retry.IsSuccess);
         await WaitForAsync(() => runtime.Search.Status.State == SearchIndexState.Ready);
 
@@ -217,7 +210,7 @@ public sealed class Phase3SearchTests
     [Fact]
     public async Task InitialPinyinFailureKeepsChineseSearchAvailable()
     {
-        var phrase = Phrase("one", "设备说明", "请检查设备。", [], 1, DateTimeOffset.UtcNow);
+        var phrase = Phrase("one", "设备说明", "请检查设备。", 1, DateTimeOffset.UtcNow);
         var provider = new MappingPinyinProvider { AlwaysFail = true };
         await using var runtime = await PhraseSearchRuntime.CreateAsync(new FakePhraseRepository([phrase]), provider);
 
@@ -225,8 +218,9 @@ public sealed class Phase3SearchTests
         Assert.True(runtime.Search.Status.State is SearchIndexState.Dirty or SearchIndexState.Rebuilding);
     }
 
-    private static Phrase Phrase(string id, string title, string content, IReadOnlyList<string> tags, int usage, DateTimeOffset updated, Guid? categoryId = null) =>
-        new(StableId(id), title, content, categoryId ?? StableId($"category-{id}"), tags.Select((name, index) => new Tag(StableId($"{id}-tag-{index}"), name, name.ToUpperInvariant())).ToImmutableArray(), false, ShortcutMode.None, null, usage, updated, 1, updated.AddMinutes(-1), updated);
+    private static Phrase Phrase(string id, string title, string content, int usage, DateTimeOffset updated, Guid? categoryId = null) =>
+        new(StableId(id), title, content, categoryId ?? StableId($"category-{id}"), false, ShortcutMode.None, null, usage, updated, 1, updated.AddMinutes(-1), updated);
+
 
     private static Guid StableId(string value) => new(SHA256.HashData(Encoding.UTF8.GetBytes(value)).AsSpan(0, 16));
 
@@ -263,7 +257,7 @@ public sealed class Phase3SearchTests
         public Task<RepositoryResult<Phrase>> CreateAsync(CreatePhraseCommand command, CancellationToken cancellationToken = default)
         {
             var now = DateTimeOffset.UtcNow;
-            var phrase = new Phrase(command.Id, command.Title, command.Content, command.CategoryId, command.Tags.Select(x => new Tag(Guid.NewGuid(), x, x.ToUpperInvariant())).ToImmutableArray(), command.Favorite, command.ShortcutMode, null, 0, null, 1, now, now);
+            var phrase = new Phrase(command.Id, command.Title, command.Content, command.CategoryId, command.Favorite, command.ShortcutMode, null, 0, null, 1, now, now);
             _phrases[phrase.Id] = phrase;
             return Task.FromResult(RepositoryResult<Phrase>.Success(phrase, new CommittedDataChange("phrase", phrase.Id, "create", now)));
         }

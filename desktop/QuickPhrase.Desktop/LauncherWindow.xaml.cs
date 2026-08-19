@@ -54,6 +54,7 @@ public partial class LauncherWindow : Window
     public string SearchErrorText { get; private set; } = "搜索索引初始化失败，请重试。";
 
     public bool IsLauncherVisible => IsVisible;
+    public bool IsPracticeMode => _invocationContext?.Mode == LauncherInvocationMode.Practice;
 
     public void Open(string initialQuery = "", DeliveryTarget? target = null, Guid? phraseId = null, AdapterStatusSnapshot? status = null, LauncherInvocationContext? invocationContext = null)
     {
@@ -69,7 +70,9 @@ public partial class LauncherWindow : Window
         CapabilityText.Text = status is null
             ? "无目标 · 插入/发送不可用"
             : $"Profile {status.ProfileVersion ?? "未确认"} · 插入 {CapabilityLabel(status.InsertText)} · 自动发送 {CapabilityLabel(status.SendText)}";
-        InsertHintText.Text = hasTarget ? "Enter 插入" : "Enter 安全复制";
+        InsertHintText.Text = IsPracticeMode
+            ? "Enter 选择到练习区"
+            : hasTarget ? "Enter 插入" : "Enter 安全复制";
         SendHintText.Text = "自动发送不支持";
         SendHintText.Foreground = (System.Windows.Media.Brush)FindResource("MutedTextBrush");
         QueryBox.Text = initialQuery;
@@ -179,6 +182,11 @@ public partial class LauncherWindow : Window
             _items = _results
                 .Select((item, index) => LauncherPhraseListItem.FromPhrase(item.Phrase, index + 1))
                 .ToArray();
+            if (_invocationContext is { Mode: LauncherInvocationMode.Practice, SearchHandler: not null } practice &&
+                !string.IsNullOrWhiteSpace(QueryBox.Text))
+            {
+                practice.SearchHandler(QueryBox.Text.Trim(), response.Status);
+            }
             SearchErrorText = string.Empty;
             ResultsList.ItemsSource = _items;
 
@@ -253,7 +261,7 @@ public partial class LauncherWindow : Window
         }
     }
 
-    private void OnResultsDoubleClick(object sender, MouseButtonEventArgs e)
+    private async void OnResultsDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (!_submissionGuard.TrySubmit())
         {
@@ -262,23 +270,34 @@ public partial class LauncherWindow : Window
         }
         if (ResultsList.SelectedItem is LauncherPhraseListItem item)
         {
-            HideLauncher();
-            DeliveryRequested?.Invoke(item.Phrase, false, _target, QueryBox.Text?.Trim());
+            await SelectPhraseAsync(item.Phrase);
         }
         e.Handled = true;
     }
 
-    private void OnInsertContextMenuClick(object sender, RoutedEventArgs e)
+    private void OnContextMenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ContextMenu menu) return;
+        var items = menu.Items.OfType<System.Windows.Controls.MenuItem>().ToArray();
+        if (items.Length < 2) return;
+        items[0].Header = IsPracticeMode ? "选择到练习区" : "发送到输入区";
+        items[0].InputGestureText = IsPracticeMode ? "Enter" : "双击";
+        items[1].Header = IsPracticeMode ? "练习模式不使用剪贴板" : "复制内容到剪贴板";
+        items[1].IsEnabled = !IsPracticeMode;
+    }
+
+    private async void OnInsertContextMenuClick(object sender, RoutedEventArgs e)
     {
         if (!_submissionGuard.TrySubmit()) return;
         var item = GetContextMenuItem(sender);
         if (item is null) return;
-        HideLauncher();
-        DeliveryRequested?.Invoke(item.Phrase, false, _target, QueryBox.Text?.Trim());
+        await SelectPhraseAsync(item.Phrase);
     }
 
     private void OnCopyContextMenuClick(object sender, RoutedEventArgs e)
     {
+        // Practice 只允许把选中正文回调给向导，禁止通过右键菜单绕过安全边界写入剪贴板。
+        if (IsPracticeMode) return;
         var item = GetContextMenuItem(sender);
         if (item is not null) System.Windows.Clipboard.SetText(item.Content);
     }
@@ -290,7 +309,7 @@ public partial class LauncherWindow : Window
         return ((menuItem.Parent as System.Windows.Controls.ContextMenu)?.PlacementTarget as FrameworkElement)?.DataContext as LauncherPhraseListItem;
     }
 
-    private void OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private async void OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (SearchHistoryPopup.IsOpen)
         {
@@ -365,12 +384,17 @@ public partial class LauncherWindow : Window
                 }
                 if (ResultsList.SelectedItem is LauncherPhraseListItem item)
                 {
-                    HideLauncher();
-                    // Enter 始终走安全插入；即使按住 Ctrl 也不会在 Launcher 触发直接发送。
-                    DeliveryRequested?.Invoke(item.Phrase, false, _target, QueryBox.Text?.Trim());
+                    // Enter 统一走选择入口；Practice 模式只回调向导。
+                    await SelectPhraseAsync(item.Phrase);
                 }
                 else if (!string.IsNullOrWhiteSpace(QueryBox.Text))
                 {
+                    // Practice 无结果时停留在真实闪念中，不得逃逸到正式新建话术流程。
+                    if (IsPracticeMode)
+                    {
+                        e.Handled = true;
+                        break;
+                    }
                     CreatePhraseRequested?.Invoke(QueryBox.Text.Trim());
                     HideLauncher();
                 }
@@ -384,8 +408,10 @@ public partial class LauncherWindow : Window
         if (_invocationContext is { Mode: LauncherInvocationMode.Practice, SelectionHandler: not null } practice)
         {
             await practice.SelectionHandler(phrase);
+            HideLauncher();
             return;
         }
+        HideLauncher();
         DeliveryRequested?.Invoke(phrase, false, _target, QueryBox.Text?.Trim());
     }
 
@@ -433,5 +459,3 @@ public partial class LauncherWindow : Window
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(nint hWnd);
 }
-
-

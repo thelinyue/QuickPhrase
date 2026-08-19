@@ -22,4 +22,5 @@ public enum LauncherInvocationMode
 /// <summary>Launcher 的通用调用上下文，避免 LauncherWindow 直接依赖向导类型。</summary>
 public sealed record LauncherInvocationContext(
     LauncherInvocationMode Mode,
-    Func<Phrase, Task<bool>>? SelectionHandler = null);
+    Func<Phrase, Task<bool>>? SelectionHandler = null,
+    Action<string, SearchIndexStatus>? SearchHandler = null);

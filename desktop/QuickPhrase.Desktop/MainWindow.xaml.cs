@@ -92,7 +92,7 @@ public partial class MainWindow : Window
         {
             _libraryView = new LibraryView(_commands, _searchHistory);
             _libraryView.RequestEdit += (_, item) => ShowEditorModal(item);
-            _libraryView.RequestNew += (_, _) => ShowEditorModal(null);
+            _libraryView.RequestNew += (_, _) => _ = ShowNewPhraseAsync();
             _libraryView.RequestMove += (_, item) => ShowMoveDialog(item);
             _libraryView.RequestNewCategory += (_, _) => ShowNewCategoryDialog();
             _libraryView.RequestNewSubCategory += (_, c) => ShowNewCategoryDialog(c.Id);
@@ -104,11 +104,43 @@ public partial class MainWindow : Window
         return _libraryView;
     }
 
-    private void ShowNewCategoryDialog(Guid? parentId = null)
+    private Guid? ShowNewCategoryDialog(Guid? parentId = null)
     {
         var dlg = new CategoryDialog(_commands, parentId: parentId) { Owner = this };
         if (dlg.ShowDialog() == true)
+        {
             _ = _libraryView?.ReloadAsync();
+            return dlg.CreatedCategoryId;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 新建话术必须先拥有一级分类。没有分类时给出明确的分支选择；新建分类成功后直接把
+    /// 实际创建的分类传给编辑器，避免用户再次手动选择或误落到未分类状态。
+    /// </summary>
+    private async Task ShowNewPhraseAsync()
+    {
+        var categories = await _commands.ListCategoriesAsync();
+        var topCategory = categories.FirstOrDefault(c => c.ParentId is null);
+        if (topCategory is not null)
+        {
+            ShowEditorModal(null, topCategory.Id);
+            return;
+        }
+
+        var choice = System.Windows.MessageBox.Show(
+            this,
+            "还没有可用分类。\n\n创建话术前，请先创建一个一级分类。\n\n点击“确定”新建分类，点击“取消”返回。",
+            "还没有可用分类",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Information);
+        if (choice != MessageBoxResult.OK) return;
+
+        var createdCategoryId = ShowNewCategoryDialog();
+        if (createdCategoryId is null) return;
+        await (_libraryView?.ReloadAsync() ?? Task.CompletedTask);
+        ShowEditorModal(null, createdCategoryId);
     }
 
     private async Task ShowRenameCategoryDialogAsync(CategoryItem category)

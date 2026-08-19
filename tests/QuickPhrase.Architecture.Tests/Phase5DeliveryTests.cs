@@ -396,7 +396,7 @@ public sealed class Phase5DeliveryTests
 
     private static Phrase CreatePhrase() => new(
         Guid.NewGuid(), "请求设备序列号", "请提供设备序列号（SN），方便我们进一步确认设备信息。", Guid.NewGuid(),
-        ImmutableArray<Tag>.Empty, false, ShortcutMode.None, null, 0, null, 1,
+        false, ShortcutMode.None, null, 0, null, 1,
         DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
     private static Phrase CreatePhrase(string title) => CreatePhrase() with { Id = Guid.NewGuid(), Title = title };

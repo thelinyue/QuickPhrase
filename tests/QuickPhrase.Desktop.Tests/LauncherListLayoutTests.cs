@@ -67,7 +67,7 @@ public sealed class LauncherListLayoutTests
     {
         var phrase = new Phrase(
             Guid.NewGuid(), "标题", "正文", Guid.NewGuid(),
-            ImmutableArray<Tag>.Empty, false, ShortcutMode.None, null,
+            false, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default");
 
         var item = LauncherPhraseListItem.FromPhrase(phrase, 3);

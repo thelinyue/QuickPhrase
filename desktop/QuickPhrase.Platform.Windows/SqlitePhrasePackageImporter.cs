@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Microsoft.Data.Sqlite;
 using QuickPhrase.Core;
 
@@ -28,7 +29,6 @@ internal sealed class SqlitePhrasePackageImporter
         var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         try
         {
-            var packageById = plan.Package.Categories.ToDictionary(x => x.Id);
             var phraseById = plan.Package.Phrases.ToDictionary(x => x.Id);
             var localCategoryIds = new Dictionary<Guid, Guid>();
             foreach (var mapping in plan.CategoryMappings)
@@ -38,10 +38,12 @@ internal sealed class SqlitePhrasePackageImporter
 
                 await using var insertCategory = connection.CreateCommand();
                 insertCategory.Transaction = transaction;
-                insertCategory.CommandText = "INSERT INTO categories(id, parent_id, name, sort_order, version, created_at_utc, updated_at_utc) VALUES ($id, $parentId, $name, $sortOrder, 1, $created, $updated);";
+                insertCategory.CommandText = "INSERT INTO categories(id, parent_id, name, normalized_name, sort_order, version, created_at_utc, updated_at_utc) VALUES ($id, $parentId, $name, $normalized, $sortOrder, 1, $created, $updated);";
                 insertCategory.Parameters.AddWithValue("$id", DbId(mapping.TargetCategoryId));
                 insertCategory.Parameters.AddWithValue("$parentId", mapping.ParentTargetCategoryId.HasValue ? DbId(mapping.ParentTargetCategoryId.Value) : (object)DBNull.Value);
-                insertCategory.Parameters.AddWithValue("$name", mapping.Name);
+                var normalized = NormalizeName(mapping.Name);
+                insertCategory.Parameters.AddWithValue("$name", normalized.Display);
+                insertCategory.Parameters.AddWithValue("$normalized", normalized.Normalized);
                 insertCategory.Parameters.AddWithValue("$sortOrder", mapping.SortOrder);
                 var now = _clock.GetUtcNow().ToString("O");
                 insertCategory.Parameters.AddWithValue("$created", now);
@@ -115,6 +117,12 @@ internal sealed class SqlitePhrasePackageImporter
     }
 
     private static string DbId(Guid id) => id.ToString("D");
+
+    private static (string Display, string Normalized) NormalizeName(string value)
+    {
+        var display = string.Join(' ', value.Normalize(NormalizationForm.FormKC).Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return (display, display.ToUpperInvariant());
+    }
 
     private static void Log(Guid traceId, string code, long started) =>
         Console.WriteLine($"话术包导入：TraceId={traceId:N}，结果码={code}，耗时={Stopwatch.GetElapsedTime(started).TotalMilliseconds:F1}ms。");

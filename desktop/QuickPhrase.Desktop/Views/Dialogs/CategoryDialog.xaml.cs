@@ -13,6 +13,9 @@ public partial class CategoryDialog : Window
     private readonly Category? _existing;
     private readonly Guid? _parentId;
 
+    /// <summary>新建分类成功后返回实际持久化 ID，供“新建话术”流程默认选中。</summary>
+    public Guid? CreatedCategoryId { get; private set; }
+
     public CategoryDialog(ICommandService commands, Category? existing = null, Guid? parentId = null)
     {
         InitializeComponent();
@@ -40,7 +43,11 @@ public partial class CategoryDialog : Window
             RepositoryResult<Category> result = _existing is null
                 ? await _commands.CreateCategoryAsync(new CreateCategoryCommand(Guid.NewGuid(), name, _parentId))
                 : await _commands.RenameCategoryAsync(new RenameCategoryCommand(_existing.Id, _existing.Version, name, _existing.SortOrder));
-            if (result.IsSuccess) DialogResult = true;
+            if (result.IsSuccess)
+            {
+                if (_existing is null) CreatedCategoryId = result.Value?.Id;
+                DialogResult = true;
+            }
             else ErrorText.Text = result.Error?.Message ?? "操作失败";
         }
         catch (Exception ex)

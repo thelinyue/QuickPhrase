@@ -22,6 +22,8 @@ Thumbs.db
 /.arch-*/
 /.build*
 /.core-*/
+/.desktop-*/
+/.platform-*/
 /.platform-diagnostic/
 /.solution-build*/
 /.test-output*/

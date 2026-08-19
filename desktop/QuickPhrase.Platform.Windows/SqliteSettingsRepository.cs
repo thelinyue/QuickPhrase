@@ -92,12 +92,18 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
     {
         public static StoredSettings From(AppSettings settings) => new(settings.LaunchOnStartup, settings.StartMinimized, settings.StayInTrayOnClose, settings.LauncherShortcutDisplay, settings.LauncherShortcutNormalized, settings.AutoSend, settings.ClipboardCompatibilityMode, settings.HasCompletedOnboarding, settings.OnboardingVersion, new Dictionary<string, bool>(settings.LauncherEnabledAdapters, StringComparer.OrdinalIgnoreCase));
 
-        public AppSettings ToAppSettings(long version) => new(version, LaunchOnStartup, StartMinimized, StayInTrayOnClose, LauncherShortcutDisplay, LauncherShortcutNormalized, AutoSend, ClipboardCompatibilityMode, HasCompletedOnboarding, OnboardingVersion)
+        public AppSettings ToAppSettings(long version)
         {
-            LauncherEnabledAdapters = LauncherEnabledAdapters is null
-                ? DefaultLauncherAdapters()
-                : new Dictionary<string, bool>(LauncherEnabledAdapters, StringComparer.OrdinalIgnoreCase),
-        };
+            // 旧版本 JSON 没有 OnboardingVersion：已处理过的用户按版本 1 兼容，未处理用户仍为版本 0。
+            var onboardingVersion = HasCompletedOnboarding && OnboardingVersion == 0 ? 1 : OnboardingVersion;
+            return new AppSettings(version, LaunchOnStartup, StartMinimized, StayInTrayOnClose,
+                LauncherShortcutDisplay, LauncherShortcutNormalized, AutoSend, ClipboardCompatibilityMode,
+                HasCompletedOnboarding, onboardingVersion)
+            {
+                LauncherEnabledAdapters = LauncherEnabledAdapters is null
+                    ? DefaultLauncherAdapters()
+                    : new Dictionary<string, bool>(LauncherEnabledAdapters, StringComparer.OrdinalIgnoreCase),
+            };
+        }
     }
 }
-

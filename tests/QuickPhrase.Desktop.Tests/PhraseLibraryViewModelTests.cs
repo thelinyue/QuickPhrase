@@ -11,7 +11,7 @@ namespace QuickPhrase.Desktop.Tests;
 public class PhraseLibraryViewModelTests
 {
     private static Phrase MakePhrase(string title, string content, Guid categoryId, bool favorite = false, string colorKey = "default")
-        => new(Guid.NewGuid(), title, content, categoryId, ImmutableArray<Tag>.Empty, favorite, ShortcutMode.None, null,
+        => new(Guid.NewGuid(), title, content, categoryId, favorite, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, colorKey);
 
     private static Category MakeCategory(out Guid id, string name = "工作", int sortOrder = 0)

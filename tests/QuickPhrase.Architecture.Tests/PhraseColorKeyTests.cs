@@ -14,7 +14,7 @@ public sealed class PhraseColorKeyTests
         var category = (await runtime.Categories.ListAsync()).First();
 
         var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(
-            Guid.NewGuid(), "默认颜色", "正文", category.Id, [], false, ShortcutMode.None, null));
+            Guid.NewGuid(), "默认颜色", "正文", category.Id, false, ShortcutMode.None, null));
 
         Assert.Equal("default", existing.ColorKey);
         Assert.Equal("default", created.Value!.ColorKey);
@@ -41,7 +41,7 @@ public sealed class PhraseColorKeyTests
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
         var category = (await runtime.Categories.ListAsync()).First();
         var id = Guid.NewGuid();
-        var command = new CreatePhraseCommand(id, "粉色话术", "正文", category.Id, [], false, ShortcutMode.None, null, "pink");
+        var command = new CreatePhraseCommand(id, "粉色话术", "正文", category.Id, false, ShortcutMode.None, null, "pink");
 
         var created = await runtime.Phrases.CreateAsync(command);
         Assert.True(created.IsSuccess);
@@ -56,7 +56,7 @@ public sealed class PhraseColorKeyTests
         var category = (await runtime.Categories.ListAsync()).First();
 
         var result = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(
-            Guid.NewGuid(), "未知颜色", "正文", category.Id, [], false, ShortcutMode.None, null, "not-a-color"));
+            Guid.NewGuid(), "未知颜色", "正文", category.Id, false, ShortcutMode.None, null, "not-a-color"));
 
         Assert.False(result.IsSuccess);
         Assert.Equal("VALIDATION_FAILED", result.Error!.Code);

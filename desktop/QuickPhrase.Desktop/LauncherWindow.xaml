@@ -21,8 +21,8 @@
         <DataTemplate x:Key="LauncherPhraseTemplate">
             <ContentControl Content="{Binding}" ContentTemplate="{StaticResource PhraseListRowTemplate}">
                 <ContentControl.ContextMenu>
-                    <ContextMenu>
-                        <MenuItem Header="发送到输入框" InputGestureText="双击" Click="OnInsertContextMenuClick" />
+                    <ContextMenu Opened="OnContextMenuOpened">
+                        <MenuItem Header="发送到输入区" InputGestureText="双击" Click="OnInsertContextMenuClick" />
                         <MenuItem Header="复制内容到剪贴板" Click="OnCopyContextMenuClick" />
                     </ContextMenu>
                 </ContentControl.ContextMenu>

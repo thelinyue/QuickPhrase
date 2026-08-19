@@ -80,7 +80,7 @@ public sealed class Phase2DataTests
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
         var category = (await runtime.Categories.ListAsync()).Single(x => x.Name == "信息收集");
         var id = Guid.NewGuid();
-        var command = new CreatePhraseCommand(id, "请求设备序列号", "请提供设备序列号（SN），方便我们进一步确认设备信息。", category.Id, ["设备", "SN"], false, ShortcutMode.None, null);
+        var command = new CreatePhraseCommand(id, "请求设备序列号", "请提供设备序列号（SN），方便我们进一步确认设备信息。", category.Id, false, ShortcutMode.None, null);
 
         var created = await runtime.Phrases.CreateAsync(command);
         var repeated = await runtime.Phrases.CreateAsync(command);
@@ -89,9 +89,9 @@ public sealed class Phase2DataTests
         Assert.Equal(created.Value!.Id, repeated.Value!.Id);
         Assert.Equal(19, (await runtime.Phrases.ListAsync()).Count);
 
-        var updated = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(id, created.Value.Version, "请求设备 SN", command.Content, category.Id, ["SN"], false, ShortcutMode.None, null));
+        var updated = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(id, created.Value.Version, "请求设备 SN", command.Content, category.Id, false, ShortcutMode.None, null));
         Assert.True(updated.IsSuccess);
-        var stale = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(id, created.Value.Version, "过期修改", command.Content, category.Id, ["SN"], false, ShortcutMode.None, null));
+        var stale = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(id, created.Value.Version, "过期修改", command.Content, category.Id, false, ShortcutMode.None, null));
         Assert.Equal("VERSION_CONFLICT", stale.Error?.Code);
     }
 
@@ -135,8 +135,8 @@ public sealed class Phase2DataTests
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
         var category = (await runtime.Categories.ListAsync()).Single(x => x.Name == "信息收集");
-        var first = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "高频一", "固定回复一", category.Id, ["重复测试"], false, ShortcutMode.Quick, "Alt + 3"));
-        var second = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "高频二", "固定回复二", category.Id, ["重复测试"], false, ShortcutMode.Quick, "3 + Alt"));
+        var first = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "高频一", "固定回复一", category.Id, false, ShortcutMode.Quick, "Alt + 3"));
+        var second = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "高频二", "固定回复二", category.Id, false, ShortcutMode.Quick, "3 + Alt"));
 
         Assert.True(first.IsSuccess);
         Assert.Equal("SHORTCUT_CONFLICT", second.Error?.Code);
@@ -145,21 +145,85 @@ public sealed class Phase2DataTests
     }
 
     [Fact]
-    public async Task TagsAreNormalizedAndOrphansAreRemoved()
+    public async Task MigrationRunnerAppliesVersionNineAndRemovesTagTables()
     {
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
-        var category = (await runtime.Categories.ListAsync()).Single(x => x.Name == "信息收集");
-        var phrase = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "标签规范化", "正文", category.Id, [" 设备 ", "设备", "Ａ"], false, ShortcutMode.None, null));
-        Assert.True(phrase.IsSuccess);
-        Assert.Equal(2, phrase.Value!.Tags.Length);
-
-        await runtime.Phrases.DeleteAsync(phrase.Value.Id, phrase.Value.Version);
         await using var connection = new SqliteConnection($"Data Source={runtime.DatabasePath};Mode=ReadOnly;Pooling=False");
         await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(1) FROM tags WHERE normalized_name = 'A';";
-        Assert.Equal(0L, (long)(await command.ExecuteScalarAsync())!);
+
+        Assert.Equal(9L, await ScalarAsync(connection, "SELECT MAX(version) FROM schema_migrations;"));
+        Assert.Equal(0L, await ScalarAsync(connection, "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name IN ('tags', 'phrase_tags');"));
+    }
+
+    [Fact]
+    public async Task LegacyRemovedTagsChecksumDoesNotBlockOpening()
+    {
+        using var temp = new TemporaryDirectory();
+        string databasePath;
+        await using (var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path)))
+        {
+            databasePath = runtime.DatabasePath;
+        }
+
+        // 模拟旧版本已删除标签表的数据库：应允许修复 008_remove_tags 历史校验值并继续启动。
+        await ExecuteSqlAsync(databasePath, "DROP TABLE IF EXISTS phrase_tags; DROP TABLE IF EXISTS tags; UPDATE schema_migrations SET checksum = 'legacy-008-remove-tags' WHERE version = 8 AND name = '008_remove_tags';");
+        await using var reopened = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
+
+        await using var connection = new SqliteConnection($"Data Source={reopened.DatabasePath};Mode=ReadOnly;Pooling=False");
+        await connection.OpenAsync();
+        Assert.Equal(9L, await ScalarAsync(connection, "SELECT MAX(version) FROM schema_migrations;"));
+        Assert.Equal(0L, await ScalarAsync(connection, "SELECT COUNT(1) FROM schema_migrations WHERE version = 8 AND checksum = 'legacy-008-remove-tags';"));
+    }
+    [Fact]
+    public async Task LegacyNoOpVersionEightAppliesTagRemovalAsNextMigration()
+    {
+        using var temp = new TemporaryDirectory();
+        var options = new QuickPhraseDataOptions(temp.Path);
+        Directory.CreateDirectory(options.DataDirectory);
+        var migrationNames = new[]
+        {
+            "001_initial",
+            "002_category_hierarchy",
+            "003_phrase_color_key",
+            "004_common_category",
+            "005_phrase_sort_order",
+            "006_fixed_phrase_colors_and_disable_phrase_shortcuts",
+            "007_search_history",
+        };
+
+        await using (var connection = new SqliteConnection($"Data Source={options.DatabasePath};Mode=ReadWriteCreate;Pooling=False"))
+        {
+            await connection.OpenAsync();
+            var assembly = typeof(QuickPhraseDataRuntime).Assembly;
+            for (var index = 0; index < migrationNames.Length; index++)
+            {
+                var version = index + 1;
+                var migrationName = migrationNames[index];
+                var sql = ReadMigrationSql(assembly, migrationName);
+                await ExecuteSqlAsync(connection, sql);
+                await using var record = connection.CreateCommand();
+                record.CommandText = "INSERT INTO schema_migrations(version, name, checksum, applied_at_utc) VALUES ($version, $name, $checksum, $appliedAt);";
+                record.Parameters.AddWithValue("$version", version);
+                record.Parameters.AddWithValue("$name", migrationName);
+                record.Parameters.AddWithValue("$checksum", ComputeChecksum(sql));
+                record.Parameters.AddWithValue("$appliedAt", "2026-08-19T00:00:00.0000000+00:00");
+                await record.ExecuteNonQueryAsync();
+            }
+
+            const string legacyMigrationSql = "-- 008_remove_tags 保留为空操作。正式产品仍支持话术标签，避免破坏既有数据模型。\r\n";
+            await using var legacyRecord = connection.CreateCommand();
+            legacyRecord.CommandText = "INSERT INTO schema_migrations(version, name, checksum, applied_at_utc) VALUES (8, '008_remove_tags', $checksum, $appliedAt);";
+            legacyRecord.Parameters.AddWithValue("$checksum", ComputeChecksum(legacyMigrationSql));
+            legacyRecord.Parameters.AddWithValue("$appliedAt", "2026-08-19T00:00:00.0000000+00:00");
+            await legacyRecord.ExecuteNonQueryAsync();
+        }
+
+        await using var upgraded = await QuickPhraseDataRuntime.OpenAsync(options);
+        await using var verify = new SqliteConnection($"Data Source={upgraded.DatabasePath};Mode=ReadOnly;Pooling=False");
+        await verify.OpenAsync();
+        Assert.Equal(9L, await ScalarAsync(verify, "SELECT MAX(version) FROM schema_migrations;"));
+        Assert.Equal(0L, await ScalarAsync(verify, "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name IN ('tags', 'phrase_tags');"));
     }
 
     [Fact]
@@ -232,7 +296,6 @@ public sealed class Phase2DataTests
         string originalCreatedAt;
         string originalUpdatedAt;
         long originalSortOrder;
-        long originalTagCount;
 
         await using (var connection = new SqliteConnection($"Data Source={options.DatabasePath};Mode=ReadWriteCreate;Pooling=False"))
         {
@@ -266,7 +329,6 @@ public sealed class Phase2DataTests
             originalCreatedAt = (string)(await ScalarAsync(connection, $"SELECT created_at_utc FROM phrases WHERE id='{phraseId}';"))!;
             originalUpdatedAt = (string)(await ScalarAsync(connection, $"SELECT updated_at_utc FROM phrases WHERE id='{phraseId}';"))!;
             originalSortOrder = (long)(await ScalarAsync(connection, $"SELECT sort_order FROM phrases WHERE id='{phraseId}';"))!;
-            originalTagCount = (long)(await ScalarAsync(connection, $"SELECT COUNT(1) FROM phrase_tags WHERE phrase_id='{phraseId}';"))!;
         }
 
         await using (var upgraded = await QuickPhraseDataRuntime.OpenAsync(options))
@@ -287,9 +349,7 @@ public sealed class Phase2DataTests
 
             await using var verify = new SqliteConnection($"Data Source={options.DatabasePath};Mode=ReadOnly;Pooling=False");
             await verify.OpenAsync();
-            Assert.Equal(originalTagCount, (long)(await ScalarAsync(verify, $"SELECT COUNT(1) FROM phrase_tags WHERE phrase_id='{phraseId}';"))!);
-            // 当前正式迁移还包含 007_search_history，本回归验证应确认 006 已执行且后续迁移继续保留。
-            Assert.Equal(7L, (long)(await ScalarAsync(verify, "SELECT MAX(version) FROM schema_migrations;"))!);
+            Assert.Equal(9L, (long)(await ScalarAsync(verify, "SELECT MAX(version) FROM schema_migrations;"))!);
             Assert.Equal(0L, (long)(await ScalarAsync(verify, "SELECT COUNT(1) FROM phrases WHERE shortcut_mode <> 'None' OR shortcut_display IS NOT NULL OR shortcut_normalized IS NOT NULL;"))!);
         }
 
@@ -365,7 +425,7 @@ public sealed class Phase2DataTests
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
         var category = (await runtime.Categories.ListAsync()).Single(x => x.Name == "信息收集");
         var tasks = Enumerable.Range(0, 24).Select(index => runtime.Phrases.CreateAsync(
-            new CreatePhraseCommand(Guid.NewGuid(), $"并发话术 {index}", $"并发正文 {index}", category.Id, [$"并发-{index}"], false, ShortcutMode.None, null))).ToArray();
+            new CreatePhraseCommand(Guid.NewGuid(), $"并发话术 {index}", $"并发正文 {index}", category.Id, false, ShortcutMode.None, null))).ToArray();
         var results = await Task.WhenAll(tasks);
 
         Assert.All(results, result => Assert.True(result.IsSuccess));
@@ -379,24 +439,24 @@ public sealed class Phase2DataTests
         var options = new QuickPhraseDataOptions(temp.Path);
         await using (var runtime = await QuickPhraseDataRuntime.OpenAsync(options)) { }
         var factory = new SqliteConnectionFactory(options.DatabasePath);
-        // 内置迁移已到版本 6（006_fixed_phrase_colors_and_disable_phrase_shortcuts），测试用追加迁移顺延为 7/8。
-        var validV2 = new SqliteMigration(7, "007_test", "CREATE TABLE phase2_test(value TEXT);", "test-checksum");
+        // 内置迁移包含移除标签表的 009，测试用追加迁移顺延为 010/011。
+        var validV2 = new SqliteMigration(10, "010_test", "CREATE TABLE phase2_test(value TEXT);", "test-checksum");
         await new MigrationRunner(options, factory, [validV2]).EnsureMigratedAsync(CancellationToken.None);
         var backup = Assert.Single(Directory.GetFiles(options.BackupDirectory, "*.db"));
         await using (var backupConnection = new SqliteConnection($"Data Source={backup};Mode=ReadOnly;Pooling=False"))
         {
             await backupConnection.OpenAsync();
-            Assert.Equal(6L, await ScalarAsync(backupConnection, "SELECT COUNT(1) FROM schema_migrations;"));
+            Assert.Equal(9L, await ScalarAsync(backupConnection, "SELECT COUNT(1) FROM schema_migrations;"));
         }
 
-        var failing = new SqliteMigration(8, "008_failure", "CREATE TABLE should_rollback(value TEXT); SELECT no_such_function();", "failure-checksum");
+        var failing = new SqliteMigration(11, "011_failure", "CREATE TABLE should_rollback(value TEXT); SELECT no_such_function();", "failure-checksum");
         await Assert.ThrowsAsync<DataStoreException>(() => new MigrationRunner(options, factory, [validV2, failing]).EnsureMigratedAsync(CancellationToken.None));
         await using var connection = await factory.OpenReadAsync(CancellationToken.None);
         Assert.Equal(0L, (long)(await ScalarAsync(connection, "SELECT COUNT(1) FROM sqlite_master WHERE name='should_rollback';"))!);
     }
 
     [Fact]
-    public async Task CategoryDeleteCascadesThroughSubcategoriesPhrasesAndTags()
+    public async Task CategoryDeleteCascadesThroughSubcategoriesAndPhrases()
     {
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
@@ -406,10 +466,10 @@ public sealed class Phase2DataTests
         var childResult = await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "级联子分类", root.Id));
         Assert.True(childResult.IsSuccess);
         var child = childResult.Value!;
-        var rootPhraseResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "级联根话术", "根分类正文", root.Id, ["级联根标签"], false, ShortcutMode.None, null));
+        var rootPhraseResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "级联根话术", "根分类正文", root.Id, false, ShortcutMode.None, null));
         Assert.True(rootPhraseResult.IsSuccess);
         var rootPhrase = rootPhraseResult.Value!;
-        var childPhraseResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "级联子话术", "子分类正文", child.Id, ["级联子标签"], false, ShortcutMode.None, null));
+        var childPhraseResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "级联子话术", "子分类正文", child.Id, false, ShortcutMode.None, null));
         Assert.True(childPhraseResult.IsSuccess);
         var childPhrase = childPhraseResult.Value!;
 
@@ -423,9 +483,6 @@ public sealed class Phase2DataTests
         Assert.Empty(runtime.Search.Search(new SearchRequest("级联根话术")).Items);
         Assert.Empty(runtime.Search.Search(new SearchRequest("级联子话术")).Items);
 
-        await using var connection = new SqliteConnection($"Data Source={runtime.DatabasePath};Pooling=False");
-        await connection.OpenAsync();
-        Assert.Equal(0L, await ScalarAsync(connection, "SELECT COUNT(1) FROM phrase_tags WHERE phrase_id IN ($rootPhrase, $childPhrase);", ("$rootPhrase", rootPhrase.Id.ToString("D")), ("$childPhrase", childPhrase.Id.ToString("D"))));
     }
 
     [Fact]
@@ -436,10 +493,10 @@ public sealed class Phase2DataTests
         var categoryResult = await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "回滚分类"));
         Assert.True(categoryResult.IsSuccess);
         var category = categoryResult.Value!;
-        var keepResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "保留话术", "回滚正文一", category.Id, ["回滚标签一"], false, ShortcutMode.None, null));
+        var keepResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "保留话术", "回滚正文一", category.Id, false, ShortcutMode.None, null));
         Assert.True(keepResult.IsSuccess);
         var keep = keepResult.Value!;
-        var failResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "触发回滚", "回滚正文二", category.Id, ["回滚标签二"], false, ShortcutMode.None, null));
+        var failResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "触发回滚", "回滚正文二", category.Id, false, ShortcutMode.None, null));
         Assert.True(failResult.IsSuccess);
         var fail = failResult.Value!;
         await ExecuteSqlAsync(runtime.DatabasePath, "CREATE TRIGGER fail_category_delete BEFORE DELETE ON phrases WHEN OLD.title = '触发回滚' BEGIN SELECT RAISE(ABORT, '测试删除失败'); END;");
@@ -451,9 +508,6 @@ public sealed class Phase2DataTests
         Assert.Contains((await runtime.Categories.ListAsync()), item => item.Id == category.Id);
         Assert.Contains(await runtime.Phrases.ListAsync(), item => item.Id == keep.Id);
         Assert.Contains(await runtime.Phrases.ListAsync(), item => item.Id == fail.Id);
-        await using var connection = new SqliteConnection($"Data Source={runtime.DatabasePath};Pooling=False");
-        await connection.OpenAsync();
-        Assert.Equal(2L, await ScalarAsync(connection, "SELECT COUNT(1) FROM phrase_tags WHERE phrase_id IN ($keep, $fail);", ("$keep", keep.Id.ToString("D")), ("$fail", fail.Id.ToString("D"))));
     }
     [Fact]
     public async Task CancelledWriteDoesNotReachTheDatabase()
@@ -464,7 +518,7 @@ public sealed class Phase2DataTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runtime.Phrases.CreateAsync(
-            new CreatePhraseCommand(Guid.NewGuid(), "取消写入", "正文", category.Id, [], false, ShortcutMode.None, null), cancellation.Token));
+            new CreatePhraseCommand(Guid.NewGuid(), "取消写入", "正文", category.Id, false, ShortcutMode.None, null), cancellation.Token));
         Assert.DoesNotContain((await runtime.Phrases.ListAsync()), phrase => phrase.Title == "取消写入");
     }
 
@@ -483,7 +537,7 @@ public sealed class Phase2DataTests
         }
         try
         {
-            var result = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "锁定测试", "正文", category.Id, [], false, ShortcutMode.None, null));
+            var result = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "锁定测试", "正文", category.Id, false, ShortcutMode.None, null));
             Assert.Equal("DATABASE_BUSY", result.Error?.Code);
         }
         finally

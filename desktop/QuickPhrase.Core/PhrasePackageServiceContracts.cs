@@ -10,7 +10,7 @@ public sealed record PhrasePackageImportResult(
     string Message,
     Guid TraceId);
 
-/// <summary>话术包服务的进程内契约，Desktop 只依赖此接口，不依赖 ZIP 或 SQLite 实现。</summary>
+/// <summary>话术包服务的进程内契约，Desktop 只依赖此接口，不依赖平台文件或数据库实现。</summary>
 public interface IPhrasePackageService
 {
     Task<PhrasePackageDocument> ReadAsync(string path, CancellationToken cancellationToken = default);

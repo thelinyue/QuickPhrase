@@ -62,4 +62,21 @@ public class SettingsViewModelTests
         Assert.NotNull(saved);
         Assert.Equal("alt+space", saved!.LauncherShortcutNormalized);
     }
+
+    [Fact]
+    public async Task Save_PreservesCompletedOnboardingState()
+    {
+        var fake = new FakeCommandService();
+        await fake.UpdateSettingsAsync(new AppSettings(1, false, false, true, "Alt + Space", "Alt+Space", false, true, true, 1));
+        var vm = new SettingsViewModel(fake);
+        await vm.LoadAsync();
+        vm.StartMinimized = true;
+
+        await vm.SaveAsync();
+
+        var saved = await fake.GetSettingsAsync();
+        Assert.True(saved.HasCompletedOnboarding);
+        Assert.Equal(1, saved.OnboardingVersion);
+        Assert.True(saved.StartMinimized);
+    }
 }

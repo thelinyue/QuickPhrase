@@ -10,7 +10,9 @@ using QuickPhrase.Platform.Windows;
 namespace QuickPhrase.Desktop;
 
 /// <summary>
-/// 鏄惧紡 composition root锛氶泦涓鐞嗘暟鎹繍琛屾椂銆佷富绐楀彛銆佺嫭绔嬭缃獥鍙ｃ€丯ative Launcher銆佹墭鐩樺拰閫€鍑洪『搴忥拷?/// 璁剧疆绐楀彛閲囩敤鍚岃繘绋嬮潪妯℃€佹柟寮忔墦寮€锛屼笉鍒囨崲 MainWindow 鍐呭锛屼篃涓嶉樆濉炰富鐣岄潰鐨勫悗缁搷浣滐拷?/// </summary>
+/// Desktop 组合根：集中管理数据运行时、主窗口、独立设置窗口、闪念、托盘和退出顺序。
+/// 设置窗口与主窗口在同一进程内以非模态方式打开，不切换主窗口内容，也不阻塞主界面的后续操作。
+/// </summary>
 internal sealed class ApplicationController : IAsyncDisposable
 {
     private readonly SingleInstanceCoordinator _singleInstance;
@@ -42,6 +44,7 @@ internal sealed class ApplicationController : IAsyncDisposable
     private bool _onboardingHandled;
     private bool _suppressManagementCloseExit;
     private bool _hotkeyConflictNotified;
+    private string? _startupWarning;
 
     public ApplicationController()
     {
@@ -93,7 +96,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"寮€鏈哄惎鍔ㄧ姸鎬佹牎鍑嗗け璐ワ細{exception.Message}");
+            Console.Error.WriteLine($"开机启动状态校准失败：{exception.Message}");
         }
         _hotkeys.Configure(_settings);
         UpdateLauncherScope();
@@ -143,10 +146,10 @@ internal sealed class ApplicationController : IAsyncDisposable
             icon = new Icon(iconStream);
             menu = new Forms.ContextMenuStrip();
             menu.Items.Add("打开话术库", null, (_, _) => OpenManagement());
-            menu.Items.Add("快速搜索", null, (_, _) => OpenLauncher(captureTarget: false));
-            menu.Items.Add("鏂板缓璇濇湳", null, (_, _) => OpenManagement("editor"));
+            menu.Items.Add("打开闪念", null, (_, _) => OpenLauncher(captureTarget: false));
+            menu.Items.Add("新建话术", null, (_, _) => OpenManagement("editor"));
             menu.Items.Add("暂停快捷键", null, (_, _) => _hotkeys.SetPaused(!_hotkeys.IsPaused));
-            menu.Items.Add("璁剧疆", null, (_, _) => OpenSettings());
+            menu.Items.Add("设置", null, (_, _) => OpenSettings());
             menu.Items.Add(new Forms.ToolStripSeparator());
             menu.Items.Add("退出", null, (_, _) => System.Windows.Application.Current.Shutdown());
 
@@ -211,14 +214,21 @@ internal sealed class ApplicationController : IAsyncDisposable
         }
 
         if (_commands is null) return;
-        var settingsWindow = new SettingsWindow(_commands);
-        _settingsWindow = settingsWindow;
-        settingsWindow.Closed += (_, _) =>
+        _settingsWindow = new SettingsWindow(_commands);
+        _settingsWindow.RestartOnboardingRequested += SettingsWindow_RestartOnboardingRequested;
+        _settingsWindow.Closed += (_, _) =>
         {
+            if (_settingsWindow is not null)
+                _settingsWindow.RestartOnboardingRequested -= SettingsWindow_RestartOnboardingRequested;
             _settingsWindow = null;
             RequestShutdownIfNoProductWindows();
         };
-        settingsWindow.Show();
+        _settingsWindow.Show();
+    }
+
+    private void SettingsWindow_RestartOnboardingRequested(object? sender, EventArgs e)
+    {
+        OpenOnboarding(manualOpen: true);
     }
 
     /// <summary>
@@ -245,6 +255,8 @@ internal sealed class ApplicationController : IAsyncDisposable
         if (_dataRuntime is null) return;
         if (_launcher is { IsVisible: true })
         {
+            if (invocationContext is not null)
+                _launcher.Open(initialQuery, target, phraseId, _adapterResolver.GetStatus(target), invocationContext);
             _launcher.Activate();
             return;
         }
@@ -264,7 +276,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         if (resolvedTarget is not null) _lastExternalTarget = resolvedTarget;
         var status = _adapterResolver.GetStatus(resolvedTarget);
         _hotkeys.SetLauncherVisible(true);
-        _launcher.Open(initialQuery, resolvedTarget, phraseId, status);
+        _launcher.Open(initialQuery, resolvedTarget, phraseId, status, invocationContext);
     }
 
     public bool ShouldShowOnboarding => _settings is { HasCompletedOnboarding: false };
@@ -273,12 +285,36 @@ internal sealed class ApplicationController : IAsyncDisposable
     public void OpenOnboarding(bool manualOpen = false)
     {
         if (_commands is null || _settings is null) return;
-        _onboarding ??= new OnboardingCoordinator(
+        if (_onboarding is not null)
+        {
+            _ = _onboarding.OpenAsync(manualOpen);
+            return;
+        }
+
+        // 每次重新打开都使用最新设置快照，避免设置窗口保存后向导仍读取旧的开机启动状态。
+        _onboarding = new OnboardingCoordinator(
             _commands,
             _settings,
             startPractice: StartOnboardingPracticeAsync,
-            editShortcut: EditOnboardingShortcutAsync);
-        _ = _onboarding.OpenAsync(manualOpen);
+            editShortcut: EditOnboardingShortcutAsync,
+            startupWarningProvider: () => _startupWarning,
+            stopPractice: StopOnboardingPractice);
+        var coordinator = _onboarding;
+        coordinator.Closed += () =>
+        {
+            if (ReferenceEquals(_onboarding, coordinator)) _onboarding = null;
+        };
+        coordinator.Completed -= OnboardingCompleted;
+        coordinator.Completed += OnboardingCompleted;
+        _ = coordinator.OpenAsync(manualOpen);
+    }
+
+    private void OnboardingCompleted()
+    {
+        _onboarding = null;
+        // 手动引导可能在设置窗口仍打开时更新了设置版本；刷新设置基线，保留用户尚未保存的控件修改。
+        _ = _settingsWindow?.ViewModel.RefreshBaseAsync();
+        OpenManagement();
     }
 
     private Task<bool> StartOnboardingPracticeAsync(OnboardingViewModel viewModel)
@@ -289,24 +325,53 @@ internal sealed class ApplicationController : IAsyncDisposable
             {
                 viewModel.MarkPracticeInserted(phrase.Content);
                 return Task.FromResult(true);
-            });
+            },
+            (query, status) => viewModel.MarkPracticeSearched(status));
         _hotkeys.SetPracticeMode(true);
         OpenLauncher(captureTarget: false, invocationContext: context);
-        viewModel.MarkPracticeSearched();
+        if (!_hotkeys.LauncherAvailable)
+        {
+            _launcher?.HideLauncher();
+            _hotkeys.SetPracticeMode(false);
+            viewModel.SetPracticeError("闪念快捷键注册失败，可能与其他程序冲突。请修改快捷键后重试。");
+            return Task.FromResult(false);
+        }
         return Task.FromResult(true);
     }
 
-    private Task EditOnboardingShortcutAsync(OnboardingViewModel viewModel)
+    private async Task EditOnboardingShortcutAsync(OnboardingViewModel viewModel)
     {
-        if (_settings is null) return Task.CompletedTask;
+        if (_commands is null || _settings is null) return;
+        var current = await _commands.GetSettingsAsync();
         var owner = System.Windows.Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w is OnboardingWindow);
-        var dialog = new HotkeyCaptureDialog(_settings.LauncherShortcutDisplay) { Owner = owner };
-        if (dialog.ShowDialog() == true)
+        var dialog = new HotkeyCaptureDialog(current.LauncherShortcutDisplay) { Owner = owner };
+        if (dialog.ShowDialog() != true) return;
+
+        RepositoryResult<AppSettings> result = RepositoryResult<AppSettings>.Failure(
+            new DataError("SETTINGS_SAVE_FAILED", "快捷键保存失败，请重试。"));
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            var next = _settings with { LauncherShortcutDisplay = dialog.Display, LauncherShortcutNormalized = dialog.Normalized };
-            _ = ApplySettingsAsync(next, CancellationToken.None);
+            var next = current with
+            {
+                LauncherShortcutDisplay = dialog.Display,
+                LauncherShortcutNormalized = dialog.Normalized,
+            };
+            result = await ApplySettingsAsync(next, CancellationToken.None);
+            if (result.IsSuccess || !string.Equals(result.Error?.Code, "VERSION_CONFLICT", StringComparison.OrdinalIgnoreCase) || attempt == 1)
+                break;
+            current = await _commands.GetSettingsAsync();
         }
-        return Task.CompletedTask;
+
+        if (result.IsSuccess && result.Value is not null)
+            viewModel.ApplySettingsSnapshot(result.Value);
+        else
+            viewModel.SetShortcutError(result.Error?.Message ?? "快捷键保存失败，请重试。");
+    }
+
+    private void StopOnboardingPractice()
+    {
+        if (_launcher?.IsPracticeMode == true) _launcher.HideLauncher();
+        else _hotkeys.SetPracticeMode(false);
     }
 
     public async ValueTask DisposeAsync()
@@ -315,7 +380,6 @@ internal sealed class ApplicationController : IAsyncDisposable
         _onboarding?.Close();
         _settingsWindow?.Close();
         _management?.Close();
-        _onboarding?.Close();
         _launcher?.DisposeLauncher();
         _tray?.Dispose();
         _tray = null;
@@ -427,14 +491,25 @@ internal sealed class ApplicationController : IAsyncDisposable
             return RepositoryResult<AppSettings>.Failure(new DataError("DATA_UNAVAILABLE", "本地数据运行时尚未就绪"));
 
         var previousCommand = _startupRegistration.GetCommand();
+        _startupWarning = null;
         try
         {
-            _startupRegistration.SetEnabled(settings.LaunchOnStartup,
-                settings.LaunchOnStartup ? GetStartupExecutablePath() : null);
+            // 启动项是 Windows 外部副作用。注册失败只记录可读警告，不能阻止设置和引导状态落库。
+            try
+            {
+                _startupRegistration.SetEnabled(settings.LaunchOnStartup,
+                    settings.LaunchOnStartup ? GetStartupExecutablePath() : null);
+            }
+            catch (Exception exception)
+            {
+                _startupWarning = $"开机启动设置未能同步：{exception.Message}。引导仍会完成，你可以稍后在设置中重试。";
+                Console.Error.WriteLine($"开机启动设置同步失败：{exception.Message}");
+            }
+
             var result = await _dataRuntime.Settings.SaveAsync(settings, settings.Version, cancellationToken);
             if (!result.IsSuccess)
             {
-                _startupRegistration.SetRawCommand(previousCommand);
+                try { _startupRegistration.SetRawCommand(previousCommand); } catch { }
                 return result;
             }
 
@@ -448,7 +523,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         catch (Exception exception)
         {
             try { _startupRegistration.SetRawCommand(previousCommand); } catch { }
-            return RepositoryResult<AppSettings>.Failure(new DataError("STARTUP_REGISTRATION_FAILED", $"寮€鏈哄惎鍔ㄨ缃け璐ワ細{exception.Message}"));
+            return RepositoryResult<AppSettings>.Failure(new DataError("SETTINGS_SAVE_FAILED", $"设置保存失败：{exception.Message}"));
         }
     }
 
@@ -456,7 +531,7 @@ internal sealed class ApplicationController : IAsyncDisposable
     {
         var path = Environment.ProcessPath;
         if (string.IsNullOrWhiteSpace(path) || Path.GetFileNameWithoutExtension(path).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("褰撳墠寮€鍙戣繍琛屾柟寮忔病鏈夊彲娉ㄥ唽鐨?QuickPhrase.exe锛涜浣跨敤鍙戝竷鐗堢▼搴忋€?");
+            throw new InvalidOperationException("当前开发运行方式没有可注册的 QuickPhrase.exe；请使用发布版程序。");
         return path;
     }
 
@@ -466,7 +541,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         _onboardingHandled = true;
         var result = await _dataRuntime.Settings.SaveAsync(_settings with { HasCompletedOnboarding = true }, _settings.Version);
         if (result.IsSuccess && result.Value is not null) _settings = result.Value;
-        else Console.Error.WriteLine($"棣栨浣跨敤鐘舵€佷繚瀛樺け璐ワ細{result.Error?.Message ?? "鏈煡閿欒"}");
+        else Console.Error.WriteLine($"首次使用状态保存失败：{result.Error?.Message ?? "未知错误"}");
         _onboarding?.Close();
         _onboarding = null;
         if (openLauncher) OpenLauncher("", captureTarget: false); else OpenManagement();
@@ -503,6 +578,7 @@ internal sealed class ApplicationController : IAsyncDisposable
     private void OnLauncherHidden()
     {
         _hotkeys.SetLauncherVisible(false);
+        _hotkeys.SetPracticeMode(false);
         UpdateLauncherScope();
     }
 
@@ -535,20 +611,3 @@ internal sealed class ApplicationController : IAsyncDisposable
         await _dataRuntime.Phrases.IncrementUsageAsync(phraseId, DateTimeOffset.UtcNow, cancellationToken);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

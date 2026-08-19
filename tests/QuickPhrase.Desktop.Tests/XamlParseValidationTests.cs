@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using QuickPhrase.Core;
 using QuickPhrase.Desktop;
 using QuickPhrase.Desktop.Tests.Fakes;
+using QuickPhrase.Desktop.Onboarding;
 using QuickPhrase.Desktop.ViewModels;
 using Xunit;
 
@@ -69,21 +70,40 @@ public class XamlParseValidationTests
                 var fake = new FakeCommandService();
                 var phrase = new Phrase(
                     Guid.NewGuid(), "示例标题", "示例正文", Guid.NewGuid(),
-                    ImmutableArray<Tag>.Empty, false, ShortcutMode.None, null,
+                    false, ShortcutMode.None, null,
                     0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default");
                 var pvm = new PhraseItemViewModel(phrase, "示例分类");
 
-                TryRender("OnboardingWindow", () => new OnboardingWindow(), errors);
+                var history = new SearchHistoryCoordinator(new EmptySearchHistoryRepository());
+                var package = new PhrasePackageDocument(
+                    new PhrasePackageManifest(
+                        PhrasePackageFormat.Format,
+                        PhrasePackageFormat.Version,
+                        Guid.NewGuid(),
+                        "示例话术包",
+                        DateTimeOffset.UtcNow,
+                        0,
+                        0),
+                    Array.Empty<PhrasePackageCategory>(),
+                    Array.Empty<PhrasePackagePhrase>());
+                var packageSnapshot = new PhrasePackageLocalSnapshot(
+                    Array.Empty<Category>(),
+                    Array.Empty<Phrase>());
+                var importVm = new ImportPhrasePackageViewModel(fake, package, packageSnapshot);
+                var exportVm = new ExportPhrasePackageViewModel(packageSnapshot);
+                TryRender("OnboardingWindow", () => new OnboardingWindow(new OnboardingViewModel(fake, new AppSettings(1, false, false, true, "Alt + Space", "alt+space", false, true))), errors);
                 TryRender("NavigationConfirmDialog", () => new NavigationConfirmDialog(), errors);
                 TryRender("HotkeyCaptureDialog", () => new HotkeyCaptureDialog("Alt + Space"), errors);
                 TryRender("CategoryDialog", () => new CategoryDialog(fake), errors);
+                TryRender("ImportPhrasePackageDialog", () => new ImportPhrasePackageDialog(importVm), errors);
+                TryRender("ExportPhrasePackageDialog", () => new ExportPhrasePackageDialog(exportVm), errors);
                 TryRender("PhraseMoveDialog", () => new PhraseMoveDialog(fake, pvm), errors);
-                TryRender("LibraryView", () => new LibraryView(fake), errors);
+                TryRender("LibraryView", () => new LibraryView(fake, history), errors);
                 TryRender("SettingsView", () => new SettingsView(fake), errors);
                 TryRender("SettingsWindow", () => new SettingsWindow(fake), errors);
                 TryRender("EditorView", () => new EditorView(fake, pvm), errors);
-                TryRender("LauncherWindow", () => new LauncherWindow(null!), errors);
-                TryRender("MainWindow", () => new MainWindow(fake, "library"), errors);
+                TryRender("LauncherWindow", () => new LauncherWindow(null!, history), errors);
+                TryRender("MainWindow", () => new MainWindow(fake, history, "library"), errors);
 
                 app.Shutdown();
             }
@@ -109,6 +129,18 @@ public class XamlParseValidationTests
         while (current is not null && !File.Exists(Path.Combine(current.FullName, "QuickPhrase.sln")))
             current = current.Parent;
         return current?.FullName ?? throw new DirectoryNotFoundException("找不到 QuickPhrase 仓库根目录。");
+    }
+
+    private sealed class EmptySearchHistoryRepository : ISearchHistoryRepository
+    {
+        public Task<IReadOnlyList<SearchHistoryEntry>> ListAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SearchHistoryEntry>>([]);
+
+        public Task<RepositoryResult<SearchHistoryEntry>> RecordAsync(string query, CancellationToken cancellationToken = default)
+            => Task.FromResult(RepositoryResult<SearchHistoryEntry>.Success(new SearchHistoryEntry(query.Trim(), DateTimeOffset.Now)));
+
+        public Task<RepositoryResult<bool>> ClearAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(RepositoryResult<bool>.Success(true));
     }
 
     private static void TryRender(string name, Func<FrameworkElement> factory, List<string> errors)

@@ -11,6 +11,7 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly object _rebuildLock = new();
     private Task? _rebuildTask;
+    private bool _rebuildRequested;
 
     private PhraseSearchRuntime(IPhraseRepository source, SearchService search)
     {
@@ -120,7 +121,7 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
             ScheduleRebuild();
             return;
         }
-        _searchInternalUpsert(entry);
+        _searchInternalUpsert(entry, markReady: !wasDirty);
         if (wasDirty) ScheduleRebuild();
         await Task.CompletedTask;
     }
@@ -143,7 +144,7 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
         await Task.CompletedTask;
     }
 
-    private void _searchInternalUpsert(SearchService.SearchEntry entry) => _search.Upsert(entry);
+    private void _searchInternalUpsert(SearchService.SearchEntry entry, bool markReady = true) => _search.Upsert(entry, markReady);
     private void _searchInternalRemove(Guid id) => _search.Remove(id);
 
     private void ScheduleRebuild()
@@ -151,8 +152,31 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
         if (_shutdown.IsCancellationRequested) return;
         lock (_rebuildLock)
         {
+            _rebuildRequested = true;
             if (_rebuildTask is { IsCompleted: false }) return;
-            _rebuildTask = Task.Run(RebuildAsync, CancellationToken.None);
+            _rebuildTask = Task.Run(ProcessRebuildRequestsAsync, CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// 串行消费索引重建请求。若一次重建尚未结束时又发生提交，保留下一次请求，
+    /// 避免当前任务结束前的竞态让索引永久停留在脏状态。
+    /// </summary>
+    private async Task ProcessRebuildRequestsAsync()
+    {
+        while (true)
+        {
+            lock (_rebuildLock)
+            {
+                if (_shutdown.IsCancellationRequested || !_rebuildRequested)
+                {
+                    _rebuildTask = null;
+                    return;
+                }
+                _rebuildRequested = false;
+            }
+
+            await RebuildAsync();
         }
     }
 

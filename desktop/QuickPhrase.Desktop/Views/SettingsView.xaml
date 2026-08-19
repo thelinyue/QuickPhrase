@@ -60,6 +60,26 @@
                     <CheckBox Style="{StaticResource ToggleSwitchStyle}" Grid.Column="1" IsChecked="{Binding StartMinimized}" VerticalAlignment="Center" />
                 </Grid>
 
+                <!-- 使用引导：只请求应用层重新打开向导，不在设置页删除或创建业务数据。 -->
+                <Border Background="{StaticResource AppBackgroundBrush}"
+                        BorderBrush="{StaticResource DividerBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="14"
+                        Margin="0,16,0,4">
+                    <StackPanel>
+                        <TextBlock Text="使用引导" Style="{StaticResource TextBody}" />
+                        <TextBlock Text="重新体验创建分类、添加话术和使用闪念的步骤。已有数据会被保留。"
+                                   Style="{StaticResource TextCaption}"
+                                   Margin="0,4,0,10"
+                                   TextWrapping="Wrap" />
+                        <Button Style="{StaticResource SecondaryButton}"
+                                Content="重新开始使用引导"
+                                Command="{Binding RestartOnboardingCommand}"
+                                HorizontalAlignment="Left" />
+                    </StackPanel>
+                </Border>
+
                 <Border Height="1" Background="{StaticResource DividerBrush}" Margin="0,16,0,4" />
 
                 <!-- 快捷键 -->
@@ -71,8 +91,8 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="Quick Launcher" Style="{StaticResource TextBody}" />
-                        <TextBlock Text="呼出快捷话术搜索" Style="{StaticResource TextCaption}" />
+                        <TextBlock Text="闪念" Style="{StaticResource TextBody}" />
+                        <TextBlock Text="按快捷键打开闪念" Style="{StaticResource TextCaption}" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <Border Style="{StaticResource ShortcutBadge}">
@@ -131,6 +151,20 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <Border Height="1" Background="{StaticResource DividerBrush}" Margin="0,20,0,4" />
+
+                <!-- 数据管理：只提供本地话术包入口，不混入标签、颜色或设置数据。 -->
+                <TextBlock Text="数据管理" Style="{StaticResource TextH2}" Margin="0,8,0,4" />
+                <TextBlock Text="管理本机 QuickPhrase 的话术数据。" Style="{StaticResource TextCaption}" Margin="0,0,0,12" />
+                <StackPanel Orientation="Horizontal">
+                    <Button Style="{StaticResource SecondaryButton}" Content="导入话术包"
+                            Command="{Binding DataManagement.RequestImportCommand}" Margin="0,0,8,0" />
+                    <Button Style="{StaticResource SecondaryButton}" Content="导出话术包"
+                            Command="{Binding DataManagement.RequestExportCommand}" />
+                </StackPanel>
+                <TextBlock Text="{Binding DataManagement.StatusMessage}" Style="{StaticResource TextCaption}" Margin="0,10,0,0" />
+                <TextBlock Text="{Binding DataManagement.ErrorMessage}" Foreground="{StaticResource DangerBrush}"
+                           Style="{StaticResource TextCaption}" TextWrapping="Wrap" Margin="0,4,0,0" />
             </StackPanel>
         </ScrollViewer>
 

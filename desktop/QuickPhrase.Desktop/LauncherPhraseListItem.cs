@@ -4,7 +4,7 @@ namespace QuickPhrase.Desktop;
 
 /// <summary>
 /// Launcher 对 Core 搜索结果的轻量显示适配模型。
-/// 只暴露共享行模板需要的序号、标题和正文；CategoryId、标签及时间字段仍留在 Phrase 中，绝不进入 Launcher 视觉层。
+/// 只暴露共享行模板需要的序号、标题和正文；CategoryId 及时间字段仍留在 Phrase 中，绝不进入 Launcher 视觉层。
 /// </summary>
 public sealed class LauncherPhraseListItem
 {

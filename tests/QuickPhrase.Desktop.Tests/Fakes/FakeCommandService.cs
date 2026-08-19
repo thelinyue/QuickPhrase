@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,12 +22,18 @@ public sealed class FakeCommandService : ICommandService
 
     public void Seed(IEnumerable<Phrase> phrases) => _phrases.AddRange(phrases);
     public int DeleteCategoryCalls { get; private set; }
+    public bool ReturnSettingsConflictOnce { get; set; }
+    public int SettingsUpdateCalls { get; private set; }
     public CreatePhraseCommand? LastCreatedPhraseCommand { get; private set; }
     public UpdatePhraseCommand? LastUpdatedPhraseCommand { get; private set; }
     // 测试钩子：允许模拟搜索请求乱序完成，验证 ViewModel 只接受最新查询结果。
     public Func<string, CancellationToken, Task>? BeforeSearchAsync { get; set; }
     public event Action<string>? SearchCompleted;
     public void Seed(IEnumerable<Category> categories) => _categories.AddRange(categories);
+    public PhrasePackageDocument? NextPackageDocument { get; set; }
+    public PhrasePackageDocument? LastWrittenPackage { get; private set; }
+    public PhrasePackageImportPlan? LastImportedPlan { get; private set; }
+    public PhrasePackageImportResult ImportResult { get; set; } = new(true, 0, 0, 0, "PACKAGE_IMPORT_OK", "话术包导入完成。", Guid.NewGuid());
 
     public Task<IReadOnlyList<Phrase>> ListPhrasesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<Phrase>>(_phrases.ToArray());
@@ -55,7 +60,6 @@ public sealed class FakeCommandService : ICommandService
         LastCreatedPhraseCommand = command;
         var phrase = new Phrase(
             command.Id, command.Title, command.Content, command.CategoryId,
-            command.Tags.Select(t => new Tag(Guid.NewGuid(), t, t)).ToImmutableArray(),
             command.Favorite, command.ShortcutMode,
             command.Shortcut is null ? null : new ShortcutValue(command.Shortcut, command.Shortcut),
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, command.ColorKey,
@@ -152,6 +156,15 @@ public sealed class FakeCommandService : ICommandService
 
     public Task<RepositoryResult<AppSettings>> UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken = default)
     {
+        SettingsUpdateCalls++;
+        if (ReturnSettingsConflictOnce)
+        {
+            ReturnSettingsConflictOnce = false;
+            _settings = _settings with { Version = _settings.Version + 1, StartMinimized = true };
+            return Task.FromResult(RepositoryResult<AppSettings>.Failure(
+                new DataError("VERSION_CONFLICT", "设置已被其他操作修改。")));
+        }
+
         _settings = settings with { Version = settings.Version + 1 };
         return Task.FromResult(RepositoryResult<AppSettings>.Success(_settings));
     }
@@ -160,17 +173,19 @@ public sealed class FakeCommandService : ICommandService
         Task.FromResult(new PhrasePackageLocalSnapshot(_categories.ToArray(), _phrases.ToArray()));
 
     public Task<PhrasePackageDocument> ReadPhrasePackageAsync(string path, CancellationToken cancellationToken = default) =>
-        Task.FromException<PhrasePackageDocument>(new NotSupportedException("测试替身不读取话术包文件。"));
+        NextPackageDocument is null
+            ? Task.FromException<PhrasePackageDocument>(new NotSupportedException("测试替身未配置话术包。"))
+            : Task.FromResult(NextPackageDocument);
 
-    public Task WritePhrasePackageAsync(string path, PhrasePackageDocument document, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
+    public Task WritePhrasePackageAsync(string path, PhrasePackageDocument document, CancellationToken cancellationToken = default)
+    {
+        LastWrittenPackage = document;
+        return Task.CompletedTask;
+    }
 
-    public Task<PhrasePackageImportResult> ImportPhrasePackageAsync(PhrasePackageImportPlan plan, CancellationToken cancellationToken = default) =>
-        Task.FromException<PhrasePackageImportResult>(new NotSupportedException("测试替身不导入话术包。"));}
-
-
-
-
-
-
-
+    public Task<PhrasePackageImportResult> ImportPhrasePackageAsync(PhrasePackageImportPlan plan, CancellationToken cancellationToken = default)
+    {
+        LastImportedPlan = plan;
+        return Task.FromResult(ImportResult);
+    }
+}

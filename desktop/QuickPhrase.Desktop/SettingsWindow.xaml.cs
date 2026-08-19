@@ -11,8 +11,8 @@ using QuickPhrase.Desktop.ViewModels;
 namespace QuickPhrase.Desktop;
 
 /// <summary>
-/// �������ô��ڡ����ڱ��ַ�ģ̬���������Կɲ��������ñ��汾����������
-/// SettingsView/SettingsViewModel��������ͨ�������� ICommandService д�뱾�����òִ���
+/// 设置窗口只负责承载设置视图和关闭确认，不直接访问持久化实现。
+/// SettingsView 与 SettingsViewModel 通过 ICommandService 保存本地设置。
 /// </summary>
 public partial class SettingsWindow : Window
 {
@@ -22,13 +22,20 @@ public partial class SettingsWindow : Window
 
     public SettingsViewModel ViewModel => _settingsView.ViewModel;
 
+    /// <summary>设置页请求重新打开使用引导时，由应用编排层决定窗口切换与数据恢复。</summary>
+    public event EventHandler? RestartOnboardingRequested;
+
     public SettingsWindow(ICommandService commands)
     {
         InitializeComponent();
         _settingsView = new SettingsView(commands);
         _settingsView.CloseRequested += SettingsView_CloseRequested;
+        _settingsView.RestartOnboardingRequested += SettingsView_RestartOnboardingRequested;
         ContentRegion.Content = _settingsView;
     }
+
+    private void SettingsView_RestartOnboardingRequested(object? sender, EventArgs e) =>
+        RestartOnboardingRequested?.Invoke(this, e);
 
     private void SettingsWindow_Loaded(object sender, RoutedEventArgs e)
     {
@@ -113,6 +120,7 @@ public partial class SettingsWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _settingsView.CloseRequested -= SettingsView_CloseRequested;
+        _settingsView.RestartOnboardingRequested -= SettingsView_RestartOnboardingRequested;
         base.OnClosed(e);
     }
 }
