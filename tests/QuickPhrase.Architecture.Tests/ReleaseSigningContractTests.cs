@@ -83,12 +83,60 @@ public sealed class ReleaseSigningContractTests
         Assert.Equal(2, workflow.Split(
             "signpath/github-action-submit-signing-request@v2",
             StringSplitOptions.None).Length - 1);
-        Assert.Contains("secrets.SIGNPATH_API_TOKEN", workflow, StringComparison.Ordinal);
-        Assert.Contains("vars.SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG", workflow, StringComparison.Ordinal);
-        Assert.Contains("vars.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG", workflow, StringComparison.Ordinal);
-        Assert.DoesNotMatch(
-            new Regex("(?i)api-token:\\s*['\"]?(?!\\$\\{\\{)", RegexOptions.CultureInvariant),
-            workflow);
+        foreach (var expected in new[]
+        {
+            "workflow_dispatch",
+            "confirmWeComAcceptance",
+            "confirmWin11Acceptance",
+            "environment: production-signing",
+            "actions/upload-artifact@v4",
+            "output-artifact-directory",
+            "wait-for-completion: true",
+            "Get-AuthenticodeSignature",
+            "finalize-signed-release.ps1",
+            "secrets.SIGNPATH_API_TOKEN",
+            "vars.SIGNPATH_ORGANIZATION_ID",
+            "vars.SIGNPATH_PROJECT_SLUG",
+            "vars.SIGNPATH_SIGNING_POLICY_SLUG",
+            "vars.SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG",
+            "vars.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG",
+        })
+            Assert.Contains(expected, workflow, StringComparison.Ordinal);
+
+        var tokenValues = Regex.Matches(
+            workflow,
+            @"(?im)^\s*api-token:\s*(?<value>.+)$",
+            RegexOptions.CultureInvariant);
+        Assert.Equal(2, tokenValues.Count);
+        Assert.All(tokenValues.Cast<Match>(), match =>
+            Assert.StartsWith("${{ secrets.", match.Groups["value"].Value.Trim(), StringComparison.Ordinal));
+        Assert.DoesNotContain("pull_request", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("push:", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("automatic approval", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("gh release create", workflow, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SignPathApplicationGuideContainsPublicEvidenceAndManualSetupBoundaries()
+    {
+        var guide = File.ReadAllText(Path.Combine(Root, "docs", "signpath-application.md"));
+        foreach (var expected in new[]
+        {
+            "https://github.com/thelinyue/QuickPhrase",
+            "thelinyue",
+            "Author / Committer",
+            "Reviewer",
+            "Approver",
+            "MFA",
+            "GitHub App",
+            "Open Source Project",
+            "SIGNPATH_API_TOKEN",
+            "SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG",
+            "SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG",
+            "v0.0.1-rc.1",
+        })
+            Assert.Contains(expected, guide, StringComparison.Ordinal);
+        Assert.DoesNotContain("SIGNPATH_API_TOKEN=", guide, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -109,6 +157,7 @@ public sealed class ReleaseSigningContractTests
         })
             Assert.Contains(expected, workflow, StringComparison.Ordinal);
     }
+
     [Fact]
     public void CandidateWorkflowCannotPublishAStableRelease()
     {
