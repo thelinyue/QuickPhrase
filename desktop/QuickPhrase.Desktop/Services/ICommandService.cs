@@ -14,7 +14,7 @@ public interface ICommandService
     Task<RepositoryResult<Phrase>> CreatePhraseAsync(CreatePhraseCommand command, CancellationToken cancellationToken = default);
     Task<RepositoryResult<Phrase>> UpdatePhraseAsync(UpdatePhraseCommand command, CancellationToken cancellationToken = default);
     Task<bool> DeletePhraseAsync(Guid id, long? expectedVersion, CancellationToken cancellationToken = default);
-    Task<bool> InsertPhraseAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<bool> InsertPhraseAsync(Phrase phrase, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Category>> ListCategoriesAsync(CancellationToken cancellationToken = default);
     Task<RepositoryResult<Category>> CreateCategoryAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default);
     Task<RepositoryResult<Category>> RenameCategoryAsync(RenameCategoryCommand command, CancellationToken cancellationToken = default);

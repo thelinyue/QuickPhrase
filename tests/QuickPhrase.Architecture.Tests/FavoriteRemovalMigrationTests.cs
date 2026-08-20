@@ -5,7 +5,7 @@ using QuickPhrase.Platform.Windows;
 namespace QuickPhrase.Architecture.Tests;
 
 /// <summary>
-/// 锁定收藏能力退出后的领域契约和 SQLite v1 到 v2 数据迁移。
+/// 锁定收藏能力退出后的领域契约和 SQLite v1 到当前版本的数据迁移。
 /// 迁移只允许删除收藏列和值，不能以重建整个数据库为代价破坏其他有效开发数据。
 /// </summary>
 public sealed class FavoriteRemovalMigrationTests
@@ -56,7 +56,7 @@ public sealed class FavoriteRemovalMigrationTests
     }
 
     [Fact]
-    public async Task FreshDatabaseUsesSchemaVersion2WithoutFavoriteColumnOrIndex()
+    public async Task FreshDatabaseUsesCurrentSchemaWithoutFavoriteColumnOrIndex()
     {
         using var temp = new TemporaryDirectory();
         await using (var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path)))
@@ -65,13 +65,13 @@ public sealed class FavoriteRemovalMigrationTests
         }
 
         var databasePath = new QuickPhraseDataOptions(temp.Path).DatabasePath;
-        Assert.Equal(2L, await ScalarLongAsync(databasePath, "PRAGMA user_version;"));
+        Assert.Equal(3L, await ScalarLongAsync(databasePath, "PRAGMA user_version;"));
         Assert.False(await ColumnExistsAsync(databasePath, "phrases", "favorite"));
         Assert.False(await IndexExistsAsync(databasePath, "ix_phrases_favorite"));
     }
 
     [Fact]
-    public async Task Version1DatabaseMigratesToVersion2AndPreservesNonFavoriteData()
+    public async Task Version1DatabaseMigratesToCurrentVersionAndPreservesNonFavoriteData()
     {
         using var temp = new TemporaryDirectory();
         var options = new QuickPhraseDataOptions(temp.Path);
@@ -123,7 +123,7 @@ public sealed class FavoriteRemovalMigrationTests
             Assert.Equal("迁移搜索", Assert.Single(history).Query);
         }
 
-        Assert.Equal(2L, await ScalarLongAsync(options.DatabasePath, "PRAGMA user_version;"));
+        Assert.Equal(3L, await ScalarLongAsync(options.DatabasePath, "PRAGMA user_version;"));
         Assert.False(await ColumnExistsAsync(options.DatabasePath, "phrases", "favorite"));
         Assert.False(await IndexExistsAsync(options.DatabasePath, "ix_phrases_favorite"));
         Assert.Equal("ok", await ScalarStringAsync(options.DatabasePath, "PRAGMA integrity_check;"));

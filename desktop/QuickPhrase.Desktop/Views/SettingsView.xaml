@@ -35,6 +35,7 @@
                     <ListBoxItem Style="{StaticResource Style.ListItem.Navigation}" Content="快捷键" AutomationProperties.Name="快捷键设置" />
                     <ListBoxItem Style="{StaticResource Style.ListItem.Navigation}" Content="发送行为" AutomationProperties.Name="发送行为设置" />
                     <ListBoxItem Style="{StaticResource Style.ListItem.Navigation}" Content="应用适配" AutomationProperties.Name="应用适配设置" />
+                    <ListBoxItem Style="{StaticResource Style.ListItem.Navigation}" Content="企业同步" AutomationProperties.Name="企业同步设置" />
                     <ListBoxItem Style="{StaticResource Style.ListItem.Navigation}" Content="数据管理" AutomationProperties.Name="数据管理设置" />
                 </ListBox>
                 <TextBlock Grid.Row="1"
@@ -225,6 +226,73 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 企业同步：默认本地模式；密码只进入当前连接命令，不持久化。 -->
+                    <Border x:Name="EnterpriseSyncSection"
+                            Visibility="Collapsed"
+                            DataContext="{Binding EnterpriseSync}">
+                        <StackPanel>
+                            <TextBlock Text="企业同步" Style="{StaticResource Style.Text.Title.Large}" />
+                            <TextBlock Text="连接企业内网中的闪语中心；未连接或服务器离线时，本地话术仍可正常使用。"
+                                       Style="{StaticResource Style.Text.Body.Small}"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       TextWrapping="Wrap"
+                                       Margin="{StaticResource Thickness.Settings.HeaderDescription}" />
+                            <Border Style="{StaticResource Style.Setting.Group}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding HttpRiskMessage}"
+                                               Foreground="{DynamicResource Brush.Status.Warning}"
+                                               Style="{StaticResource Style.Text.Body.Small}"
+                                               TextWrapping="Wrap"
+                                               Margin="{StaticResource Thickness.Settings.DataStatus}" />
+                                    <TextBlock Text="Hub 地址" Style="{StaticResource Style.Text.Caption}" Margin="{StaticResource Thickness.Settings.SyncFieldLabel}" />
+                                    <TextBox Style="{StaticResource Style.Input.Default}"
+                                             Text="{Binding HubAddress, UpdateSourceTrigger=PropertyChanged}"
+                                             AutomationProperties.Name="Hub 地址" />
+                                    <TextBlock Text="账号" Style="{StaticResource Style.Text.Caption}"
+                                               Margin="{StaticResource Thickness.Settings.SyncFieldLabel}" />
+                                    <TextBox Style="{StaticResource Style.Input.Default}"
+                                             Text="{Binding Account, UpdateSourceTrigger=PropertyChanged}"
+                                             AutomationProperties.Name="企业账号" />
+                                    <TextBlock Text="密码" Style="{StaticResource Style.Text.Caption}"
+                                               Margin="{StaticResource Thickness.Settings.SyncFieldLabel}" />
+                                    <PasswordBox x:Name="EnterprisePassword"
+                                                 Style="{StaticResource Style.Input.Password}"
+                                                 PasswordChanged="EnterprisePassword_PasswordChanged"
+                                                 AutomationProperties.Name="企业账号密码" />
+                                    <TextBlock Text="设备名称" Style="{StaticResource Style.Text.Caption}"
+                                               Margin="{StaticResource Thickness.Settings.SyncFieldLabel}" />
+                                    <TextBox Style="{StaticResource Style.Input.Default}"
+                                             Text="{Binding DeviceName, UpdateSourceTrigger=PropertyChanged}"
+                                             AutomationProperties.Name="设备名称" />
+                                    <StackPanel Orientation="Horizontal" Margin="{StaticResource Thickness.Settings.SectionTitle}">
+                                        <Button Style="{StaticResource Style.Button.Primary}" Content="连接 / 重新认证" Command="{Binding ConnectCommand}" />
+                                        <Button Style="{StaticResource Style.Button.Secondary}" Content="立即同步" Command="{Binding SynchronizeCommand}" Margin="{StaticResource Thickness.Gap.Inline.SM}" />
+                                        <Button Style="{StaticResource Style.Button.Secondary}" Content="断开连接" Command="{Binding DisconnectCommand}" Margin="{StaticResource Thickness.Gap.Inline.SM}" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource Style.Text.Body.Small}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding LastSynchronizedText, StringFormat=最后同步：{0}}" Style="{StaticResource Style.Text.Caption}" />
+                                    <TextBlock Text="{Binding ReleaseNumber, StringFormat=企业发布号：{0}}" Style="{StaticResource Style.Text.Caption}" />
+                                    <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource Brush.Status.Error}" Style="{StaticResource Style.Text.Caption}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding TraceId, StringFormat=TraceId：{0}}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Caption}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding TraceId}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                    <DataTrigger Binding="{Binding TraceId}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <Button Style="{StaticResource Style.Button.Danger}"
+                                            Content="清除本机企业缓存"
+                                            HorizontalAlignment="Left"
+                                            Margin="{StaticResource Thickness.Settings.SectionTitle}"
+                                            Click="ClearEnterpriseCache_Click" />
+                                </StackPanel>
                             </Border>
                         </StackPanel>
                     </Border>

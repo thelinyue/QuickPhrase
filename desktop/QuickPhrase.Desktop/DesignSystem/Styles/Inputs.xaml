@@ -84,6 +84,37 @@
         <Setter Property="Height" Value="{StaticResource Size.Input.Search}" />
     </Style>
 
+    <!-- PasswordBox 复用普通输入框的语义尺寸、边框和焦点环，但保留原生密码字符呈现。 -->
+    <Style x:Key="Style.Input.Password" TargetType="PasswordBox">
+        <Setter Property="Height" Value="{StaticResource Size.Control.Default}" />
+        <Setter Property="Padding" Value="{StaticResource Thickness.Control.Input}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Default}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
+        <Setter Property="BorderThickness" Value="{StaticResource Thickness.Border.Default}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="CaretBrush" Value="{DynamicResource Brush.Accent.Primary}" />
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+        <Setter Property="FontSize" Value="{StaticResource Typography.Body.Medium.FontSize}" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="PasswordBox">
+                    <Border x:Name="Root" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{StaticResource Radius.Control}">
+                        <Grid>
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
+                            <Border x:Name="FocusRing" BorderBrush="{DynamicResource Brush.Border.Focus}" BorderThickness="{StaticResource Thickness.Border.Default}" CornerRadius="{StaticResource Radius.Control}" IsHitTestVisible="False" Visibility="Collapsed" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" /></Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="FocusRing" Property="Visibility" Value="Visible" /></Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Root" Property="Background" Value="{DynamicResource Brush.Surface.Hover}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" /></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!--
         ComboBox 使用原生 PART_Popup 和 ItemsPresenter，保留键盘选择与容器虚拟化能力；
         视觉状态只修改语义 Brush，不在页面复制下拉框模板。

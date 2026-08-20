@@ -14,7 +14,8 @@ public sealed class CommandService : ICommandService
     private readonly ISearchService _search;
     private readonly ICategoryRepository _categories;
     private readonly ISettingsRepository _settings;
-    private readonly Func<Guid, CancellationToken, Task<bool>> _insertPhrase;
+    private readonly Func<Phrase, CancellationToken, Task<bool>> _insertPhrase;
+    private readonly IEnterpriseCatalog? _enterprise;
     private readonly Func<AppSettings, CancellationToken, Task<RepositoryResult<AppSettings>>>? _saveSettings;
     private readonly IPhrasePackageService? _phrasePackages;
 
@@ -23,21 +24,27 @@ public sealed class CommandService : ICommandService
         ISearchService search,
         ICategoryRepository categories,
         ISettingsRepository settings,
-        Func<Guid, CancellationToken, Task<bool>>? insertPhrase = null,
+        Func<Phrase, CancellationToken, Task<bool>>? insertPhrase = null,
         Func<AppSettings, CancellationToken, Task<RepositoryResult<AppSettings>>>? saveSettings = null,
-        IPhrasePackageService? phrasePackages = null)
+        IPhrasePackageService? phrasePackages = null,
+        IEnterpriseCatalog? enterprise = null)
     {
         _phrases = phrases;
         _search = search;
         _categories = categories;
         _settings = settings;
         _insertPhrase = insertPhrase ?? ((_, _) => Task.FromResult(false));
+        _enterprise = enterprise;
         _saveSettings = saveSettings;
         _phrasePackages = phrasePackages;
     }
 
-    public Task<IReadOnlyList<Phrase>> ListPhrasesAsync(CancellationToken cancellationToken = default) =>
-        _phrases.ListAsync(cancellationToken);
+    public async Task<IReadOnlyList<Phrase>> ListPhrasesAsync(CancellationToken cancellationToken = default)
+    {
+        var personal = await _phrases.ListAsync(cancellationToken);
+        if (_enterprise is null) return personal;
+        return personal.Concat(await _enterprise.ListPhrasesAsync(cancellationToken)).ToArray();
+    }
 
     public Task<IReadOnlyList<Phrase>> SearchPhrasesAsync(string query, int limit, CancellationToken cancellationToken = default)
     {
@@ -47,8 +54,12 @@ public sealed class CommandService : ICommandService
         return Task.FromResult(phrases);
     }
 
-    public Task<Phrase?> GetPhraseAsync(Guid id, CancellationToken cancellationToken = default) =>
-        _phrases.GetAsync(id, cancellationToken);
+    public async Task<Phrase?> GetPhraseAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var personal = await _phrases.GetAsync(id, cancellationToken);
+        if (personal is not null || _enterprise is null) return personal;
+        return (await _enterprise.ListPhrasesAsync(cancellationToken)).FirstOrDefault(item => item.Id == id);
+    }
 
     public async Task<RepositoryResult<Phrase>> CreatePhraseAsync(CreatePhraseCommand command, CancellationToken cancellationToken = default)
     {
@@ -72,11 +83,15 @@ public sealed class CommandService : ICommandService
         return result.IsSuccess && result.Value?.Deleted == true;
     }
 
-    public Task<bool> InsertPhraseAsync(Guid id, CancellationToken cancellationToken = default) =>
-        _insertPhrase(id, cancellationToken);
+    public Task<bool> InsertPhraseAsync(Phrase phrase, CancellationToken cancellationToken = default) =>
+        _insertPhrase(phrase, cancellationToken);
 
-    public Task<IReadOnlyList<Category>> ListCategoriesAsync(CancellationToken cancellationToken = default) =>
-        _categories.ListAsync(cancellationToken);
+    public async Task<IReadOnlyList<Category>> ListCategoriesAsync(CancellationToken cancellationToken = default)
+    {
+        var personal = await _categories.ListAsync(cancellationToken);
+        if (_enterprise is null) return personal;
+        return personal.Concat(await _enterprise.ListCategoriesAsync(cancellationToken)).ToArray();
+    }
 
     public async Task<RepositoryResult<Category>> CreateCategoryAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default)
     {

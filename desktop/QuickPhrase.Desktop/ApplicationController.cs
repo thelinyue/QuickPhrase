@@ -1,3 +1,4 @@
+using System.Net.NetworkInformation;
 using System.Drawing;
 using System.IO;
 using System.Windows;
@@ -29,6 +30,7 @@ internal sealed class ApplicationController : IAsyncDisposable
     private const string ApplicationIconResourceUri =
         "pack://application:,,,/QuickPhrase;component/Assets/quickphrase.ico";
     private QuickPhraseDataRuntime? _dataRuntime;
+    private CancellationTokenSource? _networkSyncDebounce;
     private SearchHistoryCoordinator? _searchHistory;
     private ICommandService? _commands;
     private AppSettings? _settings;
@@ -71,6 +73,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         _hotkeys.LauncherHotkeyPressed += ToggleLauncherFromHotkey;
         _hotkeys.StatusChanged += OnHotkeyStatusChanged;
         _foregroundWatcher.Changed += OnForegroundChanged;
+        NetworkChange.NetworkAvailabilityChanged += NetworkAvailabilityChanged;
     }
 
     public async Task InitializeDataAsync(CancellationToken cancellationToken = default)
@@ -85,7 +88,8 @@ internal sealed class ApplicationController : IAsyncDisposable
             _dataRuntime.Settings,
             InsertPhraseFromManagementAsync,
             ApplySettingsAsync,
-            _dataRuntime);
+            _dataRuntime,
+            _dataRuntime.EnterpriseCatalog);
 
         _settings = await _dataRuntime.Settings.LoadAsync(cancellationToken);
         try
@@ -100,6 +104,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         }
         await _hotkeys.ConfigureAsync(_settings, cancellationToken);
         UpdateLauncherScope();
+        _ = SynchronizeEnterpriseQuietlyAsync("STARTUP");
     }
 
     public bool TryBecomePrimary() => _singleInstance.TryBecomePrimary();
@@ -205,7 +210,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         }
 
         if (_commands is null) return;
-        _settingsWindow = new SettingsWindow(_commands);
+        _settingsWindow = new SettingsWindow(_commands, _dataRuntime?.SyncAccounts, _dataRuntime?.SyncProvider);
         _settingsWindow.RestartOnboardingRequested += SettingsWindow_RestartOnboardingRequested;
         _settingsWindow.Closed += (_, _) =>
         {
@@ -400,6 +405,9 @@ internal sealed class ApplicationController : IAsyncDisposable
         _trayIconStream = null;
         await _deliveryQueue.DisposeAsync();
         await _hotkeys.DisposeAsync();
+        NetworkChange.NetworkAvailabilityChanged -= NetworkAvailabilityChanged;
+        _networkSyncDebounce?.Cancel();
+        _networkSyncDebounce?.Dispose();
         _foregroundWatcher.Dispose();
         _adapterResolver.Dispose();
         await _usageUpdates.DisposeAsync();
@@ -419,11 +427,8 @@ internal sealed class ApplicationController : IAsyncDisposable
 
     private void OnLauncherClosed(object? sender, EventArgs e) => _hotkeys.SetLauncherVisible(false);
 
-    private async Task<bool> InsertPhraseFromManagementAsync(Guid phraseId, CancellationToken cancellationToken)
+    private async Task<bool> InsertPhraseFromManagementAsync(Phrase phrase, CancellationToken cancellationToken)
     {
-        if (_commands is null) return false;
-        var phrase = await _commands.GetPhraseAsync(phraseId, cancellationToken);
-        if (phrase is null) return false;
         var result = await QueueOrDeliverPhraseAsync(phrase, _lastExternalTarget, SendMode.InsertOnly, query: null);
         return result?.IsSuccess == true && result.Inserted;
     }
@@ -641,6 +646,38 @@ internal sealed class ApplicationController : IAsyncDisposable
         else _hotkeyConflictNotified = false;
     }
 
+    private void NetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e)
+    {
+        if (!e.IsAvailable || _dataRuntime is null) return;
+        _networkSyncDebounce?.Cancel();
+        _networkSyncDebounce?.Dispose();
+        _networkSyncDebounce = new CancellationTokenSource();
+        var token = _networkSyncDebounce.Token;
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(TimeSpan.FromSeconds(2), token); await SynchronizeEnterpriseQuietlyAsync("NETWORK_RECOVERY", token); }
+            catch (OperationCanceledException) { }
+        }, CancellationToken.None);
+    }
+
+    private async Task SynchronizeEnterpriseQuietlyAsync(string stage, CancellationToken cancellationToken = default)
+    {
+        if (_dataRuntime is null) return;
+        try
+        {
+            var state = await _dataRuntime.SyncAccounts.GetStateAsync(cancellationToken);
+            if (!state.Connected) return;
+            var result = await _dataRuntime.SyncProvider.SynchronizeAsync(new SyncRequest(), cancellationToken);
+            if (result.Status is SyncStatus.Failed or SyncStatus.AuthenticationRequired)
+                Console.Error.WriteLine($"企业同步未完成。阶段：{stage}；结果码：{result.ErrorCode ?? "UNKNOWN"}；TraceId：{result.TraceId ?? "none"}");
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"企业同步异常。阶段：{stage}；结果码：ENTERPRISE_SYNC_FAILED；异常类型：{exception.GetType().Name}");
+        }
+    }
+
     private void OnForegroundChanged() => DispatchToUi(UpdateLauncherScope);
 
     private void OnLauncherHidden()
@@ -671,7 +708,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         else dispatcher.BeginInvoke(action);
     }
 
-    private Task RecordUsageAsync(Guid phraseId, CancellationToken cancellationToken) => _usageUpdates.EnqueueAsync(phraseId, cancellationToken);
+    private Task RecordUsageAsync(Phrase phrase, CancellationToken cancellationToken) => phrase.Scope == PhraseScope.Enterprise ? Task.CompletedTask : _usageUpdates.EnqueueAsync(phrase.Id, cancellationToken);
 
     private async Task RecordUsageCoreAsync(Guid phraseId, CancellationToken cancellationToken)
     {

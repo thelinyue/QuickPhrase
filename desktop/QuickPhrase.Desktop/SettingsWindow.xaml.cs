@@ -25,10 +25,10 @@ public partial class SettingsWindow : Window
     /// <summary>设置页请求重新打开使用引导时，由应用编排层决定窗口切换与数据恢复。</summary>
     public event EventHandler? RestartOnboardingRequested;
 
-    public SettingsWindow(ICommandService commands)
+    public SettingsWindow(ICommandService commands, QuickPhrase.Core.ISyncAccountService? syncAccounts = null, QuickPhrase.Core.ISyncProvider? syncProvider = null)
     {
         InitializeComponent();
-        _settingsView = new SettingsView(commands);
+        _settingsView = new SettingsView(commands, syncAccounts, syncProvider);
         _settingsView.CloseRequested += SettingsView_CloseRequested;
         _settingsView.RestartOnboardingRequested += SettingsView_RestartOnboardingRequested;
         ContentRegion.Content = _settingsView;
