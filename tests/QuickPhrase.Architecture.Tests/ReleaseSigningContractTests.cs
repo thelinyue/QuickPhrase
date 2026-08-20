@@ -176,6 +176,21 @@ public sealed class ReleaseSigningContractTests
         }
     }
     [Fact]
+    public void ManualReleaseWorkflowsUsePowerShellSevenForUtf8Diagnostics()
+    {
+        foreach (var fileName in new[] { "release-candidate.yml", "release-signed.yml" })
+        {
+            var workflow = File.ReadAllText(Path.Combine(
+                Root,
+                ".github",
+                "workflows",
+                fileName));
+
+            Assert.Contains("shell: pwsh", workflow, StringComparison.Ordinal);
+            Assert.DoesNotContain("shell: powershell", workflow, StringComparison.Ordinal);
+        }
+    }
+    [Fact]
     public void CandidateWorkflowCannotPublishAStableRelease()
     {
         var workflow = File.ReadAllText(Path.Combine(
