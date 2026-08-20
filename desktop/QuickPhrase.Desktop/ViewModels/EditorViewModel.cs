@@ -10,7 +10,7 @@ namespace QuickPhrase.Desktop.ViewModels;
 
 /// <summary>
 /// 话术编辑器视图模型。新建和编辑共用同一套流程，所有持久化读写经 ICommandService 完成。
-/// 当前版本不提供话术级快捷键；保存时始终提交 None/null，历史字段由数据库迁移清理。
+/// 当前版本不提供话术级快捷键；保存时始终提交 None/null。
 /// </summary>
 public partial class EditorViewModel : ObservableObject, INavigationGuard
 {
@@ -116,14 +116,14 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
             if (_isNew)
             {
                 result = await _commands.CreatePhraseAsync(new CreatePhraseCommand(
-                    _id, Title.Trim(), Content, SelectedCategoryId, false,
-                     ShortcutMode.None, null, colorKey));
+                    _id, Title.Trim(), Content, SelectedCategoryId,
+                    ShortcutMode.None, null, colorKey));
             }
             else
             {
                 result = await _commands.UpdatePhraseAsync(new UpdatePhraseCommand(
-                    _id, _version, Title.Trim(), Content, SelectedCategoryId, false,
-                     ShortcutMode.None, null, colorKey));
+                    _id, _version, Title.Trim(), Content, SelectedCategoryId,
+                    ShortcutMode.None, null, colorKey));
             }
             if (result.IsSuccess && result.Value is not null)
             {
@@ -152,12 +152,7 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
     }
 
     private static string NormalizeColorKey(string? colorKey) =>
-        (string.IsNullOrWhiteSpace(colorKey) ? "default" : colorKey.Trim().ToLowerInvariant()) switch
-        {
-            "red" => "pink",
-            "yellow" => "tan",
-            _ => string.IsNullOrWhiteSpace(colorKey) ? "default" : colorKey.Trim().ToLowerInvariant(),
-        };
+        string.IsNullOrWhiteSpace(colorKey) ? "default" : colorKey.Trim().ToLowerInvariant();
 
     [RelayCommand]
     private async Task Save() => await SaveAsync();
@@ -192,12 +187,3 @@ public sealed record ColorKeyOption(string Key, string Label, string Hex)
         return brush;
     }
 }
-
-
-
-
-
-
-
-
-

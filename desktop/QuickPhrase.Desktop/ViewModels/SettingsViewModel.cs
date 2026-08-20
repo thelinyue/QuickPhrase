@@ -39,7 +39,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _startMinimized;
     [ObservableProperty] private bool _stayInTrayOnClose;
     [ObservableProperty] private ShortcutChord _launcherShortcut = RecommendedShortcut;
-    [ObservableProperty] private bool _autoSend;
+    [ObservableProperty] private bool _quickSendWithoutConfirmation;
     [ObservableProperty] private bool _clipboardCompatibilityMode;
     [ObservableProperty] private ObservableCollection<AdapterToggleItem> _adapters = new();
     [ObservableProperty] private string? _errorMessage;
@@ -72,7 +72,7 @@ public partial class SettingsViewModel : ObservableObject
             StartMinimized = settings.StartMinimized;
             StayInTrayOnClose = settings.StayInTrayOnClose;
             LauncherShortcut = settings.LauncherShortcut;
-            AutoSend = settings.AutoSend;
+            QuickSendWithoutConfirmation = settings.QuickSendWithoutConfirmation;
             ClipboardCompatibilityMode = settings.ClipboardCompatibilityMode;
             ReplaceAdapters(settings.LauncherEnabledAdapters);
             ErrorMessage = null;
@@ -207,7 +207,7 @@ public partial class SettingsViewModel : ObservableObject
             StartMinimized = StartMinimized,
             StayInTrayOnClose = StayInTrayOnClose,
             LauncherShortcut = chord,
-            AutoSend = AutoSend,
+            QuickSendWithoutConfirmation = QuickSendWithoutConfirmation,
             ClipboardCompatibilityMode = ClipboardCompatibilityMode,
             LauncherEnabledAdapters = adapters,
         };
@@ -251,7 +251,7 @@ public partial class SettingsViewModel : ObservableObject
     partial void OnLaunchOnStartupChanged(bool value) => QueueApply();
     partial void OnStartMinimizedChanged(bool value) => QueueApply();
     partial void OnStayInTrayOnCloseChanged(bool value) => QueueApply();
-    partial void OnAutoSendChanged(bool value) => QueueApply();
+    partial void OnQuickSendWithoutConfirmationChanged(bool value) => QueueApply();
     partial void OnClipboardCompatibilityModeChanged(bool value) => QueueApply();
 
     /// <summary>

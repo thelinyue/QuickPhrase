@@ -26,16 +26,23 @@ public sealed class Phase3SearchTests
     }
 
     [Fact]
-    public async Task DataRuntimeExposesSearchOverSeededPhrases()
+    public async Task DataRuntimeExposesSearchOverUserCreatedPhrases()
     {
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
+        var category = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "搜索测试"))).Value!;
+        var titles = new[] { "恢复出厂设置", "恢复网络", "恢复账户", "恢复设备", "恢复服务", "恢复订单", "恢复通用" };
+        foreach (var title in titles)
+        {
+            var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), title, $"请处理：{title}", category.Id, ShortcutMode.None, null));
+            Assert.True(created.IsSuccess, created.Error?.Message);
+        }
 
         var initials = runtime.Search.Search(new SearchRequest("hfcc"));
         var multiple = runtime.Search.Search(new SearchRequest("hf"));
 
         Assert.Contains(initials.Items, result => result.Phrase.Title == "恢复出厂设置");
-        Assert.InRange(multiple.Items.Length, 6, 8);
+        Assert.Equal(7, multiple.Items.Length);
     }
 
     [Fact]
@@ -158,11 +165,11 @@ public sealed class Phase3SearchTests
         var repository = new FakePhraseRepository([original]);
         await using var runtime = await PhraseSearchRuntime.CreateAsync(repository, new MappingPinyinProvider());
 
-        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新增话术", "新增正文", category, false, ShortcutMode.None, null));
+        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新增话术", "新增正文", category, ShortcutMode.None, null));
         Assert.True(created.IsSuccess);
         Assert.Equal(created.Value!.Id, runtime.Search.Search(new SearchRequest("新增话术")).Items.Single().Phrase.Id);
 
-        var updated = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(original.Id, original.Version, "更新话术", "更新正文", category, false, ShortcutMode.None, null));
+        var updated = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(original.Id, original.Version, "更新话术", "更新正文", category, ShortcutMode.None, null));
         Assert.True(updated.IsSuccess);
         Assert.Empty(runtime.Search.Search(new SearchRequest("原始话术")).Items);
         Assert.Equal(original.Id, runtime.Search.Search(new SearchRequest("更新话术")).Items.Single().Phrase.Id);
@@ -193,14 +200,14 @@ public sealed class Phase3SearchTests
         var repository = new FakePhraseRepository([Phrase("one", "设备说明", "正文", 1, DateTimeOffset.UtcNow)]);
         var provider = new MappingPinyinProvider { AlwaysFail = true };
         await using var runtime = await PhraseSearchRuntime.CreateAsync(repository, provider);
-        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新话术", "新正文", Guid.NewGuid(), false, ShortcutMode.None, null));
+        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新话术", "新正文", Guid.NewGuid(), ShortcutMode.None, null));
 
         Assert.True(created.IsSuccess);
         Assert.True(runtime.Search.Status.State is SearchIndexState.Dirty or SearchIndexState.Rebuilding);
         Assert.Empty(runtime.Search.Search(new SearchRequest("新话术")).Items);
 
         provider.AlwaysFail = false;
-        var retry = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "恢复索引", "恢复正文", Guid.NewGuid(), false, ShortcutMode.None, null));
+        var retry = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "恢复索引", "恢复正文", Guid.NewGuid(), ShortcutMode.None, null));
         Assert.True(retry.IsSuccess);
         await WaitForAsync(() => runtime.Search.Status.State == SearchIndexState.Ready);
 
@@ -219,7 +226,7 @@ public sealed class Phase3SearchTests
     }
 
     private static Phrase Phrase(string id, string title, string content, int usage, DateTimeOffset updated, Guid? categoryId = null) =>
-        new(StableId(id), title, content, categoryId ?? StableId($"category-{id}"), false, ShortcutMode.None, null, usage, updated, 1, updated.AddMinutes(-1), updated);
+        new(StableId(id), title, content, categoryId ?? StableId($"category-{id}"), ShortcutMode.None, null, usage, updated, 1, updated.AddMinutes(-1), updated);
 
 
     private static Guid StableId(string value) => new(SHA256.HashData(Encoding.UTF8.GetBytes(value)).AsSpan(0, 16));
@@ -257,7 +264,7 @@ public sealed class Phase3SearchTests
         public Task<RepositoryResult<Phrase>> CreateAsync(CreatePhraseCommand command, CancellationToken cancellationToken = default)
         {
             var now = DateTimeOffset.UtcNow;
-            var phrase = new Phrase(command.Id, command.Title, command.Content, command.CategoryId, command.Favorite, command.ShortcutMode, null, 0, null, 1, now, now);
+            var phrase = new Phrase(command.Id, command.Title, command.Content, command.CategoryId, command.ShortcutMode, null, 0, null, 1, now, now);
             _phrases[phrase.Id] = phrase;
             return Task.FromResult(RepositoryResult<Phrase>.Success(phrase, new CommittedDataChange("phrase", phrase.Id, "create", now)));
         }

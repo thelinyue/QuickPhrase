@@ -48,19 +48,19 @@
                      GotKeyboardFocus="QueryBox_GotKeyboardFocus"
                      LostKeyboardFocus="QueryBox_LostKeyboardFocus"
                      TextChanged="OnQueryChanged" />
-            <Popup x:Name="SearchHistoryPopup"
-                   PlacementTarget="{Binding ElementName=QueryBox}"
-                   Placement="Top"
-                   VerticalOffset="-4"
-                   StaysOpen="False"
-                   AllowsTransparency="True"
-                   Width="{Binding ActualWidth, ElementName=QueryBox}"
-                   PopupAnimation="Fade"
-                   LostKeyboardFocus="SearchHistoryPopup_LostKeyboardFocus">
+            <Border x:Name="SearchHistoryHost"
+                    Grid.Row="1"
+                    Margin="{StaticResource Thickness.Gap.Stack.Before.XS}"
+                    Width="{Binding ActualWidth, ElementName=QueryBox}"
+                    Panel.ZIndex="10"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Top"
+                    Visibility="Collapsed"
+                    LostKeyboardFocus="SearchHistoryHost_LostKeyboardFocus">
                 <shared:SearchHistoryView x:Name="SearchHistoryPanel"
                                           QuerySelected="SearchHistoryPanel_QuerySelected"
                                           ClearRequested="SearchHistoryPanel_ClearRequested" />
-            </Popup>
+            </Border>
 
             <ListBox x:Name="ResultsList"
                      Grid.Row="1"
@@ -116,7 +116,7 @@
                     <TextBlock x:Name="QueueText"
                                Visibility="Collapsed"
                                Style="{StaticResource Style.Text.Label}"
-                               Foreground="{DynamicResource Brush.Brand.Primary}"
+                               Foreground="{DynamicResource Brush.Accent.Primary}"
                                HorizontalAlignment="Right" />
                     <TextBlock x:Name="TargetText"
                                Text="未捕获目标 · 仅支持预览或安全复制"
@@ -129,8 +129,8 @@
                                Margin="{StaticResource Thickness.Gap.Stack.Before.XS}" />
                 </StackPanel>
                 <TextBlock Text="↑ ↓ 选择" Style="{StaticResource Style.Text.Caption}" Margin="{StaticResource Thickness.Launcher.FooterHint}" />
-                <TextBlock x:Name="InsertHintText" Text="Enter 插入" Style="{StaticResource Style.Text.Label}" Foreground="{DynamicResource Brush.Brand.Primary}" Margin="{StaticResource Thickness.Launcher.FooterHint}" />
-                <TextBlock x:Name="SendHintText" Text="自动发送不支持" Style="{StaticResource Style.Text.Caption}" Margin="{StaticResource Thickness.Launcher.FooterHint}" />
+                <TextBlock x:Name="InsertHintText" Text="Enter 插入" Style="{StaticResource Style.Text.Label}" Foreground="{DynamicResource Brush.Accent.Primary}" Margin="{StaticResource Thickness.Launcher.FooterHint}" />
+                <TextBlock x:Name="SendHintText" Text="Ctrl+Enter 显式发送" Style="{StaticResource Style.Text.Caption}" Margin="{StaticResource Thickness.Launcher.FooterHint}" />
                 <TextBlock x:Name="PreviewHintText" Text="Tab 预览 · Esc 关闭" Style="{StaticResource Style.Text.Caption}" />
             </DockPanel>
         </Grid>

@@ -5,8 +5,8 @@ using QuickPhrase.Core;
 namespace QuickPhrase.Platform.Windows;
 
 /// <summary>
-/// Windows 投递安全闸门。它只允许已验证的能力继续向后执行；任何目标、能力或验证异常都降级为复制，
-/// 并且不会自动重试可能已经发生过的输入动作。
+/// Windows 投递安全闸门。它只允许已验证的能力继续向后执行；仅 InsertOnly 可以安全降级为复制，
+/// InsertAndSend 作为不可拆分的显式意图在任一前置条件失败时都保持零副作用，并且不会自动重试。
 /// </summary>
 internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDisposable
 {
@@ -50,6 +50,9 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
             cancellationToken.ThrowIfCancellationRequested();
             if (request.Target is null)
             {
+                if (request.Mode == SendMode.InsertAndSend)
+                    return Result(traceId, DeliveryStatus.Failed, DeliveryEffect.None, DeliveryStage.ValidateTarget, DeliveryConfidence.Confirmed,
+                        "TARGET_VALIDATION_FAILED", "没有可用目标，未执行插入或发送。", false, "Unknown", "unknown", null);
                 if (request.TargetChangeBehavior == TargetChangeBehavior.Cancel)
                     return Result(traceId, DeliveryStatus.Cancelled, DeliveryEffect.None, DeliveryStage.ValidateTarget, DeliveryConfidence.Confirmed,
                         "TARGET_VALIDATION_FAILED", "没有可用目标，已取消投递。", false, "Unknown", "unknown", null);
@@ -61,6 +64,9 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
             if (!initialValidation.IsValid)
             {
                 var code = initialValidation.ErrorCode ?? "TARGET_VALIDATION_FAILED";
+                if (request.Mode == SendMode.InsertAndSend)
+                    return Result(traceId, DeliveryStatus.Failed, DeliveryEffect.None, currentStage, DeliveryConfidence.Confirmed,
+                        code, "目标窗口已变化，未执行插入或发送。", false, "Unknown", "unknown", request.Target);
                 if (request.TargetChangeBehavior == TargetChangeBehavior.Cancel)
                     return Result(traceId, DeliveryStatus.Cancelled, DeliveryEffect.None, currentStage, DeliveryConfidence.Confirmed,
                         code, "目标窗口已变化，已取消投递。", false, "Unknown", "unknown", request.Target);
@@ -76,8 +82,20 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
             currentStage = DeliveryStage.DetectCapabilities;
             var capabilities = adapter.DetectCapabilities();
             TraceStage(traceId, currentStage, adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, capabilities.InsertText.ToString(), adapter.DetectedProductVersion);
+            // InsertAndSend 是不可拆分的显式意图。先检查发送能力，确保不支持发送时不会先插入或复制。
+            if (request.Mode == SendMode.InsertAndSend && capabilities.SendText != CapabilityStatus.Verified)
+                return Result(traceId, DeliveryStatus.Unsupported, DeliveryEffect.None, currentStage, DeliveryConfidence.Confirmed,
+                    "UNSUPPORTED_SEND", "当前应用仅支持插入，不支持快捷发送；请使用普通 Enter 插入话术。", false,
+                    adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
+
             if (capabilities.InsertText != CapabilityStatus.Verified)
+            {
+                if (request.Mode == SendMode.InsertAndSend)
+                    return Result(traceId, DeliveryStatus.Unsupported, DeliveryEffect.None, currentStage, DeliveryConfidence.Confirmed,
+                        "CAPABILITY_UNVERIFIED", "当前应用不支持稳定插入，未执行插入或发送。", false,
+                        adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
                 return await CopyOnlyAsync(request, traceId, "CAPABILITY_UNVERIFIED", cancellationToken, adapter).ConfigureAwait(false);
+            }
 
             currentStage = DeliveryStage.Insert;
             actionStarted = true;
@@ -117,23 +135,21 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
             if (!verification.IsVerified)
             {
                 await RecordUsageAsync(request, cancellationToken).ConfigureAwait(false);
-                var code = verification.IsInconclusive ? "INSERT_VERIFICATION_INCONCLUSIVE" : verification.Code;
-                return Result(traceId, DeliveryStatus.Unknown, DeliveryEffect.Unknown, currentStage, DeliveryConfidence.Unknown,
-                    code, "已执行插入，但无法确认结果；未发送。", false, adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
+                if (verification.IsInconclusive)
+                    return Result(traceId, DeliveryStatus.Unknown, DeliveryEffect.Unknown, currentStage, DeliveryConfidence.Unknown,
+                        "INSERT_VERIFICATION_INCONCLUSIVE", "插入动作结果无法确认，未执行发送，也未复制或重试。", false,
+                        adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
+
+                return Result(traceId, DeliveryStatus.Failed, DeliveryEffect.Inserted, currentStage, DeliveryConfidence.Confirmed,
+                    verification.Code, "已执行插入，但目标窗口或输入焦点已经变化，未执行发送。", false,
+                    adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
             }
 
-            if (!request.SendRequested || !request.UserAutoSendEnabled)
+            if (request.Mode == SendMode.InsertOnly)
             {
                 await RecordUsageAsync(request, cancellationToken).ConfigureAwait(false);
                 return Result(traceId, DeliveryStatus.Success, DeliveryEffect.Inserted, DeliveryStage.Completed, DeliveryConfidence.Confirmed,
                     "INSERTED", "已插入话术。", false, adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
-            }
-
-            if (capabilities.SendText != CapabilityStatus.Verified || capabilities.VerifySend != CapabilityStatus.Verified)
-            {
-                await RecordUsageAsync(request, cancellationToken).ConfigureAwait(false);
-                return Result(traceId, DeliveryStatus.Success, DeliveryEffect.Inserted, DeliveryStage.Completed, DeliveryConfidence.Confirmed,
-                    "CAPABILITY_UNVERIFIED", "已插入话术，自动发送能力尚未验证。", false, adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
             }
 
             currentStage = DeliveryStage.RevalidateBeforeSend;
@@ -142,8 +158,9 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
             if (!beforeSend.IsValid)
             {
                 await RecordUsageAsync(request, cancellationToken).ConfigureAwait(false);
-                return Result(traceId, DeliveryStatus.Success, DeliveryEffect.Inserted, currentStage, DeliveryConfidence.Confirmed,
-                    beforeSend.ErrorCode ?? "TARGET_CHANGED", "目标窗口已变化，未发送。", false, adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
+                return Result(traceId, DeliveryStatus.Failed, DeliveryEffect.Inserted, currentStage, DeliveryConfidence.Confirmed,
+                    beforeSend.ErrorCode ?? "TARGET_CHANGED", "已插入话术，但目标窗口或输入焦点已经变化，未执行发送。", false,
+                    adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
             }
 
             currentStage = DeliveryStage.OptionalSend;
@@ -152,20 +169,37 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
             if (!send.WasApplied)
             {
                 await RecordUsageAsync(request, cancellationToken).ConfigureAwait(false);
+                if (send.Inconclusive)
+                    return Result(traceId, DeliveryStatus.Unknown, DeliveryEffect.Unknown, currentStage, DeliveryConfidence.Unknown,
+                        send.Code, "发送快捷操作的执行结果无法确认，未自动重试。", false,
+                        adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
+
                 return Result(traceId, DeliveryStatus.Failed, DeliveryEffect.Inserted, currentStage, DeliveryConfidence.Confirmed,
-                    send.Code, "已插入话术，但发送失败。", false, adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
+                    send.Code, "已插入话术，但发送快捷操作执行失败。", false,
+                    adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
             }
+
+            await RecordUsageAsync(request, cancellationToken).ConfigureAwait(false);
+            if (capabilities.VerifySend != CapabilityStatus.Verified)
+                return Result(traceId, DeliveryStatus.Success, DeliveryEffect.SendTriggered, DeliveryStage.Completed, DeliveryConfidence.Confirmed,
+                    "SEND_TRIGGERED", "已执行插入和发送快捷操作，但无法确认目标应用最终发送结果。", false,
+                    adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
 
             currentStage = DeliveryStage.VerifySend;
             TraceStage(traceId, currentStage, adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, "STARTED", adapter.DetectedProductVersion);
             var sendVerification = await adapter.VerifySendAsync(request, cancellationToken).ConfigureAwait(false);
-            await RecordUsageAsync(request, cancellationToken).ConfigureAwait(false);
-            if (!sendVerification.IsVerified)
-                return Result(traceId, DeliveryStatus.Unknown, DeliveryEffect.Unknown, currentStage, DeliveryConfidence.Unknown,
-                    sendVerification.Code, "发送结果无法确认，未自动重试。", false, adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
+            if (sendVerification.IsVerified)
+                return Result(traceId, DeliveryStatus.Success, DeliveryEffect.Sent, DeliveryStage.Completed, DeliveryConfidence.Confirmed,
+                    "SENT", "已插入并发送话术。", false,
+                    adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
 
-            return Result(traceId, DeliveryStatus.Success, DeliveryEffect.Sent, DeliveryStage.Completed, DeliveryConfidence.Confirmed,
-                "SENT", "已插入并发送话术。", false, adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
+            return sendVerification.IsInconclusive
+                ? Result(traceId, DeliveryStatus.Success, DeliveryEffect.SendTriggered, DeliveryStage.Completed, DeliveryConfidence.Confirmed,
+                    sendVerification.Code, "已执行发送快捷操作，但无法确认目标应用最终发送结果。", false,
+                    adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion)
+                : Result(traceId, DeliveryStatus.Failed, DeliveryEffect.SendTriggered, currentStage, DeliveryConfidence.Confirmed,
+                    sendVerification.Code, "已执行发送快捷操作，但目标应用未确认发送成功。", false,
+                    adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
         }
         catch (OperationCanceledException)
         {

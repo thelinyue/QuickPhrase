@@ -10,7 +10,6 @@ namespace QuickPhrase.Platform.Windows;
 /// </summary>
 public sealed class WindowsAdapterResolver : IAdapterResolver, IDisposable
 {
-    public const string SupportedWeComProductVersion = "5.0.9.6065";
     public static IReadOnlySet<string> KnownAdapterIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "WXWork" };
 
     private readonly Func<DeliveryTarget, string?> _productVersionReader;
@@ -32,7 +31,11 @@ public sealed class WindowsAdapterResolver : IAdapterResolver, IDisposable
 
     public IApplicationAdapter Resolve(DeliveryTarget target, string? productVersion = null)
     {
-        productVersion ??= _productVersionReader(target);
+        if (productVersion is null)
+        {
+            try { productVersion = _productVersionReader(target); }
+            catch { productVersion = null; }
+        }
         if (string.Equals(target.ApplicationId, "WXWork", StringComparison.OrdinalIgnoreCase))
             return new WeComAdapter(target, productVersion, _clipboard, _targetValidator, _contexts);
 
@@ -91,28 +94,30 @@ internal sealed class UnknownApplicationAdapter(string applicationId) : IApplica
 {
     public string AdapterId => "Unknown";
     public string? DetectedProductVersion => null;
-    public AdapterProfile Profile { get; } = new("Unknown", applicationId, "*", "unverified", CapabilityStatus.Unverified,
+    public AdapterProfile Profile { get; } = new("Unknown", applicationId, "unverified", CapabilityStatus.Unverified,
         CapabilityStatus.Unverified, CapabilityStatus.Unsupported, CapabilityStatus.Unsupported, "CopyOnly", null);
     public AdapterCapabilities DetectCapabilities() => new(CapabilityStatus.Unverified, CapabilityStatus.Unverified, CapabilityStatus.Unsupported, CapabilityStatus.Unsupported);
     public Task<InsertResult> InsertAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(new InsertResult(false, false, "CAPABILITY_UNVERIFIED"));
     public Task<VerificationResult> VerifyInsertAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(VerificationResult.Failed("CAPABILITY_UNVERIFIED"));
-    public Task<SendResult> SendAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(new SendResult(false, "CAPABILITY_UNSUPPORTED"));
+    public Task<SendResult> SendAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(new SendResult(false, Code: "CAPABILITY_UNSUPPORTED"));
     public Task<VerificationResult> VerifySendAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(VerificationResult.Failed("CAPABILITY_UNSUPPORTED"));
 }
 
-/// <summary>企业微信单版本 Adapter。精确版本只开放已验收的 Clipboard 插入，验证和发送能力仍保持悲观。</summary>
+/// <summary>
+/// 企业微信运行时能力 Adapter。客户端版本只保留为诊断元数据；所有插入和发送准入均由
+/// 当前窗口身份、前台状态以及输入区焦点/Caret 指纹在动作前后实时决定。
+/// </summary>
 internal sealed class WeComAdapter : IApplicationAdapter
 {
-    private readonly DeliveryTarget _target;
     private readonly string? _productVersion;
     private readonly ClipboardTransaction _clipboard;
     private readonly Func<DeliveryTarget, bool> _targetValidator;
     private readonly WindowsTargetContextStore _contexts;
+    private WeComFocusFingerprint? _insertFingerprint;
 
     public WeComAdapter(DeliveryTarget target, string? productVersion, ClipboardTransaction clipboard,
         Func<DeliveryTarget, bool> targetValidator, WindowsTargetContextStore contexts)
     {
-        _target = target;
         _productVersion = productVersion;
         _clipboard = clipboard;
         _targetValidator = targetValidator;
@@ -122,10 +127,10 @@ internal sealed class WeComAdapter : IApplicationAdapter
     public string AdapterId => "WXWork";
     public string? DetectedProductVersion => _productVersion;
     public AdapterProfile Profile => new(
-        "WXWork", "WXWork", WindowsAdapterResolver.SupportedWeComProductVersion, "phase5-wecom-3",
-        IsSupportedVersion ? CapabilityStatus.Verified : CapabilityStatus.Unverified,
-        CapabilityStatus.Unverified,
-        CapabilityStatus.Unsupported,
+        "WXWork", "WXWork", "phase5-wecom-runtime-1",
+        CapabilityStatus.Verified,
+        CapabilityStatus.Verified,
+        CapabilityStatus.Verified,
         CapabilityStatus.Unsupported,
         "CopyOnly", null);
 
@@ -135,14 +140,13 @@ internal sealed class WeComAdapter : IApplicationAdapter
     public async Task<InsertResult> InsertAsync(DeliveryRequest request, CancellationToken cancellationToken)
     {
         var stages = ImmutableArray.CreateBuilder<DeliverySubstage>();
-        if (request.Target is null || !IsSupportedVersion)
-            return new InsertResult(false, false, "CAPABILITY_UNVERIFIED", stages.ToImmutable());
+        if (request.Target is null)
+            return new InsertResult(false, false, "TARGET_CONTEXT_MISSING", stages.ToImmutable());
         if (!_targetValidator(request.Target))
             return new InsertResult(false, false, "TARGET_CHANGED", stages.ToImmutable());
         if (!_contexts.TryGet(request.Target.RuntimeKey, out var windowsTarget))
             return new InsertResult(false, false, "TARGET_CONTEXT_MISSING", stages.ToImmutable());
 
-        // Launcher 刚刚关闭时先激活捕获的原窗口，再用已验收的 Win32 caret 指纹判断聊天编辑区。
         var started = Stopwatch.GetTimestamp();
         var activated = ActivateTarget(windowsTarget);
         stages.Add(new DeliverySubstage("target-activation", activated ? "ACTIVATED" : "TARGET_ACTIVATION_FAILED", Stopwatch.GetElapsedTime(started).TotalMilliseconds));
@@ -150,16 +154,11 @@ internal sealed class WeComAdapter : IApplicationAdapter
 
         cancellationToken.ThrowIfCancellationRequested();
         started = Stopwatch.GetTimestamp();
-        var fingerprintReady = await WeComFocusWaiter.WaitAsync(
-            windowsTarget,
-            static threadId => WindowsNativeMethods.TryCaptureFocusFingerprint(threadId, out var fingerprint) ? fingerprint : null,
-            TimeSpan.FromMilliseconds(500),
-            TimeSpan.FromMilliseconds(10),
-            cancellationToken).ConfigureAwait(false);
-        stages.Add(new DeliverySubstage("control-fingerprint", fingerprintReady ? "FINGERPRINT_READY" : "TARGET_CONTROL_PROFILE_MISMATCH", Stopwatch.GetElapsedTime(started).TotalMilliseconds));
-        if (!fingerprintReady) return new InsertResult(false, false, "TARGET_CONTROL_PROFILE_MISMATCH", stages.ToImmutable());
+        _insertFingerprint = await WaitForComposerFingerprintAsync(windowsTarget, TimeSpan.FromMilliseconds(500), cancellationToken).ConfigureAwait(false);
+        stages.Add(new DeliverySubstage("control-fingerprint", _insertFingerprint.HasValue ? "FINGERPRINT_READY" : "TARGET_CONTROL_PROFILE_MISMATCH", Stopwatch.GetElapsedTime(started).TotalMilliseconds));
+        if (!_insertFingerprint.HasValue) return new InsertResult(false, false, "TARGET_CONTROL_PROFILE_MISMATCH", stages.ToImmutable());
 
-        // 企业微信精确版本固定使用已人工验收的剪贴板事务；不受全局兼容模式开关影响。
+        // 运行时检查通过后固定使用受保护剪贴板事务；不读取或比对目标输入框正文。
         started = Stopwatch.GetTimestamp();
         var clipboard = await _clipboard.PasteAsync(request.Phrase.Content, request.Target, cancellationToken).ConfigureAwait(false);
         stages.Add(new DeliverySubstage("clipboard-paste", clipboard.Code, Stopwatch.GetElapsedTime(started).TotalMilliseconds));
@@ -168,16 +167,73 @@ internal sealed class WeComAdapter : IApplicationAdapter
             : new InsertResult(false, false, clipboard.Code, stages.ToImmutable());
     }
 
-    public Task<VerificationResult> VerifyInsertAsync(DeliveryRequest request, CancellationToken cancellationToken) =>
-        Task.FromResult(VerificationResult.Inconclusive("INSERT_VERIFICATION_INCONCLUSIVE"));
+    public async Task<VerificationResult> VerifyInsertAsync(DeliveryRequest request, CancellationToken cancellationToken)
+    {
+        if (request.Target is null || !_targetValidator(request.Target))
+            return VerificationResult.Failed("TARGET_CHANGED");
+        if (!_contexts.TryGet(request.Target.RuntimeKey, out var windowsTarget))
+            return VerificationResult.Failed("TARGET_CONTEXT_MISSING");
 
-    public Task<SendResult> SendAsync(DeliveryRequest request, CancellationToken cancellationToken) =>
-        Task.FromResult(new SendResult(false, "CAPABILITY_UNSUPPORTED"));
+        if (_insertFingerprint is not { } before)
+            return VerificationResult.Failed("INSERT_FINGERPRINT_MISSING");
+
+        // Ctrl+V 返回不代表企业微信已经处理完粘贴消息；稳定等待后必须重新采集脱敏焦点指纹。
+        await WeComFocusPolicy.WaitForPostPasteStabilityAsync(cancellationToken).ConfigureAwait(false);
+        var after = await WaitForComposerFingerprintAsync(windowsTarget, TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
+        var stable = WindowsNativeMethods.GetForegroundWindow() == windowsTarget.Hwnd
+            && after is { } value
+            && WeComFocusPolicy.IsStableChatComposer(windowsTarget, before, value);
+        return stable
+            ? VerificationResult.Verified
+            : VerificationResult.Failed("TARGET_CONTROL_PROFILE_MISMATCH");
+    }
+
+    public async Task<SendResult> SendAsync(DeliveryRequest request, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (request.Target is null || !_targetValidator(request.Target))
+            return new SendResult(false, Code: "TARGET_CHANGED");
+        if (!_contexts.TryGet(request.Target.RuntimeKey, out var windowsTarget))
+            return new SendResult(false, Code: "TARGET_CONTEXT_MISSING");
+        if (_insertFingerprint is not { } before)
+            return new SendResult(false, Code: "INSERT_FINGERPRINT_MISSING");
+
+        var current = await WaitForComposerFingerprintAsync(windowsTarget, TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
+        if (WindowsNativeMethods.GetForegroundWindow() != windowsTarget.Hwnd
+            || current is not { } value
+            || !WeComFocusPolicy.IsStableChatComposer(windowsTarget, before, value))
+            return new SendResult(false, Code: "TARGET_CONTROL_PROFILE_MISMATCH");
+
+        return WindowsNativeMethods.SendEnter() switch
+        {
+            KeyboardInjectionResult.Applied => SendResult.Applied,
+            KeyboardInjectionResult.Inconclusive => SendResult.Unknown("SEND_INPUT_INCONCLUSIVE"),
+            _ => new SendResult(false, Code: "SEND_INPUT_FAILED"),
+        };
+    }
 
     public Task<VerificationResult> VerifySendAsync(DeliveryRequest request, CancellationToken cancellationToken) =>
-        Task.FromResult(VerificationResult.Failed("CAPABILITY_UNSUPPORTED"));
+        Task.FromResult(VerificationResult.Inconclusive("SEND_RESULT_UNVERIFIED"));
 
-    private bool IsSupportedVersion => string.Equals(_productVersion, WindowsAdapterResolver.SupportedWeComProductVersion, StringComparison.OrdinalIgnoreCase);
+    private static async Task<WeComFocusFingerprint?> WaitForComposerFingerprintAsync(
+        WindowsTargetIdentity target,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.GetTimestamp();
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (WindowsNativeMethods.TryCaptureFocusFingerprint(target.WindowThreadId, out var fingerprint)
+                && WeComFocusPolicy.IsChatComposer(target, fingerprint))
+                return fingerprint;
+
+            var remaining = timeout - Stopwatch.GetElapsedTime(started);
+            if (remaining <= TimeSpan.Zero) return null;
+            var pollInterval = TimeSpan.FromMilliseconds(10);
+            await Task.Delay(remaining < pollInterval ? remaining : pollInterval, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     private static bool ActivateTarget(WindowsTargetIdentity target)
     {

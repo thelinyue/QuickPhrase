@@ -43,6 +43,43 @@ public sealed class LibraryFocusContractTests
     }
 
     [Fact]
+    public void PhraseListDoubleClick_UsesActualListItemInsteadOfStaleSelection()
+    {
+        var code = ReadLibraryCode();
+        var handler = ExtractMethod(code, "private void PhraseList_MouseDoubleClick", "private void OnListKeyDown");
+
+        Assert.Contains("e.OriginalSource", handler, StringComparison.Ordinal);
+        Assert.Contains("FindAncestor<ListBoxItem>", handler, StringComparison.Ordinal);
+        Assert.Contains("DataContext is not PhraseItemViewModel", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("PhraseList.SelectedItem", handler, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LibraryRootMouseHandler_MovesFocusToRootOnlyForBlankArea()
+    {
+        var code = ReadLibraryCode();
+        var handler = ExtractMethod(code, "private void RootLayout_PreviewMouseLeftButtonDown", "private void RootLayout_PreviewMouseRightButtonDown");
+
+        Assert.Contains("e.OriginalSource", handler, StringComparison.Ordinal);
+        Assert.Contains("IsLibraryNodeHit", handler, StringComparison.Ordinal);
+        Assert.Contains("IsNonBlankInteractiveControl", handler, StringComparison.Ordinal);
+        Assert.Contains("Keyboard.Focus(RootLayout)", handler, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LibraryMarkup_RegistersBlankAreaMouseHandlerAndFocusableRoot()
+    {
+        var root = FindRepositoryRoot();
+        var markup = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "LibraryView.xaml"));
+        var rootStart = markup.IndexOf("<Grid x:Name=\"RootLayout\"", StringComparison.Ordinal);
+        Assert.True(rootStart >= 0, "找不到话术库根容器");
+        var rootMarkup = markup[rootStart..markup.IndexOf('>', rootStart)];
+
+        Assert.Contains("PreviewMouseLeftButtonDown=\"RootLayout_PreviewMouseLeftButtonDown\"", rootMarkup, StringComparison.Ordinal);
+        Assert.Contains("Focusable=\"True\"", rootMarkup, StringComparison.Ordinal);
+        Assert.Contains("KeyboardNavigation.IsTabStop=\"False\"", rootMarkup, StringComparison.Ordinal);
+    }
+    [Fact]
     public void LibraryMarkup_DoesNotDeclareAutoFocus()
     {
         var root = FindRepositoryRoot();

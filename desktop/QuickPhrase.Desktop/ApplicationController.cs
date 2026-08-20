@@ -104,30 +104,19 @@ internal sealed class ApplicationController : IAsyncDisposable
 
     public bool TryBecomePrimary() => _singleInstance.TryBecomePrimary();
 
-    public Task<string> CreateUpgradeBackupAsync(string reason, CancellationToken cancellationToken = default) =>
-        QuickPhraseDataRuntime.CreateBackupOnlyAsync(_dataOptions, reason, cancellationToken);
 
     public void StartActivationServer()
     {
         _singleInstance.StartServer(message =>
         {
-            DispatchToUi(() =>
-            {
-                if (string.Equals(message, "shutdown-for-upgrade", StringComparison.OrdinalIgnoreCase))
-                {
-                    _suppressManagementCloseExit = true;
-                    System.Windows.Application.Current?.Shutdown();
-                    return;
-                }
-
-                OpenManagement();
-            });
+            DispatchToUi(() => OpenManagement());
             return Task.CompletedTask;
         });
     }
-
     /// <summary>
-    /// 鍒涘缓绯荤粺鎵樼洏鍥炬爣锛屽苟涓庣獥鍙ｆ爣棰樻爮銆佷富鐣岄潰鍝佺墝浣嶇粺涓€浣跨敤鍚屼竴浠藉唴锟?ICO锟?    /// 璧勬簮鍔犺浇澶辫触鏃朵笉鍥為€€锟?Windows 绯荤粺榛樿鍥炬爣锛岄伩鍏嶅啀娆℃樉绀洪敊璇浛浠ｅ浘鏍囷拷?    /// </summary>
+    /// 创建系统托盘图标，并与窗口标题栏、主界面品牌位统一使用同一份内置 ICO。
+    /// 资源加载失败时不回退到 Windows 默认图标，避免再次显示错误的替代图标。
+    /// </summary>
     public void StartTray()
     {
         if (_tray is not null) return;
@@ -140,7 +129,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         {
             var resource = System.Windows.Application.GetResourceStream(new Uri(ApplicationIconResourceUri, UriKind.Absolute));
             if (resource is null)
-                throw new InvalidOperationException($"鎵句笉鍒板唴宓屽浘鏍囪祫婧愶細{ApplicationIconResourceUri}");
+                throw new InvalidOperationException($"找不到内置图标资源：{ApplicationIconResourceUri}");
 
             iconStream = resource.Stream;
             icon = new Icon(iconStream);
@@ -157,7 +146,7 @@ internal sealed class ApplicationController : IAsyncDisposable
             {
                 Icon = icon,
                 Visible = true,
-                Text = "闂",
+                Text = "闪语",
                 ContextMenuStrip = menu,
             };
             tray.DoubleClick += (_, _) => OpenManagement();
@@ -202,7 +191,9 @@ internal sealed class ApplicationController : IAsyncDisposable
     }
 
     /// <summary>
-    /// 鎵撳紑鎴栨縺娲诲敮涓€鐨勯潪妯℃€佽缃獥鍙ｃ€傜獥鍙ｄ笌涓荤獥鍙ｅ悓杩涚▼锛岃缃姞杞藉拰淇濆瓨涓嶉樆濉炰富绐楀彛锟?    /// </summary>
+    /// 打开或激活唯一的非模态设置窗口。设置窗口与主窗口同进程，
+    /// 设置加载和保存不应阻塞主窗口。
+    /// </summary>
     public void OpenSettings()
     {
         if (_settingsWindow is { IsVisible: true })
@@ -232,7 +223,9 @@ internal sealed class ApplicationController : IAsyncDisposable
     }
 
     /// <summary>
-    /// 涓荤獥鍙ｅ叧闂悗锛屽鏋滆缃獥鍙ｄ粛鐒跺彲瑙侊紝鍏堜繚鐣欒繘绋嬪拰璁剧疆绐楀彛锟?    /// 鍙湁鏈€鍚庝竴涓骇鍝佺獥鍙ｄ篃鍏抽棴鏃讹紝鎵嶆寜鈥滃叧闂悗鐣欏湪鎵樼洏鈥濊缃喅瀹氭槸鍚﹂€€鍑猴拷?    /// </summary>
+    /// 主窗口关闭后，如果设置窗口仍然可见，则保留进程和设置窗口。
+    /// 只有最后一个产品窗口也关闭时，才按“关闭后留在托盘”设置决定是否退出。
+    /// </summary>
     private void OnManagementClosed()
     {
         _management = null;
@@ -242,7 +235,8 @@ internal sealed class ApplicationController : IAsyncDisposable
     }
 
     /// <summary>
-    /// 缁熶竴澶勭悊浜у搧绐楀彛鍏抽棴鍚庣殑閫€鍑哄垽鏂紝閬垮厤鍏抽棴璇濇湳搴撴椂璇€€鍑虹嫭绔嬭缃獥鍙ｏ拷?    /// </summary>
+    /// 统一处理产品窗口关闭后的退出判断，避免关闭话术库时误退出仍在显示的独立设置窗口。
+    /// </summary>
     private void RequestShutdownIfNoProductWindows(bool suppressExit = false)
     {
         if (suppressExit || _settings is not { StayInTrayOnClose: false }) return;
@@ -414,8 +408,8 @@ internal sealed class ApplicationController : IAsyncDisposable
         await _singleInstance.DisposeAsync();
     }
 
-    private void OnDeliveryRequested(Phrase phrase, bool sendRequested, DeliveryTarget? target, string? query) =>
-        _ = QueueOrDeliverPhraseAsync(phrase, target, sendRequested, query);
+    private void OnDeliveryRequested(Phrase phrase, SendMode mode, DeliveryTarget? target, string? query) =>
+        _ = QueueOrDeliverPhraseAsync(phrase, target, mode, query);
     private void OnCreatePhraseRequested(string seed)
     {
         OpenManagement("editor");
@@ -430,20 +424,41 @@ internal sealed class ApplicationController : IAsyncDisposable
         if (_commands is null) return false;
         var phrase = await _commands.GetPhraseAsync(phraseId, cancellationToken);
         if (phrase is null) return false;
-        var result = await QueueOrDeliverPhraseAsync(phrase, _lastExternalTarget, sendRequested: false, query: null);
+        var result = await QueueOrDeliverPhraseAsync(phrase, _lastExternalTarget, SendMode.InsertOnly, query: null);
         return result?.IsSuccess == true && result.Inserted;
     }
 
 
-    private async Task<DeliveryResult?> QueueOrDeliverPhraseAsync(Phrase phrase, DeliveryTarget? target, bool sendRequested, string? query)
+    /// <summary>
+    /// 显式发送确认只属于 Desktop 的用户授权策略，不依赖具体 Adapter。
+    /// InsertOnly 从不确认；只有用户明确开启风险设置后才允许 InsertAndSend 跳过确认。
+    /// </summary>
+    internal static bool RequiresSendConfirmation(SendMode mode, AppSettings settings) =>
+        mode == SendMode.InsertAndSend && !settings.QuickSendWithoutConfirmation;
+
+    private async Task<DeliveryResult?> QueueOrDeliverPhraseAsync(Phrase phrase, DeliveryTarget? target, SendMode mode, string? query)
     {
         var settings = _settings ?? new AppSettings(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true)
         {
             LauncherEnabledAdapters = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["WXWork"] = true },
         };
-        var adapter = target is null ? null : _adapterResolver.Resolve(target);
-        var canQueue = adapter is not null && DeliveryQueuePolicy.CanQueue(adapter.Profile);
-        var request = new DeliveryRequest(phrase, target, sendRequested, settings.AutoSend, settings.ClipboardCompatibilityMode,
+        if (RequiresSendConfirmation(mode, settings))
+        {
+            var choice = System.Windows.MessageBox.Show(
+                "将发送目标输入框中的全部内容，已有草稿可能一并发送。\n\n闪语不会读取输入框正文，也无法确认目标应用最终是否完成发送。是否继续？",
+                "确认快捷发送",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning,
+                MessageBoxResult.Cancel);
+            if (choice != MessageBoxResult.OK) return null;
+        }
+
+        // 适配器解析会读取目标进程元数据，必须离开 WPF UI 线程，避免闪念提交时窗口失去响应。
+        var adapter = target is null
+            ? null
+            : await ResolveAdapterOffUiThreadAsync(_adapterResolver, target, CancellationToken.None).ConfigureAwait(true);
+        var canQueue = adapter is not null && DeliveryQueuePolicy.CanQueue(adapter.Profile, mode);
+        var request = new DeliveryRequest(phrase, target, mode, settings.ClipboardCompatibilityMode,
             canQueue ? TargetChangeBehavior.Cancel : TargetChangeBehavior.CopyOnly);
         if (canQueue)
         {
@@ -463,7 +478,9 @@ internal sealed class ApplicationController : IAsyncDisposable
     {
         try
         {
-            var result = await _delivery.DeliverAsync(request, CancellationToken.None);
+            // 单次投递的目标校验、运行时能力探测和剪贴板操作都属于平台工作，
+            // 不能在 Launcher 的 Enter 事件线程内同步执行。
+            var result = await RunSingleDeliveryOffUiThreadAsync(_delivery, request, CancellationToken.None).ConfigureAwait(true);
             if (result.Status is DeliveryStatus.Failed or DeliveryStatus.Unknown)
                 ShowDeliveryNotification(result, Forms.ToolTipIcon.Warning);
             else if (result.Status == DeliveryStatus.Unsupported)
@@ -473,11 +490,25 @@ internal sealed class ApplicationController : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"璇濇湳鎶曢€掑け璐ワ細{exception.Message}");
+            Console.Error.WriteLine($"话术投递失败，未自动重试：{exception.Message}");
             _tray?.ShowBalloonTip(2200, "闪语", "话术投递失败，未自动重试。", Forms.ToolTipIcon.Warning);
             return null;
         }
     }
+
+    /// <summary>在线程池解析目标适配器，防止进程版本读取阻塞 WPF UI 线程。</summary>
+    internal static Task<IApplicationAdapter> ResolveAdapterOffUiThreadAsync(
+        IAdapterResolver resolver,
+        DeliveryTarget target,
+        CancellationToken cancellationToken) =>
+        Task.Run(() => resolver.Resolve(target), cancellationToken);
+
+    /// <summary>在线程池执行单次平台投递，确保 Win32、UIA 和剪贴板等待不进入 WPF UI 线程。</summary>
+    internal static Task<DeliveryResult> RunSingleDeliveryOffUiThreadAsync(
+        ITextDeliveryStateMachine delivery,
+        DeliveryRequest request,
+        CancellationToken cancellationToken) =>
+        Task.Run(() => delivery.DeliverAsync(request, cancellationToken), cancellationToken);
 
     private void OnDeliveryCompleted(DeliveryResult result, string? query)
     {
@@ -491,7 +522,7 @@ internal sealed class ApplicationController : IAsyncDisposable
     }
     private void ShowDeliveryNotification(DeliveryResult result, Forms.ToolTipIcon icon)
     {
-        _tray?.ShowBalloonTip(2200, "闂", result.Message, icon);
+        _tray?.ShowBalloonTip(2200, "闪语", result.Message, icon);
     }
 
     /// <summary>

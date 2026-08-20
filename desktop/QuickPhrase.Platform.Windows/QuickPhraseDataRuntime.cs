@@ -3,8 +3,8 @@ using QuickPhrase.Core;
 namespace QuickPhrase.Platform.Windows;
 
 /// <summary>
-/// 数据层组合根，统一拥有迁移器、单写者队列、Repository、搜索运行时和话术包服务。
-/// 话术包写入仍由本类编排：先拿搜索变更门，再由 SQLite 写队列执行单事务，提交成功后刷新内存索引。
+/// 数据层组合根，统一拥有单写者队列、Repository、搜索运行时和话术包服务。
+/// 数据库只在首次运行时初始化当前版本结构，不包含默认分类或示例话术。
 /// </summary>
 public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageService
 {
@@ -41,18 +41,11 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
     public ISettingsRepository Settings { get; }
     public ISearchHistoryRepository SearchHistory { get; }
 
-    public Task<string> CreateBackupAsync(string reason, CancellationToken cancellationToken = default) =>
-        SqliteBackupService.CreateAsync(Options, reason, cancellationToken);
-
-    public static Task<string> CreateBackupOnlyAsync(QuickPhraseDataOptions options, string reason, CancellationToken cancellationToken = default) =>
-        SqliteBackupService.CreateAsync(options, reason, cancellationToken);
-
     public static async Task<QuickPhraseDataRuntime> OpenAsync(QuickPhraseDataOptions options, CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(options.DataDirectory);
-        Directory.CreateDirectory(options.BackupDirectory);
         var connections = new SqliteConnectionFactory(options.DatabasePath);
-        await new MigrationRunner(options, connections).EnsureMigratedAsync(cancellationToken);
+        await new DatabaseInitializer(options, connections).EnsureInitializedAsync(cancellationToken);
 
         var queue = new SqliteWriteQueue(connections, options.WriteQueueCapacity, options.ShutdownTimeout);
         try

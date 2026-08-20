@@ -307,7 +307,7 @@ public partial class MainWindow : Window
                 VerticalAlignment = VerticalAlignment.Center,
             },
         };
-        placeholder.SetResourceReference(System.Windows.Controls.Panel.BackgroundProperty, "Brush.Surface.Primary");
+        placeholder.SetResourceReference(System.Windows.Controls.Panel.BackgroundProperty, "Brush.Surface.Default");
         return placeholder;
     }
 

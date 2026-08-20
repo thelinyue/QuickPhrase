@@ -10,7 +10,7 @@ namespace QuickPhrase.Platform.Windows;
 /// </summary>
 internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettingsRepository
 {
-    private const int CurrentSettingsSchemaVersion = 2;
+    private const int CurrentSettingsSchemaVersion = 3;
     private const string SettingsKey = "app.settings";
     private static readonly ShortcutChord DefaultLauncherShortcut = new(ShortcutModifiers.Alt, ShortcutKey.Space);
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -43,7 +43,7 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
         var materialized = Materialize(row.Json, row.Version);
         if (!materialized.ShouldRewrite) return materialized.Settings;
 
-        var rewrite = await RewriteSchemaVersion2Async(row, materialized.Settings, cancellationToken);
+        var rewrite = await RewriteSchemaVersion3Async(row, materialized.Settings, cancellationToken);
         if (rewrite == MigrationRewriteResult.Success) return materialized.Settings;
         if (rewrite == MigrationRewriteResult.ConcurrentChange && allowConcurrentRetry)
             return await LoadCoreAsync(allowConcurrentRetry: false, cancellationToken);
@@ -60,8 +60,6 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
 
     private async Task<RepositoryResult<AppSettings>> SaveCoreAsync(SqliteConnection connection, AppSettings settings, long expectedVersion, CancellationToken cancellationToken)
     {
-        // 当前适配目录没有经过验证的自动发送能力，后端始终保持关闭，避免旧客户端或篡改请求绕过 UI 限制。
-        settings = settings with { AutoSend = false };
         var shortcutValidation = ShortcutChordValidator.Validate(settings.LauncherShortcut);
         if (!shortcutValidation.IsValid)
             return RepositoryResult<AppSettings>.Failure(Validation("Launcher 快捷键无效，请使用至少一个修饰键和一个受支持按键。"));
@@ -116,7 +114,8 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
             return schemaVersion switch
             {
                 1 => MaterializeSchemaVersion1(json, version),
-                CurrentSettingsSchemaVersion => MaterializeSchemaVersion2(json, version),
+                2 => MaterializeSchemaVersion2(json, version),
+                CurrentSettingsSchemaVersion => MaterializeSchemaVersion3(json, version),
                 _ => MaterializeUnsupportedSchema(json, version),
             };
         }
@@ -147,21 +146,34 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
     {
         var stored = JsonSerializer.Deserialize<StoredSettingsV2>(json, JsonOptions) ?? new StoredSettingsV2();
         var shortcut = stored.Shortcuts?.FlashLauncher?.ToChord() ?? default;
+        if (!ShortcutChordValidator.Validate(shortcut).IsValid)
+        {
+            shortcut = DefaultLauncherShortcut;
+            WriteMigrationDiagnostic("SETTINGS_SHORTCUT_SCHEMA_V2_INVALID_SHORTCUT");
+        }
+
+        // v2 的 autoSend 无论原值如何都不能迁移为跳过显式发送确认。
+        return new StoredMaterialization(stored.ToAppSettings(version, shortcut), ShouldRewrite: true);
+    }
+
+    private StoredMaterialization MaterializeSchemaVersion3(string json, long version)
+    {
+        var stored = JsonSerializer.Deserialize<StoredSettingsV3>(json, JsonOptions) ?? new StoredSettingsV3();
+        var shortcut = stored.Shortcuts?.FlashLauncher?.ToChord() ?? default;
         if (ShortcutChordValidator.Validate(shortcut).IsValid)
             return new StoredMaterialization(stored.ToAppSettings(version, shortcut), ShouldRewrite: false);
 
-        WriteMigrationDiagnostic("SETTINGS_SHORTCUT_SCHEMA_V2_INVALID_SHORTCUT");
+        WriteMigrationDiagnostic("SETTINGS_SHORTCUT_SCHEMA_V3_INVALID_SHORTCUT");
         return new StoredMaterialization(stored.ToAppSettings(version, DefaultLauncherShortcut), ShouldRewrite: true);
     }
 
     private StoredMaterialization MaterializeUnsupportedSchema(string json, long version)
     {
         WriteMigrationDiagnostic("SETTINGS_SHORTCUT_SCHEMA_VERSION_UNSUPPORTED");
-        var stored = JsonSerializer.Deserialize<StoredSettingsV2>(json, JsonOptions) ?? new StoredSettingsV2();
-        return new StoredMaterialization(stored.ToAppSettings(version, DefaultLauncherShortcut), ShouldRewrite: false);
+        return new StoredMaterialization(Defaults(version), ShouldRewrite: false);
     }
 
-    private async Task<MigrationRewriteResult> RewriteSchemaVersion2Async(
+    private async Task<MigrationRewriteResult> RewriteSchemaVersion3Async(
         StoredRow original,
         AppSettings settings,
         CancellationToken cancellationToken)
@@ -195,7 +207,7 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
     }
 
     private static string Serialize(AppSettings settings) =>
-        JsonSerializer.Serialize(StoredSettingsV2.From(settings), JsonOptions);
+        JsonSerializer.Serialize(StoredSettingsV3.From(settings), JsonOptions);
 
     private static bool TryMigrateLegacyShortcut(string? display, string? normalized, out ShortcutChord chord)
     {
@@ -340,25 +352,25 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
         public static StoredShortcuts From(AppSettings settings) => new(StoredShortcut.From(settings.LauncherShortcut));
     }
 
-    private sealed record StoredSettingsV2(
+    private sealed record StoredSettingsV3(
         int SchemaVersion = CurrentSettingsSchemaVersion,
         StoredShortcuts? Shortcuts = null,
         bool LaunchOnStartup = false,
         bool StartMinimized = false,
         bool StayInTrayOnClose = true,
-        bool AutoSend = false,
+        bool QuickSendWithoutConfirmation = false,
         bool ClipboardCompatibilityMode = true,
         bool HasCompletedOnboarding = false,
         int OnboardingVersion = 0,
         Dictionary<string, bool>? LauncherEnabledAdapters = null)
     {
-        public static StoredSettingsV2 From(AppSettings settings) => new(
+        public static StoredSettingsV3 From(AppSettings settings) => new(
             CurrentSettingsSchemaVersion,
             StoredShortcuts.From(settings),
             settings.LaunchOnStartup,
             settings.StartMinimized,
             settings.StayInTrayOnClose,
-            settings.AutoSend,
+            settings.QuickSendWithoutConfirmation,
             settings.ClipboardCompatibilityMode,
             settings.HasCompletedOnboarding,
             settings.OnboardingVersion,
@@ -370,7 +382,35 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
             StartMinimized,
             StayInTrayOnClose,
             shortcut,
-            AutoSend,
+            QuickSendWithoutConfirmation,
+            ClipboardCompatibilityMode,
+            HasCompletedOnboarding,
+            OnboardingVersion)
+        {
+            LauncherEnabledAdapters = LauncherEnabledAdapters is null
+                ? DefaultLauncherAdapters()
+                : new Dictionary<string, bool>(LauncherEnabledAdapters, StringComparer.OrdinalIgnoreCase),
+        };
+    }
+    private sealed record StoredSettingsV2(
+        int SchemaVersion = 2,
+        StoredShortcuts? Shortcuts = null,
+        bool LaunchOnStartup = false,
+        bool StartMinimized = false,
+        bool StayInTrayOnClose = true,
+        bool AutoSend = false,
+        bool ClipboardCompatibilityMode = true,
+        bool HasCompletedOnboarding = false,
+        int OnboardingVersion = 0,
+        Dictionary<string, bool>? LauncherEnabledAdapters = null)
+    {
+        public AppSettings ToAppSettings(long version, ShortcutChord shortcut) => new(
+            version,
+            LaunchOnStartup,
+            StartMinimized,
+            StayInTrayOnClose,
+            shortcut,
+            false,
             ClipboardCompatibilityMode,
             HasCompletedOnboarding,
             OnboardingVersion)
@@ -399,7 +439,7 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
             StartMinimized,
             StayInTrayOnClose,
             shortcut,
-            AutoSend,
+            false,
             ClipboardCompatibilityMode,
             HasCompletedOnboarding,
             OnboardingVersion)

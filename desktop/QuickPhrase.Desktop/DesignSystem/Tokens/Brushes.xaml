@@ -1,0 +1,45 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 语义 Brush 使用 DynamicResource，切换主题时现有控件无需重建。 -->
+    <SolidColorBrush x:Key="Brush.Background.Default" Color="{DynamicResource Color.Background.Default}" />
+    <SolidColorBrush x:Key="Brush.Background.Secondary" Color="{DynamicResource Color.Background.Secondary}" />
+    <SolidColorBrush x:Key="Brush.Surface.Default" Color="{DynamicResource Color.Surface.Default}" />
+    <SolidColorBrush x:Key="Brush.Surface.Hover" Color="{DynamicResource Color.Surface.Hover}" />
+    <SolidColorBrush x:Key="Brush.Surface.Selected" Color="{DynamicResource Color.Surface.Selected}" />
+    <SolidColorBrush x:Key="Brush.Surface.Elevated" Color="{DynamicResource Color.Surface.Elevated}" />
+    <SolidColorBrush x:Key="Brush.Accent.Primary" Color="{DynamicResource Color.Accent.Primary}" />
+    <SolidColorBrush x:Key="Brush.Accent.Primary.Hover" Color="{DynamicResource Color.Accent.Primary.Hover}" />
+    <SolidColorBrush x:Key="Brush.Accent.Primary.Pressed" Color="{DynamicResource Color.Accent.Primary.Pressed}" />
+    <SolidColorBrush x:Key="Brush.Accent.Soft" Color="{DynamicResource Color.Accent.Soft}" />
+    <SolidColorBrush x:Key="Brush.Accent.Gold" Color="{DynamicResource Color.Accent.Gold}" />
+    <SolidColorBrush x:Key="Brush.Accent.Gold.Strong" Color="{DynamicResource Color.Accent.Gold.Strong}" />
+    <SolidColorBrush x:Key="Brush.Text.Primary" Color="{DynamicResource Color.Text.Primary}" />
+    <SolidColorBrush x:Key="Brush.Text.Secondary" Color="{DynamicResource Color.Text.Secondary}" />
+    <SolidColorBrush x:Key="Brush.Text.Disabled" Color="{DynamicResource Color.Text.Disabled}" />
+    <SolidColorBrush x:Key="Brush.Text.OnAccent" Color="{DynamicResource Color.Text.OnAccent}" />
+    <SolidColorBrush x:Key="Brush.Border.Default" Color="{DynamicResource Color.Border.Default}" />
+    <SolidColorBrush x:Key="Brush.Border.Strong" Color="{DynamicResource Color.Border.Strong}" />
+    <SolidColorBrush x:Key="Brush.Border.Focus" Color="{DynamicResource Color.Border.Focus}" />
+    <SolidColorBrush x:Key="Brush.Selection.Indicator" Color="{DynamicResource Color.Selection.Indicator}" />
+    <SolidColorBrush x:Key="Brush.Status.Success" Color="{DynamicResource Color.Status.Success}" />
+    <SolidColorBrush x:Key="Brush.Status.Warning" Color="{DynamicResource Color.Status.Warning}" />
+    <SolidColorBrush x:Key="Brush.Status.Error" Color="{DynamicResource Color.Status.Error}" />
+    <SolidColorBrush x:Key="Brush.Overlay" Color="{DynamicResource Color.Overlay}" />
+    <SolidColorBrush x:Key="Brush.Shadow.Default" Color="{DynamicResource Color.Shadow.Default}" />
+
+    <SolidColorBrush x:Key="Brush.Phrase.Default" Color="{StaticResource Color.Phrase.Default}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Orange" Color="{StaticResource Color.Phrase.Orange}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Blue" Color="{StaticResource Color.Phrase.Blue}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Magenta" Color="{StaticResource Color.Phrase.Magenta}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Purple" Color="{StaticResource Color.Phrase.Purple}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Green" Color="{StaticResource Color.Phrase.Green}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Pink" Color="{StaticResource Color.Phrase.Pink}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Teal" Color="{StaticResource Color.Phrase.Teal}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Tan" Color="{StaticResource Color.Phrase.Tan}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Gray" Color="{StaticResource Color.Phrase.Gray}" />
+
+    <!-- 默认 Card 不使用阴影；仅为 Elevated、Dialog 和 Popup 提供低噪音层级。 -->
+    <DropShadowEffect x:Key="Effect.Shadow.Elevated" Color="{DynamicResource Color.Shadow.Default}" BlurRadius="18" ShadowDepth="2" Opacity="0.22" Direction="270" />
+    <DropShadowEffect x:Key="Effect.Shadow.Dialog" Color="{DynamicResource Color.Shadow.Default}" BlurRadius="30" ShadowDepth="8" Opacity="0.30" Direction="270" />
+    <DropShadowEffect x:Key="Effect.Shadow.Popup" Color="{DynamicResource Color.Shadow.Default}" BlurRadius="22" ShadowDepth="4" Opacity="0.26" Direction="270" />
+</ResourceDictionary>

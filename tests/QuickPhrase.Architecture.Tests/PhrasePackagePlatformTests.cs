@@ -15,10 +15,12 @@ public sealed class PhrasePackagePlatformTests
     {
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
+        var category = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "导出测试"))).Value!;
+        var phrase = (await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "导出话术", "导出正文", category.Id, ShortcutMode.None, null))).Value!;
         var snapshot = await runtime.CaptureSnapshotAsync();
         var document = PhrasePackagePlanner.BuildExportDocument(
             snapshot,
-            new PhrasePackageExportSelection(PhrasePackageExportScope.Phrases, "测试包", [], [snapshot.Phrases[0].Id]),
+            new PhrasePackageExportSelection(PhrasePackageExportScope.Phrases, "测试包", [], [phrase.Id]),
             DateTimeOffset.UtcNow);
         var path = Path.Combine(temp.Path, "roundtrip.qphrase");
 

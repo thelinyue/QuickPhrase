@@ -10,8 +10,8 @@ namespace QuickPhrase.Desktop.Tests;
 
 public class PhraseLibraryViewModelTests
 {
-    private static Phrase MakePhrase(string title, string content, Guid categoryId, bool favorite = false, string colorKey = "default")
-        => new(Guid.NewGuid(), title, content, categoryId, favorite, ShortcutMode.None, null,
+    private static Phrase MakePhrase(string title, string content, Guid categoryId, string colorKey = "default")
+        => new(Guid.NewGuid(), title, content, categoryId, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, colorKey);
 
     private static Category MakeCategory(out Guid id, string name = "工作", int sortOrder = 0)
@@ -33,7 +33,7 @@ public class PhraseLibraryViewModelTests
     public async Task LoadAsync_PopulatesPhrases_AndStatus()
     {
         var category = MakeCategory(out var catId);
-        var p1 = MakePhrase("欢迎语", "您好，请问有什么可以帮您？", catId, favorite: true);
+        var p1 = MakePhrase("欢迎语", "您好，请问有什么可以帮您？", catId);
         var p2 = MakePhrase("结束语", "感谢您的咨询。", catId);
         var fake = new FakeCommandService();
         fake.Seed(new[] { p1, p2 });

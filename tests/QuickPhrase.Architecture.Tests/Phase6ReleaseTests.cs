@@ -6,16 +6,7 @@ namespace QuickPhrase.Architecture.Tests;
 
 public sealed class Phase6ReleaseTests
 {
-    [Fact]
-    public void PrimaryUpgradeShutdownExitsBeforeStartingTheApplication()
-    {
-        var exitCode = -1;
 
-        var handled = App.HandlePrimaryUpgradeShutdown(true, code => exitCode = code);
-
-        Assert.True(handled);
-        Assert.Equal(0, exitCode);
-    }
 
     [Fact]
     public void StartupRegistrationQuotesExecutablePathAndUsesBackgroundMode()

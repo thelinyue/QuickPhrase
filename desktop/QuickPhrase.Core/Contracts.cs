@@ -41,7 +41,6 @@ public sealed record Phrase(
     string Title,
     string Content,
     Guid CategoryId,
-    bool Favorite,
     ShortcutMode ShortcutMode,
     ShortcutValue? Shortcut,
     int UsageCount,
@@ -62,7 +61,7 @@ public sealed record AppSettings(
     bool StartMinimized,
     bool StayInTrayOnClose,
     ShortcutChord LauncherShortcut,
-    bool AutoSend,
+    bool QuickSendWithoutConfirmation,
     bool ClipboardCompatibilityMode,
     bool HasCompletedOnboarding = false,
     int OnboardingVersion = 0)
@@ -76,7 +75,6 @@ public sealed record CreatePhraseCommand(
     string Title,
     string Content,
     Guid CategoryId,
-    bool Favorite,
     ShortcutMode ShortcutMode,
     string? Shortcut,
     string ColorKey = "default",
@@ -88,7 +86,6 @@ public sealed record UpdatePhraseCommand(
     string Title,
     string Content,
     Guid CategoryId,
-    bool Favorite,
     ShortcutMode ShortcutMode,
     string? Shortcut,
     string ColorKey = "default",
@@ -252,7 +249,6 @@ public sealed record AdapterCapabilities(
 public sealed record AdapterProfile(
     string AdapterId,
     string ApplicationId,
-    string ProductVersionRange,
     string ProfileVersion,
     CapabilityStatus InsertTextStatus,
     CapabilityStatus VerifyInsertStatus,
@@ -264,10 +260,18 @@ public sealed record AdapterProfile(
 public sealed record DeliveryRequest(
     Phrase Phrase,
     DeliveryTarget? Target,
-    bool SendRequested,
-    bool UserAutoSendEnabled,
+    SendMode Mode,
     bool ClipboardCompatibilityMode,
     TargetChangeBehavior TargetChangeBehavior = TargetChangeBehavior.CopyOnly);
+
+/// <summary>
+/// 用户本次投递的明确意图。该枚举不描述快捷键，也不规定 Adapter 采用何种发送协议。
+/// </summary>
+public enum SendMode
+{
+    InsertOnly,
+    InsertAndSend,
+}
 
 /// <summary>目标失效后的处理必须由调用场景显式选择，连续投递绝不污染用户剪贴板。</summary>
 public enum TargetChangeBehavior
@@ -289,6 +293,7 @@ public enum DeliveryEffect
 {
     None,
     Inserted,
+    SendTriggered,
     Sent,
     Unknown,
 }
@@ -327,9 +332,10 @@ public sealed record InsertResult(bool WasApplied, bool Inconclusive = false, st
     public static InsertResult Applied { get; } = new(true);
 }
 
-public sealed record SendResult(bool WasApplied, string Code = "SENT")
+public sealed record SendResult(bool WasApplied, bool Inconclusive = false, string Code = "SEND_TRIGGERED")
 {
     public static SendResult Applied { get; } = new(true);
+    public static SendResult Unknown(string code) => new(false, true, code);
 }
 
 public sealed record VerificationResult(bool IsVerified, bool IsInconclusive, string Code)
@@ -353,7 +359,8 @@ public sealed record DeliveryResult(
     bool Retryable,
     Guid TraceId)
 {
-    public bool Inserted => Effect is DeliveryEffect.Inserted or DeliveryEffect.Sent;
+    public bool Inserted => Effect is DeliveryEffect.Inserted or DeliveryEffect.SendTriggered or DeliveryEffect.Sent;
+    public bool SendTriggered => Effect is DeliveryEffect.SendTriggered or DeliveryEffect.Sent;
     public bool Sent => Effect is DeliveryEffect.Sent;
     public bool IsSuccess => Status == DeliveryStatus.Success;
 }
@@ -408,4 +415,3 @@ public interface ITextDeliveryStateMachine
 
 
 // TEMP_MARKER_0819
-

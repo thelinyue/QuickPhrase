@@ -128,7 +128,7 @@ public sealed class PhrasePackagePlannerTests
         new(StableId(key), parentId, name, sortOrder, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
     private static Phrase Phrase(string key, string title, string content, Guid categoryId, int sortOrder) =>
-        new(StableId(key), title, content, categoryId, false, ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default", sortOrder);
+        new(StableId(key), title, content, categoryId, ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default", sortOrder);
 
     private static Guid StableId(string key) => GuidUtility.Create(Guid.Empty, key);
 

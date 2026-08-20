@@ -5,7 +5,7 @@
         Title="闪语 · 使用引导" Width="{StaticResource Size.Onboarding.Width}" Height="{StaticResource Size.Onboarding.Height}" MinWidth="{StaticResource Size.Onboarding.MinimumWidth}" MinHeight="{StaticResource Size.Onboarding.MinimumHeight}"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Style="{StaticResource Style.Dialog.Window}"
-        Background="{DynamicResource Brush.Background.Window}" ShowInTaskbar="False"
+        Background="{DynamicResource Brush.Background.Default}" ShowInTaskbar="False"
         UseLayoutRounding="True" SnapsToDevicePixels="True">
     <Window.Resources>
         <!--
@@ -154,18 +154,18 @@
         </Style>
 
         <Style x:Key="PracticeOpenedStatusText" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Medium}">
-            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Muted}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding PracticeStarting}" Value="True"><Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" /></DataTrigger>
                 <DataTrigger Binding="{Binding PracticeOpened}" Value="True"><Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" /></DataTrigger>
             </Style.Triggers>
         </Style>
         <Style x:Key="PracticeSearchedStatusText" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Medium}">
-            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Muted}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
             <Style.Triggers><DataTrigger Binding="{Binding PracticeSearched}" Value="True"><Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" /></DataTrigger></Style.Triggers>
         </Style>
         <Style x:Key="PracticeInsertedStatusText" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Medium}">
-            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Muted}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
             <Style.Triggers><DataTrigger Binding="{Binding PracticeInserted}" Value="True"><Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" /></DataTrigger></Style.Triggers>
         </Style>
     </Window.Resources>
@@ -180,7 +180,7 @@
 
         <!-- Header：产品身份，不随步骤变化。 -->
         <Grid Grid.Row="0">
-            <TextBlock Text="闪语" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Brand.Primary}" />
+            <TextBlock Text="闪语" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Accent.Primary}" />
             <TextBlock Text="念起，即达" Style="{StaticResource Style.Text.Caption}" HorizontalAlignment="Right" />
         </Grid>
 
@@ -197,7 +197,7 @@
             <TextBlock Text="{Binding StepTitle}" Style="{StaticResource Style.Text.Title.Large}" />
             <TextBlock Grid.Column="1" Text="{Binding StepNumber, StringFormat=第 {0} 步 / 5}" Style="{StaticResource Style.Text.Caption}" VerticalAlignment="Center" />
             <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Value="{Binding StepNumber, Mode=OneWay}" Maximum="5" Height="{StaticResource Size.Onboarding.Progress.Height}" Margin="{StaticResource Thickness.Gap.Stack.Before.MD}"
-                         Foreground="{DynamicResource Brush.Brand.Primary}" Background="{DynamicResource Brush.Border.Subtle}" />
+                         Foreground="{DynamicResource Brush.Accent.Primary}" Background="{DynamicResource Brush.Border.Default}" />
         </Grid>
 
         <!-- Content：所有步骤共用剩余空间，内容始终从同一个顶部起点开始。 -->
@@ -280,10 +280,10 @@
                                 <Ellipse Width="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" Height="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <Ellipse.Style>
                                         <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="{DynamicResource Brush.Border.Subtle}" />
+                                            <Setter Property="Fill" Value="{DynamicResource Brush.Border.Default}" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding PracticeStarting}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Brand.Primary}" /></DataTrigger>
-                                                <DataTrigger Binding="{Binding PracticeOpened}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Brand.Primary}" /></DataTrigger>
+                                                <DataTrigger Binding="{Binding PracticeStarting}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Accent.Primary}" /></DataTrigger>
+                                                <DataTrigger Binding="{Binding PracticeOpened}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Accent.Primary}" /></DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </Ellipse.Style>
@@ -295,8 +295,8 @@
                                 <Ellipse Width="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" Height="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <Ellipse.Style>
                                         <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="{DynamicResource Brush.Border.Subtle}" />
-                                            <Style.Triggers><DataTrigger Binding="{Binding PracticeSearched}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Brand.Primary}" /></DataTrigger></Style.Triggers>
+                                            <Setter Property="Fill" Value="{DynamicResource Brush.Border.Default}" />
+                                            <Style.Triggers><DataTrigger Binding="{Binding PracticeSearched}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Accent.Primary}" /></DataTrigger></Style.Triggers>
                                         </Style>
                                     </Ellipse.Style>
                                 </Ellipse>
@@ -307,8 +307,8 @@
                                 <Ellipse Width="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" Height="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <Ellipse.Style>
                                         <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="{DynamicResource Brush.Border.Subtle}" />
-                                            <Style.Triggers><DataTrigger Binding="{Binding PracticeInserted}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Brand.Primary}" /></DataTrigger></Style.Triggers>
+                                            <Setter Property="Fill" Value="{DynamicResource Brush.Border.Default}" />
+                                            <Style.Triggers><DataTrigger Binding="{Binding PracticeInserted}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Accent.Primary}" /></DataTrigger></Style.Triggers>
                                         </Style>
                                     </Ellipse.Style>
                                 </Ellipse>

@@ -9,7 +9,7 @@
 - Core 不引用 Windows、WPF、UIA、SQLite 或 PinyinM.NET；Desktop 通过 Core 契约调用 Platform.Windows 能力。
 - 正式产品是单进程纯 WPF，不引入 WebView、React 管理页、ManagementIpc、ManagementBridge、IPC DTO、协议版本或 requestId。
 - 当前实际 WPF XAML、ViewModel 和交互是唯一 UI 参考；Web 原型/Sites 只保留为独立展示资产。
-- 任何第三方应用能力默认 `Unverified`；没有具体版本验收记录不得开放自动发送。
+- 任何第三方应用能力默认 `Unverified`；必须通过运行时能力检测后才能执行，客户端版本号只用于脱敏诊断，不作为准入条件。
 - 任何不确定的插入、目标变化、剪贴板状态或发送结果都不得自动重试。
 - 保留 `.openai/hosting.json`、`worker/index.js`、Sites 脚本和 Sites 测试，不删除原型构建链。
 
@@ -88,10 +88,10 @@
 - Core 使用平台无关 `DeliveryTarget`；HWND、PID、WindowThreadId、ProcessStartTimeUtc、ProcessName 和 UIA 上下文只在 Platform.Windows 保存。
 - 实现 Target 捕获、动作前重校验、MTA UIA Worker、Clipboard Transaction、序列号恢复保护、投递并发闸门、脱敏 DeliveryTrace。
 - `DeliveryResult` 已正交化为 Status、Effect、Stage、Confidence、ErrorCode、Message、Retryable、TraceId。
-- 精确企业微信 Profile 为 `WXWork 5.0.9.6065`：InsertText Verified、VerifyInsert Unverified、SendText Unsupported、VerifySend Unsupported。
-- 企业微信固定使用受保护 Clipboard + `Ctrl+V`；未知结果不自动重试，不开放后台目标发送。
+- 企业微信不设置版本门禁：InsertText Verified、VerifyInsert Verified、SendText Verified、VerifySend Unsupported；版本号仅进入脱敏诊断 Trace。
+- `Enter` 为 `InsertOnly`，`Ctrl+Enter` 为通用 `InsertAndSend`；Launcher 手势与目标发送协议分离。企业微信固定使用受保护 Clipboard + `Ctrl+V` 插入，并在发送前重校验后按当前已验收配置注入一次 `Enter`。未知结果不自动重试，不开放后台目标发送或无用户授权自动发送。
 
-强制安全测试包括 HWND 复用、PID/线程/启动时间变化、Launcher 后切换窗口、插入验证不确定、插入与发送之间切换窗口、发送后验证不确定、剪贴板新复制内容、UIA 超时/取消/UIPI 和未验证版本降级。
+强制安全测试包括 HWND 复用、PID/线程/启动时间变化、Launcher 后切换窗口、插入验证不确定、插入与发送之间切换窗口、发送后验证不确定、剪贴板新复制内容、UIA 超时/取消/UIPI 和运行时能力不满足时的安全拒绝。
 
 结果：`IMPLEMENTED / WECOM INSERT PROFILE FROZEN / MANUAL MATRIX IN PROGRESS`。证据见 [phase5-validation.md](phase5-validation.md)。
 
@@ -99,7 +99,7 @@
 
 ### 已完成
 
-- 精确企业微信 1 条执行 + 4 条等待队列，FIFO、目标变化取消和 Launcher 状态反馈。
+- 连续投递队列只接受 `InsertOnly`，按运行时能力提供 1 条执行 + 4 条等待的 FIFO；`InsertAndSend` 永不进入队列。
 - 启动路径、投递并发闸门和脱敏日志基础设施。
 - 不再记录或依赖旧 management bundle、system.ready 或 WebView 生命周期。
 
@@ -118,7 +118,7 @@
 
 主要平台为 Windows 11 x64；Windows 10 22H2 为 `UNVERIFIED / NOT SUPPORTED IN V1.0.0`。
 
-当前结果：`PHASE6_INFRA_PASS`。企业微信 30 次人工矩阵、冷/热启动采样、Windows 11 VM 安装/升级/卸载矩阵仍需补录，完成后才写入 `PHASE6_VERIFY_PASS_WIN11`。证据见 [phase6-validation.md](phase6-validation.md)。
+当前结果：`PHASE6_INFRA_PASS`。当前主流版本企业微信运行时能力人工矩阵、冷/热启动采样、Windows 11 VM 安装/升级/卸载矩阵仍需补录，完成后才写入 `PHASE6_VERIFY_PASS_WIN11`。证据见 [phase6-validation.md](phase6-validation.md)。
 
 ## 统一验证命令
 
@@ -129,7 +129,7 @@ npm run build
 npm run test:sites
 ```
 
-其中 npm 命令只用于独立 Prototype/Sites 链路，不是正式 WPF 构建依赖。涉及 Windows 真实能力的阶段必须增加 Windows 11 人工验收矩阵；模拟通过不得替代真实第三方客户端版本验收。
+其中 npm 命令只用于独立 Prototype/Sites 链路，不是正式 WPF 构建依赖。涉及 Windows 真实能力的阶段必须增加 Windows 11 人工验收矩阵；模拟通过不得替代真实第三方客户端运行时能力验收。
 
 ## V1 冻结后的 Backlog
 

@@ -19,7 +19,7 @@
                    Style="{StaticResource Style.Text.Caption}" TextWrapping="Wrap"
                    MinHeight="{StaticResource Size.Dialog.Status.MinimumHeight}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
         <!-- 底部操作栏复用语义边框与按钮 Style，仅保留上下分区所需的非对称结构间距。 -->
-        <Border Grid.Row="3" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="{StaticResource Thickness.Border.Top}"
+        <Border Grid.Row="3" BorderBrush="{DynamicResource Brush.Border.Default}" BorderThickness="{StaticResource Thickness.Border.Top}"
                 Margin="{StaticResource Thickness.Dialog.Footer}" Padding="{StaticResource Thickness.Dialog.Footer.Padding}">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button x:Name="CancelButton" Style="{StaticResource Style.Button.Ghost}" Content="取消"

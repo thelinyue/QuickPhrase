@@ -8,8 +8,8 @@
 | 项目 | 结果 |
 | --- | --- |
 | .NET SDK | 10.0.400 |
-| Debug build/test | 通过，0 warning，63/63 |
-| Release build/test | 通过，0 warning，63/63 |
+| Debug build/test | 本次通过，0 warning；Architecture 213/213，Desktop 199/199 |
+| Release build/test | 本次通过，0 warning；Architecture 213/213，Desktop 199/199 |
 | React build | 通过 |
 | Management-only build | 通过，独立 `dist/management` |
 | Sites tests | 通过，4/4 |
@@ -30,12 +30,13 @@
 
 ## 尚待人工确认
 
-1. 企业微信 `5.0.9.6065` 关闭全局兼容模式后仍固定走 Clipboard 路径。
-2. 5 条连续真实插入按 FIFO、每条只插入一次且不发送；累计至少 30 次，单条执行 P95 ≤ 300ms。
-3. Windows 11 x64 冷启动 10 次、热打开/关闭 20 次，Management Ready 分别满足 P95 ≤ 2s / ≤ 1s。
-4. 在线/离线安装、无 Runtime、已有 Runtime、升级前备份、卸载保留数据和重装恢复话术。
-5. 管理窗口关闭后无活跃 WebView2 Controller，并在无其他 WebView 时收到 BrowserProcessExited。
-6. 稳定空闲五分钟内无 QuickPhrase 可归因的周期性持久化写入。
+1. 在当前主流版本企业微信上验证版本号不参与准入；普通 `Enter` 始终使用受保护 Clipboard + `Ctrl+V`，并通过运行时目标、前台窗口和焦点/Caret 检查。
+2. 验证 `Ctrl+Enter` 默认确认、取消零副作用、快捷发送模式、已有草稿、焦点切换和异常中断；完整按键注入只记录 `SendTriggered`，不宣称最终 `Sent`。
+3. 5 条连续真实 `InsertOnly` 按 FIFO、每条只插入一次且不发送；累计至少 30 次，单条执行 P95 ≤ 300ms。
+4. Windows 11 x64 冷启动 10 次、热打开/关闭 20 次，Management Ready 分别满足 P95 ≤ 2s / ≤ 1s。
+5. 在线/离线安装、无 Runtime、已有 Runtime、升级前备份、卸载保留数据和重装恢复话术。
+6. 管理窗口关闭后无活跃 WebView2 Controller，并在无其他 WebView 时收到 BrowserProcessExited。
+7. 稳定空闲五分钟内无 QuickPhrase 可归因的周期性持久化写入。
 
 完整门禁命令：
 

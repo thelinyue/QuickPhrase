@@ -14,9 +14,9 @@ public class SettingsViewContractTests
         Assert.DoesNotContain("Content=\"保存\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"取消\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<designSystem:ShortcutInput", xaml, StringComparison.Ordinal);
-        Assert.Contains("{DynamicResource Brush.Background.Window}", xaml, StringComparison.Ordinal);
-        Assert.Contains("{DynamicResource Brush.Surface.Primary}", xaml, StringComparison.Ordinal);
-        Assert.Contains("{DynamicResource Brush.Border.Subtle}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{DynamicResource Brush.Background.Default}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{DynamicResource Brush.Surface.Default}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{DynamicResource Brush.Border.Default}", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -44,6 +44,10 @@ public class SettingsViewContractTests
         Assert.Contains("ApplyRecommendedShortcut_Click", xaml, StringComparison.Ordinal);
         Assert.Contains("ApplyAlternateShortcut_Click", xaml, StringComparison.Ordinal);
         Assert.Contains("EditCustomShortcut_Click", xaml, StringComparison.Ordinal);
+        Assert.Contains("Title=\"快捷发送模式\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("风险选项", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsChecked=\"{Binding QuickSendWithoutConfirmation}\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Title=\"自动发送\"", xaml, StringComparison.Ordinal);
     }
 
     [Fact]

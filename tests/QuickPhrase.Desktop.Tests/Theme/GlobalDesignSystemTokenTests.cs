@@ -41,48 +41,31 @@ public sealed class GlobalDesignSystemTokenTests
 
     private static readonly string[] RequiredThemeColorKeys =
     {
-        "Color.Brand.Primary",
-        "Color.Brand.Primary.Hover",
-        "Color.Brand.Primary.Pressed",
-        "Color.Brand.BlueStrong",
-        "Color.Brand.Ice",
-        "Color.Brand.IceLight",
-        "Color.Brand.Gold",
-        "Color.Brand.Gold.Hover",
-        "Color.Background.Window",
-        "Color.Background.Navigation",
-        "Color.Surface.Primary",
-        "Color.Surface.Secondary",
+        "Color.Background.Default",
+        "Color.Background.Secondary",
+        "Color.Surface.Default",
+        "Color.Surface.Hover",
+        "Color.Surface.Selected",
         "Color.Surface.Elevated",
+        "Color.Accent.Primary",
+        "Color.Accent.Primary.Hover",
+        "Color.Accent.Primary.Pressed",
+        "Color.Accent.Soft",
+        "Color.Accent.Gold",
+        "Color.Accent.Gold.Strong",
         "Color.Text.Primary",
         "Color.Text.Secondary",
-        "Color.Text.Muted",
         "Color.Text.Disabled",
-        "Color.Text.OnBrand",
+        "Color.Text.OnAccent",
         "Color.Border.Default",
-        "Color.Border.Subtle",
+        "Color.Border.Strong",
         "Color.Border.Focus",
-        "Color.State.Hover",
-        "Color.State.Selected",
-        "Color.State.SelectedBorder",
-        "Color.State.SelectionIndicator",
+        "Color.Selection.Indicator",
         "Color.Status.Success",
         "Color.Status.Warning",
         "Color.Status.Error",
-        "Color.Favorite.Inactive",
-        "Color.Favorite.Active",
         "Color.Overlay",
         "Color.Shadow.Default",
-        "Color.Phrase.Default",
-        "Color.Phrase.Orange",
-        "Color.Phrase.Blue",
-        "Color.Phrase.Magenta",
-        "Color.Phrase.Purple",
-        "Color.Phrase.Green",
-        "Color.Phrase.Pink",
-        "Color.Phrase.Teal",
-        "Color.Phrase.Tan",
-        "Color.Phrase.Gray",
     };
 
     private static readonly string[] RequiredShadowEffectKeys =
@@ -199,7 +182,9 @@ public sealed class GlobalDesignSystemTokenTests
         foreach (var tokenFileName in FrozenTokenMergeOrder)
             merged.MergedDictionaries.Add(LoadDictionary(DesignSystemPath("Tokens", tokenFileName)));
 
+        merged.MergedDictionaries.Add(LoadDictionary(DesignSystemPath("Tokens", "Colors.xaml")));
         merged.MergedDictionaries.Add(LoadDictionary(ThemePath(themeFileName)));
+        merged.MergedDictionaries.Add(LoadDictionary(DesignSystemPath("Tokens", "Brushes.xaml")));
         return merged;
     }
 
@@ -300,45 +285,47 @@ public sealed class GlobalDesignSystemTokenTests
     [Fact]
     public void LightAndDarkThemes_ExposeIdenticalGovernedSemanticKeySets()
     {
-        var light = ReadKeyedElements(ThemePath("QuickPhraseTheme.Light.xaml"));
-        var dark = ReadKeyedElements(ThemePath("QuickPhraseTheme.Dark.xaml"));
+        var light = ReadKeyedElements(ThemePath("Theme.Light.xaml"));
+        var dark = ReadKeyedElements(ThemePath("Theme.Dark.xaml"));
 
         Assert.Equal(light.Keys.OrderBy(key => key), dark.Keys.OrderBy(key => key));
-
         foreach (var theme in new[] { (Name: "Light Theme", Resources: light), (Name: "Dark Theme", Resources: dark) })
         {
-            AssertKeysUsePrefix(theme.Name, theme.Resources.Keys, "Color.", "Brush.", "Effect.Shadow.");
-
-            foreach (var forbiddenKey in ForbiddenLegacyThemeKeys)
-                Assert.DoesNotContain(forbiddenKey, theme.Resources.Keys);
-
+            AssertKeysUsePrefix(theme.Name, theme.Resources.Keys, "Color.");
+            Assert.Equal(RequiredThemeColorKeys.OrderBy(key => key), theme.Resources.Keys.OrderBy(key => key));
             foreach (var colorKey in RequiredThemeColorKeys)
-            {
-                Assert.True(theme.Resources.ContainsKey(colorKey), $"{theme.Name} 缺少 {colorKey}");
                 Assert.Equal("Color", theme.Resources[colorKey].Name.LocalName);
-
-                var brushKey = colorKey.Replace("Color.", "Brush.", StringComparison.Ordinal);
-                Assert.True(theme.Resources.ContainsKey(brushKey), $"{theme.Name} 缺少 {brushKey}");
-            }
-
-            var shadowKeys = theme.Resources.Keys
-                .Where(key => key.StartsWith("Effect.Shadow.", StringComparison.Ordinal))
-                .OrderBy(key => key)
-                .ToArray();
-            Assert.Equal(RequiredShadowEffectKeys, shadowKeys);
         }
+
+        var governedFiles = new[]
+        {
+            DesignSystemPath("Tokens", "Colors.xaml"),
+            DesignSystemPath("Tokens", "Brushes.xaml"),
+            ThemePath("Theme.Light.xaml"),
+            ThemePath("Theme.Dark.xaml"),
+        };
+        var governedKeys = governedFiles.SelectMany(path => ReadKeyedElements(path).Keys).ToArray();
+        foreach (var forbiddenKey in ForbiddenLegacyThemeKeys)
+            Assert.DoesNotContain(forbiddenKey, governedKeys);
+        Assert.DoesNotContain(governedKeys, key => key.Contains("Favorite", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void DesignSystemXamlOutsideThemes_ContainsNoHexOrColorDeclarations()
+    public void DesignSystemXamlOutsideGovernedColorLayers_ContainsNoHexOrColorDeclarations()
     {
         var hexColor = new Regex(
             @"(?<![0-9A-Fa-f])#(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{3})(?![0-9A-Fa-f])",
             RegexOptions.CultureInvariant);
-        var themesDirectory = Path.GetFullPath(DesignSystemPath("Themes")) + Path.DirectorySeparatorChar;
+        var governedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            Path.GetFullPath(DesignSystemPath("Tokens", "Colors.xaml")),
+            Path.GetFullPath(DesignSystemPath("Tokens", "Brushes.xaml")),
+            Path.GetFullPath(ThemePath("Theme.Light.xaml")),
+            Path.GetFullPath(ThemePath("Theme.Dark.xaml")),
+        };
         var xamlFiles = Directory
             .EnumerateFiles(DesignSystemPath(), "*.xaml", SearchOption.AllDirectories)
-            .Where(path => !Path.GetFullPath(path).StartsWith(themesDirectory, StringComparison.OrdinalIgnoreCase))
+            .Where(path => !governedFiles.Contains(Path.GetFullPath(path)))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -365,22 +352,21 @@ public sealed class GlobalDesignSystemTokenTests
 
             Assert.True(
                 colorDeclarations.Length == 0,
-                $"主题外 XAML 不得声明 Color 或 SolidColorBrush：{Path.GetRelativePath(DesignSystemPath(), path)}；发现 {string.Join(", ", colorDeclarations)}");
+                $"受管颜色层外的 XAML 不得声明 Color 或 SolidColorBrush：{Path.GetRelativePath(DesignSystemPath(), path)}；发现 {string.Join(", ", colorDeclarations)}");
         }
     }
 
-    [Theory]
-    [InlineData("QuickPhraseTheme.Light.xaml")]
-    [InlineData("QuickPhraseTheme.Dark.xaml")]
-    public void ThemeBrushesAndShadowEffects_UseDynamicResource(string fileName)
+    [Fact]
+    public void BrushesAndShadowEffects_ReferenceGovernedColors()
     {
-        var keyedElements = ReadKeyedElements(ThemePath(fileName));
+        var keyedElements = ReadKeyedElements(DesignSystemPath("Tokens", "Brushes.xaml"));
 
         foreach (var pair in keyedElements.Where(pair => pair.Key.StartsWith("Brush.", StringComparison.Ordinal)))
         {
             Assert.Equal("SolidColorBrush", pair.Value.Name.LocalName);
             var expectedColorKey = pair.Key.Replace("Brush.", "Color.", StringComparison.Ordinal);
-            Assert.Equal($"{{DynamicResource {expectedColorKey}}}", pair.Value.Attribute("Color")?.Value);
+            var resourceKind = pair.Key.StartsWith("Brush.Phrase.", StringComparison.Ordinal) ? "StaticResource" : "DynamicResource";
+            Assert.Equal($"{{{resourceKind} {expectedColorKey}}}", pair.Value.Attribute("Color")?.Value);
         }
 
         foreach (var effectKey in RequiredShadowEffectKeys)
@@ -392,69 +378,56 @@ public sealed class GlobalDesignSystemTokenTests
     }
 
     [Fact]
-    public void LightAndDarkThemes_ExposeApprovedFixedColorsAndOnBrandContrast()
+    public void LightAndDarkThemes_ExposeApprovedFixedColorsAndOnAccentContrast()
     {
-        var light = ReadKeyedElements(ThemePath("QuickPhraseTheme.Light.xaml"));
-        var dark = ReadKeyedElements(ThemePath("QuickPhraseTheme.Dark.xaml"));
+        var light = ReadKeyedElements(ThemePath("Theme.Light.xaml"));
+        var dark = ReadKeyedElements(ThemePath("Theme.Dark.xaml"));
 
         var expectedLight = new Dictionary<string, string>
         {
-            ["Color.Brand.Primary"] = "#3478F6",
-            ["Color.Brand.Primary.Hover"] = "#2869E8",
-            ["Color.Brand.Primary.Pressed"] = "#2059C9",
-            ["Color.Brand.BlueStrong"] = "#2563D9",
-            ["Color.Brand.Gold"] = "#F2B735",
-            ["Color.Background.Window"] = "#EDF3FA",
-            ["Color.Background.Navigation"] = "#E8F0F9",
-            ["Color.Surface.Primary"] = "#FFFFFF",
-            ["Color.Surface.Secondary"] = "#F5F8FC",
-            ["Color.Surface.Elevated"] = "#FFFFFF",
-            ["Color.Text.Primary"] = "#172033",
-            ["Color.Text.Secondary"] = "#44516A",
-            ["Color.Text.Muted"] = "#6F7D94",
-            ["Color.Text.Disabled"] = "#A5AFBD",
-            ["Color.Text.OnBrand"] = "#FFFFFF",
-            ["Color.Border.Default"] = "#CBD6E4",
-            ["Color.Border.Subtle"] = "#D9E2EC",
-            ["Color.Border.Focus"] = "#3478F6",
-            ["Color.State.Hover"] = "#EAF3FF",
-            ["Color.State.Selected"] = "#DCEAFF",
-            ["Color.State.SelectedBorder"] = "#76AAFF",
-            ["Color.Status.Success"] = "#2E9B63",
-            ["Color.Status.Warning"] = "#E5A12D",
-            ["Color.Status.Error"] = "#D64545",
+            ["Color.Background.Default"] = "#F8FAFC",
+            ["Color.Background.Secondary"] = "#F1F5F9",
+            ["Color.Surface.Default"] = "#FFFFFF",
+            ["Color.Surface.Hover"] = "#F8FAFC",
+            ["Color.Surface.Selected"] = "#EFF6FF",
+            ["Color.Accent.Primary"] = "#2563EB",
+            ["Color.Accent.Primary.Hover"] = "#1D4ED8",
+            ["Color.Accent.Primary.Pressed"] = "#1E40AF",
+            ["Color.Accent.Soft"] = "#DBEAFE",
+            ["Color.Accent.Gold"] = "#FBBF24",
+            ["Color.Text.Primary"] = "#1E293B",
+            ["Color.Text.Secondary"] = "#64748B",
+            ["Color.Text.Disabled"] = "#94A3B8",
+            ["Color.Text.OnAccent"] = "#FFFFFF",
+            ["Color.Border.Default"] = "#E2E8F0",
+            ["Color.Border.Strong"] = "#CBD5E1",
+            ["Color.Border.Focus"] = "#4A90FF",
+            ["Color.Selection.Indicator"] = "#4A90FF",
         };
-
         var expectedDark = new Dictionary<string, string>
         {
-            ["Color.Brand.BlueStrong"] = "#9BCBFF",
-            ["Color.Background.Window"] = "#141B26",
-            ["Color.Background.Navigation"] = "#182331",
-            ["Color.Surface.Primary"] = "#1D2A39",
-            ["Color.Surface.Secondary"] = "#223142",
-            ["Color.Surface.Elevated"] = "#26384B",
-            ["Color.Text.Primary"] = "#F3F7FC",
-            ["Color.Text.Secondary"] = "#C4D0DE",
-            ["Color.Text.Muted"] = "#93A4B8",
-            ["Color.Text.OnBrand"] = "#172033",
-            ["Color.Border.Default"] = "#3B4B60",
-            ["Color.Border.Focus"] = "#8EC5FF",
-            ["Color.State.Selected"] = "#203F67",
-            ["Color.State.SelectedBorder"] = "#75AEFF",
+            ["Color.Background.Default"] = "#0F172A",
+            ["Color.Surface.Default"] = "#172033",
+            ["Color.Surface.Selected"] = "#1E3A5F",
+            ["Color.Accent.Primary"] = "#60A5FA",
+            ["Color.Text.Primary"] = "#F8FAFC",
+            ["Color.Text.Secondary"] = "#CBD5E1",
+            ["Color.Text.OnAccent"] = "#0F172A",
+            ["Color.Border.Default"] = "#334155",
+            ["Color.Border.Focus"] = "#4A90FF",
         };
 
         foreach (var expected in expectedLight)
             Assert.Equal(expected.Value, light[expected.Key].Value.Trim());
-
         foreach (var expected in expectedDark)
             Assert.Equal(expected.Value, dark[expected.Key].Value.Trim());
 
         var lightContrast = CalculateContrastRatio(
-            ParseColor(light["Color.Brand.BlueStrong"].Value.Trim()),
-            ParseColor(light["Color.Text.OnBrand"].Value.Trim()));
+            ParseColor(light["Color.Accent.Primary"].Value.Trim()),
+            ParseColor(light["Color.Text.OnAccent"].Value.Trim()));
         var darkContrast = CalculateContrastRatio(
-            ParseColor(dark["Color.Brand.BlueStrong"].Value.Trim()),
-            ParseColor(dark["Color.Text.OnBrand"].Value.Trim()));
+            ParseColor(dark["Color.Accent.Primary"].Value.Trim()),
+            ParseColor(dark["Color.Text.OnAccent"].Value.Trim()));
 
         Assert.True(lightContrast >= 4.5, $"Light Primary Button 对比度不足：{lightContrast:F2}:1");
         Assert.True(darkContrast >= 4.5, $"Dark Primary Button 对比度不足：{darkContrast:F2}:1");
@@ -477,12 +450,9 @@ public sealed class GlobalDesignSystemTokenTests
             ["Color.Phrase.Gray"] = "#5C6772",
         };
 
-        foreach (var fileName in new[] { "QuickPhraseTheme.Light.xaml", "QuickPhraseTheme.Dark.xaml" })
-        {
-            var theme = ReadKeyedElements(ThemePath(fileName));
-            foreach (var pair in expected)
-                Assert.Equal(pair.Value, theme[pair.Key].Value.Trim());
-        }
+        var colors = ReadKeyedElements(DesignSystemPath("Tokens", "Colors.xaml"));
+        foreach (var pair in expected)
+            Assert.Equal(pair.Value, colors[pair.Key].Value.Trim());
     }
 
     [Fact]
@@ -638,7 +608,7 @@ public sealed class GlobalDesignSystemTokenTests
             ("Size.Onboarding.PracticeIndicator.Diameter", 8),
             ("Size.Onboarding.FooterStatus.Height", 28),
             ("Size.Library.BrandIcon", 24),
-            ("Size.List.SelectionIndicator.Width", 4),
+            ("Size.List.SelectionIndicator.Width", 3),
             ("Size.Dialog.Category.Width", 380),
             ("Size.Dialog.Category.Height", 240),
             ("Size.Dialog.Category.MinimumHeight", 200),
@@ -684,8 +654,8 @@ public sealed class GlobalDesignSystemTokenTests
     }
 
     [Theory]
-    [InlineData("QuickPhraseTheme.Light.xaml", "#EDF3FA", "#B8C7D9")]
-    [InlineData("QuickPhraseTheme.Dark.xaml", "#141B26", "#0B111A")]
+    [InlineData("Theme.Light.xaml", "#F8FAFC", "#94A3B8")]
+    [InlineData("Theme.Dark.xaml", "#0F172A", "#0B111A")]
     public void FrozenMergeOrder_ParsesAndMaterializesEveryResource(
         string themeFileName,
         string expectedWindowColor,
@@ -695,13 +665,15 @@ public sealed class GlobalDesignSystemTokenTests
         {
             var merged = LoadMergedDesignSystem(themeFileName);
 
-            Assert.Equal(6, merged.MergedDictionaries.Count);
+            Assert.Equal(8, merged.MergedDictionaries.Count);
             Assert.True(merged.MergedDictionaries[0].Contains("Typography.FontFamily.UI"));
             Assert.True(merged.MergedDictionaries[1].Contains("Thickness.XS"));
             Assert.True(merged.MergedDictionaries[2].Contains("Radius.Control"));
             Assert.True(merged.MergedDictionaries[3].Contains("Size.Control.Default"));
             Assert.True(merged.MergedDictionaries[4].Contains("Motion.Duration.Normal"));
             Assert.True(merged.MergedDictionaries[5].Contains("Color.Brand.Primary"));
+            Assert.True(merged.MergedDictionaries[6].Contains("Color.Background.Default"));
+            Assert.True(merged.MergedDictionaries[7].Contains("Brush.Background.Default"));
 
             var keys = merged.MergedDictionaries
                 .SelectMany(dictionary => dictionary.Keys.Cast<object>())
@@ -712,7 +684,7 @@ public sealed class GlobalDesignSystemTokenTests
                 Assert.NotNull(merged[key]);
 
             var probe = new Border { Resources = merged };
-            probe.SetResourceReference(Border.BackgroundProperty, "Brush.Background.Window");
+            probe.SetResourceReference(Border.BackgroundProperty, "Brush.Background.Default");
             probe.SetResourceReference(UIElement.EffectProperty, "Effect.Shadow.Elevated");
 
             var background = Assert.IsType<SolidColorBrush>(probe.Background);

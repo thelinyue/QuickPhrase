@@ -13,8 +13,9 @@ internal sealed record DeliveryQueueTicket(
 internal sealed record DeliveryBatchSummary(int CompletedCount, int FailedCount, int CancelledCount);
 
 /// <summary>
-/// 鏉╃偟鐢荤拠婵囨钩閻ㄥ嫯绻樼粙瀣敶閺堝鏅?FIFO閵嗗倿妲﹂崚妤€褰х拹鐔荤煑閹稿銆庢惔蹇氱殶鎼达讣绱濋惇鐔割劀閻ㄥ嫮閮寸紒鐔荤翻閸忋儰绮涚紒蹇氱箖
-/// ITextDeliveryStateMachine 閻ㄥ嫪瑕嗙悰灞界暔閸忋劑妞勯梻顭掔礉绾喕绻氭禒璁崇秿閺冭泛鍩㈤張鈧径姘娑擃亝濮囬柅鎺戝З娴ｆ粏袝绾版壆娲伴弽鍥╃崶閸欙絾鍨ㄩ崜顏囧垱閺夎￥鈧?/// </summary>
+/// 连续投递队列按 FIFO 串行执行话术。入队操作只更新内存状态，实际投递在线程池启动，
+/// 避免目标激活、焦点等待等 Win32 操作阻塞 WPF UI 线程；失败结果不会自动重试。
+/// </summary>
 internal sealed class DeliveryQueueCoordinator : IAsyncDisposable
 {
     private readonly ITextDeliveryStateMachine _delivery;
@@ -50,6 +51,7 @@ internal sealed class DeliveryQueueCoordinator : IAsyncDisposable
     {
         QueuedDelivery item;
         DeliveryQueueStatus status;
+        TaskCompletionSource? workerStart = null;
         lock (_gate)
         {
             if (!_accepting)
@@ -62,7 +64,13 @@ internal sealed class DeliveryQueueCoordinator : IAsyncDisposable
             {
                 _processing = true;
                 ResetBatchCounters();
-                _worker = ProcessLoopAsync(item);
+                var startSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _worker = Task.Run(async () =>
+                {
+                    await startSignal.Task.ConfigureAwait(false);
+                    await ProcessLoopAsync(item).ConfigureAwait(false);
+                });
+                workerStart = startSignal;
             }
             else
             {
@@ -71,7 +79,15 @@ internal sealed class DeliveryQueueCoordinator : IAsyncDisposable
             status = new(true, _pending.Count);
         }
 
-        StatusChanged?.Invoke(status);
+        try
+        {
+            StatusChanged?.Invoke(status);
+        }
+        finally
+        {
+            // 先发布“处理中”状态，再放行后台工作，避免极快失败时 UI 收到倒序状态。
+            workerStart?.TrySetResult();
+        }
         return new(true, "DELIVERY_QUEUED", status.WaitingCount, item.Completion.Task);
     }
 
@@ -111,7 +127,7 @@ internal sealed class DeliveryQueueCoordinator : IAsyncDisposable
             }
             catch (Exception exception)
             {
-                Console.Error.WriteLine($"鏉╃偟鐢荤拠婵囨钩閹舵洟鈧帒銇戠拹銉窗{exception.GetType().Name}");
+                Console.Error.WriteLine($"投递队列处理异常，当前话术不会自动重试：{exception.GetType().Name}: {exception.Message}");
                 result = FailedResult("INSERT_FAILED", "投递失败，未自动重试。" );
             }
 

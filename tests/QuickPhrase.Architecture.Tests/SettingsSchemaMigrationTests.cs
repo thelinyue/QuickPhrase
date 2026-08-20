@@ -31,26 +31,27 @@ public sealed class SettingsSchemaMigrationTests
     }
 
     [Fact]
-    public async Task FreshDatabase_LoadMigratesToSchemaVersion2WithoutLegacyShortcutFields()
+    public async Task FreshDatabase_SeedsSchemaVersion3WithoutLegacySendFields()
     {
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
-        _ = await runtime.Settings.LoadAsync();
 
         var row = await ReadSettingsRowAsync(runtime.DatabasePath);
         using var json = JsonDocument.Parse(row.Json);
         var root = json.RootElement;
         var flashLauncher = root.GetProperty("shortcuts").GetProperty("flashLauncher");
 
-        Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(3, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal((int)ShortcutModifiers.Alt, flashLauncher.GetProperty("modifiers").GetInt32());
         Assert.Equal((int)ShortcutKey.Space, flashLauncher.GetProperty("keyCode").GetInt32());
         Assert.False(root.TryGetProperty("launcherShortcutDisplay", out _));
         Assert.False(root.TryGetProperty("launcherShortcutNormalized", out _));
+        Assert.False(root.GetProperty("quickSendWithoutConfirmation").GetBoolean());
+        Assert.False(root.TryGetProperty("autoSend", out _));
     }
 
     [Fact]
-    public async Task Save_WritesSchemaVersion2StructuredShortcutAndPreservesOtherSettings()
+    public async Task Save_WritesSchemaVersion3AndPersistsQuickSendRiskChoice()
     {
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
@@ -61,7 +62,7 @@ public sealed class SettingsSchemaMigrationTests
             StartMinimized: true,
             StayInTrayOnClose: false,
             new ShortcutChord(ShortcutModifiers.Ctrl | ShortcutModifiers.Shift, ShortcutKey.F12),
-            AutoSend: true,
+            QuickSendWithoutConfirmation: true,
             ClipboardCompatibilityMode: false,
             HasCompletedOnboarding: true,
             OnboardingVersion: 3)
@@ -78,12 +79,12 @@ public sealed class SettingsSchemaMigrationTests
         Assert.True(result.IsSuccess, result.Error?.Message);
         Assert.NotNull(result.Value);
         Assert.Equal(current.Version + 1, result.Value.Version);
-        Assert.False(result.Value.AutoSend);
+        Assert.True(result.Value.QuickSendWithoutConfirmation);
         var row = await ReadSettingsRowAsync(runtime.DatabasePath);
         Assert.Equal(current.Version + 1, row.Version);
         using var json = JsonDocument.Parse(row.Json);
         var root = json.RootElement;
-        Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(3, root.GetProperty("schemaVersion").GetInt32());
         var flashLauncher = root.GetProperty("shortcuts").GetProperty("flashLauncher");
         Assert.Equal((int)(ShortcutModifiers.Ctrl | ShortcutModifiers.Shift), flashLauncher.GetProperty("modifiers").GetInt32());
         Assert.Equal((int)ShortcutKey.F12, flashLauncher.GetProperty("keyCode").GetInt32());
@@ -92,19 +93,23 @@ public sealed class SettingsSchemaMigrationTests
         Assert.True(root.GetProperty("launchOnStartup").GetBoolean());
         Assert.True(root.GetProperty("startMinimized").GetBoolean());
         Assert.False(root.GetProperty("stayInTrayOnClose").GetBoolean());
-        Assert.False(root.GetProperty("autoSend").GetBoolean());
+        Assert.True(root.GetProperty("quickSendWithoutConfirmation").GetBoolean());
+        Assert.False(root.TryGetProperty("autoSend", out _));
         Assert.False(root.GetProperty("clipboardCompatibilityMode").GetBoolean());
         Assert.True(root.GetProperty("hasCompletedOnboarding").GetBoolean());
         Assert.Equal(3, root.GetProperty("onboardingVersion").GetInt32());
         Assert.False(root.GetProperty("launcherEnabledAdapters").GetProperty("WXWork").GetBoolean());
         Assert.True(root.GetProperty("launcherEnabledAdapters").GetProperty("CustomAdapter").GetBoolean());
+
+        var reloaded = await runtime.Settings.LoadAsync();
+        Assert.True(reloaded.QuickSendWithoutConfirmation);
     }
 
     [Theory]
     [InlineData("Alt + Space", "Alt+Space", ShortcutModifiers.Alt, ShortcutKey.Space)]
     [InlineData("Ctrl + Space", "Ctrl+Space", ShortcutModifiers.Ctrl, ShortcutKey.Space)]
     [InlineData("Ctrl + Shift + F12", "Ctrl+Shift+F12", ShortcutModifiers.Ctrl | ShortcutModifiers.Shift, ShortcutKey.F12)]
-    public async Task Load_MigratesSchemaVersion1ShortcutAndRewritesVersion2WithoutChangingRowVersion(
+    public async Task Load_MigratesSchemaVersion1WithoutEnablingQuickSendAndRewritesVersion3(
         string display,
         string normalized,
         ShortcutModifiers expectedModifiers,
@@ -122,7 +127,7 @@ public sealed class SettingsSchemaMigrationTests
           "stayInTrayOnClose": false,
           "launcherShortcutDisplay": "{{display}}",
           "launcherShortcutNormalized": "{{normalized}}",
-          "autoSend": false,
+          "autoSend": true,
           "clipboardCompatibilityMode": false,
           "hasCompletedOnboarding": true,
           "onboardingVersion": 4,
@@ -142,6 +147,7 @@ public sealed class SettingsSchemaMigrationTests
         Assert.True(loaded.LaunchOnStartup);
         Assert.True(loaded.StartMinimized);
         Assert.False(loaded.StayInTrayOnClose);
+        Assert.False(loaded.QuickSendWithoutConfirmation);
         Assert.False(loaded.ClipboardCompatibilityMode);
         Assert.True(loaded.HasCompletedOnboarding);
         Assert.Equal(4, loaded.OnboardingVersion);
@@ -151,12 +157,14 @@ public sealed class SettingsSchemaMigrationTests
         var migrated = await ReadSettingsRowAsync(runtime.DatabasePath);
         Assert.Equal(rowVersion, migrated.Version);
         using var json = JsonDocument.Parse(migrated.Json);
-        Assert.Equal(2, json.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(3, json.RootElement.GetProperty("schemaVersion").GetInt32());
         var flashLauncher = json.RootElement.GetProperty("shortcuts").GetProperty("flashLauncher");
         Assert.Equal((int)expectedModifiers, flashLauncher.GetProperty("modifiers").GetInt32());
         Assert.Equal((int)expectedKey, flashLauncher.GetProperty("keyCode").GetInt32());
         Assert.False(json.RootElement.TryGetProperty("launcherShortcutDisplay", out _));
         Assert.False(json.RootElement.TryGetProperty("launcherShortcutNormalized", out _));
+        Assert.False(json.RootElement.GetProperty("quickSendWithoutConfirmation").GetBoolean());
+        Assert.False(json.RootElement.TryGetProperty("autoSend", out _));
     }
 
     [Fact]
@@ -230,7 +238,7 @@ public sealed class SettingsSchemaMigrationTests
     }
 
     [Fact]
-    public async Task Load_ReadsSchemaVersion2AndPreservesStableEnumValues()
+    public async Task Load_MigratesSchemaVersion2WithoutEnablingQuickSend()
     {
         using var temp = new TemporaryDirectory();
         await using (var bootstrap = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path)))
@@ -248,7 +256,7 @@ public sealed class SettingsSchemaMigrationTests
           "launchOnStartup": false,
           "startMinimized": true,
           "stayInTrayOnClose": true,
-          "autoSend": false,
+          "autoSend": true,
           "clipboardCompatibilityMode": true,
           "hasCompletedOnboarding": true,
           "onboardingVersion": 2,
@@ -266,6 +274,13 @@ public sealed class SettingsSchemaMigrationTests
         Assert.True(loaded.StartMinimized);
         Assert.True(loaded.HasCompletedOnboarding);
         Assert.Equal(2, loaded.OnboardingVersion);
+        Assert.False(loaded.QuickSendWithoutConfirmation);
+
+        var migrated = await ReadSettingsRowAsync(runtime.DatabasePath);
+        using var migratedJson = JsonDocument.Parse(migrated.Json);
+        Assert.Equal(3, migratedJson.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.False(migratedJson.RootElement.GetProperty("quickSendWithoutConfirmation").GetBoolean());
+        Assert.False(migratedJson.RootElement.TryGetProperty("autoSend", out _));
     }
 
     private static AppSettings CreateSettings(ShortcutChord shortcut) =>

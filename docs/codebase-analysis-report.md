@@ -24,7 +24,7 @@
 ## 1. 项目概览
 
 ### 1.1 项目类型
-Windows 11 x64 本地**快捷话术（文本片段）投递工具**，中文产品名“**闪语**”，MIT License。目标是在任意应用（V1 仅**企业微信 5.0.9.6065**）的聊天编辑区快速插入预存话术，支持分类树、标签、快捷键与搜索。无云/网络依赖，纯本地工具。
+Windows 11 x64 本地**快捷话术（文本片段）投递工具**，中文产品名“**闪语**”，MIT License。目标是在任意应用（V1 仅**当前主流版本企业微信**）的聊天编辑区快速插入预存话术，支持分类树、标签、快捷键与搜索。无云/网络依赖，纯本地工具。
 
 ### 1.2 核心功能与业务目标
 - 话术库：分类（最多三级树）、标签、纯文本正文、ColorKey、快捷键。
@@ -58,7 +58,7 @@ QuickPhrase/
 │  ├─ QuickPhrase.Platform.Windows/  # Windows 能力（SQLite/Win32/UIA/剪贴板/热键/目标/Adapter/投递）
 │  ├─ QuickPhrase.Desktop/        # WPF 生命周期、单实例、托盘、Launcher、WebView2 Host、IPC、组合根
 │  └─ (tests 见下)
-├─ tests/QuickPhrase.Architecture.Tests/  # 架构约束 + 各 Phase 验证（63/63 通过）
+├─ tests/QuickPhrase.Architecture.Tests/  # 架构约束 + 各 Phase 验证（当前 Architecture 213/213、Desktop 199/199 通过）
 ├─ src/                           # React：原型 + 正式管理页
 ├─ docs/                          # 架构文档、Phase 验证、PRD、codex 执行说明
 ├─ scripts/                       # 8 个 PowerShell：verify-phase1~6、verify-phase51、build-release
@@ -88,14 +88,14 @@ Core → 无平台项目引用
 该方向被 **`ArchitectureTests.ProjectReferencesFollowFrozenDirection`** 以单元测试强制：Core 无项目/包引用；Platform.Windows 仅引用 Core 与 `Microsoft.Data.Sqlite`/`PinyinM.NET`；Desktop 仅引用 Core 与 `Microsoft.Web.WebView2`。
 
 ### 3.2 架构宪法 10 条（`docs/quickphrase-architecture.md`）
-Core 不知道 Windows；React 不拥有业务能力；WebView2 非核心运行时依赖；Launcher 不经过 React；搜索不查询 SQLite；UIA 不运行在 WPF UI Thread；自动发送默认不可信；Target 必须重验证；第三方能力必须版本化验证；降级失败不允许演变成误发送。
+Core 不知道 Windows；React 不拥有业务能力；WebView2 非核心运行时依赖；Launcher 不经过 React；搜索不查询 SQLite；UIA 不运行在 WPF UI Thread；显式发送默认不可信；Target 必须重验证；第三方能力必须经过运行时能力验证且不依赖版本号准入；降级失败不允许演变成误发送。
 
 其中“Core 不含平台泄漏”由 **`ArchitectureTests.FrozenCoreDoesNotContainPlatformLeakage`** 通过全文扫描强制（禁止 `WebView2`/`Windows.UI`/`SQLite`/`IManagementBridge`/`IUiAutomationWorker` 等关键字出现在 Core 源码中）。
 
 ### 3.3 关键边界与数据流
 - **IPC 边界**：Desktop 自有 `IManagementBridge` 与 IPC DTO，Core 不含 IPC 概念。协议版本化（v1），`ManagementBridge` 覆盖协议不匹配（`IPC_PROTOCOL_MISMATCH`）、未知命令（`IPC_UNKNOWN_COMMAND`）、重复 requestId 重放、超大数据（`IPC_PAYLOAD_TOO_LARGE`）、取消（`IPC_TIMEOUT`）、`window.sceneChanged` 场景白名单（library/editor/settings）等。
 - **数据一致性不变量**：`DB Commit → Publish Domain Change → Search Index Update`；索引更新异常不回滚数据库，置 `IndexDirty` 并后台重建；搜索全程不查 SQLite。
-- **投递安全状态机**（`TextDeliveryStateMachine.cs`，9 阶段）：`CaptureTarget → ValidateTarget → ResolveAdapter → DetectCapabilities → Insert → VerifyInsert → RevalidateBeforeSend → OptionalSend → VerifySend → Completed/Fallback`。自动发送条件需同时 `UserEnabled && TargetValid && AdapterMatched && SendText==Verified && InsertSucceeded && InsertVerified && TargetForeground`。V1 不允许后台目标自动发送；`VerifyInsert` 不确定时绝不重复插入/粘贴；`VerifySend` 不确定时不重试。
+- **投递安全状态机**（`TextDeliveryStateMachine.cs`，9 阶段）：`CaptureTarget → ValidateTarget → ResolveAdapter → DetectCapabilities → Insert → VerifyInsert → RevalidateBeforeSend → OptionalSend → VerifySend → Completed/Fallback`。`Ctrl+Enter` 是通用 `InsertAndSend` 意图，发送确认由 Desktop 处理；状态机要求 `TargetValid && AdapterMatched && SendText==Verified && InsertSucceeded && InsertVerified && TargetForeground`。V1 不允许后台目标发送或无用户授权自动发送；`VerifyInsert` 不确定时绝不重复插入/粘贴；`VerifySend` 不确定时不重试。
 - **线程模型**：WPF Dispatcher 固定 STA；UIA 调用集中在无窗口 COM MTA 的 `UiAutomationWorker`；剪贴板操作在独立 STA 线程（`ClipboardTransaction`），以序列号判断用户是否产生新复制内容再决定是否恢复。
 
 ---
@@ -146,8 +146,8 @@ Core 不知道 Windows；React 不拥有业务能力；WebView2 非核心运行�
 - **拼音**：`IPinyinProvider`（Core 契约）/ `PinyinMProvider`（Platform 薄适配，限制 32 变体组合）；`SearchService` 不直接引用 PinyinM.NET。
 
 ### 5.2 外部服务 / 第三方集成
-- V1 **唯一目标应用**：企业微信 `5.0.9.6065`，固定走**受保护剪贴板 + Ctrl+V**，`InsertText=Verified`、`VerifyInsert=Unverified`、`SendText=Unsupported`、`VerifySend=Unsupported`，不开放 Unicode 直输或自动发送。
-- 通过**版本化 Adapter Profile**（`Verified`/`Unverified`/`Unsupported` 三态）验收；未按客户端版本验收的能力默认不开放自动发送。
+- V1 **唯一目标应用**：当前主流版本企业微信，固定走**受保护剪贴板 + Ctrl+V** 插入；`InsertText=Verified`、`VerifyInsert=Verified`、`SendText=Verified`、`VerifySend=Unsupported`。Launcher 的显式发送手势为 `Ctrl+Enter`，企业微信当前已验收配置的目标发送协议为一次 `Enter`；完整注入只表示 `SendTriggered`。
+- Adapter 通过运行时目标、前台窗口和焦点/Caret 指纹检测能力；客户端版本号仅用于脱敏诊断，不参与准入或降级。
 - **无云/网络/远程依赖**（纯本地工具）；Sites 相关（`worker/index.js` + `.openai/hosting.json`）仅为 SPA fallback 宿主，`.openai/hosting.json` 内容极小（`{"d1":null,"r2":null}`）。
 
 ---
@@ -157,11 +157,11 @@ Core 不知道 Windows；React 不拥有业务能力；WebView2 非核心运行�
 ### 6.1 构建
 - `npm run build` → `dist/client`（多入口）；`npm run build:management` → 独立 `dist/management`（不含原型）。
 - `npm run dev`（host `0.0.0.0`、allowedHosts `terminal.local`）、`npm run preview`。
-- `.NET` 侧：`dotnet build/test QuickPhrase.sln`（Debug 与 Release 均 0 warning，63/63 通过）。
+- `.NET` 侧：`dotnet build/test QuickPhrase.sln`（Debug 与 Release 均 0 warning；Architecture 213/213、Desktop 199/199 通过）。
 
 ### 6.2 测试
 - `npm run test:sites`（Sites 4/4）。
-- `dotnet test`：架构约束测试 + Phase1~6/5.1 验证（共 63/63）。
+- `dotnet test`：架构约束测试 + Phase1~6/5.1 验证（Architecture 213/213、Desktop 199/199）。
 - Playwright：`qa:management`（QA 自动化）。
 
 ### 6.3 部署 / 发布（`scripts/build-release.ps1`）
@@ -184,7 +184,7 @@ Core 不知道 Windows；React 不拥有业务能力；WebView2 非核心运行�
 ## 7. 问题与建议（按优先级）
 
 ### P0 — 发布门禁（已知未通过，阻断 1.0.0 正式发布）
-1. **Phase 6 最终门禁未关闭**：状态仍为 `PHASE6_INFRA_PASS`，`PHASE6_VERIFY_PASS_WIN11` 未写入。企业微信 30 次人工插入矩阵 + Windows 11 安装/冷启动矩阵仍需发布负责人以时间/TraceId/安装矩阵证据确认（详见 `docs/phase6-validation.md` 第 31–38 行）。
+1. **Phase 6 最终门禁未关闭**：状态仍为 `PHASE6_INFRA_PASS`，`PHASE6_VERIFY_PASS_WIN11` 未写入。当前主流版本企业微信运行时能力矩阵（含 Enter 插入、Ctrl+Enter 显式发送与异常中断）+ Windows 11 安装/冷启动矩阵仍需发布负责人以时间/TraceId/安装矩阵证据确认（详见 `docs/phase6-validation.md` 第 31–38 行）。
 2. **Windows 10 标记为不支持**（`UNVERIFIED / NOT SUPPORTED IN V1.0.0`）；安装器**未签名**，SmartScreen “未知发布者”为已知限制。
 
 ### P1 — 潜在风险 / 技术债
@@ -202,7 +202,7 @@ Core 不知道 Windows；React 不拥有业务能力；WebView2 非核心运行�
 ---
 
 ## 附：不确定性标注（未深入阅读部分）
-- `tests/` 各 Phase 测试的具体断言未逐一阅读（已知全 63/63 通过）。
+- `tests/` 各 Phase 测试的具体断言未逐一阅读（本次完整测试 Architecture 213/213、Desktop 199/199 通过）。
 - `design-prototype/` 视觉原型未读，管理页视觉基线以 `AGENTS.md` 描述为据。
 - `installer/QuickPhrase.iss` 全文未读（已知 Inno Setup 6.7.3 online/offline 可编译）。
 - `docs/` 其余 Phase 验证文档未逐字阅读（仅读架构与 phase6）。

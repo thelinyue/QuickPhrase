@@ -25,12 +25,12 @@
                             SnapsToDevicePixels="True">
                         <Grid>
                             <Border x:Name="HoverLayer"
-                                    Background="{DynamicResource Brush.State.Hover}"
+                                    Background="{DynamicResource Brush.Surface.Hover}"
                                     CornerRadius="{StaticResource Radius.Control}"
                                     IsHitTestVisible="False"
                                     Opacity="0" />
                             <Border x:Name="PressedLayer"
-                                    Background="{DynamicResource Brush.State.Selected}"
+                                    Background="{DynamicResource Brush.Surface.Selected}"
                                     CornerRadius="{StaticResource Radius.Control}"
                                     IsHitTestVisible="False"
                                     Opacity="0" />
@@ -58,8 +58,8 @@
                             <Setter TargetName="FocusRing" Property="Visibility" Value="Visible" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Background" Value="{DynamicResource Brush.Surface.Secondary}" />
-                            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+                            <Setter Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
+                            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
                             <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />
                             <Setter Property="Cursor" Value="Arrow" />
                             <Setter TargetName="HoverLayer" Property="Opacity" Value="0" />
@@ -77,31 +77,31 @@
     </Style>
 
     <Style x:Key="Style.Button.Primary" TargetType="Button" BasedOn="{StaticResource Style.Button.Base}">
-        <Setter Property="Background" Value="{DynamicResource Brush.Brand.BlueStrong}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Brand.BlueStrong}" />
-        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnBrand}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent.Primary}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent.Primary}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnAccent}" />
         <Style.Triggers>
             <MultiTrigger>
                 <MultiTrigger.Conditions>
                     <Condition Property="IsEnabled" Value="True" />
                     <Condition Property="IsMouseOver" Value="True" />
                 </MultiTrigger.Conditions>
-                <Setter Property="Background" Value="{DynamicResource Brush.Brand.Primary.Hover}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Brand.Primary.Hover}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Accent.Primary.Hover}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent.Primary.Hover}" />
             </MultiTrigger>
             <MultiTrigger>
                 <MultiTrigger.Conditions>
                     <Condition Property="IsEnabled" Value="True" />
                     <Condition Property="IsPressed" Value="True" />
                 </MultiTrigger.Conditions>
-                <Setter Property="Background" Value="{DynamicResource Brush.Brand.Primary.Pressed}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Brand.Primary.Pressed}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Accent.Primary.Pressed}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent.Primary.Pressed}" />
             </MultiTrigger>
         </Style.Triggers>
     </Style>
 
     <Style x:Key="Style.Button.Secondary" TargetType="Button" BasedOn="{StaticResource Style.Button.Base}">
-        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Primary}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Default}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Style.Triggers>
@@ -110,15 +110,15 @@
                     <Condition Property="IsEnabled" Value="True" />
                     <Condition Property="IsMouseOver" Value="True" />
                 </MultiTrigger.Conditions>
-                <Setter Property="Background" Value="{DynamicResource Brush.State.Hover}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource Brush.State.SelectedBorder}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
             </MultiTrigger>
             <MultiTrigger>
                 <MultiTrigger.Conditions>
                     <Condition Property="IsEnabled" Value="True" />
                     <Condition Property="IsPressed" Value="True" />
                 </MultiTrigger.Conditions>
-                <Setter Property="Background" Value="{DynamicResource Brush.State.Selected}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Selected}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
             </MultiTrigger>
         </Style.Triggers>
@@ -134,7 +134,7 @@
                     <Condition Property="IsEnabled" Value="True" />
                     <Condition Property="IsMouseOver" Value="True" />
                 </MultiTrigger.Conditions>
-                <Setter Property="Background" Value="{DynamicResource Brush.State.Hover}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
                 <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
             </MultiTrigger>
             <MultiTrigger>
@@ -142,8 +142,8 @@
                     <Condition Property="IsEnabled" Value="True" />
                     <Condition Property="IsPressed" Value="True" />
                 </MultiTrigger.Conditions>
-                <Setter Property="Background" Value="{DynamicResource Brush.State.Selected}" />
-                <Setter Property="Foreground" Value="{DynamicResource Brush.Brand.Primary.Pressed}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Selected}" />
+                <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Primary.Pressed}" />
             </MultiTrigger>
         </Style.Triggers>
     </Style>
@@ -151,7 +151,7 @@
     <Style x:Key="Style.Button.Danger" TargetType="Button" BasedOn="{StaticResource Style.Button.Base}">
         <Setter Property="Background" Value="{DynamicResource Brush.Status.Error}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Status.Error}" />
-        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnBrand}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnAccent}" />
         <Style.Triggers>
             <!-- Danger 沿用基础模板的 Hover/Pressed 覆盖层；条件显式排除 Disabled。 -->
             <MultiTrigger>

@@ -35,7 +35,7 @@ if ($IncludeDesktopSmoke) {
 
 if ($IncludeWeComAcceptance) {
   if ($env:QUICKPHRASE_WECOM_ACCEPTANCE -ne "passed") {
-    throw "Manual WXWork acceptance requires a prepared WXWork 5.0.9.6065 test session and QUICKPHRASE_WECOM_ACCEPTANCE=passed. The script never takes over a real window."
+    throw "Manual WXWork acceptance requires a prepared current-mainstream WXWork test session covering runtime capability checks, Enter insertion, Ctrl+Enter explicit send, draft/focus-change safety, and QUICKPHRASE_WECOM_ACCEPTANCE=passed. No client version is used as an admission gate, and the script never takes over a real window."
   }
   Write-Host "WXWork manual acceptance was confirmed by the user." -ForegroundColor Yellow
 }

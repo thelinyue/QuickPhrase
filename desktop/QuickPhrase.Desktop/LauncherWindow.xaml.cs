@@ -13,7 +13,7 @@ namespace QuickPhrase.Desktop;
 
 /// <summary>
 /// WPF Native Launcher。窗口实例会被隐藏后复用，搜索只访问 Core 的内存快照，
-/// 不依赖数据库查询或外部页面运行时。历史搜索 Popup 与话术搜索共用当前输入框，
+/// 不依赖数据库查询或外部页面运行时。历史搜索使用窗口内覆盖层并与话术搜索共用当前输入框，
 /// 但历史确认只执行搜索，不直接插入话术。
 /// </summary>
 public partial class LauncherWindow : Window
@@ -48,7 +48,7 @@ public partial class LauncherWindow : Window
         UpdateTitleColumnWidth();
     }
 
-    public event Action<Phrase, bool, DeliveryTarget?, string?>? DeliveryRequested;
+    public event Action<Phrase, SendMode, DeliveryTarget?, string?>? DeliveryRequested;
     public event Action<string>? CreatePhraseRequested;
     public event Action? Hidden;
     public string SearchErrorText { get; private set; } = "搜索索引初始化失败，请重试。";
@@ -69,11 +69,15 @@ public partial class LauncherWindow : Window
             : "未捕获目标 · 仅支持预览或安全复制";
         CapabilityText.Text = status is null
             ? "无目标 · 插入/发送不可用"
-            : $"Profile {status.ProfileVersion ?? "未确认"} · 插入 {CapabilityLabel(status.InsertText)} · 自动发送 {CapabilityLabel(status.SendText)}";
+            : $"Profile {status.ProfileVersion ?? "未确认"} · 插入 {CapabilityLabel(status.InsertText)} · 显式发送 {CapabilityLabel(status.SendText)}";
         InsertHintText.Text = IsPracticeMode
             ? "Enter 选择到练习区"
             : hasTarget ? "Enter 插入" : "Enter 安全复制";
-        SendHintText.Text = "自动发送不支持";
+        SendHintText.Text = IsPracticeMode
+            ? "练习模式不发送"
+            : status?.SendText == CapabilityStatus.Verified
+                ? "Ctrl+Enter 显式发送"
+                : "Ctrl+Enter 当前目标不支持发送";
 
         QueryBox.Text = initialQuery;
         _preview = false;
@@ -88,6 +92,8 @@ public partial class LauncherWindow : Window
         CloseSearchHistory();
         if (!IsVisible) return;
         Hide();
+        // Hide 之后再次收起窗口内历史覆盖层，作为排队焦点回调之前的最终关闭屏障。
+        CloseSearchHistory();
         Hidden?.Invoke();
     }
 
@@ -114,7 +120,7 @@ public partial class LauncherWindow : Window
 
     private void QueryBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => ScheduleSearchHistoryClose();
 
-    private void SearchHistoryPopup_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => ScheduleSearchHistoryClose();
+    private void SearchHistoryHost_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => ScheduleSearchHistoryClose();
 
     private void SearchHistoryPanel_QuerySelected(object? sender, string query)
     {
@@ -138,21 +144,22 @@ public partial class LauncherWindow : Window
 
     private void OpenSearchHistory()
     {
-        if (!IsLoaded) return;
-        SearchHistoryPopup.IsOpen = true;
+        // Launcher 隐藏或进入关闭流程后，排队的 GotKeyboardFocus 回调不得重新显示历史覆盖层。
+        if (!IsLoaded || !IsVisible || _closing) return;
+        SearchHistoryHost.Visibility = Visibility.Visible;
     }
 
     private void CloseSearchHistory()
     {
         SearchHistoryPanel.ClearSelection();
-        SearchHistoryPopup.IsOpen = false;
+        SearchHistoryHost.Visibility = Visibility.Collapsed;
     }
 
     private void ScheduleSearchHistoryClose()
     {
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
         {
-            if (!QueryBox.IsKeyboardFocusWithin && !SearchHistoryPopup.IsKeyboardFocusWithin)
+            if (!QueryBox.IsKeyboardFocusWithin && !SearchHistoryHost.IsKeyboardFocusWithin)
                 CloseSearchHistory();
         }));
     }
@@ -270,7 +277,7 @@ public partial class LauncherWindow : Window
         }
         if (ResultsList.SelectedItem is LauncherPhraseListItem item)
         {
-            await SelectPhraseAsync(item.Phrase);
+            await SelectPhraseAsync(item.Phrase, SendMode.InsertOnly);
         }
         e.Handled = true;
     }
@@ -291,7 +298,7 @@ public partial class LauncherWindow : Window
         if (!_submissionGuard.TrySubmit()) return;
         var item = GetContextMenuItem(sender);
         if (item is null) return;
-        await SelectPhraseAsync(item.Phrase);
+        await SelectPhraseAsync(item.Phrase, SendMode.InsertOnly);
     }
 
     private void OnCopyContextMenuClick(object sender, RoutedEventArgs e)
@@ -311,13 +318,16 @@ public partial class LauncherWindow : Window
 
     private async void OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (SearchHistoryPopup.IsOpen)
+        if (SearchHistoryHost.Visibility == Visibility.Visible)
         {
             if (e.Key == Key.Down && SearchHistoryPanel.MoveSelection(1)) { e.Handled = true; return; }
             if (e.Key == Key.Up && SearchHistoryPanel.MoveSelection(-1)) { e.Handled = true; return; }
-            if (e.Key == Key.Enter && SearchHistoryPanel.SelectedEntry is not null)
+            if (ShouldSelectSearchHistoryEntry(
+                    e.Key,
+                    Keyboard.Modifiers,
+                    SearchHistoryPanel.SelectedEntry is not null))
             {
-                SearchHistoryPanel_QuerySelected(this, SearchHistoryPanel.SelectedEntry.Query);
+                SearchHistoryPanel_QuerySelected(this, SearchHistoryPanel.SelectedEntry!.Query);
                 e.Handled = true;
                 return;
             }
@@ -385,7 +395,10 @@ public partial class LauncherWindow : Window
                 if (ResultsList.SelectedItem is LauncherPhraseListItem item)
                 {
                     // Enter 统一走选择入口；Practice 模式只回调向导。
-                    await SelectPhraseAsync(item.Phrase);
+                    var mode = ResolveSendMode(
+                        IsPracticeMode,
+                        (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control);
+                    await SelectPhraseAsync(item.Phrase, mode);
                 }
                 else if (!string.IsNullOrWhiteSpace(QueryBox.Text))
                 {
@@ -403,7 +416,20 @@ public partial class LauncherWindow : Window
         }
     }
 
-    private async Task SelectPhraseAsync(Phrase phrase)
+    /// <summary>
+    /// 历史搜索只消费无修饰键的普通 Enter。Ctrl+Enter 是通用显式发送手势，
+    /// 即使 Popup 中存在选中历史项也必须继续进入话术投递分支。
+    /// </summary>
+    internal static bool ShouldSelectSearchHistoryEntry(Key key, ModifierKeys modifiers, bool hasSelection) =>
+        key == Key.Enter && modifiers == ModifierKeys.None && hasSelection;
+
+    /// <summary>
+    /// 将 Launcher 内本次 Enter 意图转换为通用投递模式。练习模式永远只选择话术，
+    /// 不因 Ctrl 修饰键进入真实发送流程。
+    /// </summary>
+    internal static SendMode ResolveSendMode(bool isPracticeMode, bool controlPressed) =>
+        !isPracticeMode && controlPressed ? SendMode.InsertAndSend : SendMode.InsertOnly;
+    private async Task SelectPhraseAsync(Phrase phrase, SendMode mode)
     {
         if (_invocationContext is { Mode: LauncherInvocationMode.Practice, SelectionHandler: not null } practice)
         {
@@ -412,7 +438,7 @@ public partial class LauncherWindow : Window
             return;
         }
         HideLauncher();
-        DeliveryRequested?.Invoke(phrase, false, _target, QueryBox.Text?.Trim());
+        DeliveryRequested?.Invoke(phrase, mode, _target, QueryBox.Text?.Trim());
     }
 
     private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e) => UpdateTitleColumnWidth();

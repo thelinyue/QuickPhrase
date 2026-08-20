@@ -10,7 +10,7 @@ namespace QuickPhrase.Desktop.Tests;
 public class EditorViewModelTests
 {
     private static Phrase MakePhrase(Guid id, string title, string content, Guid categoryId, string colorKey = "default", ShortcutMode shortcutMode = ShortcutMode.None, string? shortcut = null)
-        => new(id, title, content, categoryId, false, shortcutMode,
+        => new(id, title, content, categoryId, shortcutMode,
             shortcut is null ? null : new ShortcutValue(shortcut, shortcut),
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, colorKey);
 
@@ -66,10 +66,10 @@ public class EditorViewModelTests
     }
 
     [Fact]
-    public async Task Save_Existing_ClearsLegacyPhraseShortcut()
+    public async Task Save_Existing_AlwaysClearsPhraseShortcut()
     {
         var cat = Guid.NewGuid();
-        var phrase = MakePhrase(Guid.NewGuid(), "标题", "内容", cat, "red", ShortcutMode.Custom, "Ctrl + 1");
+        var phrase = MakePhrase(Guid.NewGuid(), "标题", "内容", cat, "pink", ShortcutMode.Custom, "Ctrl + 1");
         var fake = new FakeCommandService();
         var vm = new EditorViewModel(fake, new PhraseItemViewModel(phrase, "分类"));
         vm.Title = "修改后";
@@ -102,5 +102,3 @@ public class EditorViewModelTests
             EditorViewModel.ColorKeys.Select(c => c.Hex).ToArray());
     }
 }
-
-

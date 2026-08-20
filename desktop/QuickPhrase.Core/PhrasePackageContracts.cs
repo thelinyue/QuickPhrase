@@ -2,7 +2,7 @@ using System.Text;
 
 namespace QuickPhrase.Core;
 
-/// <summary>话术包 V1 的固定格式标识和边界，确保导出的内容只包含可迁移的话术数据。</summary>
+/// <summary>话术包 V1 的固定格式标识和边界，确保导出的内容只包含可导入的话术数据。</summary>
 public static class PhrasePackageFormat
 {
     public const string Format = "QuickPhrase.PhrasePackage";

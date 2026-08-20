@@ -6,7 +6,7 @@
              xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
              xmlns:designSystem="clr-namespace:QuickPhrase.Desktop.DesignSystem.Components"
              mc:Ignorable="d">
-    <Grid Background="{DynamicResource Brush.Background.Window}">
+    <Grid Background="{DynamicResource Brush.Background.Default}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="{StaticResource Size.Settings.Sidebar.GridLength}" />
             <ColumnDefinition Width="*" />
@@ -14,8 +14,8 @@
 
         <!-- 左侧导航只负责模块切换；布局、焦点和选中状态统一来自全局列表样式。 -->
         <Border Grid.Column="0"
-                Background="{DynamicResource Brush.Surface.Primary}"
-                BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                Background="{DynamicResource Brush.Surface.Default}"
+                BorderBrush="{DynamicResource Brush.Border.Default}"
                 BorderThickness="{StaticResource Thickness.Border.Right}">
             <Grid Margin="{StaticResource Thickness.Settings.Navigation}">
                 <Grid.RowDefinitions>
@@ -25,7 +25,7 @@
                 <ListBox x:Name="SettingsNavigation"
                          Grid.Row="0"
                          BorderThickness="{StaticResource Thickness.None}"
-                         Background="{DynamicResource Brush.Surface.Primary}"
+                         Background="{DynamicResource Brush.Surface.Default}"
                          SelectedIndex="0"
                          SelectionMode="Single"
                          SelectionChanged="SettingsNavigation_SelectionChanged"
@@ -40,7 +40,7 @@
                 <TextBlock Grid.Row="1"
                            Text="✓ 已自动保存"
                            Style="{StaticResource Style.Text.Caption}"
-                           Foreground="{DynamicResource Brush.Text.Muted}"
+                           Foreground="{DynamicResource Brush.Text.Secondary}"
                            Margin="{StaticResource Thickness.Settings.NavigationStatus}"
                            AutomationProperties.Name="设置已自动保存" />
             </Grid>
@@ -177,12 +177,12 @@
                                        Margin="{StaticResource Thickness.Settings.SectionTitle}" />
                             <Border Style="{StaticResource Style.Setting.Group}">
                                 <StackPanel>
-                                    <designSystem:SettingItem Title="自动发送"
-                                                              Description="插入后自动发送（当前目标不支持时不会开启）"
+                                    <designSystem:SettingItem Title="快捷发送模式"
+                                                              Description="风险选项：Ctrl+Enter 显式发送时跳过每次确认；目标中已有草稿可能一并发送"
                                                               ShowDivider="True">
                                         <designSystem:SettingItem.ControlContent>
                                             <CheckBox Style="{StaticResource Style.Switch.Default}"
-                                                      IsChecked="{Binding AutoSend}"
+                                                      IsChecked="{Binding QuickSendWithoutConfirmation}"
                                                       VerticalAlignment="Center" />
                                         </designSystem:SettingItem.ControlContent>
                                     </designSystem:SettingItem>
@@ -278,8 +278,8 @@
 
             <!-- 即时保存状态固定在内容区底部，不遮挡模块滚动内容。 -->
             <Border Grid.Row="1"
-                    Background="{DynamicResource Brush.Surface.Primary}"
-                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                    Background="{DynamicResource Brush.Surface.Default}"
+                    BorderBrush="{DynamicResource Brush.Border.Default}"
                     BorderThickness="{StaticResource Thickness.Border.Top}"
                     Padding="{StaticResource Thickness.Settings.Footer}">
                 <StackPanel Orientation="Horizontal">

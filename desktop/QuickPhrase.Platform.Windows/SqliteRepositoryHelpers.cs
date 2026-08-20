@@ -47,7 +47,6 @@ internal abstract class SqliteRepositoryBase
         existing.Title == command.Title.Trim() &&
         existing.Content == command.Content &&
         existing.CategoryId == command.CategoryId &&
-        existing.Favorite == command.Favorite &&
         existing.ShortcutMode == command.ShortcutMode &&
         existing.ColorKey == NormalizeColorKey(command.ColorKey) &&
         existing.Shortcut?.Normalized == shortcut?.Normalized;
@@ -80,17 +79,9 @@ internal abstract class SqliteRepositoryBase
         return false;
     }
 
-    /// <summary>兼容历史键并返回新的固定色板存储键。</summary>
-    protected static string NormalizeColorKey(string? colorKey)
-    {
-        var normalized = string.IsNullOrWhiteSpace(colorKey) ? "default" : colorKey.Trim().ToLowerInvariant();
-        return normalized switch
-        {
-            "red" => "pink",
-            "yellow" => "tan",
-            _ => normalized,
-        };
-    }
+    /// <summary>把颜色键规范化为当前固定色板使用的小写存储值。</summary>
+    protected static string NormalizeColorKey(string? colorKey) =>
+        string.IsNullOrWhiteSpace(colorKey) ? "default" : colorKey.Trim().ToLowerInvariant();
 
     protected static bool PrepareShortcut(ShortcutNormalizer normalizer, ShortcutMode mode, string? input, out ShortcutValue? value, out DataError? error)
     {
@@ -106,7 +97,7 @@ internal abstract class SqliteRepositoryBase
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
-            command.CommandText = "SELECT id, title, content, category_id, favorite, shortcut_mode, shortcut_display, shortcut_normalized, usage_count, last_used_at_utc, version, created_at_utc, updated_at_utc, color_key, sort_order FROM phrases WHERE id = $id;";
+            command.CommandText = "SELECT id, title, content, category_id, shortcut_mode, shortcut_display, shortcut_normalized, usage_count, last_used_at_utc, version, created_at_utc, updated_at_utc, color_key, sort_order FROM phrases WHERE id = $id;";
             command.Parameters.AddWithValue("$id", id);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken)) return null;
@@ -120,7 +111,7 @@ internal abstract class SqliteRepositoryBase
         var result = new List<Phrase>();
         await using (var command = connection.CreateCommand())
         {
-            command.CommandText = "SELECT id, title, content, category_id, favorite, shortcut_mode, shortcut_display, shortcut_normalized, usage_count, last_used_at_utc, version, created_at_utc, updated_at_utc, color_key, sort_order FROM phrases ORDER BY sort_order, updated_at_utc DESC, title;";
+            command.CommandText = "SELECT id, title, content, category_id, shortcut_mode, shortcut_display, shortcut_normalized, usage_count, last_used_at_utc, version, created_at_utc, updated_at_utc, color_key, sort_order FROM phrases ORDER BY sort_order, updated_at_utc DESC, title;";
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
@@ -135,15 +126,14 @@ internal abstract class SqliteRepositoryBase
         reader.GetString(1),
         reader.GetString(2),
         ReadId(reader, 3),
-        reader.GetInt32(4) != 0,
-        Enum.Parse<ShortcutMode>(reader.GetString(5), true),
-        reader.IsDBNull(6) ? null : new ShortcutValue(reader.GetString(6), reader.GetString(7)),
-        reader.GetInt32(8),
-        ReadNullableTime(reader, 9),
-        reader.GetInt64(10),
+        Enum.Parse<ShortcutMode>(reader.GetString(4), true),
+        reader.IsDBNull(5) ? null : new ShortcutValue(reader.GetString(5), reader.GetString(6)),
+        reader.GetInt32(7),
+        ReadNullableTime(reader, 8),
+        reader.GetInt64(9),
+        ReadTime(reader, 10),
         ReadTime(reader, 11),
-        ReadTime(reader, 12),
-        reader.IsDBNull(13) ? "default" : reader.GetString(13),
-        reader.GetInt32(14));
+        reader.IsDBNull(12) ? "default" : reader.GetString(12),
+        reader.GetInt32(13));
 
 }

@@ -46,7 +46,7 @@
 
             <Rectangle Grid.Row="1"
                        Height="{Binding Top, Source={StaticResource Thickness.Border.Default}}"
-                       Fill="{DynamicResource Brush.Border.Subtle}"
+                       Fill="{DynamicResource Brush.Border.Default}"
                        VerticalAlignment="Bottom">
                 <Rectangle.Style>
                     <Style TargetType="Rectangle">

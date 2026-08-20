@@ -19,9 +19,9 @@ QuickPhrase 正式技术路线固定为：`.NET 10 LTS + Pure WPF + Win32/UIA + 
 3. Launcher 不经过任何 Web 或 IPC 层。
 4. 搜索只访问 Core 内存索引，不查询 SQLite。
 5. UI Automation 不运行在 WPF UI Thread。
-6. 自动发送默认不可信。
+6. 显式发送默认不可信；无用户授权的自动发送禁止。
 7. Target 必须在动作执行前重新验证。
-8. 第三方应用能力必须经过具体客户端版本验证。
+8. 第三方应用能力必须通过运行时能力检测验证，不依赖客户端版本号准入。
 9. 降级失败不允许演变成误发送。
 10. 原型文件与生产 WPF 项目物理、依赖和验收边界分离。
 
@@ -86,16 +86,16 @@ CaptureTarget → ValidateTarget → ResolveAdapter → DetectCapabilities
 → OptionalSend → VerifySend
 ```
 
-`DeliveryResult` 使用正交字段表达 `Status`、`Effect`、`Stage`、`Confidence`、`ErrorCode`、`Message`、`Retryable` 和 `TraceId`。插入或发送已经开始但结果不确定时返回 `Unknown + Unknown`，禁止自动重试。
+`DeliveryResult` 使用正交字段表达 `Status`、`Effect`、`Stage`、`Confidence`、`ErrorCode`、`Message`、`Retryable` 和 `TraceId`。`SendTriggered` 只表示发送快捷操作已完整执行；仅能确认目标应用最终发送结果时才使用 `Sent`。插入或发送已经开始但结果不确定时返回 `Unknown + Unknown`，禁止自动重试。
 
-当前企业微信精确 Profile 为 `WXWork 5.0.9.6065`：
+当前企业微信兼容目标是当前主流版本，不设置版本门禁。客户端版本号仅进入脱敏诊断 Trace，不参与启动、插入、发送、排队或降级判断：
 
 - `InsertText = Verified`
-- `VerifyInsert = Unverified`
-- `SendText = Unsupported`
-- `VerifySend = Unsupported`
-- 固定使用受保护 Clipboard + `Ctrl+V`
-- 不开放 Unicode 直输、后台目标投递或自动发送
+- `VerifyInsert = Verified`：只验证粘贴动作完整执行且目标、前台窗口、输入焦点/Caret 指纹保持稳定，不读取正文
+- `SendText = Verified`：用户在 Launcher 中以 `Ctrl+Enter` 明确触发；该组合键只表达通用 `InsertAndSend` 意图，企业微信 Adapter 在发送前重校验后按当前目标协议注入一次 `Enter`
+- `VerifySend = Unsupported`：无法确认目标应用最终发送结果，完整注入返回 `SendTriggered`，不得声称 `Sent`
+- 固定使用受保护 Clipboard + `Ctrl+V` 插入
+- 不开放 Unicode 直输、后台目标投递、无用户授权自动发送或失败自动重试
 
 ### Persistence and Search
 
@@ -130,4 +130,4 @@ MainWindow 当前为 `1200×760`，最小 `900×560`；话术库、编辑器、�
 - `src/` 等原型链路可以保留，但不得被三个正式桌面 Project 引用。
 - 安装器保持当前用户、纯 WPF、自包含安装方式；数据、备份和日志在卸载后保留。
 
-Phase 1–4 已完成，Phase 5 企业微信安全插入和 Phase 5.1 连续投递/启动性能基础设施已完成。Phase 6 Windows 11 发布基础设施状态为 `PHASE6_INFRA_PASS`；企业微信人工矩阵和 Windows 11 安装矩阵通过后才写入 `PHASE6_VERIFY_PASS_WIN11`。插件、AI、团队、文件/图片话术、浏览器扩展、跨平台、后台发送和自动更新进入 V2 Backlog，不修改 Architecture v1.1。
+Phase 1–4 已完成，Phase 5 企业微信安全插入与通用显式发送代码路径、Phase 5.1 连续投递/启动性能基础设施已完成。Phase 6 Windows 11 发布基础设施状态为 `PHASE6_INFRA_PASS`；企业微信人工矩阵和 Windows 11 安装矩阵通过后才写入 `PHASE6_VERIFY_PASS_WIN11`。插件、AI、团队、文件/图片话术、浏览器扩展、跨平台、后台发送和自动更新进入 V2 Backlog，不修改 Architecture v1.1。

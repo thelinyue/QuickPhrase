@@ -114,7 +114,9 @@ public sealed class DesignSystemStyleTests
             "DesignSystem/Tokens/Radius.xaml",
             "DesignSystem/Tokens/Sizes.xaml",
             "DesignSystem/Tokens/Motion.xaml",
-            "DesignSystem/Themes/QuickPhraseTheme.Light.xaml",
+            "DesignSystem/Tokens/Colors.xaml",
+        "DesignSystem/Themes/Theme.Light.xaml",
+        "DesignSystem/Tokens/Brushes.xaml",
             "DesignSystem/Styles/Text.xaml",
             "DesignSystem/Styles/Buttons.xaml",
             "DesignSystem/Styles/Inputs.xaml",
@@ -589,21 +591,21 @@ public sealed class DesignSystemStyleTests
 
                 var textRoot = Assert.IsType<Border>(textBox.Template.FindName("Root", textBox));
                 var textFocusRing = Assert.IsType<Border>(textBox.Template.FindName("FocusRing", textBox));
-                AssertBrushColor(textBox, "Brush.Surface.Secondary", textRoot.Background);
-                AssertBrushColor(textBox, "Brush.Border.Subtle", textRoot.BorderBrush);
+                AssertBrushColor(textBox, "Brush.Surface.Hover", textRoot.Background);
+                AssertBrushColor(textBox, "Brush.Border.Default", textRoot.BorderBrush);
                 Assert.Equal(Visibility.Collapsed, textFocusRing.Visibility);
 
                 var comboRoot = Assert.IsType<Border>(comboBox.Template.FindName("Root", comboBox));
                 var comboFocusRing = Assert.IsType<Border>(comboBox.Template.FindName("FocusRing", comboBox));
-                AssertBrushColor(comboBox, "Brush.Surface.Secondary", comboRoot.Background);
-                AssertBrushColor(comboBox, "Brush.Border.Subtle", comboRoot.BorderBrush);
+                AssertBrushColor(comboBox, "Brush.Surface.Hover", comboRoot.Background);
+                AssertBrushColor(comboBox, "Brush.Border.Default", comboRoot.BorderBrush);
                 Assert.Equal(Visibility.Collapsed, comboFocusRing.Visibility);
 
                 var track = Assert.IsType<Border>(switchControl.Template.FindName("Track", switchControl));
                 var thumb = Assert.IsType<System.Windows.Shapes.Ellipse>(switchControl.Template.FindName("Thumb", switchControl));
                 var switchFocusRing = Assert.IsType<Border>(switchControl.Template.FindName("FocusRing", switchControl));
-                AssertBrushColor(switchControl, "Brush.Surface.Secondary", track.Background);
-                AssertBrushColor(switchControl, "Brush.Border.Subtle", track.BorderBrush);
+                AssertBrushColor(switchControl, "Brush.Surface.Hover", track.Background);
+                AssertBrushColor(switchControl, "Brush.Border.Default", track.BorderBrush);
                 AssertBrushColor(switchControl, "Brush.Text.Disabled", thumb.Fill);
                 Assert.Equal(HorizontalAlignment.Right, thumb.HorizontalAlignment);
                 Assert.Equal(Visibility.Collapsed, switchFocusRing.Visibility);

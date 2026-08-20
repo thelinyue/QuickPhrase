@@ -89,46 +89,22 @@ public partial class App : System.Windows.Application
         RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
         base.OnStartup(e);
         // 主题资源需在 Application.Resources 已经构建后立即合并，否则后续 Converters/Controls
-        // 字典中所有 {StaticResource AccentBrush} 等会引用旧值。Light 已通过 App.xaml 加载，
+        // 主题资源引用会在此处根据当前偏好覆盖。Light 已通过 App.xaml 加载，
         // 这里根据用户偏好决定是否追加 Dark 覆盖字典。
         ThemeService.Instance.Initialize();
         StartupTrace.Mark("native-startup");
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         _controller = new ApplicationController();
-        var shutdownForUpgrade = e.Args.Contains("--shutdown-for-upgrade", StringComparer.OrdinalIgnoreCase);
-        var backupForUpgrade = e.Args.Contains("--backup-for-upgrade", StringComparer.OrdinalIgnoreCase);
         if (!_controller.TryBecomePrimary())
         {
             var ok = await SingleInstanceCoordinator.ActivatePrimaryAsync(
                 $"QuickPhrase.Activation.{System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value ?? "unknown"}",
-                shutdownForUpgrade ? "shutdown-for-upgrade" : "show-management",
+                "show-management",
                 new CancellationTokenSource(TimeSpan.FromSeconds(1)).Token);
             if (!ok) System.Windows.MessageBox.Show("已有实例，但无法唤醒主实例。", "闪语", MessageBoxButton.OK, MessageBoxImage.Warning);
             Shutdown();
             return;
         }
-
-        // 安装器升级前会启动一个带此参数的临时进程；若当前没有旧实例，
-        // 该进程会成为主实例，也必须立即退出，不能初始化数据或打开管理界面。
-        if (HandlePrimaryUpgradeShutdown(shutdownForUpgrade, Shutdown)) return;
-
-        // 升级备份必须早于数据运行时初始化；新版本迁移校验不应阻断对旧数据库的快照保护。
-        if (backupForUpgrade)
-        {
-            try
-            {
-                var backup = await _controller.CreateUpgradeBackupAsync("upgrade");
-                Console.WriteLine($"UPGRADE_BACKUP_CREATED: {backup}");
-                Shutdown(0);
-            }
-            catch (Exception exception)
-            {
-                Console.Error.WriteLine($"UPGRADE_BACKUP_FAILED：升级前数据备份失败，未替换程序文件。{exception.Message}");
-                Shutdown(1);
-            }
-            return;
-        }
-
         // 先创建托盘图标，确保后台启动或数据初始化耗时期间也不会错过 NotifyIcon 初始化。
         try
         {
@@ -163,13 +139,6 @@ public partial class App : System.Windows.Application
             if (_controller.ShouldShowOnboarding) _controller.OpenOnboarding();
             else if (!_controller.StartMinimized) _controller.OpenManagement();
         }
-    }
-
-    internal static bool HandlePrimaryUpgradeShutdown(bool shutdownForUpgrade, Action<int> shutdown)
-    {
-        if (!shutdownForUpgrade) return false;
-        shutdown(0);
-        return true;
     }
 
     protected override async void OnExit(ExitEventArgs e)

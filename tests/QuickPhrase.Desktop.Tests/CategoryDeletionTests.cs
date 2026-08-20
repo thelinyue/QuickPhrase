@@ -12,9 +12,9 @@ public class CategoryDeletionTests
     {
         var root = new Category(Guid.NewGuid(), null, "通用话术", 7, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var child = new Category(Guid.NewGuid(), root.Id, "售前", 1, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
-        var rootPhrase = new Phrase(Guid.NewGuid(), "欢迎语", "您好", root.Id, false, ShortcutMode.None, null,
+        var rootPhrase = new Phrase(Guid.NewGuid(), "欢迎语", "您好", root.Id, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
-        var childPhrase = new Phrase(Guid.NewGuid(), "售前说明", "请问有什么可以帮您", child.Id, false, ShortcutMode.None, null,
+        var childPhrase = new Phrase(Guid.NewGuid(), "售前说明", "请问有什么可以帮您", child.Id, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var fake = new FakeCommandService();
         fake.Seed(new[] { root, child });

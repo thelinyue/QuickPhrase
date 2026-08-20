@@ -66,7 +66,7 @@ internal sealed class SqlitePhrasePackageImporter
 
                 await using var insertPhrase = connection.CreateCommand();
                 insertPhrase.Transaction = transaction;
-                insertPhrase.CommandText = "INSERT INTO phrases(id, title, content, category_id, favorite, shortcut_mode, shortcut_display, shortcut_normalized, usage_count, version, created_at_utc, updated_at_utc, color_key, sort_order) VALUES ($id, $title, $content, $categoryId, 0, 'None', NULL, NULL, 0, 1, $created, $updated, 'default', $sortOrder);";
+                insertPhrase.CommandText = "INSERT INTO phrases(id, title, content, category_id, shortcut_mode, shortcut_display, shortcut_normalized, usage_count, version, created_at_utc, updated_at_utc, color_key, sort_order) VALUES ($id, $title, $content, $categoryId, 'None', NULL, NULL, 0, 1, $created, $updated, 'default', $sortOrder);";
                 insertPhrase.Parameters.AddWithValue("$id", DbId(Guid.NewGuid()));
                 insertPhrase.Parameters.AddWithValue("$title", phrase.Title.Trim());
                 insertPhrase.Parameters.AddWithValue("$content", phrase.Content);

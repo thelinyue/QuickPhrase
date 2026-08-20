@@ -61,7 +61,7 @@
         <Setter Property="FontWeight" Value="{StaticResource Typography.Caption.FontWeight}" />
         <Setter Property="LineHeight" Value="{StaticResource Typography.Caption.LineHeight}" />
         <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
-        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Muted}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
     </Style>
 
     <Style x:Key="Style.Text.Label" TargetType="TextBlock">

@@ -101,7 +101,7 @@ Style.ListItem.Phrase
 - 水平 Padding 使用 Button 语义 Thickness，短按钮不得依赖固定宽度制造对齐。
 - 文本使用 14px 语义排版 Style；图标与文本间距引用 Inline Gap Token。
 - 图标按钮必须提供可读的 `AutomationProperties.Name` 或 Tooltip。
-- Primary 默认填充使用 `Brush.Brand.BlueStrong`；Hover/Pressed 使用对应 Brand 状态 Brush。
+- Primary 默认填充使用 `Brush.Accent.Primary`；Hover/Pressed 使用 `Brush.Accent.Primary.Hover` / `Brush.Accent.Primary.Pressed`。
 
 ### 3.3 状态
 
@@ -358,7 +358,7 @@ public string? ErrorMessage { get; set; }
 - 分类/标签的低强调展示。
 - 可选尾部操作入口。
 
-状态：Default、Hover、Selected、Keyboard Focus、Disabled/Unavailable；选中状态使用 `Brush.State.Selected` 与 SelectedBorder，不能只依赖文本颜色。
+状态：Default、Hover、Selected、Keyboard Focus、Disabled/Unavailable；选中状态使用 `Brush.Surface.Selected`、蓝色文字和 `Brush.Selection.Indicator` 左侧指示线，不能使用整行深蓝填充，也不能只依赖文本颜色。
 
 尺寸：最小高度 32，内容换行时允许自然增高；Padding 和内部 Gap 使用 Token。
 

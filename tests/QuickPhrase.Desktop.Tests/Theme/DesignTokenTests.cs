@@ -49,7 +49,9 @@ public class DesignTokenTests
                 "../DesignSystem/Tokens/Radius.xaml",
                 "../DesignSystem/Tokens/Sizes.xaml",
                 "../DesignSystem/Tokens/Motion.xaml",
-                "../DesignSystem/Themes/QuickPhraseTheme.Light.xaml",
+                "../DesignSystem/Tokens/Colors.xaml",
+                "../DesignSystem/Themes/Theme.Light.xaml",
+                "../DesignSystem/Tokens/Brushes.xaml",
             },
             ReadMergedSources(DesktopPath("Themes", "QuickPhraseTheme.xaml")));
     }
@@ -77,7 +79,10 @@ public class DesignTokenTests
     {
         Assert.False(File.Exists(DesktopPath("Themes", "QuickPhraseTheme.Dark.xaml")));
         Assert.False(File.Exists(DesktopPath("Themes", "PhraseListResources.xaml")));
-        Assert.True(File.Exists(DesktopPath("DesignSystem", "Themes", "QuickPhraseTheme.Dark.xaml")));
+        Assert.False(File.Exists(DesktopPath("DesignSystem", "Themes", "QuickPhraseTheme.Light.xaml")));
+        Assert.False(File.Exists(DesktopPath("DesignSystem", "Themes", "QuickPhraseTheme.Dark.xaml")));
+        Assert.True(File.Exists(DesktopPath("DesignSystem", "Themes", "Theme.Light.xaml")));
+        Assert.True(File.Exists(DesktopPath("DesignSystem", "Themes", "Theme.Dark.xaml")));
     }
 
     [Fact]

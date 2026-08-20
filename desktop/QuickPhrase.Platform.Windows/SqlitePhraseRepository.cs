@@ -60,7 +60,7 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
             await using var insert = connection.CreateCommand();
             insert.Transaction = transaction;
             // 新建话术时 sort_order 总是追加到所属分类末尾，避免插入到中间导致持久化顺序混乱。
-            insert.CommandText = "INSERT INTO phrases(id, title, content, category_id, favorite, shortcut_mode, shortcut_display, shortcut_normalized, usage_count, version, created_at_utc, updated_at_utc, color_key, sort_order) VALUES ($id, $title, $content, $categoryId, $favorite, $mode, $display, $normalized, 0, 1, $created, $updated, $colorKey, (SELECT COALESCE(MAX(sort_order),0)+1 FROM (SELECT sort_order FROM phrases WHERE category_id=$categoryId)));";
+            insert.CommandText = "INSERT INTO phrases(id, title, content, category_id, shortcut_mode, shortcut_display, shortcut_normalized, usage_count, version, created_at_utc, updated_at_utc, color_key, sort_order) VALUES ($id, $title, $content, $categoryId, $mode, $display, $normalized, 0, 1, $created, $updated, $colorKey, (SELECT COALESCE(MAX(sort_order),0)+1 FROM (SELECT sort_order FROM phrases WHERE category_id=$categoryId)));";
             AddPhraseParameters(insert, command, shortcut, colorKey, now);
             await insert.ExecuteNonQueryAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -101,11 +101,10 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
             var now = Now();
             await using var update = connection.CreateCommand();
             update.Transaction = transaction;
-            update.CommandText = "UPDATE phrases SET title=$title, content=$content, category_id=$categoryId, favorite=$favorite, shortcut_mode=$mode, shortcut_display=$display, shortcut_normalized=$normalized, color_key=$colorKey, sort_order=$sortOrder, version=version+1, updated_at_utc=$updated WHERE id=$id AND version=$version;";
+            update.CommandText = "UPDATE phrases SET title=$title, content=$content, category_id=$categoryId, shortcut_mode=$mode, shortcut_display=$display, shortcut_normalized=$normalized, color_key=$colorKey, sort_order=$sortOrder, version=version+1, updated_at_utc=$updated WHERE id=$id AND version=$version;";
             update.Parameters.AddWithValue("$title", command.Title.Trim());
             update.Parameters.AddWithValue("$content", command.Content);
             update.Parameters.AddWithValue("$categoryId", DbId(command.CategoryId));
-            update.Parameters.AddWithValue("$favorite", command.Favorite ? 1 : 0);
             update.Parameters.AddWithValue("$mode", command.ShortcutMode.ToString());
             update.Parameters.AddWithValue("$display", (object?)shortcut?.Display ?? DBNull.Value);
             update.Parameters.AddWithValue("$normalized", (object?)shortcut?.Normalized ?? DBNull.Value);
@@ -207,7 +206,6 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
         command.Parameters.AddWithValue("$title", phrase.Title.Trim());
         command.Parameters.AddWithValue("$content", phrase.Content);
         command.Parameters.AddWithValue("$categoryId", DbId(phrase.CategoryId));
-        command.Parameters.AddWithValue("$favorite", phrase.Favorite ? 1 : 0);
         command.Parameters.AddWithValue("$mode", phrase.ShortcutMode.ToString());
         command.Parameters.AddWithValue("$display", (object?)shortcut?.Display ?? DBNull.Value);
         command.Parameters.AddWithValue("$normalized", (object?)shortcut?.Normalized ?? DBNull.Value);

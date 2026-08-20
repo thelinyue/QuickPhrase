@@ -18,7 +18,7 @@
 
 - WPF MainWindow：当前实际话术库、编辑器、设置和导航确认流程。
 - WPF Launcher：`Alt + Space` 呼出、搜索、方向键、Enter、Esc、单击选中、双击安全插入。
-- 话术：纯文本正文、标题、分类、二级分类、标签、收藏、排序、稳定 ColorKey、快捷键。
+- 话术：纯文本正文、标题、分类、二级分类、标签、排序、稳定 ColorKey、快捷键。
 - SQLite 本地持久化、事务 migration、备份、单写者和内存搜索索引。
 - 企业微信版本适配、目标窗口重校验、Clipboard Transaction、投递 Trace 和安全降级。
 - 单实例、托盘、开机启动、升级备份和当前用户安装。
@@ -54,7 +54,6 @@ id                  UUID
 正文                 1–4000 字，必填
 categoryId          必填
 tags                0–10 个，去重
-favorite            bool
 shortcutMode       none | quick | custom
 shortcutDisplay     可空
 shortcutNormalized  可空，规范化冲突键
@@ -110,15 +109,17 @@ CaptureTarget
 
 ### Send
 
-V1 不开放后台目标自动发送。只有未来具体 Adapter/Profile 同时满足以下条件时，才允许在用户明确开启后发送：
+V1 不开放后台目标发送或无用户授权自动发送。Launcher 中 `Ctrl+Enter` 表示通用 `InsertAndSend`，默认每次显示不可逆确认；用户明确开启“快捷发送模式”后才跳过确认。执行发送必须同时满足：
 
 ```text
 目标身份有效
-Adapter Profile 匹配
-SendText = Verified
-Insert 成功且已可靠验证
-发送前 Target 仍在前台
+Adapter 运行时能力匹配且 SendText = Verified
+Insert 成功，且目标、前台窗口、输入焦点/Caret 指纹稳定
+发送前 Target 再次验证通过
+用户已确认本次发送，或已明确开启快捷发送模式
 ```
+
+发送确认是 Desktop UI 策略，不进入 Core `DeliveryRequest`。`InsertAndSend` 不支持时直接返回 `UnsupportedSend`，不插入、不发送、不自动降级；连续投递队列只接受 `InsertOnly`。
 
 ### 不确定结果
 
@@ -128,16 +129,16 @@ Insert 成功且已可靠验证
 
 ## 7. 企业微信 Adapter 能力矩阵
 
-当前精确 Profile：`WXWork 5.0.9.6065`。
+兼容目标：当前主流版本企业微信，不设置客户端版本门禁。版本号仅作为可空诊断信息，不参与能力或降级判断。
 
-| 能力 | 状态 |
-|---|---|
-| 文本插入 | Verified |
-| 插入验证 | Unverified |
-| 自动发送 | Unsupported |
-| 发送验证 | Unsupported |
+| 能力 | 状态 | 当前实现 |
+|---|---|---|
+| 文本插入 | Verified | 受保护 Clipboard + `Ctrl+V` |
+| 插入动作验证 | Verified | 目标、前台窗口、输入焦点/Caret 指纹稳定，不读取正文 |
+| 显式发送 | Verified | Launcher 以 `Ctrl+Enter` 明确触发；再次重校验后由企业微信 Adapter 注入一次 `Enter` |
+| 最终发送验证 | Unsupported | 只返回 `SendTriggered`，不声明 `Sent` |
 
-企业微信固定使用受保护 Clipboard + `Ctrl+V`，不开放 Unicode 直输、后台投递和自动发送。
+企业微信不开放 Unicode 直输、后台投递、无用户授权自动发送或自动重试。
 
 ## 8. 首次使用与错误状态
 

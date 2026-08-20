@@ -1,6 +1,6 @@
 <!--
   QuickPhrase 主题聚合入口。
-  固定 Token 合并顺序确保几何资源先于主题色加载；运行时换肤只替换最后一个 Light/Dark 主题字典。
+  固定 Token 合并顺序确保品牌原色、语义颜色和 Brush 分层加载；运行时换肤只替换 Light/Dark 语义颜色字典。
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
@@ -10,6 +10,8 @@
         <ResourceDictionary Source="../DesignSystem/Tokens/Radius.xaml" />
         <ResourceDictionary Source="../DesignSystem/Tokens/Sizes.xaml" />
         <ResourceDictionary Source="../DesignSystem/Tokens/Motion.xaml" />
-        <ResourceDictionary Source="../DesignSystem/Themes/QuickPhraseTheme.Light.xaml" />
+        <ResourceDictionary Source="../DesignSystem/Tokens/Colors.xaml" />
+        <ResourceDictionary Source="../DesignSystem/Themes/Theme.Light.xaml" />
+        <ResourceDictionary Source="../DesignSystem/Tokens/Brushes.xaml" />
     </ResourceDictionary.MergedDictionaries>
 </ResourceDictionary>

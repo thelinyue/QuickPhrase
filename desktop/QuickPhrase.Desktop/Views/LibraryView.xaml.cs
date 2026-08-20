@@ -182,6 +182,17 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     }
 
     /// <summary>
+    /// 空白区域点击只负责收回搜索输入焦点；节点和其他交互控件保留其原有焦点行为。
+    /// </summary>
+    private void RootLayout_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject source) return;
+        if (IsLibraryNodeHit(source) || IsNonBlankInteractiveControl(source)) return;
+
+        Keyboard.Focus(RootLayout);
+    }
+
+    /// <summary>
     /// 右键预览阶段先判定节点命中，再处理空白菜单。命中话术行/二级标题/一级 chip
     /// 时不标记事件，交由现有节点 ContextMenu 继续处理；只有真正的空白区域才拦截并打开本菜单。
     /// </summary>
@@ -357,9 +368,11 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
     private void PhraseList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        var item = PhraseList.SelectedItem as PhraseItemViewModel;
-        // 文档规范：双�?= 发送到输入区。编辑仅走右键菜单�?
-        if (item is not null) _viewModel.InsertCommand.Execute(item);
+        if (e.OriginalSource is not DependencyObject source) return;
+        if (FindAncestor<ListBoxItem>(source)?.DataContext is not PhraseItemViewModel item) return;
+
+        // 双击必须以实际命中的话术行为准，避免空白区域复用旧的 SelectedItem。
+        _viewModel.InsertCommand.Execute(item);
     }
 
     private void OnListKeyDown(object sender, System.Windows.Input.KeyEventArgs e)

@@ -37,7 +37,7 @@ public partial class PhraseMoveDialog : Window
         if (CategoryCombo.SelectedValue is not Guid target) { ErrorText.Text = "请选择目标分类"; return; }
         var p = _item.ToPhrase();
         var command = new UpdatePhraseCommand(
-            p.Id, p.Version, p.Title, p.Content, target, p.Favorite, p.ShortcutMode, p.Shortcut?.Display, p.ColorKey);
+            p.Id, p.Version, p.Title, p.Content, target, p.ShortcutMode, p.Shortcut?.Display, p.ColorKey);
         var result = await _commands.UpdatePhraseAsync(command);
         if (result.IsSuccess) DialogResult = true;
         else ErrorText.Text = result.Error?.Message ?? "移动失败";

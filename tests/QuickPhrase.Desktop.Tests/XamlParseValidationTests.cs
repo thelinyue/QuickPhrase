@@ -269,8 +269,7 @@ public class XamlParseValidationTests
         {
             var fake = new FakeCommandService();
             var phrase = new Phrase(
-                Guid.NewGuid(), "示例标题", "示例正文", Guid.NewGuid(),
-                false, ShortcutMode.None, null,
+                Guid.NewGuid(), "示例标题", "示例正文", Guid.NewGuid(), ShortcutMode.None, null,
                 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default");
             var pvm = new PhraseItemViewModel(phrase, "示例分类");
 

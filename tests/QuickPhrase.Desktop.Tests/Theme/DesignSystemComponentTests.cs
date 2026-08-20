@@ -362,7 +362,9 @@ public sealed class DesignSystemComponentTests
         "DesignSystem/Tokens/Radius.xaml",
         "DesignSystem/Tokens/Sizes.xaml",
         "DesignSystem/Tokens/Motion.xaml",
-        "DesignSystem/Themes/QuickPhraseTheme.Light.xaml",
+        "DesignSystem/Tokens/Colors.xaml",
+        "DesignSystem/Themes/Theme.Light.xaml",
+        "DesignSystem/Tokens/Brushes.xaml",
     ];
 
     private static WindowHost ShowInTestWindow(FrameworkElement content)

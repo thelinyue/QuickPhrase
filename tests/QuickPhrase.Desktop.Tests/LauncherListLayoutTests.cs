@@ -29,7 +29,7 @@ public sealed class LauncherListLayoutTests
     }
 
     [Fact]
-    public void LauncherUsesOnlyIndexTitleAndContentAndDoesNotExposeCategoryGuidOrDirectSend()
+    public void LauncherUsesApprovedFieldsAndExplicitCtrlEnterSendIntent()
     {
         var root = FindRepositoryRoot();
         var launcher = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
@@ -47,7 +47,12 @@ public sealed class LauncherListLayoutTests
         Assert.DoesNotContain("CategoryId", launcher);
         Assert.DoesNotContain("直接发送", launcher);
         Assert.DoesNotContain("sendRequested", codeBehind);
-        Assert.DoesNotContain("ModifierKeys.Control", codeBehind);
+        Assert.Contains("ModifierKeys.Control", codeBehind);
+        Assert.Contains("SendMode.InsertAndSend", codeBehind);
+        Assert.Contains("Ctrl+Enter 显式发送", codeBehind);
+        Assert.DoesNotContain("自动发送不支持", launcher);
+        Assert.DoesNotContain("自动发送不支持", codeBehind);
+        Assert.True(codeBehind.Split("SelectPhraseAsync(item.Phrase, SendMode.InsertOnly)", StringSplitOptions.None).Length - 1 >= 2);
     }
 
     [Fact]
@@ -67,8 +72,7 @@ public sealed class LauncherListLayoutTests
     public void LauncherPhraseListItemMapsOnlyTheApprovedDisplayFields()
     {
         var phrase = new Phrase(
-            Guid.NewGuid(), "标题", "正文", Guid.NewGuid(),
-            false, ShortcutMode.None, null,
+            Guid.NewGuid(), "标题", "正文", Guid.NewGuid(), ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default");
 
         var item = LauncherPhraseListItem.FromPhrase(phrase, 3);
@@ -109,7 +113,3 @@ public sealed class LauncherListLayoutTests
         return directory?.FullName ?? throw new DirectoryNotFoundException("找不到 QuickPhrase.sln");
     }
 }
-
-
-
-

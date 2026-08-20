@@ -7,7 +7,7 @@
     <Style x:Key="Style.Switch.Default" TargetType="CheckBox">
         <Setter Property="Width" Value="{StaticResource Size.Switch.Width}" />
         <Setter Property="Height" Value="{StaticResource Size.Switch.Height}" />
-        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Secondary}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
         <Setter Property="BorderThickness" Value="{StaticResource Thickness.Border.Default}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
@@ -28,7 +28,7 @@
                                  Margin="{StaticResource Thickness.Border.Default}"
                                  HorizontalAlignment="Left"
                                  VerticalAlignment="Center"
-                                 Fill="{DynamicResource Brush.Surface.Primary}" />
+                                 Fill="{DynamicResource Brush.Surface.Default}" />
                         <Border x:Name="FocusRing"
                                 BorderBrush="{DynamicResource Brush.Border.Focus}"
                                 BorderThickness="{StaticResource Thickness.Border.Default}"
@@ -38,24 +38,24 @@
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource Brush.State.Hover}" />
-                            <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource Brush.State.SelectedBorder}" />
+                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
+                            <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource Brush.State.Selected}" />
+                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource Brush.Surface.Selected}" />
                             <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource Brush.Brand.BlueStrong}" />
-                            <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource Brush.Brand.BlueStrong}" />
+                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource Brush.Accent.Primary}" />
+                            <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource Brush.Accent.Primary}" />
                             <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="FocusRing" Property="Visibility" Value="Visible" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource Brush.Surface.Secondary}" />
-                            <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
+                            <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
                             <Setter TargetName="Thumb" Property="Fill" Value="{DynamicResource Brush.Text.Disabled}" />
                             <Setter TargetName="FocusRing" Property="Visibility" Value="Collapsed" />
                             <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />

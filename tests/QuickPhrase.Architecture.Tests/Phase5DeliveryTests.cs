@@ -55,6 +55,79 @@ public sealed class Phase5DeliveryTests
         Assert.Equal(new DeliveryQueueStatus(false, 0), queue.Status);
     }
 
+
+    [Fact]
+    public async Task DeliveryQueueDoesNotRunDeliveryInlineOnTheCallerThread()
+    {
+        var machine = new BlockingStartDeliveryMachine();
+        await using var queue = new DeliveryQueueCoordinator(machine, maxPending: 4);
+        var target = CreateTarget();
+        var enqueueTask = Task.Run(() => queue.TryEnqueue(
+            CreateRequest(CreatePhrase("不会阻塞闪念"), target),
+            Guid.NewGuid()));
+
+        Assert.True(machine.WaitUntilEntered(TimeSpan.FromSeconds(1)));
+        try
+        {
+            var completed = await Task.WhenAny(enqueueTask, Task.Delay(TimeSpan.FromSeconds(1)));
+            Assert.Same(enqueueTask, completed);
+        }
+        finally
+        {
+            machine.Release();
+        }
+
+        var ticket = await enqueueTask;
+        Assert.True(ticket.Accepted);
+        Assert.True((await ticket.Completion!).Inserted);
+    }
+
+    [Fact]
+    public async Task AdapterResolutionDoesNotRunInlineOnTheCallerThread()
+    {
+        var resolver = new BlockingAdapterResolver(new FakeAdapter("WXWork", CapabilityStatus.Unverified));
+
+        var resolution = ApplicationController.ResolveAdapterOffUiThreadAsync(
+            resolver,
+            CreateTarget(),
+            CancellationToken.None);
+
+        Assert.True(resolver.WaitUntilEntered(TimeSpan.FromSeconds(1)));
+        try
+        {
+            Assert.False(resolution.IsCompleted);
+        }
+        finally
+        {
+            resolver.Release();
+        }
+
+        Assert.Equal("WXWork", (await resolution).AdapterId);
+    }
+
+    [Fact]
+    public async Task SingleDeliveryDoesNotRunPlatformWorkInlineOnTheCallerThread()
+    {
+        var machine = new BlockingStartDeliveryMachine();
+        var request = CreateRequest(CreatePhrase("运行时能力投递"), CreateTarget());
+
+        var delivery = ApplicationController.RunSingleDeliveryOffUiThreadAsync(
+            machine,
+            request,
+            CancellationToken.None);
+
+        Assert.True(machine.WaitUntilEntered(TimeSpan.FromSeconds(1)));
+        try
+        {
+            Assert.False(delivery.IsCompleted);
+        }
+        finally
+        {
+            machine.Release();
+        }
+
+        Assert.True((await delivery).Inserted);
+    }
     [Fact]
     public async Task TargetChangeCancelsSameTargetWaitingItemsWithoutExecutingThem()
     {
@@ -108,14 +181,17 @@ public sealed class Phase5DeliveryTests
         Assert.True(guard.TrySubmit());
     }
 
-    [Fact]
-    public void OnlyVerifiedWeComInsertCanUseContinuousQueue()
-    {
-        var exact = new AdapterProfile("WXWork", "WXWork", "5.0.9.6065", "phase5-wecom-3", CapabilityStatus.Verified, CapabilityStatus.Unverified, CapabilityStatus.Unsupported, CapabilityStatus.Unsupported, "CopyOnly", null);
-        var unknown = exact with { AdapterId = "Unknown", InsertTextStatus = CapabilityStatus.Unverified };
 
-        Assert.True(DeliveryQueuePolicy.CanQueue(exact));
-        Assert.False(DeliveryQueuePolicy.CanQueue(unknown));
+    [Fact]
+    public void ContinuousQueueAcceptsOnlyVerifiedInsertOnlyRequests()
+    {
+        var verified = new AdapterProfile("AnyAdapter", "AnyApp", "runtime-capability-test",
+            CapabilityStatus.Verified, CapabilityStatus.Verified, CapabilityStatus.Verified, CapabilityStatus.Unsupported, "CopyOnly", null);
+        var unverified = verified with { InsertTextStatus = CapabilityStatus.Unverified };
+
+        Assert.True(DeliveryQueuePolicy.CanQueue(verified, SendMode.InsertOnly));
+        Assert.False(DeliveryQueuePolicy.CanQueue(verified, SendMode.InsertAndSend));
+        Assert.False(DeliveryQueuePolicy.CanQueue(unverified, SendMode.InsertOnly));
     }
 
     [Fact]
@@ -146,7 +222,7 @@ public sealed class Phase5DeliveryTests
             clipboard,
             static (_, _) => Task.CompletedTask);
 
-        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, null, false, false, true));
+        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, null, SendMode.InsertOnly, true));
 
         Assert.Equal(DeliveryStatus.Unsupported, result.Status);
         Assert.Equal("TARGET_VALIDATION_FAILED", result.ErrorCode);
@@ -160,6 +236,11 @@ public sealed class Phase5DeliveryTests
         var phrase = CreatePhrase();
         var adapter = new FakeAdapter("WXWork", CapabilityStatus.Verified)
         {
+            Capabilities = new AdapterCapabilities(
+                CapabilityStatus.Verified,
+                CapabilityStatus.Verified,
+                CapabilityStatus.Verified,
+                CapabilityStatus.Unsupported),
             VerifyInsertResult = VerificationResult.Inconclusive("INSERT_VERIFICATION_INCONCLUSIVE")
         };
         var detector = new FakeTargetDetector
@@ -169,7 +250,7 @@ public sealed class Phase5DeliveryTests
         var clipboard = new FakeClipboardTransaction();
         var engine = new TextDeliveryStateMachine(detector, new FakeAdapterResolver(adapter), clipboard, static (_, _) => Task.CompletedTask);
 
-        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, detector.Current, true, true, true));
+        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, detector.Current, SendMode.InsertAndSend, true));
 
         Assert.Equal("INSERT_VERIFICATION_INCONCLUSIVE", result.ErrorCode);
         Assert.Equal(DeliveryStatus.Unknown, result.Status);
@@ -189,7 +270,7 @@ public sealed class Phase5DeliveryTests
         var clipboard = new FakeClipboardTransaction();
         var engine = new TextDeliveryStateMachine(detector, new FakeAdapterResolver(adapter), clipboard, static (_, _) => Task.CompletedTask);
 
-        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, detector.Current, false, false, true));
+        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, detector.Current, SendMode.InsertOnly, true));
 
         Assert.Equal(DeliveryStatus.Unknown, result.Status);
         Assert.Equal("INSERT_VERIFICATION_INCONCLUSIVE", result.ErrorCode);
@@ -204,7 +285,7 @@ public sealed class Phase5DeliveryTests
         var clipboard = new FakeClipboardTransaction();
         var engine = new TextDeliveryStateMachine(new FakeTargetDetector(), new FakeAdapterResolver(new FakeAdapter("Unknown", CapabilityStatus.Unverified)), clipboard, static (_, _) => Task.CompletedTask);
 
-        var result = await engine.DeliverAsync(new DeliveryRequest(CreatePhrase(), null, false, false, true), cancellation.Token);
+        var result = await engine.DeliverAsync(new DeliveryRequest(CreatePhrase(), null, SendMode.InsertOnly, true), cancellation.Token);
 
         Assert.Equal(DeliveryStatus.Cancelled, result.Status);
         Assert.Equal(0, clipboard.CopyOnlyCalls);
@@ -218,7 +299,7 @@ public sealed class Phase5DeliveryTests
         var clipboard = new FakeClipboardTransaction();
         var engine = new TextDeliveryStateMachine(new FakeTargetDetector { Current = target with { RuntimeKey = Guid.NewGuid().ToString("N") } }, new FakeAdapterResolver(new FakeAdapter("WXWork", CapabilityStatus.Verified)), clipboard, static (_, _) => Task.CompletedTask);
 
-        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, target, false, false, true, TargetChangeBehavior.Cancel));
+        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, target, SendMode.InsertOnly, true, TargetChangeBehavior.Cancel));
 
         Assert.Equal("TARGET_CHANGED", result.ErrorCode);
         Assert.Equal(DeliveryStatus.Cancelled, result.Status);
@@ -237,7 +318,7 @@ public sealed class Phase5DeliveryTests
         };
         var engine = new TextDeliveryStateMachine(new FakeTargetDetector { Current = target }, new FakeAdapterResolver(adapter), clipboard, static (_, _) => Task.CompletedTask);
 
-        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, target, false, false, true, TargetChangeBehavior.Cancel));
+        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, target, SendMode.InsertOnly, true, TargetChangeBehavior.Cancel));
 
         Assert.Equal(DeliveryStatus.Cancelled, result.Status);
         Assert.Equal(0, clipboard.CopyOnlyCalls);
@@ -258,7 +339,7 @@ public sealed class Phase5DeliveryTests
         };
         var engine = new TextDeliveryStateMachine(detector, new FakeAdapterResolver(adapter), new FakeClipboardTransaction(), static (_, _) => Task.CompletedTask);
 
-        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, detector.Current, true, true, false));
+        var result = await engine.DeliverAsync(new DeliveryRequest(phrase, detector.Current, SendMode.InsertAndSend, false));
 
         Assert.Equal(DeliveryStatus.Success, result.Status);
         Assert.Equal(1, adapter.SendCalls);
@@ -275,45 +356,39 @@ public sealed class Phase5DeliveryTests
         Assert.Equal(ApartmentState.MTA, first.Item2);
     }
 
-    [Fact]
-    public void ResolverKeepsUnknownVersionsUnverified()
+
+    [Theory]
+    [InlineData("5.0.9.6065")]
+    [InlineData("5.1.0.100")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void WeComCapabilitiesDoNotDependOnDetectedVersion(string? version)
     {
-        var resolver = new WindowsAdapterResolver(_ => "4.1.39.6003");
-        var target = CreateTarget();
-
-        var adapter = resolver.Resolve(target);
-
-        Assert.Equal("WXWork", adapter.AdapterId);
-        Assert.Equal(CapabilityStatus.Unverified, adapter.DetectCapabilities().InsertText);
-    }
-
-    [Fact]
-    public void ExactWeComVersionExposesVerifiedInsertWithoutAcceptanceBypass()
-    {
-        using var resolver = new WindowsAdapterResolver(_ => "5.0.9.6065", _ => true);
-        var target = CreateTarget();
-
-        var adapter = resolver.Resolve(target);
-        var capabilities = adapter.DetectCapabilities();
-
-        Assert.Equal(CapabilityStatus.Verified, capabilities.InsertText);
-        Assert.Equal(CapabilityStatus.Verified, adapter.Profile.InsertTextStatus);
-        Assert.Equal(CapabilityStatus.Unsupported, capabilities.SendText);
-    }
-
-    [Fact]
-    public void ExactWeComProfileExposesVerifiedInsertAndUnverifiedVerification()
-    {
-        using var resolver = new WindowsAdapterResolver(_ => WindowsAdapterResolver.SupportedWeComProductVersion, _ => true);
-        var target = CreateTarget();
-
-        var adapter = resolver.Resolve(target);
+        using var resolver = new WindowsAdapterResolver(_ => version, _ => true);
+        var adapter = resolver.Resolve(CreateTarget());
 
         Assert.Equal(CapabilityStatus.Verified, adapter.Profile.InsertTextStatus);
-        Assert.Equal(CapabilityStatus.Unverified, adapter.Profile.VerifyInsertStatus);
-        Assert.Equal(CapabilityStatus.Unsupported, adapter.Profile.SendTextStatus);
-        Assert.Equal(WindowsAdapterResolver.SupportedWeComProductVersion, adapter.DetectedProductVersion);
+        Assert.Equal(CapabilityStatus.Verified, adapter.Profile.VerifyInsertStatus);
+        Assert.Equal(CapabilityStatus.Verified, adapter.Profile.SendTextStatus);
+        Assert.Equal(CapabilityStatus.Unsupported, adapter.Profile.VerifySendStatus);
+        Assert.Equal(version, adapter.DetectedProductVersion);
     }
+
+    [Fact]
+    public void WeComCapabilitiesRemainAvailableWhenVersionReaderFails()
+    {
+        using var resolver = new WindowsAdapterResolver(_ => throw new IOException("无法读取版本"), _ => true);
+
+        var adapter = resolver.Resolve(CreateTarget());
+
+        Assert.Equal(CapabilityStatus.Verified, adapter.DetectCapabilities().InsertText);
+        Assert.Equal(CapabilityStatus.Verified, adapter.DetectCapabilities().SendText);
+        Assert.Null(adapter.DetectedProductVersion);
+    }
+
+
+
+
 
     [Fact]
     public void WeComFocusPolicyAcceptsChatComposerAndRejectsTopSearch()
@@ -333,16 +408,7 @@ public sealed class Phase5DeliveryTests
         Assert.Equal(32, System.Runtime.InteropServices.Marshal.SizeOf<WindowsNativeMethods.KeyboardInputData>());
     }
 
-    [Fact]
-    public void PreviousWeComVersionRemainsUnverified()
-    {
-        using var resolver = new WindowsAdapterResolver(_ => "4.1.39.6004", _ => true);
-        var target = CreateTarget();
 
-        var adapter = resolver.Resolve(target);
-
-        Assert.Equal(CapabilityStatus.Unverified, adapter.DetectCapabilities().InsertText);
-    }
 
     [Fact]
     public async Task DeliveryTraceIncludesDetectedProductVersion()
@@ -356,7 +422,7 @@ public sealed class Phase5DeliveryTests
         var target = CreateTarget();
         var engine = new TextDeliveryStateMachine(new FakeTargetDetector { Current = target }, new FakeAdapterResolver(adapter), new FakeClipboardTransaction(), static (_, _) => Task.CompletedTask, traces.Add);
 
-        await engine.DeliverAsync(new DeliveryRequest(phrase, target, false, false, true));
+        await engine.DeliverAsync(new DeliveryRequest(phrase, target, SendMode.InsertOnly, true));
 
         Assert.Contains(traces, trace => trace.AdapterId == "WXWork" && trace.ProductVersion == "5.0.9.6065");
     }
@@ -373,7 +439,7 @@ public sealed class Phase5DeliveryTests
         var target = CreateTarget();
         var engine = new TextDeliveryStateMachine(new FakeTargetDetector { Current = target }, new FakeAdapterResolver(adapter), new FakeClipboardTransaction(), static (_, _) => Task.CompletedTask, traces.Add);
 
-        await engine.DeliverAsync(new DeliveryRequest(phrase, target, false, false, false));
+        await engine.DeliverAsync(new DeliveryRequest(phrase, target, SendMode.InsertOnly, false));
 
         Assert.Contains(traces, trace => trace.Stage == DeliveryStage.Fallback && trace.ProductVersion == "5.0.9.6065");
     }
@@ -396,7 +462,7 @@ public sealed class Phase5DeliveryTests
 
     private static Phrase CreatePhrase() => new(
         Guid.NewGuid(), "请求设备序列号", "请提供设备序列号（SN），方便我们进一步确认设备信息。", Guid.NewGuid(),
-        false, ShortcutMode.None, null, 0, null, 1,
+        ShortcutMode.None, null, 0, null, 1,
         DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
     private static Phrase CreatePhrase(string title) => CreatePhrase() with { Id = Guid.NewGuid(), Title = title };
@@ -408,10 +474,28 @@ public sealed class Phase5DeliveryTests
         new((nint)42, 7, 9, DateTimeOffset.UtcNow.AddMinutes(-1), "WXWork", DateTimeOffset.UtcNow);
 
     private static DeliveryRequest CreateRequest(Phrase phrase, DeliveryTarget target) =>
-        new(phrase, target, false, false, true, TargetChangeBehavior.Cancel);
+        new(phrase, target, SendMode.InsertOnly, true, TargetChangeBehavior.Cancel);
 
     private static DeliveryResult Success(DeliveryRequest request) =>
         new(DeliveryStatus.Success, DeliveryEffect.Inserted, DeliveryStage.Completed, DeliveryConfidence.Confirmed, "INSERTED", "已插入。", false, Guid.NewGuid());
+
+    private sealed class BlockingStartDeliveryMachine : ITextDeliveryStateMachine
+    {
+        private readonly ManualResetEventSlim _entered = new(false);
+        private readonly ManualResetEventSlim _release = new(false);
+
+        public Task<DeliveryResult> DeliverAsync(DeliveryRequest request, CancellationToken cancellationToken = default)
+        {
+            _entered.Set();
+            if (!_release.Wait(TimeSpan.FromSeconds(5), cancellationToken))
+                throw new TimeoutException("测试未能及时释放同步投递入口。");
+            return Task.FromResult(Success(request));
+        }
+
+        public bool WaitUntilEntered(TimeSpan timeout) => _entered.Wait(timeout);
+        public void Release() => _release.Set();
+    }
+
     private sealed class ControlledDeliveryMachine : ITextDeliveryStateMachine
     {
         private readonly System.Threading.Channels.Channel<Invocation> _invocations =
@@ -451,21 +535,41 @@ public sealed class Phase5DeliveryTests
         public IApplicationAdapter Resolve(DeliveryTarget target, string? productVersion = null) => adapter;
     }
 
+
+    private sealed class BlockingAdapterResolver(IApplicationAdapter adapter) : IAdapterResolver
+    {
+        private readonly ManualResetEventSlim _entered = new(false);
+        private readonly ManualResetEventSlim _release = new(false);
+
+        public IApplicationAdapter Resolve(DeliveryTarget target, string? productVersion = null)
+        {
+            _entered.Set();
+            if (!_release.Wait(TimeSpan.FromSeconds(5)))
+                throw new TimeoutException("测试未能及时释放同步适配器解析入口。");
+            return adapter;
+        }
+
+        public bool WaitUntilEntered(TimeSpan timeout) => _entered.Wait(timeout);
+        public void Release() => _release.Set();
+    }
+
     private sealed class FakeAdapter(string id, CapabilityStatus insertStatus) : IApplicationAdapter
     {
         public string AdapterId { get; } = id;
         public string? DetectedProductVersion => "5.0.9.6065";
-        public AdapterProfile Profile { get; } = new(id, "WXWork", "5.0.9.6065", "phase5-test", insertStatus, insertStatus, CapabilityStatus.Unsupported, CapabilityStatus.Unsupported, "CopyOnly", null);
+        public AdapterProfile Profile => new(AdapterId, "WXWork", "phase5-test", Capabilities.InsertText, Capabilities.VerifyInsert, Capabilities.SendText, Capabilities.VerifySend, "CopyOnly", null);
         public AdapterCapabilities Capabilities { get; set; } = new(insertStatus, insertStatus, CapabilityStatus.Unsupported, CapabilityStatus.Unsupported);
         public VerificationResult VerifyInsertResult { get; set; } = VerificationResult.Verified;
         public int InsertCalls { get; private set; }
         public int SendCalls { get; private set; }
         public InsertResult InsertResponse { get; set; } = QuickPhrase.Core.InsertResult.Applied;
+        public SendResult SendResponse { get; set; } = QuickPhrase.Core.SendResult.Applied;
+        public VerificationResult VerifySendResult { get; set; } = VerificationResult.Verified;
         public AdapterCapabilities DetectCapabilities() => Capabilities;
         public Task<InsertResult> InsertAsync(DeliveryRequest request, CancellationToken cancellationToken) { InsertCalls++; return Task.FromResult(InsertResponse); }
         public Task<VerificationResult> VerifyInsertAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(VerifyInsertResult);
-        public Task<SendResult> SendAsync(DeliveryRequest request, CancellationToken cancellationToken) { SendCalls++; return Task.FromResult(SendResult.Applied); }
-        public Task<VerificationResult> VerifySendAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(VerificationResult.Verified);
+        public Task<SendResult> SendAsync(DeliveryRequest request, CancellationToken cancellationToken) { SendCalls++; return Task.FromResult(SendResponse); }
+        public Task<VerificationResult> VerifySendAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(VerifySendResult);
     }
 
     private sealed class FakeClipboardTransaction : IClipboardTransaction
@@ -476,5 +580,3 @@ public sealed class Phase5DeliveryTests
         public Task<ClipboardResult> PasteAsync(string text, DeliveryTarget target, CancellationToken cancellationToken) { LastCopiedText = text; return Task.FromResult(ClipboardResult.Pasted); }
     }
 }
-
-

@@ -4,7 +4,7 @@ namespace QuickPhrase.Platform.Windows;
 
 /// <summary>
 /// 管理当前用户的 Windows 登录启动项。注册表只保存当前安装路径，
-/// 不进入 Core，避免领域模型依赖 Windows；升级后由 Desktop 重新校准。
+/// 不进入 Core，避免领域模型依赖 Windows；应用启动时由 Desktop 重新校准。
 /// </summary>
 internal sealed class WindowsStartupRegistration
 {

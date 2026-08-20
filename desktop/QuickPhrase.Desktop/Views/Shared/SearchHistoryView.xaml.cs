@@ -1,24 +1,34 @@
 using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using QuickPhrase.Core;
 using QuickPhrase.Desktop.ViewModels;
 
 namespace QuickPhrase.Desktop.Views.Shared;
 
 /// <summary>
-/// 锟斤拷锟斤拷锟斤拷史锟斤拷签锟斤拷濉ｏ拷锟斤拷只锟斤拷锟斤拷锟斤拷趾锟窖★拷瘢锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷锟诫，
-/// 锟斤拷锟斤拷锟斤拷锟斤拷锟节撅拷锟斤拷锟斤拷锟斤拷锟角╋拷锟斤拷锟斤拷锟斤拷锟斤拷锟藉，锟接讹拷锟斤拷证锟斤拷锟斤拷锟节猴拷 Launcher 锟斤拷为一锟铰★拷
+/// Launcher 与话术库共用的历史搜索单行视图。
+///
+/// 持久化层仍保存最近十条历史记录；本控件只根据实际可用宽度展示最近五至八条，
+/// 让垃圾桶按钮和关键词标签始终保持在同一行。键盘选择只遍历当前可见记录，
+/// 避免窗口缩放后继续选中已经隐藏的历史项。
 /// </summary>
 public partial class SearchHistoryView : System.Windows.Controls.UserControl
 {
+    private const int MinimumVisibleEntryCount = 5;
+    private const int MaximumVisibleEntryCount = 8;
+    private const double TargetEntryWidth = 96d;
+
     private bool _suppressSelectionEvent;
+    private SearchHistoryViewModel? _viewModel;
+    private INotifyCollectionChanged? _entriesCollection;
+
     public SearchHistoryView()
     {
         InitializeComponent();
-        DataContextChanged += (_, _) => AttachCollectionNotifications();
-        Loaded += (_, _) => AttachCollectionNotifications();
+        DataContextChanged += (_, _) => AttachViewModel();
+        Loaded += (_, _) => AttachViewModel();
+        SizeChanged += (_, _) => RefreshVisibleEntries();
     }
 
     public event EventHandler<string>? QuerySelected;
@@ -33,6 +43,22 @@ public partial class SearchHistoryView : System.Windows.Controls.UserControl
     public bool HasSelection => HistoryList.SelectedItem is SearchHistoryEntry;
 
     public SearchHistoryEntry? SelectedEntry => HistoryList.SelectedItem as SearchHistoryEntry;
+
+    /// <summary>
+    /// 将历史标签区域的可用宽度转换为可见记录数。
+    /// 96 DIP 是单个标签的目标宽度；无效或过窄尺寸按五条处理，宽屏最多展示八条。
+    /// </summary>
+    internal static int CalculateVisibleEntryLimit(double availableWidth)
+    {
+        if (double.IsPositiveInfinity(availableWidth))
+            return MaximumVisibleEntryCount;
+
+        if (!double.IsFinite(availableWidth) || availableWidth <= 0)
+            return MinimumVisibleEntryCount;
+
+        var countByWidth = (int)Math.Floor(availableWidth / TargetEntryWidth);
+        return Math.Clamp(countByWidth, MinimumVisibleEntryCount, MaximumVisibleEntryCount);
+    }
 
     public bool MoveSelection(int delta)
     {
@@ -64,49 +90,67 @@ public partial class SearchHistoryView : System.Windows.Controls.UserControl
 
     private void ClearButton_Click(object sender, RoutedEventArgs e) => ClearRequested?.Invoke(this, EventArgs.Empty);
 
-    private void AttachCollectionNotifications()
+    private void AttachViewModel()
     {
-        if (DataContext is not SearchHistoryViewModel viewModel) return;
-        viewModel.PropertyChanged -= ViewModel_PropertyChanged;
-        viewModel.PropertyChanged += ViewModel_PropertyChanged;
-        if (viewModel.Entries is INotifyCollectionChanged collection)
+        if (!ReferenceEquals(_viewModel, DataContext))
         {
-            collection.CollectionChanged -= Collection_CollectionChanged;
-            collection.CollectionChanged += Collection_CollectionChanged;
+            if (_viewModel is not null)
+                _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+
+            _viewModel = DataContext as SearchHistoryViewModel;
+            if (_viewModel is not null)
+                _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         }
-        _suppressSelectionEvent = true;
-        try
-        {
-            HistoryList.ItemsSource = viewModel.Entries;
-        }
-        finally
-        {
-            _suppressSelectionEvent = false;
-        }
-        UpdateState();
+
+        AttachCollectionNotifications(_viewModel?.Entries);
+        RefreshVisibleEntries();
+    }
+
+    private void AttachCollectionNotifications(INotifyCollectionChanged? collection)
+    {
+        if (ReferenceEquals(_entriesCollection, collection)) return;
+
+        if (_entriesCollection is not null)
+            _entriesCollection.CollectionChanged -= Collection_CollectionChanged;
+
+        _entriesCollection = collection;
+        if (_entriesCollection is not null)
+            _entriesCollection.CollectionChanged += Collection_CollectionChanged;
     }
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(SearchHistoryViewModel.Entries) or nameof(SearchHistoryViewModel.HasEntries))
         {
-            if (sender is SearchHistoryViewModel viewModel)
-            {
-                _suppressSelectionEvent = true;
-                try
-                {
-                    HistoryList.ItemsSource = viewModel.Entries;
-                }
-                finally
-                {
-                    _suppressSelectionEvent = false;
-                }
-                UpdateState();
-            }
+            AttachCollectionNotifications(_viewModel?.Entries);
+            RefreshVisibleEntries();
         }
     }
 
-    private void Collection_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => UpdateState();
+    private void Collection_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => RefreshVisibleEntries();
+
+    private void RefreshVisibleEntries()
+    {
+        var selectedEntry = SelectedEntry;
+        var visibleLimit = CalculateVisibleEntryLimit(HistoryHost.ActualWidth);
+        HistoryList.Tag = visibleLimit;
+        var visibleEntries = _viewModel?.Entries.Take(visibleLimit).ToArray() ?? [];
+
+        _suppressSelectionEvent = true;
+        try
+        {
+            HistoryList.ItemsSource = visibleEntries;
+            HistoryList.SelectedItem = selectedEntry is null
+                ? null
+                : visibleEntries.FirstOrDefault(entry => entry == selectedEntry);
+        }
+        finally
+        {
+            _suppressSelectionEvent = false;
+        }
+
+        UpdateState();
+    }
 
     private void UpdateState()
     {
@@ -117,5 +161,3 @@ public partial class SearchHistoryView : System.Windows.Controls.UserControl
         if (!hasEntries) HistoryList.SelectedIndex = -1;
     }
 }
-
-

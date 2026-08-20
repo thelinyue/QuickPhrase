@@ -22,7 +22,11 @@ public partial class EditorView : System.Windows.Controls.UserControl
         ViewModel = new EditorViewModel(commands, existing, defaultCategoryId);
         DataContext = ViewModel;
 
-        ViewModel.Saved += (_, phrase) => PhraseSaved?.Invoke(this, phrase);
+        ViewModel.Saved += (_, phrase) =>
+        {
+            PhraseSaved?.Invoke(this, phrase);
+            CloseRequested?.Invoke(this, EventArgs.Empty);
+        };
         ViewModel.Cancelled += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
         ViewModel.Deleted += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
 

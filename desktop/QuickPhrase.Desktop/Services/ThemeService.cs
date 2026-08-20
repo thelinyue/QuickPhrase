@@ -11,8 +11,8 @@ namespace QuickPhrase.Desktop.Services
     /// </summary>
     public sealed class ThemeService : INotifyPropertyChanged
     {
-        public const string LightDictionaryPath = "DesignSystem/Themes/QuickPhraseTheme.Light.xaml";
-        public const string DarkDictionaryPath = "DesignSystem/Themes/QuickPhraseTheme.Dark.xaml";
+        public const string LightDictionaryPath = "DesignSystem/Themes/Theme.Light.xaml";
+        public const string DarkDictionaryPath = "DesignSystem/Themes/Theme.Dark.xaml";
 
         private static ThemeService? _instance;
         private static readonly object SyncRoot = new();
@@ -76,8 +76,8 @@ namespace QuickPhrase.Desktop.Services
             for (var index = 0; index < dictionaries.Count; index++)
             {
                 var source = dictionaries[index].Source?.ToString();
-                if (source?.EndsWith("QuickPhraseTheme.Light.xaml", StringComparison.OrdinalIgnoreCase) == true
-                    || source?.EndsWith("QuickPhraseTheme.Dark.xaml", StringComparison.OrdinalIgnoreCase) == true)
+                if (source?.EndsWith("Theme.Light.xaml", StringComparison.OrdinalIgnoreCase) == true
+                    || source?.EndsWith("Theme.Dark.xaml", StringComparison.OrdinalIgnoreCase) == true)
                 {
                     themeIndex = index;
                     break;
@@ -90,7 +90,7 @@ namespace QuickPhrase.Desktop.Services
                 Source = new Uri($"/QuickPhrase;component/{sourcePath}", UriKind.Relative),
             };
 
-            // 只替换聚合字典中的颜色/Brush/Shadow 层；Typography、Thickness、Radius、Size 和 Motion 保持同一实例。
+            // 只替换语义颜色层；品牌原色、Brush、Typography、Thickness、Radius、Size 和 Motion 保持同一实例。
             if (themeIndex >= 0)
                 dictionaries[themeIndex] = themeDictionary;
             else

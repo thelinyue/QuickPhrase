@@ -9,7 +9,7 @@ using QuickPhrase.Desktop.Services;
 namespace QuickPhrase.Desktop.ViewModels;
 
 /// <summary>
-/// 话术库视图模型：搜索、列表、选择、收藏、插入、复制、删除、打开编辑器。
+/// 话术库视图模型：负责搜索、列表选择、插入、复制、删除和打开编辑器。
 /// 所有数据访问都经由 ICommandService（→ Core 契约 → Platform.Windows 实现），不直接碰 SQLite。
 /// </summary>
 public partial class PhraseLibraryViewModel : ObservableObject
@@ -123,7 +123,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
                 foreach (var sub in subs) topCategories.Add(sub);
             }
             Categories = new ObservableCollection<CategoryItem>(topCategories);
-            // 默认进入第一个真实一级分类（含迁移 004 落库的「常用」，SortOrder=0 排最前）
+            // 默认进入第一个真实一级分类；首次安装无分类时保持未选中状态。
             var defaultTop = topCategories.FirstOrDefault(c => c.ParentId == null);
             SelectedCategoryId = defaultTop?.Id;
             IsCategoryFilterActive = defaultTop is not null;
@@ -332,8 +332,8 @@ public partial class PhraseLibraryViewModel : ObservableObject
             item.SortOrder = newSort;
             var model = item.ToPhrase();
             var result = await _commands.UpdatePhraseAsync(new UpdatePhraseCommand(
-                item.Id, item.Version, model.Title, model.Content, model.CategoryId, model.Favorite,
-                 model.ShortcutMode, model.Shortcut?.Display, model.ColorKey, newSort));
+                item.Id, item.Version, model.Title, model.Content, model.CategoryId,
+                model.ShortcutMode, model.Shortcut?.Display, model.ColorKey, newSort));
             if (!result.IsSuccess)
             {
                 anyFailed = true;
@@ -493,9 +493,3 @@ public partial class PhraseLibraryViewModel : ObservableObject
     [RelayCommand]
     private void New() => NewRequested?.Invoke(this, EventArgs.Empty);
 }
-
-
-
-
-
-

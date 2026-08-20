@@ -1,12 +1,12 @@
 # QuickPhrase Phase 5.1 验证记录
 
-状态：`PHASE5_1_INFRA_PASS`。连续投递和启动性能自动化门禁通过；企业微信 5.0.9.6065 的 30 次真实插入矩阵仍按 Phase 5 人工门禁管理，未在本轮重复宣称通过。
+状态：`PHASE5_1_INFRA_PASS`。连续投递和启动性能自动化门禁通过；当前主流版本企业微信的运行时能力人工矩阵仍按 Phase 5 门禁管理，未在本轮重复宣称通过。
 
 ## 已实施边界
 
-- 精确企业微信 Profile 仍为 `WXWork 5.0.9.6065 / phase5-wecom-3`。
+- 企业微信不使用客户端版本门禁；版本号仅作为脱敏诊断信息，能力由目标、前台窗口和焦点/Caret 运行时检查决定。
 - 已验证插入路径先做 Win32 caret 指纹，再进入受序列号保护的 Clipboard + Ctrl+V；不回退到 UIA 扫描。
-- 新增 1 条执行、4 条等待的有界 FIFO。目标变化取消同目标剩余队列，不 Copy Only、不重定向。
+- 新增 1 条执行、4 条等待的有界 FIFO，且只接受 `InsertOnly`。`InsertAndSend` 不进入队列；目标变化取消同目标剩余队列，不 Copy Only、不重定向。
 - 未识别应用不进入连续队列，仍为单次 Copy Only；全局投递闸门仍保证系统输入不并行。
 - 使用次数写入移出投递关键路径，容量 128 的后台单写队列在退出时排空。
 - 管理窗口先显示原生骨架；正式 WebView 通过独立 `management.html` bundle 加载，React 首次数据读取完成后发送 `system.ready` 才切换。
@@ -16,7 +16,7 @@
 | 项目 | 结果 |
 | --- | --- |
 | Release build | 通过，0 warning / 0 error |
-| Release tests | 通过，61/61 |
+| Release tests | 历史记录 61/61；本次功能改造后的完整结果见 Phase 5/6 文档 |
 | 队列 FIFO、1+4 容量、满载、目标变化取消 | 通过 |
 | Launcher 单次 Enter 保护 | 通过 |
 | 使用次数入队不阻塞下一条 | 通过 |
@@ -32,7 +32,7 @@
 
 ## 性能口径
 
-本轮没有伪造真实企业微信 30 次样本。单条真实执行 P95≤300ms、管理窗口冷/热 ready P50/P95/P99 和 10,000 条数据初始化门禁需在后续 Windows 验收环境补采；当前 Release smoke 已确认 Launcher P95 远低于 120ms，WebView2 生命周期可重复通过。
+本轮没有伪造当前主流版本企业微信的真实人工矩阵。单条真实执行 P95≤300ms、管理窗口冷/热 ready P50/P95/P99 和 10,000 条数据初始化门禁需在后续 Windows 验收环境补采；当前 Release smoke 已确认 Launcher P95 远低于 120ms，WebView2 生命周期可重复通过。
 
 ## 复跑
 

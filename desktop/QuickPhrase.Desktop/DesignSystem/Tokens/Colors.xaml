@@ -1,0 +1,23 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 品牌原色来自应用图标：天空蓝、云白和闪电金。业务界面只通过语义 Brush 使用这些原色。 -->
+    <Color x:Key="Color.Brand.SkyBlue">#4A90FF</Color>
+    <Color x:Key="Color.Brand.Primary">#2563EB</Color>
+    <Color x:Key="Color.Brand.Primary.Hover">#1D4ED8</Color>
+    <Color x:Key="Color.Brand.Primary.Pressed">#1E40AF</Color>
+    <Color x:Key="Color.Brand.Soft">#DBEAFE</Color>
+    <Color x:Key="Color.Brand.Gold">#FBBF24</Color>
+    <Color x:Key="Color.Brand.Gold.Strong">#F59E0B</Color>
+
+    <!-- 话术自定义色属于持久化数据色板，不随 Light/Dark 主题改变。 -->
+    <Color x:Key="Color.Phrase.Default">#FFFFFF</Color>
+    <Color x:Key="Color.Phrase.Orange">#FF8839</Color>
+    <Color x:Key="Color.Phrase.Blue">#178BFF</Color>
+    <Color x:Key="Color.Phrase.Magenta">#FF73FF</Color>
+    <Color x:Key="Color.Phrase.Purple">#AF60FF</Color>
+    <Color x:Key="Color.Phrase.Green">#41C028</Color>
+    <Color x:Key="Color.Phrase.Pink">#F67E91</Color>
+    <Color x:Key="Color.Phrase.Teal">#00A8A8</Color>
+    <Color x:Key="Color.Phrase.Tan">#CB9563</Color>
+    <Color x:Key="Color.Phrase.Gray">#5C6772</Color>
+</ResourceDictionary>

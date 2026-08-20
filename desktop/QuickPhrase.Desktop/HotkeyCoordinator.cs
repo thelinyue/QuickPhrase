@@ -18,6 +18,7 @@ internal sealed class HotkeyCoordinator : IDisposable, IAsyncDisposable
     private bool paused;
     private bool practiceMode;
     private bool disposed;
+    private int launcherRegistrationReconcileState;
     private string? activeAdapterId;
 
     public HotkeyCoordinator(IShortcutService service, Action<Action> dispatchToUi)
@@ -403,32 +404,57 @@ internal sealed class HotkeyCoordinator : IDisposable, IAsyncDisposable
         StatusChanged?.Invoke();
     }
 
+    /// <summary>
+    /// 合并 Launcher 注册状态变化，禁止在同步 SetEnabled 等待期间再次进入同一状态切换。
+    /// WinEventHook 可能在 WPF Dispatcher 等待原生消息线程时同步回调前台变化；若直接重入，
+    /// WindowsShortcutService 会再次等待同一 SemaphoreSlim，导致整个 UI 线程死锁。
+    /// 状态 0 表示空闲，1 表示正在应用，2 表示应用期间又出现了更新；外层完成后继续应用最新状态。
+    /// </summary>
     private void ReconcileLauncherRegistration()
     {
         if (disposed) return;
+        if (Interlocked.CompareExchange(ref launcherRegistrationReconcileState, 1, 0) != 0)
+        {
+            Interlocked.Exchange(ref launcherRegistrationReconcileState, 2);
+            return;
+        }
 
-        var shouldEnable = launcherConfigured
-            && !paused
-            && (launcherScopeActive || launcherVisible || practiceMode);
         try
         {
-            service.SetEnabled(shouldEnable);
-            LauncherAvailable = shouldEnable;
-            if (!shouldEnable && LauncherErrorCode is not "HOTKEY_CONFLICT")
-                LauncherErrorCode = launcherConfigured ? null : LauncherErrorCode;
+            while (!disposed)
+            {
+                var shouldEnable = launcherConfigured
+                    && !paused
+                    && (launcherScopeActive || launcherVisible || practiceMode);
+                try
+                {
+                    service.SetEnabled(shouldEnable);
+                    LauncherAvailable = shouldEnable;
+                    if (!shouldEnable && LauncherErrorCode is not "HOTKEY_CONFLICT")
+                        LauncherErrorCode = launcherConfigured ? null : LauncherErrorCode;
+                }
+                catch (Exception exception)
+                {
+                    LauncherAvailable = false;
+                    LauncherErrorCode = "HOTKEY_REGISTRATION_FAILED";
+                    var traceId = Guid.NewGuid();
+                    Trace.TraceError(
+                        "全局快捷键状态切换失败。阶段：SET_ENABLED；结果码：HOTKEY_REGISTRATION_FAILED；TraceId：{0}；异常类型：{1}",
+                        traceId,
+                        exception.GetType().Name);
+                }
+
+                if (Interlocked.CompareExchange(ref launcherRegistrationReconcileState, 0, 1) == 1)
+                    return;
+
+                _ = Interlocked.CompareExchange(ref launcherRegistrationReconcileState, 1, 2);
+            }
         }
-        catch (Exception exception)
+        finally
         {
-            LauncherAvailable = false;
-            LauncherErrorCode = "HOTKEY_REGISTRATION_FAILED";
-            var traceId = Guid.NewGuid();
-            Trace.TraceError(
-                "全局快捷键状态切换失败。阶段：SET_ENABLED；结果码：HOTKEY_REGISTRATION_FAILED；TraceId：{0}；异常类型：{1}",
-                traceId,
-                exception.GetType().Name);
+            Interlocked.Exchange(ref launcherRegistrationReconcileState, 0);
         }
     }
-
     /// <summary>
     /// IShortcutService 明确允许从后台原生消息线程触发 Activated；所有 WPF UI 编排必须经过注入的调度器。
     /// </summary>

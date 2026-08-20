@@ -1,4 +1,4 @@
-﻿using QuickPhrase.Core;
+using QuickPhrase.Core;
 
 namespace QuickPhrase.Desktop.Tests;
 
@@ -64,6 +64,26 @@ public sealed class HotkeyCoordinatorTests
         Assert.True(service.IsEnabled);
     }
 
+    [Fact]
+    public async Task ReentrantScopeChangeDuringSetEnabledAppliesLatestStateWithoutDeadlock()
+    {
+        var service = new FakeShortcutService();
+        await using var coordinator = new HotkeyCoordinator(service, action => action());
+        await coordinator.ConfigureAsync(CreateSettings(AltSpace));
+        var reentered = false;
+        service.DuringSetEnabled = _ =>
+        {
+            if (reentered) return;
+            reentered = true;
+            coordinator.SetLauncherScopeActive(false, null);
+        };
+
+        coordinator.SetLauncherScopeActive(true, "WXWork");
+
+        Assert.True(reentered);
+        Assert.False(service.IsEnabled);
+        Assert.False(coordinator.LauncherAvailable);
+    }
     [Fact]
     public async Task Activated_AlwaysUsesInjectedUiDispatcher()
     {
@@ -567,6 +587,8 @@ public sealed class HotkeyCoordinatorTests
 
         public Action? BeforeCommit { get; init; }
 
+        public Action<bool>? DuringSetEnabled { get; set; }
+
         public CancellationToken ObservedRollbackToken { get; private set; }
 
         public Task<ShortcutStageResult> StageAsync(ShortcutChord chord, CancellationToken cancellationToken = default)
@@ -614,7 +636,11 @@ public sealed class HotkeyCoordinatorTests
             return Task.CompletedTask;
         }
 
-        public void SetEnabled(bool enabled) => IsEnabled = enabled;
+        public void SetEnabled(bool enabled)
+        {
+            DuringSetEnabled?.Invoke(enabled);
+            IsEnabled = enabled;
+        }
 
         public void RaiseActivated() => Activated?.Invoke(this, EventArgs.Empty);
 

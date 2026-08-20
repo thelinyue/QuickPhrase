@@ -60,7 +60,7 @@
     <GridLength x:Key="Size.Onboarding.FooterStatus.GridLength">28</GridLength>
 
     <sys:Double x:Key="Size.Library.BrandIcon">24</sys:Double>
-    <sys:Double x:Key="Size.List.SelectionIndicator.Width">4</sys:Double>
+    <sys:Double x:Key="Size.List.SelectionIndicator.Width">3</sys:Double>
     <GridLength x:Key="Size.SearchHistory.Gutter.GridLength">8</GridLength>
     <sys:Double x:Key="Size.StatePresenter.MinimumHeight">84</sys:Double>
 

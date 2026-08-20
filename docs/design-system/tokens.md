@@ -1,6 +1,6 @@
 # QuickPhrase Design Token 规范
 
-状态：Phase 0 设计基准，尚不代表下列资源键已全部写入生产 XAML。
+状态：已映射到正式 Pure WPF 运行时资源；具体值以当前 XAML ResourceDictionary 为准。
 
 本文定义 QuickPhrase 正式 Pure WPF 客户端的 Token 命名、值域和消费规则。后续实现必须以 `desktop/QuickPhrase.Desktop/DesignSystem` 中的 XAML `ResourceDictionary` 为运行真源；本文用于设计审查、迁移和 QA 对照。
 
@@ -11,9 +11,9 @@ Token → Theme Resource → Style / ControlTemplate → Component → Page
 ```
 
 - 资源键统一使用点分语义命名。
-- `Color.*` 只存在于 Light/Dark Theme 字典。
+- 品牌原色和固定话术色板位于 `Colors.xaml`；主题语义 `Color.*` 位于 Light/Dark Theme 字典。
 - `Brush.*` 由对应 `Color.*` 创建，页面和模板优先消费 Brush。
-- `Color.*`、`Brush.*` 和 `Effect.Shadow.*` 使用 `{DynamicResource ...}`；Light/Dark Theme 暴露完全相同的阴影资源键。
+- 主题语义 `Color.*` 与 `Brush.*` 使用 `{DynamicResource ...}`；固定话术色板通过 `StaticResource` 映射。
 - Typography、Thickness、Radius、Size 和 Motion 使用 `{StaticResource ...}`。
 - Light/Dark 主题键集合必须完全同构。
 - 不保留旧 Resource Key，不建立兼容 Alias。
@@ -21,75 +21,108 @@ Token → Theme Resource → Style / ControlTemplate → Component → Page
 
 ## 2. Color 与 Brush
 
-### 2.1 Light Theme
+### 2.1 四文件职责
+
+| 文件 | 职责 |
+| --- | --- |
+| `DesignSystem/Tokens/Colors.xaml` | 应用图标来源的品牌原色，以及不随主题改变的话术数据色板 |
+| `DesignSystem/Themes/Theme.Light.xaml` | Light Theme 语义颜色 |
+| `DesignSystem/Themes/Theme.Dark.xaml` | 与 Light 完全同 Key 的 Dark Theme 语义颜色 |
+| `DesignSystem/Tokens/Brushes.xaml` | 将语义颜色映射为页面和组件消费的 Brush，并集中定义低噪音阴影 |
+
+页面、Style 和 ControlTemplate 禁止直接引用 Hex，也不直接引用 `Color.Brand.*`；品牌原色必须先进入主题语义层，再通过 `Brush.*` 使用。旧主题文件和旧颜色 Alias 不保留。
+
+### 2.2 品牌原色
+
+| Color Token | 值 | 品牌含义与使用边界 |
+| --- | --- | --- |
+| `Color.Brand.SkyBlue` | `#4A90FF` | 天空蓝；Focus、选择指示线和品牌识别 |
+| `Color.Brand.Primary` | `#2563EB` | 可访问性更好的主操作填充 |
+| `Color.Brand.Primary.Hover` | `#1D4ED8` | 主操作 Hover |
+| `Color.Brand.Primary.Pressed` | `#1E40AF` | 主操作 Pressed |
+| `Color.Brand.Soft` | `#DBEAFE` | 浅蓝提示和弱强调 |
+| `Color.Brand.Gold` | `#FBBF24` | 闪电金；快捷键、Badge、核心能力提示 |
+| `Color.Brand.Gold.Strong` | `#F59E0B` | 金色强调的强状态 |
+
+金色不承担普通按钮或收藏语义；页面不得大面积铺蓝，也不得把所有按钮都改为蓝色填充。
+
+### 2.3 Light Theme 语义颜色
 
 | Color Token | Light 值 | 语义 |
 | --- | --- | --- |
-| `Color.Brand.Primary` | `#3478F6` | 焦点、选择指示和非文字品牌强调 |
-| `Color.Brand.Primary.Hover` | `#2869E8` | 品牌交互 Hover |
-| `Color.Brand.Primary.Pressed` | `#2059C9` | 品牌交互 Pressed |
-| `Color.Brand.BlueStrong` | `#2563D9` | Primary Button 默认填充 |
-| `Color.Brand.Gold` | `#F2B735` | 收藏、少量品牌高光 |
-| `Color.Background.Window` | `#EDF3FA` | 窗口背景 |
-| `Color.Background.Navigation` | `#E8F0F9` | 导航背景 |
-| `Color.Surface.Primary` | `#FFFFFF` | 主内容表面、默认 Card |
-| `Color.Surface.Secondary` | `#F5F8FC` | 次级表面、弱分组 |
-| `Color.Surface.Elevated` | `#FFFFFF` | 浮层、弹窗、高层级 Card |
-| `Color.Text.Primary` | `#172033` | 标题和主要正文 |
-| `Color.Text.Secondary` | `#44516A` | 次级正文 |
-| `Color.Text.Muted` | `#6F7D94` | 辅助说明 |
-| `Color.Text.Disabled` | `#A5AFBD` | 禁用文字 |
-| `Color.Border.Default` | `#CBD6E4` | 控件和 Card 默认边框 |
-| `Color.Border.Subtle` | `#D9E2EC` | 分隔线、弱边框 |
-| `Color.Border.Focus` | `#3478F6` | 键盘焦点和输入焦点 |
-| `Color.State.Hover` | `#EAF3FF` | 低噪音 Hover 背景 |
-| `Color.State.Selected` | `#DCEAFF` | 选中背景 |
-| `Color.State.SelectedBorder` | `#76AAFF` | 选中边框 |
-| `Color.Status.Success` | `#2E9B63` | 成功状态 |
-| `Color.Status.Warning` | `#E5A12D` | 警告状态 |
-| `Color.Status.Error` | `#D64545` | 错误、Danger 操作 |
-| `Color.Text.OnBrand` | `#FFFFFF` | 品牌色填充上的文字/图标 |
-| `Color.Overlay` | `#000000` | 遮罩基础色，透明度由使用方语义资源控制 |
-| `Color.Shadow.Default` | `#B8C7D9` | Light 主题阴影色 |
+| `Color.Background.Default` | `#F8FAFC` | 页面浅灰白 Fluent 背景 |
+| `Color.Background.Secondary` | `#F1F5F9` | 导航和次级区域 |
+| `Color.Surface.Default` | `#FFFFFF` | 默认 Surface |
+| `Color.Surface.Hover` | `#F8FAFC` | 中性 Hover |
+| `Color.Surface.Selected` | `#EFF6FF` | 分类和话术 Selected |
+| `Color.Surface.Elevated` | `#FFFFFF` | Dialog、Popup、Elevated Card |
+| `Color.Accent.Primary` | `#2563EB` | 主操作和选中文字 |
+| `Color.Accent.Primary.Hover` | `#1D4ED8` | 主操作 Hover |
+| `Color.Accent.Primary.Pressed` | `#1E40AF` | 主操作 Pressed |
+| `Color.Accent.Soft` | `#DBEAFE` | 信息提示和弱强调 |
+| `Color.Accent.Gold` | `#FBBF24` | 快捷键、Badge、核心能力 |
+| `Color.Accent.Gold.Strong` | `#F59E0B` | 金色强状态 |
+| `Color.Text.Primary` | `#1E293B` | 标题和主要正文 |
+| `Color.Text.Secondary` | `#64748B` | 次级正文和默认分类文字 |
+| `Color.Text.Disabled` | `#94A3B8` | 禁用文字 |
+| `Color.Text.OnAccent` | `#FFFFFF` | 主操作填充上的文字和图标 |
+| `Color.Border.Default` | `#E2E8F0` | 默认低噪音边框 |
+| `Color.Border.Strong` | `#CBD5E1` | 需要更清晰分层的边框 |
+| `Color.Border.Focus` | `#4A90FF` | 键盘和输入焦点 |
+| `Color.Selection.Indicator` | `#4A90FF` | 话术选中行左侧 3px 指示线 |
 
-Primary Button 使用 `Color.Brand.BlueStrong` 作为默认填充，Hover/Pressed 使用 Brand Hover/Pressed Token。按钮前景统一引用主题语义 Token `Color.Text.OnBrand`：Light Theme 为 `#FFFFFF`，Dark Theme 为 `#172033`，使不同主题可以针对各自的品牌填充提供满足可读性的前景色。`Color.Brand.Primary` 不作为小号文字按钮的默认底色。
+Status、Overlay 和 Shadow 继续使用各自语义 Key；它们不替代品牌 Accent。
 
-### 2.2 Dark Theme
+### 2.4 Dark Theme
 
-Dark Theme 与 Light Theme 使用完全相同的键。已冻结的对照值如下：
+Dark Theme 与 Light Theme 暴露完全相同的语义 Key，只调整对比度和层级，不扩展为新的暗色视觉语言。核心值如下：
 
 | Color Token | Dark 值 |
 | --- | --- |
-| `Color.Brand.Primary` | `#75AEFF` |
-| `Color.Brand.Primary.Hover` | `#8EC5FF` |
-| `Color.Brand.Primary.Pressed` | `#5D97E8` |
-| `Color.Brand.BlueStrong` | `#9BCBFF` |
-| `Color.Brand.Gold` | `#F5B940` |
-| `Color.Background.Window` | `#141B26` |
-| `Color.Background.Navigation` | `#182331` |
-| `Color.Surface.Primary` | `#1D2A39` |
-| `Color.Surface.Secondary` | `#223142` |
-| `Color.Surface.Elevated` | `#26384B` |
-| `Color.Text.Primary` | `#F3F7FC` |
-| `Color.Text.Secondary` | `#C4D0DE` |
-| `Color.Text.Muted` | `#93A4B8` |
-| `Color.Text.Disabled` | `#6F8094` |
-| `Color.Border.Default` | `#3B4B60` |
-| `Color.Border.Subtle` | `#2B3A4B` |
-| `Color.Border.Focus` | `#8EC5FF` |
-| `Color.State.Hover` | `#1F344E` |
-| `Color.State.Selected` | `#203F67` |
-| `Color.State.SelectedBorder` | `#75AEFF` |
-| `Color.Status.Success` | `#58C78F` |
-| `Color.Status.Warning` | `#F3B85B` |
-| `Color.Status.Error` | `#F07878` |
-| `Color.Text.OnBrand` | `#172033` |
-| `Color.Overlay` | `#000000` |
-| `Color.Shadow.Default` | `#0B111A` |
+| `Color.Background.Default` | `#0F172A` |
+| `Color.Background.Secondary` | `#111C2E` |
+| `Color.Surface.Default` | `#172033` |
+| `Color.Surface.Hover` | `#1E293B` |
+| `Color.Surface.Selected` | `#1E3A5F` |
+| `Color.Accent.Primary` | `#60A5FA` |
+| `Color.Accent.Gold` | `#FBBF24` |
+| `Color.Text.Primary` | `#F8FAFC` |
+| `Color.Text.Secondary` | `#CBD5E1` |
+| `Color.Border.Default` | `#334155` |
+| `Color.Border.Focus` | `#4A90FF` |
+| `Color.Selection.Indicator` | `#4A90FF` |
 
-### 2.3 固定话术色板
+### 2.5 页面消费 Brush
 
-固定话术色板与应用主题分离，Light/Dark 使用相同值，迁移时只重命名资源键，不改变既有业务色值：
+页面和组件优先使用以下语义 Brush：
+
+```text
+Brush.Background.Default
+Brush.Background.Secondary
+Brush.Surface.Default
+Brush.Surface.Hover
+Brush.Surface.Selected
+Brush.Surface.Elevated
+Brush.Accent.Primary
+Brush.Accent.Primary.Hover
+Brush.Accent.Primary.Pressed
+Brush.Accent.Soft
+Brush.Accent.Gold
+Brush.Text.Primary
+Brush.Text.Secondary
+Brush.Text.Disabled
+Brush.Text.OnAccent
+Brush.Border.Default
+Brush.Border.Strong
+Brush.Border.Focus
+Brush.Selection.Indicator
+```
+
+组件状态统一为：Default 使用白色/默认 Surface；Hover 使用浅灰或浅蓝；Pressed 轻微加深；Selected 使用浅蓝背景和蓝色文字；Focus 使用天空蓝描边；Disabled 使用禁用文字和对应模板状态。
+
+### 2.6 固定话术色板
+
+固定话术色板属于持久化数据颜色，不随 Light/Dark 改变：
 
 | Color Token | 值 |
 | --- | --- |
@@ -103,15 +136,6 @@ Dark Theme 与 Light Theme 使用完全相同的键。已冻结的对照值如�
 | `Color.Phrase.Teal` | `#00A8A8` |
 | `Color.Phrase.Tan` | `#CB9563` |
 | `Color.Phrase.Gray` | `#5C6772` |
-
-每个 Color Token 均应有同名语义 Brush，例如：
-
-```xaml
-<SolidColorBrush x:Key="Brush.Text.Primary"
-                 Color="{DynamicResource Color.Text.Primary}" />
-```
-
-组件模板通过 `{DynamicResource Brush.Text.Primary}` 等 Brush 键消费主题，不直接引用 Hex。
 
 ## 3. Typography
 
@@ -262,14 +286,14 @@ WPF 原生 `TextBlock` 没有 CSS 式 `letter-spacing` 属性。V1 的 LetterSpa
 | `Effect.Shadow.Dialog` | Light/Dark Theme | Dialog 层级 `DropShadowEffect` |
 | `Effect.Shadow.Popup` | Light/Dark Theme | Popup 层级 `DropShadowEffect` |
 
-Theme 定义 `Color.Shadow.*` 以及三个同名 `Effect.Shadow.*`，Effect 的 `Color` 属性使用 `DynamicResource` 引用主题阴影颜色。页面和控件不得声明额外 Shadow Effect。
+`Brushes.xaml` 定义三个 `Effect.Shadow.*`，Effect 的 `Color` 属性使用 `DynamicResource` 引用主题阴影颜色。页面和控件不得声明额外 Shadow Effect。
 
 批准计划只冻结了阴影的使用层级和“轻量”原则。运行真源由 Light/Dark Theme 中的三个 `Effect.Shadow.*` 确定；页面和视觉板不得复制具体阴影参数。
 
 ## 9. Token 使用示例
 
 ```xaml
-<Border Background="{DynamicResource Brush.Surface.Primary}"
+<Border Background="{DynamicResource Brush.Surface.Default}"
         BorderBrush="{DynamicResource Brush.Border.Default}"
         BorderThickness="{StaticResource Thickness.Border.Default}"
         CornerRadius="{StaticResource Radius.Card}"

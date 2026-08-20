@@ -2,8 +2,8 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- 默认 Card 只使用 1px 边框，不使用阴影，避免内容区形成后台管理系统式卡片堆叠。 -->
     <Style x:Key="Style.Card.Default" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Primary}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Default}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
         <Setter Property="BorderThickness" Value="{StaticResource Thickness.Border.Default}" />
         <Setter Property="CornerRadius" Value="{StaticResource Radius.Card}" />
         <Setter Property="Padding" Value="{StaticResource Thickness.Card}" />
@@ -31,25 +31,25 @@
 
     <Style x:Key="Style.Setting.Row" TargetType="Border">
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
         <Setter Property="Padding" Value="{StaticResource Thickness.Settings.Row}" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{DynamicResource Brush.State.Hover}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
             </Trigger>
             <Trigger Property="IsKeyboardFocusWithin" Value="True">
                 <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
-                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Secondary}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
             </Trigger>
         </Style.Triggers>
     </Style>
 
     <Style x:Key="Style.Keycap" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource Brush.Background.Window}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Background.Default}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
         <Setter Property="BorderThickness" Value="{StaticResource Thickness.Border.Default}" />
         <Setter Property="CornerRadius" Value="{StaticResource Radius.XS}" />
@@ -59,7 +59,7 @@
 
     <Style x:Key="Style.Toast.Surface" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource Brush.Text.Primary}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
         <Setter Property="BorderThickness" Value="{StaticResource Thickness.Border.Default}" />
         <Setter Property="CornerRadius" Value="{StaticResource Radius.Medium}" />
         <Setter Property="Padding" Value="{StaticResource Thickness.Popup}" />

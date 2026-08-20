@@ -26,8 +26,8 @@ public sealed class MainLibraryEditorDesignSystemTests
         Assert.Contains("MinHeight=\"{StaticResource Size.MainWindow.MinimumHeight}\"", markup);
         Assert.Contains("CaptionHeight=\"{StaticResource Size.TitleBar.Height}\"", markup);
         Assert.Contains("<RowDefinition Height=\"{StaticResource Size.TitleBar.GridLength}\" />", markup);
-        Assert.Contains("Background=\"{DynamicResource Brush.Background.Window}\"", markup);
-        Assert.Contains("Background=\"{DynamicResource Brush.Surface.Primary}\"", markup);
+        Assert.Contains("Background=\"{DynamicResource Brush.Background.Default}\"", markup);
+        Assert.Contains("Background=\"{DynamicResource Brush.Surface.Default}\"", markup);
         Assert.Contains("FontFamily=\"{StaticResource Typography.FontFamily.UI}\"", markup);
 
         Assert.DoesNotContain("WindowBackgroundBrush", markup);
@@ -47,9 +47,9 @@ public sealed class MainLibraryEditorDesignSystemTests
         Assert.Contains("Style=\"{StaticResource Style.Button.Primary}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Button.Secondary}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Button.Danger}\"", markup);
-        Assert.Contains("Background=\"{DynamicResource Brush.Background.Window}\"", markup);
-        Assert.Contains("Background=\"{DynamicResource Brush.Surface.Primary}\"", markup);
-        Assert.Contains("BorderBrush=\"{DynamicResource Brush.Border.Subtle}\"", markup);
+        Assert.Contains("Background=\"{DynamicResource Brush.Background.Default}\"", markup);
+        Assert.Contains("Background=\"{DynamicResource Brush.Surface.Default}\"", markup);
+        Assert.Contains("BorderBrush=\"{DynamicResource Brush.Border.Default}\"", markup);
         Assert.Contains("Value=\"{DynamicResource Brush.Border.Focus}\"", markup);
         Assert.Contains("Foreground=\"{DynamicResource Brush.Status.Error}\"", markup);
 
@@ -68,9 +68,13 @@ public sealed class MainLibraryEditorDesignSystemTests
     {
         var markup = ReadDesktopXaml("Views", "LibraryView.xaml");
 
-        Assert.Contains("Background=\"{DynamicResource Brush.Background.Window}\"", markup);
-        Assert.Contains("Background=\"{DynamicResource Brush.Surface.Primary}\"", markup);
+        Assert.Contains("Background=\"{DynamicResource Brush.Background.Default}\"", markup);
+        Assert.Contains("Background=\"{DynamicResource Brush.Surface.Default}\"", markup);
         Assert.Contains("Foreground=\"{DynamicResource Brush.Text.Primary}\"", markup);
+        Assert.Contains("<Setter Property=\"Foreground\" Value=\"{DynamicResource Brush.Text.Secondary}\" />", markup);
+        Assert.Contains("<Setter TargetName=\"Root\" Property=\"Background\" Value=\"{DynamicResource Brush.Surface.Selected}\" />", markup);
+        Assert.Contains("<Setter Property=\"Foreground\" Value=\"{DynamicResource Brush.Accent.Primary}\" />", markup);
+        Assert.DoesNotContain("<Setter TargetName=\"Root\" Property=\"Background\" Value=\"{DynamicResource Brush.Accent.Primary.Pressed}\" />", markup);
         Assert.Contains("Style=\"{StaticResource Style.Input.Search}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Button.Icon}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Menu.Item.Danger}\"", markup);
@@ -103,9 +107,9 @@ public sealed class MainLibraryEditorDesignSystemTests
         Assert.Contains("Style=\"{StaticResource Style.Text.Body.Medium}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Button.Icon}\"", markup);
         Assert.Contains("MinHeight=\"{StaticResource Size.Phrase.Row.Minimum}\"", markup);
-        Assert.Contains("Value=\"{DynamicResource Brush.State.Hover}\"", markup);
-        Assert.Contains("Value=\"{DynamicResource Brush.State.Selected}\"", markup);
-        Assert.Contains("Value=\"{DynamicResource Brush.State.SelectedBorder}\"", markup);
+        Assert.Contains("Value=\"{DynamicResource Brush.Surface.Hover}\"", markup);
+        Assert.Contains("Value=\"{DynamicResource Brush.Surface.Selected}\"", markup);
+        Assert.Contains("Value=\"{DynamicResource Brush.Border.Focus}\"", markup);
 
         AssertNoVisualLiterals(markup, "Lists.xaml");
         Assert.DoesNotContain("PhraseRowMinHeight", markup);

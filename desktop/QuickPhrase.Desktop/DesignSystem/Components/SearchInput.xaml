@@ -18,7 +18,7 @@
             <TextBlock.Style>
                 <Style TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Medium}">
                     <Setter Property="Visibility" Value="Collapsed" />
-                    <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Muted}" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
                     <Style.Triggers>
                         <MultiDataTrigger>
                             <MultiDataTrigger.Conditions>

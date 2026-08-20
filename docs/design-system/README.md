@@ -52,10 +52,12 @@ desktop/QuickPhrase.Desktop/
 │   │   ├── Thickness.xaml
 │   │   ├── Radius.xaml
 │   │   ├── Sizes.xaml
-│   │   └── Motion.xaml
+│   │   ├── Motion.xaml
+│   │   ├── Colors.xaml
+│   │   └── Brushes.xaml
 │   ├── Themes/
-│   │   ├── QuickPhraseTheme.Light.xaml
-│   │   └── QuickPhraseTheme.Dark.xaml
+│   │   ├── Theme.Light.xaml
+│   │   └── Theme.Dark.xaml
 │   ├── Styles/
 │   │   ├── Text.xaml
 │   │   ├── Buttons.xaml
@@ -92,7 +94,7 @@ desktop/QuickPhrase.Desktop/
 
 ```text
 QuickPhraseTheme.xaml
-  Typography → Thickness → Radius → Sizes → Motion → Light Theme
+  Typography → Thickness → Radius → Sizes → Motion → Colors → Light Theme → Brushes
 
 Controls.xaml
   Text → Buttons → Inputs → SelectionControls → Lists
@@ -106,8 +108,8 @@ V1 默认只加载 Light Theme。Dark Theme 必须与 Light Theme 暴露完全�
 资源键采用点分语义命名：
 
 ```text
-Color.Brand.Primary
-Brush.Background.Window
+Color.Brand.SkyBlue
+Brush.Background.Default
 Brush.Text.Primary
 Typography.Body.Medium
 Thickness.Control.Input
@@ -121,7 +123,7 @@ Style.Card.Default
 
 引用规则：
 
-- `Color.*` 只能定义在 Light/Dark Theme 字典中。
+- 品牌原色和固定话术色板定义在 `Colors.xaml`；语义 `Color.*` 定义在 Light/Dark Theme 字典中。
 - 页面和模板优先消费 `Brush.*`，不得直接写颜色值。
 - 主题相关的 `Color.*`、`Brush.*`、背景、前景、边框、Accent 和 `Effect.Shadow.*` 使用 `{DynamicResource ...}`；三个 Shadow Effect 由 Light/Dark Theme 以同名键提供，控件不直接写阴影参数。
 - Typography、FontSize、FontWeight、Thickness、Radius、Size 和 Motion 使用 `{StaticResource ...}`。

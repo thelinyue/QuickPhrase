@@ -11,6 +11,7 @@ internal static class WindowsNativeMethods
     public const uint KeyEventUnicode = 0x0004;
     public const ushort VirtualKeyControl = 0x11;
     public const ushort VirtualKeyV = 0x56;
+    public const ushort VirtualKeyReturn = 0x0D;
 
     [DllImport("user32.dll")]
     public static extern nint GetForegroundWindow();
@@ -129,6 +130,35 @@ internal static class WindowsNativeMethods
         return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<KeyboardInput>()) == inputs.Length;
     }
 
+    /// <summary>
+    /// 注入一次 Enter，作为企业微信当前“Enter 发送”配置的具体发送协议。
+    /// Launcher 的 Ctrl+Enter 只表达通用 InsertAndSend 意图，不要求 Adapter 注入相同组合键。
+    /// 部分注入后只尝试释放 Enter，不重复 KeyDown，避免无法判断目标已消费事件时产生重复发送。
+    /// </summary>
+    internal static KeyboardInjectionResult SendEnter(
+        Func<uint, KeyboardInput[], int, uint>? sender = null)
+    {
+        sender ??= SendInput;
+        var inputs = new[]
+        {
+            KeyDown(VirtualKeyReturn),
+            KeyUp(VirtualKeyReturn),
+        };
+        var size = Marshal.SizeOf<KeyboardInput>();
+        var inserted = sender((uint)inputs.Length, inputs, size);
+        if (inserted == inputs.Length) return KeyboardInjectionResult.Applied;
+        if (inserted == 0) return KeyboardInjectionResult.NotApplied;
+
+        // 只补充 KeyUp，绝不补发 Enter KeyDown。
+        var releases = new[] { KeyUp(VirtualKeyReturn) };
+        _ = sender((uint)releases.Length, releases, size);
+        return KeyboardInjectionResult.Inconclusive;
+    }
+    private static KeyboardInput KeyDown(ushort virtualKey) =>
+        new() { Type = InputKeyboard, Data = new KeyboardInputData { Key = new KeyboardInputKey { VirtualKey = virtualKey } } };
+
+    private static KeyboardInput KeyUp(ushort virtualKey) =>
+        new() { Type = InputKeyboard, Data = new KeyboardInputData { Key = new KeyboardInputKey { VirtualKey = virtualKey, Flags = KeyEventKeyUp } } };
     public static bool SendUnicodeText(string text)
     {
         if (string.IsNullOrEmpty(text)) return true;
@@ -140,4 +170,11 @@ internal static class WindowsNativeMethods
         }
         return SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<KeyboardInput>()) == inputs.Count;
     }
+}
+
+internal enum KeyboardInjectionResult
+{
+    NotApplied,
+    Applied,
+    Inconclusive,
 }

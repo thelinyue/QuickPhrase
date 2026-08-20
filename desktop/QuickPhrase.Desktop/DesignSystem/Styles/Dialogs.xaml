@@ -5,7 +5,7 @@
         避免公共 Style 改变现有窗口生命周期和业务行为。
     -->
     <Style x:Key="Style.Dialog.Window" TargetType="Window">
-        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Primary}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Default}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
         <Setter Property="BorderThickness" Value="{StaticResource Thickness.Border.Default}" />
         <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
@@ -55,14 +55,14 @@
                     <Condition Property="IsEnabled" Value="True" />
                     <Condition Property="IsHighlighted" Value="True" />
                 </MultiTrigger.Conditions>
-                <Setter Property="Background" Value="{DynamicResource Brush.State.Hover}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
             </MultiTrigger>
             <MultiTrigger>
                 <MultiTrigger.Conditions>
                     <Condition Property="IsEnabled" Value="True" />
                     <Condition Property="IsKeyboardFocusWithin" Value="True" />
                 </MultiTrigger.Conditions>
-                <Setter Property="Background" Value="{DynamicResource Brush.State.Selected}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Selected}" />
             </MultiTrigger>
             <Trigger Property="IsEnabled" Value="False">
                 <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />
@@ -78,6 +78,6 @@
     <Style x:Key="Style.Menu.Separator" TargetType="Separator">
         <Setter Property="Height" Value="{StaticResource Thickness.Border.Default}" />
         <Setter Property="Margin" Value="{StaticResource Thickness.XS}" />
-        <Setter Property="Background" Value="{DynamicResource Brush.Border.Subtle}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Border.Default}" />
     </Style>
 </ResourceDictionary>

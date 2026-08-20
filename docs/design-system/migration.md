@@ -53,10 +53,12 @@ D:\code\QuickPhrase\desktop\QuickPhrase.Desktop\
 │   │   ├── Thickness.xaml
 │   │   ├── Radius.xaml
 │   │   ├── Sizes.xaml
-│   │   └── Motion.xaml
+│   │   ├── Motion.xaml
+│   │   ├── Colors.xaml
+│   │   └── Brushes.xaml
 │   ├── Themes\
-│   │   ├── QuickPhraseTheme.Light.xaml
-│   │   └── QuickPhraseTheme.Dark.xaml
+│   │   ├── Theme.Light.xaml
+│   │   └── Theme.Dark.xaml
 │   ├── Styles\
 │   │   ├── Text.xaml
 │   │   ├── Buttons.xaml
@@ -113,7 +115,9 @@ D:\code\QuickPhrase\docs\design-system\
 3. `DesignSystem/Tokens/Radius.xaml`
 4. `DesignSystem/Tokens/Sizes.xaml`
 5. `DesignSystem/Tokens/Motion.xaml`
-6. `DesignSystem/Themes/QuickPhraseTheme.Light.xaml`
+6. `DesignSystem/Tokens/Colors.xaml`
+7. `DesignSystem/Themes/Theme.Light.xaml`
+8. `DesignSystem/Tokens/Brushes.xaml`
 
 `Controls.xaml` 内部固定合并：
 

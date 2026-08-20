@@ -53,20 +53,20 @@
                                     <ControlTemplate TargetType="ListBoxItem">
                                         <Border x:Name="Card"
                                                 Padding="{StaticResource Thickness.XS}"
-                                                Background="{DynamicResource Brush.Background.Window}"
-                                                BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                                                Background="{DynamicResource Brush.Background.Default}"
+                                                BorderBrush="{DynamicResource Brush.Border.Default}"
                                                 BorderThickness="{StaticResource Thickness.Border.Default}"
                                                 CornerRadius="{StaticResource Radius.XS}">
                                             <ContentPresenter />
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Card" Property="Background" Value="{DynamicResource Brush.State.Hover}" />
-                                                <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource Brush.Brand.Primary}" />
+                                                <Setter TargetName="Card" Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
+                                                <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource Brush.Accent.Primary}" />
                                             </Trigger>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="Card" Property="Background" Value="{DynamicResource Brush.State.Hover}" />
-                                                <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource Brush.Brand.Primary}" />
+                                                <Setter TargetName="Card" Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
+                                                <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource Brush.Accent.Primary}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -87,7 +87,7 @@
 
                 <TextBlock x:Name="EmptyText"
                            Text="暂无历史搜索"
-                           Foreground="{DynamicResource Brush.Text.Muted}"
+                           Foreground="{DynamicResource Brush.Text.Secondary}"
                            Style="{StaticResource Style.Text.Caption}"
                            VerticalAlignment="Center"
                            Visibility="Collapsed"

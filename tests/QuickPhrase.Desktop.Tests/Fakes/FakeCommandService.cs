@@ -60,8 +60,7 @@ public sealed class FakeCommandService : ICommandService
     {
         LastCreatedPhraseCommand = command;
         var phrase = new Phrase(
-            command.Id, command.Title, command.Content, command.CategoryId,
-            command.Favorite, command.ShortcutMode,
+            command.Id, command.Title, command.Content, command.CategoryId, command.ShortcutMode,
             command.Shortcut is null ? null : new ShortcutValue(command.Shortcut, command.Shortcut),
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, command.ColorKey,
             command.SortOrder != 0 ? command.SortOrder : _phrases.Count(p => p.CategoryId == command.CategoryId) + 1);
@@ -79,7 +78,6 @@ public sealed class FakeCommandService : ICommandService
             Title = command.Title,
             Content = command.Content,
             CategoryId = command.CategoryId,
-            Favorite = command.Favorite,
             ShortcutMode = command.ShortcutMode,
             Shortcut = command.Shortcut is null ? null : new ShortcutValue(command.Shortcut, command.Shortcut),
             ColorKey = command.ColorKey,

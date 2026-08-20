@@ -40,13 +40,13 @@
         </Setter>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{DynamicResource Brush.State.Hover}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
                 <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
             </Trigger>
             <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="{DynamicResource Brush.State.Selected}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource Brush.State.SelectedBorder}" />
-                <Setter Property="Foreground" Value="{DynamicResource Brush.Brand.Primary.Pressed}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Selected}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
+                <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Primary.Pressed}" />
             </Trigger>
             <Trigger Property="IsKeyboardFocused" Value="True">
                 <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
@@ -85,11 +85,11 @@
         </Setter>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{DynamicResource Brush.State.Hover}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
             </Trigger>
             <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="{DynamicResource Brush.State.Selected}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource Brush.State.SelectedBorder}" />
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Selected}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
             </Trigger>
             <Trigger Property="IsKeyboardFocused" Value="True">
                 <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
@@ -112,8 +112,8 @@
         <Setter Property="MinHeight" Value="{StaticResource Size.Phrase.Row.Minimum}" />
         <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
         <Setter Property="Margin" Value="{StaticResource Thickness.None}" />
-        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Primary}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Default}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
         <Setter Property="BorderThickness" Value="{StaticResource Thickness.Border.Bottom}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -130,20 +130,20 @@
                             <Rectangle x:Name="AccentBar"
                                        Width="{StaticResource Size.List.SelectionIndicator.Width}"
                                        HorizontalAlignment="Left"
-                                       Fill="{DynamicResource Brush.State.SelectionIndicator}"
+                                       Fill="{DynamicResource Brush.Selection.Indicator}"
                                        Visibility="Collapsed" />
                             <ContentPresenter Margin="{TemplateBinding Padding}" />
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource Brush.State.Hover}" />
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource Brush.State.Selected}" />
-                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Brush.State.SelectedBorder}" />
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource Brush.Surface.Selected}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
                             <Setter TargetName="AccentBar" Property="Visibility" Value="Visible" />
-                            <Setter Property="Foreground" Value="{DynamicResource Brush.Brand.Primary.Pressed}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Primary.Pressed}" />
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />

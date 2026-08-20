@@ -5,7 +5,7 @@
              xmlns:local="clr-namespace:QuickPhrase.Desktop"
              xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework">
 
-    <Grid Height="{StaticResource Size.TitleBar.Height}" Background="{DynamicResource Brush.Background.Window}">
+    <Grid Height="{StaticResource Size.TitleBar.Height}" Background="{DynamicResource Brush.Background.Default}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />

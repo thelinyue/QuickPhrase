@@ -170,41 +170,6 @@ begin
   end;
 end;
 
-function PrepareToUpgrade(): Boolean;
-var
-  ResultCode: Integer;
-  ExistingExe: String;
-begin
-  Result := True;
-  ExistingExe := ExpandConstant('{app}\{#AppExeName}');
-  if not FileExists(ExistingExe) then Exit;
-
-  Exec(ExistingExe, '--shutdown-for-upgrade', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  if ResultCode <> 0 then
-  begin
-    MsgBox('闪语正在使用中，无法安全退出升级。请关闭闪语后重试。', mbError, MB_OK);
-    Result := False;
-    Exit;
-  end;
-
-  Exec(ExistingExe, '--backup-for-upgrade', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  if ResultCode <> 0 then
-  begin
-    MsgBox('升级前数据备份失败，已保留旧版本和用户数据。', mbError, MB_OK);
-    Result := False;
-  end;
-end;
-
-function PrepareToInstall(var NeedsRestart: Boolean): String;
-begin
-  Result := '';
-  if not PrepareToUpgrade() then
-  begin
-    Result := 'UPGRADE_ABORTED';
-    Exit;
-  end;
-end;
-
 procedure CurUninstallStepChanged(Step: TUninstallStep);
 begin
   if Step = usUninstall then

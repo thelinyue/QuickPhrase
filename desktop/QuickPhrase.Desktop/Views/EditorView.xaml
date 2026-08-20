@@ -6,7 +6,7 @@
              xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
              mc:Ignorable="d">
     <!-- 编辑器只编排表单和命令；颜色、排版、间距及控件状态均由全局 Design System 提供。 -->
-    <Grid Background="{DynamicResource Brush.Background.Window}">
+    <Grid Background="{DynamicResource Brush.Background.Default}">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
@@ -116,7 +116,7 @@
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{DynamicResource Brush.State.SelectedBorder}" />
+                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
                                             </Trigger>
                                             <Trigger Property="IsSelected" Value="True">
                                                 <Setter TargetName="ColorTile" Property="BorderBrush" Value="{DynamicResource Brush.Text.Primary}" />
@@ -142,8 +142,8 @@
 
         <!-- 操作栏沿用原命令和可见性绑定，只统一为 Danger / Secondary / Primary 语义按钮。 -->
         <Border Grid.Row="1"
-                Background="{DynamicResource Brush.Surface.Primary}"
-                BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                Background="{DynamicResource Brush.Surface.Default}"
+                BorderBrush="{DynamicResource Brush.Border.Default}"
                 BorderThickness="{StaticResource Thickness.Border.Top}"
                 Padding="{StaticResource Thickness.Page}">
             <Grid>

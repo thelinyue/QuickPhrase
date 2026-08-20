@@ -15,9 +15,9 @@
 3. Launcher 不经过 Web、IPC 或序列化桥接层。
 4. 搜索不查询 SQLite，只查询 Core 内存索引。
 5. UI Automation 不运行在 WPF UI Thread。
-6. 自动发送默认不可信。
+6. 显式发送默认不可信；无用户授权的自动发送禁止。
 7. Target 必须在动作执行前重新验证。
-8. 第三方应用能力必须经过具体客户端版本验证。
+8. 第三方应用能力必须通过运行时能力检测验证，不依赖客户端版本号准入。
 9. 降级失败不允许演变成误发送。
 10. 原型与生产代码必须保持物理和依赖隔离。
 
@@ -158,7 +158,7 @@ CaptureTarget
 
 ```text
 Status:     Success | Failed | Cancelled | Unsupported | Unknown
-Effect:     None | Inserted | Sent | Unknown
+Effect:     None | Inserted | SendTriggered | Sent | Unknown
 Stage:      NotStarted | ValidateTarget | Insert | VerifyInsert | Send ...
 Confidence:  Confirmed | Probable | Unknown
 ErrorCode
@@ -173,8 +173,9 @@ V1 安全门禁：
 
 - Target 在捕获后、插入前、发送前重新验证。
 - `VerifyInsert` 不确定时绝不进入 Send。
-- V1 不允许后台目标自动发送。
-- 未验证的 Adapter 能力降级为复制或 `Unsupported`。
+- V1 不允许后台目标发送或无用户授权自动发送。
+- `InsertAndSend` 在发送能力不受支持时直接返回 `UnsupportedSend`，不插入、不发送、不降级。
+- `InsertOnly` 可按安全策略降级为复制；连续投递队列只接受 `InsertOnly`。
 - 失败消息必须对用户友好，并携带可追溯 TraceId。
 
 ## 7. Windows 线程模型
@@ -213,12 +214,11 @@ Core Application Service
 
 ## 10. Adapter Profile
 
-能力状态为 `Verified`、`Unverified`、`Unsupported`。Profile 至少按以下字段匹配：
+能力状态为 `Verified`、`Unverified`、`Unsupported`。Profile 描述 Adapter 身份、实现版本和运行时能力，不包含客户端版本准入范围：
 
 ```text
 AdapterId
 ProcessName
-ProductVersionRange
 ProfileVersion
 InsertTextStatus
 VerifyInsertStatus
@@ -226,18 +226,19 @@ SendTextStatus
 VerifySendStatus
 FallbackMode
 VerifiedAt
+DetectedProductVersion (nullable, diagnostics only)
 ```
 
-当前企业微信精确 Profile：`WXWork 5.0.9.6065`。
+企业微信兼容目标为当前主流版本。任意版本号、缺失版本号或版本读取失败都不得阻止运行时能力检测；版本号只写入不包含用户内容的诊断 Trace。
 
-| 能力 | 状态 |
-|---|---|
-| InsertText | Verified |
-| VerifyInsert | Unverified |
-| SendText | Unsupported |
-| VerifySend | Unsupported |
+| 能力 | 状态 | 语义 |
+|---|---|---|
+| InsertText | Verified | 受保护 Clipboard + `Ctrl+V` |
+| VerifyInsert | Verified | 验证动作完整且目标、前台窗口、输入焦点/Caret 指纹稳定，不读取正文 |
+| SendText | Verified | Launcher 以 `Ctrl+Enter` 明确触发；发送前重校验后由企业微信 Adapter 注入一次 `Enter` |
+| VerifySend | Unsupported | 不确认目标应用最终发送结果，返回 `SendTriggered` 而非 `Sent` |
 
-企业微信固定使用受保护 Clipboard + `Ctrl+V`；不开放 Unicode 直输、后台投递和自动发送。
+`Ctrl+Enter` 是 Launcher 的通用 `InsertAndSend` 意图，不绑定企业微信；各 Adapter 独立实现具体发送协议。企业微信不开放 Unicode 直输、后台投递、无用户授权自动发送或发送失败自动重试。
 
 ## 11. Observability
 
