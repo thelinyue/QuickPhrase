@@ -92,6 +92,24 @@ public sealed class ReleaseSigningContractTests
     }
 
     [Fact]
+    public void ContinuousIntegrationRunsWindowsBuildTestsAndLauncherSmokes()
+    {
+        var workflow = File.ReadAllText(Path.Combine(Root, ".github", "workflows", "ci.yml"));
+        foreach (var expected in new[]
+        {
+            "runs-on: windows-latest",
+            "actions/checkout@v4",
+            "fetch-depth: 0",
+            "actions/setup-dotnet@v4",
+            "dotnet restore",
+            "dotnet build QuickPhrase.sln -c Release",
+            "dotnet test QuickPhrase.sln -c Release",
+            "invoke-launcher-smoke.ps1 -Mode Native",
+            "invoke-launcher-smoke.ps1 -Mode Performance",
+        })
+            Assert.Contains(expected, workflow, StringComparison.Ordinal);
+    }
+    [Fact]
     public void CandidateWorkflowCannotPublishAStableRelease()
     {
         var workflow = File.ReadAllText(Path.Combine(
