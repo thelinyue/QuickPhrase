@@ -74,6 +74,7 @@
     <Thickness x:Key="Thickness.Settings.NavigationStatus">12,16,8,0</Thickness>
     <Thickness x:Key="Thickness.Settings.HeaderDescription">0,4,0,24</Thickness>
     <Thickness x:Key="Thickness.Settings.SectionTitle">0,0,0,8</Thickness>
+    <Thickness x:Key="Thickness.Settings.SyncFieldLabel">0,12,0,6</Thickness>
     <Thickness x:Key="Thickness.Settings.Footer">24,8,24,10</Thickness>
     <Thickness x:Key="Thickness.Settings.DataStatus">16,12,16,0</Thickness>
     <Thickness x:Key="Thickness.Settings.DataError">16,4,16,16</Thickness>

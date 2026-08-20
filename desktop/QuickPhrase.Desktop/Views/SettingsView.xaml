@@ -248,23 +248,23 @@
                                                Style="{StaticResource Style.Text.Body.Small}"
                                                TextWrapping="Wrap"
                                                Margin="{StaticResource Thickness.Settings.DataStatus}" />
-                                    <TextBlock Text="Hub 地址" Style="{StaticResource Style.Text.Caption}" />
+                                    <TextBlock Text="Hub 地址" Style="{StaticResource Style.Text.Caption}" Margin="{StaticResource Thickness.Settings.SyncFieldLabel}" />
                                     <TextBox Style="{StaticResource Style.Input.Default}"
                                              Text="{Binding HubAddress, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="Hub 地址" />
                                     <TextBlock Text="账号" Style="{StaticResource Style.Text.Caption}"
-                                               Margin="{StaticResource Thickness.Settings.SectionTitle}" />
+                                               Margin="{StaticResource Thickness.Settings.SyncFieldLabel}" />
                                     <TextBox Style="{StaticResource Style.Input.Default}"
                                              Text="{Binding Account, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="企业账号" />
                                     <TextBlock Text="密码" Style="{StaticResource Style.Text.Caption}"
-                                               Margin="{StaticResource Thickness.Settings.SectionTitle}" />
+                                               Margin="{StaticResource Thickness.Settings.SyncFieldLabel}" />
                                     <PasswordBox x:Name="EnterprisePassword"
                                                  Style="{StaticResource Style.Input.Password}"
                                                  PasswordChanged="EnterprisePassword_PasswordChanged"
                                                  AutomationProperties.Name="企业账号密码" />
                                     <TextBlock Text="设备名称" Style="{StaticResource Style.Text.Caption}"
-                                               Margin="{StaticResource Thickness.Settings.SectionTitle}" />
+                                               Margin="{StaticResource Thickness.Settings.SyncFieldLabel}" />
                                     <TextBox Style="{StaticResource Style.Input.Default}"
                                              Text="{Binding DeviceName, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="设备名称" />
@@ -277,7 +277,16 @@
                                     <TextBlock Text="{Binding LastSynchronizedText, StringFormat=最后同步：{0}}" Style="{StaticResource Style.Text.Caption}" />
                                     <TextBlock Text="{Binding ReleaseNumber, StringFormat=企业发布号：{0}}" Style="{StaticResource Style.Text.Caption}" />
                                     <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource Brush.Status.Error}" Style="{StaticResource Style.Text.Caption}" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding TraceId, StringFormat=TraceId：{0}}" Style="{StaticResource Style.Text.Caption}" />
+                                    <TextBlock Text="{Binding TraceId, StringFormat=TraceId：{0}}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Caption}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding TraceId}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                    <DataTrigger Binding="{Binding TraceId}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                     <Button Style="{StaticResource Style.Button.Danger}"
                                             Content="清除本机企业缓存"
                                             HorizontalAlignment="Left"
