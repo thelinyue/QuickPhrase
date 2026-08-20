@@ -55,6 +55,7 @@ public partial class LauncherWindow : Window
 
     public bool IsLauncherVisible => IsVisible;
     internal LauncherLifecycleState LifecycleState { get; private set; } = LauncherLifecycleState.Created;
+    internal void MarkLifecycleFaulted() => LifecycleState = LauncherLifecycleState.Faulted;
     public bool IsPracticeMode => _invocationContext?.Mode == LauncherInvocationMode.Practice;
 
     public void Open(string initialQuery = "", DeliveryTarget? target = null, Guid? phraseId = null, AdapterStatusSnapshot? status = null, LauncherInvocationContext? invocationContext = null)

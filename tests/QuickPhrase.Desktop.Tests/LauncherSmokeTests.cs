@@ -1,3 +1,4 @@
+using System.IO;
 using QuickPhrase.Desktop;
 using Xunit;
 
@@ -84,5 +85,61 @@ public sealed class LauncherSmokeTests
             "Disposed",
             "Faulted",
         }, Enum.GetNames<LauncherLifecycleState>());
+    }
+
+    [Fact]
+    public void Runner_DoesNotReferenceExternalDeliveryOrPersistenceServices()
+    {
+        var root = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(
+            root, "desktop", "QuickPhrase.Desktop", "LauncherSmokeRunner.cs"));
+
+        foreach (var forbidden in new[]
+        {
+            "QuickPhraseDataRuntime",
+            "QuickPhraseDataOptions.ForCurrentUser",
+            "WindowsShortcutService",
+            "WindowsTargetDetector",
+            "WindowsAdapterResolver",
+            "TextDeliveryFactory",
+            "Clipboard",
+            "AutomationElement",
+        })
+            Assert.DoesNotContain(forbidden, source, StringComparison.Ordinal);
+
+        Assert.Equal(1, source.Split("new LauncherWindow", StringSplitOptions.None).Length - 1);
+        Assert.Contains("ReferenceEquals", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Diagnostics_CreateRunDirectoryUnderConfiguredRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "QuickPhrase-Smoke-Tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var diagnostics = LauncherSmokeDiagnostics.Create(root, LauncherSmokeMode.Native);
+            Assert.StartsWith(Path.GetFullPath(root), diagnostics.RunDirectory, StringComparison.OrdinalIgnoreCase);
+            Assert.True(Directory.Exists(diagnostics.RunDirectory));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PerformanceContract_UsesConfirmedCountsAndThreshold()
+    {
+        Assert.Equal(10, LauncherSmokeRunner.PerformanceWarmupCount);
+        Assert.Equal(200, LauncherSmokeRunner.PerformanceSampleCount);
+        Assert.Equal(TimeSpan.FromMilliseconds(120), LauncherSmokeRunner.PerformanceThreshold);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "QuickPhrase.sln")))
+            directory = directory.Parent;
+        return directory?.FullName ?? throw new DirectoryNotFoundException("找不到 QuickPhrase.sln");
     }
 }
