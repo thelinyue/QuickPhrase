@@ -50,7 +50,7 @@ internal sealed class ApplicationController : IAsyncDisposable
     {
         _singleInstance = new SingleInstanceCoordinator();
         _dataOptions = QuickPhraseDataOptions.ForCurrentUser();
-        _hotkeys = new HotkeyCoordinator();
+        _hotkeys = new HotkeyCoordinator(new WindowsShortcutService(), DispatchToUi);
         _targetDetector = new WindowsTargetDetector();
         _adapterResolver = new WindowsAdapterResolver(
             targetValidator: target => _targetDetector.Validate(target, requireForeground: false).IsValid);
@@ -98,7 +98,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         {
             Console.Error.WriteLine($"开机启动状态校准失败：{exception.Message}");
         }
-        _hotkeys.Configure(_settings);
+        await _hotkeys.ConfigureAsync(_settings, cancellationToken);
         UpdateLauncherScope();
     }
 
@@ -341,31 +341,48 @@ internal sealed class ApplicationController : IAsyncDisposable
 
     private async Task EditOnboardingShortcutAsync(OnboardingViewModel viewModel)
     {
-        if (_commands is null || _settings is null) return;
-        var current = await _commands.GetSettingsAsync();
-        var owner = System.Windows.Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w is OnboardingWindow);
-        var dialog = new HotkeyCaptureDialog(current.LauncherShortcutDisplay) { Owner = owner };
-        if (dialog.ShowDialog() != true) return;
+        if (_commands is null || _settings is null)
+            return;
 
-        RepositoryResult<AppSettings> result = RepositoryResult<AppSettings>.Failure(
-            new DataError("SETTINGS_SAVE_FAILED", "快捷键保存失败，请重试。"));
-        for (var attempt = 0; attempt < 2; attempt++)
+        var current = await _commands.GetSettingsAsync();
+        RepositoryResult<AppSettings>? appliedResult = null;
+
+        async Task<RepositoryResult<AppSettings>> ApplyShortcutAsync(
+            ShortcutChord chord,
+            CancellationToken cancellationToken)
         {
-            var next = current with
+            RepositoryResult<AppSettings> result = RepositoryResult<AppSettings>.Failure(
+                new DataError("SETTINGS_SAVE_FAILED", "快捷键保存失败，请重试。"));
+            for (var attempt = 0; attempt < 2; attempt++)
             {
-                LauncherShortcutDisplay = dialog.Display,
-                LauncherShortcutNormalized = dialog.Normalized,
-            };
-            result = await ApplySettingsAsync(next, CancellationToken.None);
-            if (result.IsSuccess || !string.Equals(result.Error?.Code, "VERSION_CONFLICT", StringComparison.OrdinalIgnoreCase) || attempt == 1)
-                break;
-            current = await _commands.GetSettingsAsync();
+                result = await ApplySettingsAsync(
+                    current with { LauncherShortcut = chord },
+                    cancellationToken);
+                if (result.IsSuccess ||
+                    !string.Equals(result.Error?.Code, "VERSION_CONFLICT", StringComparison.OrdinalIgnoreCase) ||
+                    attempt == 1)
+                {
+                    break;
+                }
+
+                current = await _commands.GetSettingsAsync(cancellationToken);
+            }
+
+            if (result.IsSuccess)
+                appliedResult = result;
+            return result;
         }
 
-        if (result.IsSuccess && result.Value is not null)
-            viewModel.ApplySettingsSnapshot(result.Value);
-        else
-            viewModel.SetShortcutError(result.Error?.Message ?? "快捷键保存失败，请重试。");
+        var owner = System.Windows.Application.Current?.Windows
+            .OfType<Window>()
+            .FirstOrDefault(window => window is OnboardingWindow);
+        var dialog = new HotkeyCaptureDialog(current.LauncherShortcut, ApplyShortcutAsync)
+        {
+            Owner = owner,
+        };
+
+        if (dialog.ShowDialog() == true && appliedResult?.Value is not null)
+            viewModel.ApplySettingsSnapshot(appliedResult.Value);
     }
 
     private void StopOnboardingPractice()
@@ -388,7 +405,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         _trayIconStream?.Dispose();
         _trayIconStream = null;
         await _deliveryQueue.DisposeAsync();
-        _hotkeys.Dispose();
+        await _hotkeys.DisposeAsync();
         _foregroundWatcher.Dispose();
         _adapterResolver.Dispose();
         await _usageUpdates.DisposeAsync();
@@ -420,7 +437,7 @@ internal sealed class ApplicationController : IAsyncDisposable
 
     private async Task<DeliveryResult?> QueueOrDeliverPhraseAsync(Phrase phrase, DeliveryTarget? target, bool sendRequested, string? query)
     {
-        var settings = _settings ?? new AppSettings(1, false, false, true, "Alt + Space", "Alt+Space", false, true)
+        var settings = _settings ?? new AppSettings(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true)
         {
             LauncherEnabledAdapters = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["WXWork"] = true },
         };
@@ -477,19 +494,17 @@ internal sealed class ApplicationController : IAsyncDisposable
         _tray?.ShowBalloonTip(2200, "闂", result.Message, icon);
     }
 
-    private async Task ApplySettingsHotkeysAsync(AppSettings settings)
-    {
-        _settings = settings;
-        if (_dataRuntime is null) return;
-        _hotkeys.Configure(settings);
-        UpdateLauncherScope();
-    }
-
+    /// <summary>
+    /// 应用设置时，快捷键严格按 Stage → SQLite Save → Commit 执行。
+    /// 开机启动属于独立的 Windows 外部副作用：主事务失败时恢复旧注册表值，
+    /// 但启动项本身同步失败仍只作为可读警告，不阻断其他设置保存。
+    /// </summary>
     private async Task<RepositoryResult<AppSettings>> ApplySettingsAsync(AppSettings settings, CancellationToken cancellationToken)
     {
-        if (_dataRuntime is null)
+        if (_dataRuntime is null || _settings is null)
             return RepositoryResult<AppSettings>.Failure(new DataError("DATA_UNAVAILABLE", "本地数据运行时尚未就绪"));
 
+        var current = _settings;
         var previousCommand = _startupRegistration.GetCommand();
         _startupWarning = null;
         try
@@ -503,30 +518,43 @@ internal sealed class ApplicationController : IAsyncDisposable
             catch (Exception exception)
             {
                 _startupWarning = $"开机启动设置未能同步：{exception.Message}。引导仍会完成，你可以稍后在设置中重试。";
-                Console.Error.WriteLine($"开机启动设置同步失败：{exception.Message}");
+                Console.Error.WriteLine($"开机启动设置同步失败。阶段：STARTUP_REGISTRATION；结果码：STARTUP_SYNC_FAILED；异常类型：{exception.GetType().Name}");
             }
 
-            var result = await _dataRuntime.Settings.SaveAsync(settings, settings.Version, cancellationToken);
-            if (!result.IsSuccess)
+            var result = await _hotkeys.ApplyShortcutChangeAsync(
+                current,
+                settings,
+                _dataRuntime.Settings.SaveAsync,
+                cancellationToken);
+            if (!result.IsSuccess || result.Value is null)
             {
+                // 快捷键 Commit 失败后，补偿写回会产生新的设置版本；即使业务结果失败，
+                // 也必须同步该快照，否则本次会话后续保存会持续触发 VERSION_CONFLICT。
+                if (result.Value is not null)
+                    _settings = result.Value;
                 try { _startupRegistration.SetRawCommand(previousCommand); } catch { }
                 return result;
             }
 
-            if (result.Value is not null)
-            {
-                _settings = result.Value;
-                await ApplySettingsHotkeysAsync(result.Value);
-            }
+            _settings = result.Value;
+            UpdateLauncherScope();
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            try { _startupRegistration.SetRawCommand(previousCommand); } catch { }
+            throw;
         }
         catch (Exception exception)
         {
             try { _startupRegistration.SetRawCommand(previousCommand); } catch { }
-            return RepositoryResult<AppSettings>.Failure(new DataError("SETTINGS_SAVE_FAILED", $"设置保存失败：{exception.Message}"));
+            var traceId = Guid.NewGuid();
+            Console.Error.WriteLine($"设置保存失败。阶段：APPLY_SETTINGS；结果码：SETTINGS_SAVE_FAILED；TraceId：{traceId}；异常类型：{exception.GetType().Name}");
+            return RepositoryResult<AppSettings>.Failure(new DataError(
+                "SETTINGS_SAVE_FAILED",
+                $"设置保存失败，请重试。TraceId：{traceId}"));
         }
     }
-
     private static string GetStartupExecutablePath()
     {
         var path = Environment.ProcessPath;

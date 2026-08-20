@@ -1,0 +1,33 @@
+<UserControl x:Class="QuickPhrase.Desktop.DesignSystem.Components.CategoryTreeItem"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root"
+             Style="{StaticResource Style.Component.CategoryTreeItem}">
+    <Grid MinHeight="{StaticResource Size.Navigation.Item}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <ContentPresenter Content="{Binding LeadingContent, ElementName=Root}"
+                          Margin="{StaticResource Thickness.Gap.Inline.SM}"
+                          VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1"
+                   Text="{Binding Title, ElementName=Root}"
+                   Style="{StaticResource Style.Text.Body.Medium}"
+                   TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center"
+                   ToolTip="{Binding Title, ElementName=Root}" />
+        <TextBlock Grid.Column="2"
+                   Text="{Binding CountText, ElementName=Root}"
+                   Style="{StaticResource Style.Text.Caption}"
+                   Margin="{StaticResource Thickness.Gap.Inline.SM}"
+                   VerticalAlignment="Center" />
+        <ContentPresenter Grid.Column="3"
+                          Content="{Binding TrailingContent, ElementName=Root}"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Center" />
+    </Grid>
+</UserControl>

@@ -1,0 +1,45 @@
+<UserControl x:Class="QuickPhrase.Desktop.DesignSystem.Components.SearchInput"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root"
+             Style="{StaticResource Style.Component.SearchInput}">
+    <Grid Height="{StaticResource Size.Input.Search}">
+        <TextBox x:Name="InputBox"
+                 Height="{StaticResource Size.Input.Search}"
+                 Padding="{StaticResource Thickness.Control.Input}"
+                 Style="{StaticResource Style.Input.Search}"
+                 Text="{Binding Text, ElementName=Root, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 AutomationProperties.Name="搜索" />
+        <TextBlock x:Name="PlaceholderText"
+                   Text="{Binding Placeholder, ElementName=Root}"
+                   Padding="{StaticResource Thickness.Control.Input}"
+                   VerticalAlignment="Center"
+                   IsHitTestVisible="False">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Medium}">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Muted}" />
+                    <Style.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding Text, ElementName=InputBox}" Value="" />
+                                <Condition Binding="{Binding IsKeyboardFocused, ElementName=InputBox}" Value="False" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter Property="Visibility" Value="Visible" />
+                        </MultiDataTrigger>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding Text, ElementName=InputBox}" Value="{x:Null}" />
+                                <Condition Binding="{Binding IsKeyboardFocused, ElementName=InputBox}" Value="False" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter Property="Visibility" Value="Visible" />
+                        </MultiDataTrigger>
+                        <DataTrigger Binding="{Binding IsEnabled, ElementName=Root}" Value="False">
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+    </Grid>
+</UserControl>

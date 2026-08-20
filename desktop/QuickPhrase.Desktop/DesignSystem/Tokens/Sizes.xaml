@@ -1,0 +1,86 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+    <!-- 控件尺寸保持紧凑，并统一 Windows 桌面应用的点击与键盘焦点区域。 -->
+    <sys:Double x:Key="Size.Control.Compact">32</sys:Double>
+    <sys:Double x:Key="Size.Control.Default">36</sys:Double>
+    <sys:Double x:Key="Size.Button.Icon.Width">32</sys:Double>
+    <sys:Double x:Key="Size.Button.Icon.Height">32</sys:Double>
+    <sys:Double x:Key="Size.Button.Action.MinimumWidth">96</sys:Double>
+    <sys:Double x:Key="Size.Input.Search">36</sys:Double>
+    <!-- ComboBox 箭头尺寸统一由 Token 管理，路径几何仍保持自身坐标系。 -->
+    <sys:Double x:Key="Size.Select.DropDownArrow.Width">8</sys:Double>
+    <sys:Double x:Key="Size.Select.DropDownArrow.Height">5</sys:Double>
+    <sys:Double x:Key="Size.Switch.Width">40</sys:Double>
+    <sys:Double x:Key="Size.Switch.Height">22</sys:Double>
+    <sys:Double x:Key="Size.Switch.Thumb">18</sys:Double>
+    <sys:Double x:Key="Size.TitleBar.Height">32</sys:Double>
+    <GridLength x:Key="Size.TitleBar.GridLength">32</GridLength>
+    <sys:Double x:Key="Size.TitleBar.CaptionButton.Width">48</sys:Double>
+    <sys:Double x:Key="Size.Navigation.Item">40</sys:Double>
+    <sys:Double x:Key="Size.Phrase.Row.Minimum">32</sys:Double>
+    <GridLength x:Key="Size.Phrase.IndexColumn.GridLength">32</GridLength>
+    <sys:Double x:Key="Size.Editor.Body.Height">140</sys:Double>
+    <sys:Double x:Key="Size.Editor.Content.Maximum">480</sys:Double>
+
+    <!-- 同时提供 Double 与 GridLength：前者供数值比较，后者可直接绑定 ColumnDefinition.Width。 -->
+    <sys:Double x:Key="Size.Settings.Sidebar.Width">176</sys:Double>
+    <GridLength x:Key="Size.Settings.Sidebar.GridLength">176</GridLength>
+    <sys:Double x:Key="Size.Settings.Content.Maximum">640</sys:Double>
+
+    <sys:Double x:Key="Size.MainWindow.Width">1200</sys:Double>
+    <sys:Double x:Key="Size.MainWindow.Height">760</sys:Double>
+    <sys:Double x:Key="Size.MainWindow.MinimumWidth">900</sys:Double>
+    <sys:Double x:Key="Size.MainWindow.MinimumHeight">560</sys:Double>
+
+    <sys:Double x:Key="Size.SettingsWindow.Width">860</sys:Double>
+    <sys:Double x:Key="Size.SettingsWindow.Height">680</sys:Double>
+    <sys:Double x:Key="Size.SettingsWindow.MinimumWidth">560</sys:Double>
+    <sys:Double x:Key="Size.SettingsWindow.MinimumHeight">480</sys:Double>
+
+    <sys:Double x:Key="Size.Launcher.Width">760</sys:Double>
+    <sys:Double x:Key="Size.Launcher.Height">300</sys:Double>
+    <sys:Double x:Key="Size.Launcher.MinimumWidth">680</sys:Double>
+    <sys:Double x:Key="Size.Launcher.MinimumHeight">260</sys:Double>
+    <sys:Double x:Key="Size.Launcher.MaximumHeight">520</sys:Double>
+
+    <!-- 首次引导的行高使用 GridLength，确保 RowDefinition 不接收错误的 Double 类型。 -->
+    <sys:Double x:Key="Size.Onboarding.Width">640</sys:Double>
+    <sys:Double x:Key="Size.Onboarding.Height">520</sys:Double>
+    <sys:Double x:Key="Size.Onboarding.MinimumWidth">560</sys:Double>
+    <sys:Double x:Key="Size.Onboarding.MinimumHeight">480</sys:Double>
+    <GridLength x:Key="Size.Onboarding.TitleBar.GridLength">28</GridLength>
+    <GridLength x:Key="Size.Onboarding.Header.GridLength">72</GridLength>
+    <GridLength x:Key="Size.Onboarding.Footer.GridLength">80</GridLength>
+    <sys:Double x:Key="Size.Onboarding.Progress.Height">4</sys:Double>
+    <sys:Double x:Key="Size.Onboarding.PhraseBody.Height">88</sys:Double>
+    <GridLength x:Key="Size.Onboarding.PracticeIndicator.Gutter.GridLength">20</GridLength>
+    <sys:Double x:Key="Size.Onboarding.PracticeIndicator.Diameter">8</sys:Double>
+    <sys:Double x:Key="Size.Onboarding.FooterStatus.Height">28</sys:Double>
+    <GridLength x:Key="Size.Onboarding.FooterStatus.GridLength">28</GridLength>
+
+    <sys:Double x:Key="Size.Library.BrandIcon">24</sys:Double>
+    <sys:Double x:Key="Size.List.SelectionIndicator.Width">4</sys:Double>
+    <GridLength x:Key="Size.SearchHistory.Gutter.GridLength">8</GridLength>
+    <sys:Double x:Key="Size.StatePresenter.MinimumHeight">84</sys:Double>
+
+    <!-- 对话框尺寸集中管理；Navigation 高度由旧 190px 对齐到 4px 网格的 192px。 -->
+    <sys:Double x:Key="Size.Dialog.Category.Width">380</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Category.Height">240</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Category.MinimumHeight">200</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Status.MinimumHeight">20</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Export.Width">560</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Export.Height">620</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Export.MinimumWidth">500</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Export.MinimumHeight">460</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Import.Width">520</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Import.Height">560</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Import.MinimumWidth">460</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Import.MinimumHeight">420</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Navigation.Width">400</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Navigation.Height">192</sys:Double>
+    <sys:Double x:Key="Size.Dialog.PhraseMove.Width">400</sys:Double>
+    <sys:Double x:Key="Size.Dialog.PhraseMove.Height">200</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Shortcut.Width">420</sys:Double>
+    <sys:Double x:Key="Size.Dialog.Shortcut.Height">240</sys:Double>
+</ResourceDictionary>

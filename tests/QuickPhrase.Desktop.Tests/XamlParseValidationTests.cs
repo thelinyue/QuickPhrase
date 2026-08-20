@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
-using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 using QuickPhrase.Core;
 using QuickPhrase.Desktop;
+using QuickPhrase.Desktop.DesignSystem.Components;
 using QuickPhrase.Desktop.Tests.Fakes;
 using QuickPhrase.Desktop.Onboarding;
 using QuickPhrase.Desktop.ViewModels;
@@ -46,9 +48,10 @@ public class XamlParseValidationTests
         Assert.Contains("Text=\"保存到\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"话术标题\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"话术内容\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ComboBoxFieldStyle", xaml, StringComparison.Ordinal);
+        Assert.Contains("BasedOn=\"{StaticResource Style.Select.Default}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Value=\"{Binding StepNumber, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ContentRegion\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("RowDefinition Height=\"82\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("RowDefinition Height=\"{StaticResource Size.Onboarding.Footer.GridLength}\"", xaml, StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(xaml, "Content=\"修改快捷键\""));
 
         var completeSectionStart = xaml.IndexOf("x:Name=\"CompleteStepPanel\"", StringComparison.Ordinal);
@@ -86,81 +89,235 @@ public class XamlParseValidationTests
     }
 
     [Fact]
+    public void LightThemeProvidesFocusBrushToControlTemplates()
+    {
+        WpfTestApplicationHost.Invoke(app =>
+        {
+            var textBox = new TextBox
+            {
+                Style = (Style)app.Resources["Style.Input.Default"],
+                Width = 200,
+                Height = (double)app.Resources["Size.Control.Default"],
+            };
+
+            Assert.NotNull(app.Resources["Brush.Border.Focus"]);
+            textBox.ApplyTemplate();
+            textBox.Measure(new Size(textBox.Width, textBox.Height));
+        });
+    }
+
+    [Fact]
+    public void HotkeyCaptureDialog_CaptureOnlyUpdatesCandidateWithoutApplying()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var current = new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space);
+            var candidate = new ShortcutChord(ShortcutModifiers.Ctrl, ShortcutKey.Space);
+            var applyCount = 0;
+            var dialog = new HotkeyCaptureDialog(
+                current,
+                (chord, _) =>
+                {
+                    applyCount++;
+                    return Task.FromResult(RepositoryResult<AppSettings>.Success(CreateSettings(chord)));
+                });
+            var shortcutInput = (ShortcutInput)dialog.FindName("CapturedShortcut");
+
+            Assert.Equal(current, dialog.CandidateChord);
+            shortcutInput.IsCapturing = true;
+            shortcutInput.ProcessKeyInput(Key.Space, ModifierKeys.Control, isRepeat: false);
+
+            Assert.Equal(candidate, dialog.CandidateChord);
+            Assert.Equal(0, applyCount);
+            dialog.Close();
+        });
+    }
+
+    [Fact]
+    public void HotkeyCaptureDialog_ApplyFailureKeepsDialogOpenAndPreservesActiveShortcut()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var active = new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space);
+            var dialog = new HotkeyCaptureDialog(
+                active,
+                (_, _) => Task.FromResult(RepositoryResult<AppSettings>.Failure(
+                    new DataError("HOTKEY_CONFLICT", "快捷键冲突，请选择其他组合。"))));
+            var shortcutInput = (ShortcutInput)dialog.FindName("CapturedShortcut");
+            var saveButton = (Button)dialog.FindName("SaveButton");
+
+            dialog.Dispatcher.BeginInvoke(() =>
+            {
+                try
+                {
+                    shortcutInput.IsCapturing = true;
+                    shortcutInput.ProcessKeyInput(Key.Space, ModifierKeys.Control, isRepeat: false);
+                    saveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                    Assert.True(dialog.IsVisible);
+                    Assert.Equal("快捷键冲突，请选择其他组合。", dialog.CaptureErrorMessage);
+                    Assert.Equal(new ShortcutChord(ShortcutModifiers.Ctrl, ShortcutKey.Space), dialog.CandidateChord);
+                    Assert.Equal(new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), active);
+                }
+                finally
+                {
+                    if (dialog.IsVisible)
+                        dialog.Close();
+                }
+            }, DispatcherPriority.Loaded);
+
+            Assert.False(dialog.ShowDialog());
+        });
+    }
+
+    [Fact]
+    public void HotkeyCaptureDialog_ApplySuccessClosesOnlyAfterPersistedResult()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var active = new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space);
+            var applyCount = 0;
+            var dialog = new HotkeyCaptureDialog(
+                active,
+                (chord, _) =>
+                {
+                    applyCount++;
+                    active = chord;
+                    return Task.FromResult(RepositoryResult<AppSettings>.Success(CreateSettings(chord)));
+                });
+            var shortcutInput = (ShortcutInput)dialog.FindName("CapturedShortcut");
+            var saveButton = (Button)dialog.FindName("SaveButton");
+
+            dialog.Dispatcher.BeginInvoke(() =>
+            {
+                shortcutInput.IsCapturing = true;
+                shortcutInput.ProcessKeyInput(Key.Space, ModifierKeys.Control, isRepeat: false);
+                saveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            }, DispatcherPriority.Loaded);
+
+            Assert.True(dialog.ShowDialog());
+            Assert.Equal(1, applyCount);
+            Assert.Equal(new ShortcutChord(ShortcutModifiers.Ctrl, ShortcutKey.Space), active);
+        });
+    }
+
+    [Fact]
+    public void HotkeyCaptureDialog_CancelAndCaptureEscapeDoNotApplyCandidate()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var applyCount = 0;
+            var dialog = new HotkeyCaptureDialog(
+                new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space),
+                (chord, _) =>
+                {
+                    applyCount++;
+                    return Task.FromResult(RepositoryResult<AppSettings>.Success(CreateSettings(chord)));
+                });
+            var shortcutInput = (ShortcutInput)dialog.FindName("CapturedShortcut");
+
+            dialog.Dispatcher.BeginInvoke(() =>
+            {
+                try
+                {
+                    shortcutInput.IsCapturing = true;
+                    shortcutInput.ProcessKeyInput(Key.Escape, ModifierKeys.None, isRepeat: false);
+
+                    Assert.False(shortcutInput.IsCapturing);
+                    Assert.True(dialog.IsVisible);
+                    Assert.Equal(0, applyCount);
+                    var cancelButton = Assert.IsType<Button>(dialog.FindName("CancelButton"));
+                    cancelButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }
+                finally
+                {
+                    if (dialog.IsVisible)
+                        dialog.Close();
+                }
+            }, DispatcherPriority.Loaded);
+
+            Assert.False(dialog.ShowDialog());
+            Assert.Equal(0, applyCount);
+        });
+    }
+
+    [Fact]
+    public void HotkeyCaptureDialog_UsesSizeTokensAndDoesNotLogShortcutValues()
+    {
+        var root = FindRepoRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "Dialogs", "HotkeyCaptureDialog.xaml"));
+        var code = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "Dialogs", "HotkeyCaptureDialog.xaml.cs"));
+
+        Assert.Contains("Width=\"{StaticResource Size.Dialog.Shortcut.Width}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Height=\"{StaticResource Size.Dialog.Shortcut.Height}\"", xaml, StringComparison.Ordinal);
+
+        var logStart = code.IndexOf("System.Diagnostics.Trace.TraceError(", StringComparison.Ordinal);
+        var logEnd = code.IndexOf("CaptureErrorMessage =", logStart, StringComparison.Ordinal);
+        Assert.True(logStart >= 0 && logEnd > logStart, "快捷键保存失败分支必须保留中文结构化日志。");
+        var logBlock = code[logStart..logEnd];
+        Assert.DoesNotContain("CandidateChord", logBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("ShortcutKey", logBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("VirtualKey", logBlock, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AllWindowsAndViewsRenderWithoutXamlErrors()
     {
         var errors = new List<string>();
-        Exception? setupError = null;
 
-        var t = new Thread(() =>
+        WpfTestApplicationHost.Invoke(_ =>
         {
-            try
-            {
-                var app = new Application();
-                // 与真实 App.xaml 完全一致地加载主题（从程序集内嵌 BAML，走 pack URI）。
-                // 这样 clr-namespace 与依赖属性的解析上下文与正式运行完全一致，
-                // 避免松散文件加载对转换器/属性解析产生的误报。
-                foreach (var rel in new[] { "Themes/QuickPhraseTheme.xaml", "Themes/QuickPhraseTheme.Dark.xaml", "Themes/Converters.xaml", "Themes/Controls.xaml", "Themes/PhraseListResources.xaml" })
-                {
-                    // 相对 pack URI 跨程序集引用 QuickPhrase 内嵌的 BAML（Application.LoadComponent
-                    // 不接受绝对 pack URI）。这与正式运行 App.xaml 的加载上下文一致。
-                    var uri = new Uri($"/QuickPhrase;component/{rel}", UriKind.Relative);
-                    app.Resources.MergedDictionaries.Add((ResourceDictionary)Application.LoadComponent(uri));
-                }
-                var fake = new FakeCommandService();
-                var phrase = new Phrase(
-                    Guid.NewGuid(), "示例标题", "示例正文", Guid.NewGuid(),
-                    false, ShortcutMode.None, null,
-                    0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default");
-                var pvm = new PhraseItemViewModel(phrase, "示例分类");
+            var fake = new FakeCommandService();
+            var phrase = new Phrase(
+                Guid.NewGuid(), "示例标题", "示例正文", Guid.NewGuid(),
+                false, ShortcutMode.None, null,
+                0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default");
+            var pvm = new PhraseItemViewModel(phrase, "示例分类");
 
-                var history = new SearchHistoryCoordinator(new EmptySearchHistoryRepository());
-                var package = new PhrasePackageDocument(
-                    new PhrasePackageManifest(
-                        PhrasePackageFormat.Format,
-                        PhrasePackageFormat.Version,
-                        Guid.NewGuid(),
-                        "示例话术包",
-                        DateTimeOffset.UtcNow,
-                        0,
-                        0),
-                    Array.Empty<PhrasePackageCategory>(),
-                    Array.Empty<PhrasePackagePhrase>());
-                var packageSnapshot = new PhrasePackageLocalSnapshot(
-                    Array.Empty<Category>(),
-                    Array.Empty<Phrase>());
-                var importVm = new ImportPhrasePackageViewModel(fake, package, packageSnapshot);
-                var exportVm = new ExportPhrasePackageViewModel(packageSnapshot);
-                TryRender("OnboardingWindow", () => new OnboardingWindow(new OnboardingViewModel(fake, new AppSettings(1, false, false, true, "Alt + Space", "alt+space", false, true))), errors);
-                TryRender("NavigationConfirmDialog", () => new NavigationConfirmDialog(), errors);
-                TryRender("HotkeyCaptureDialog", () => new HotkeyCaptureDialog("Alt + Space"), errors);
-                TryRender("CategoryDialog", () => new CategoryDialog(fake), errors);
-                TryRender("ImportPhrasePackageDialog", () => new ImportPhrasePackageDialog(importVm), errors);
-                TryRender("ExportPhrasePackageDialog", () => new ExportPhrasePackageDialog(exportVm), errors);
-                TryRender("PhraseMoveDialog", () => new PhraseMoveDialog(fake, pvm), errors);
-                TryRender("LibraryView", () => new LibraryView(fake, history), errors);
-                TryRender("SettingsView", () => new SettingsView(fake), errors);
-                TryRender("SettingsWindow", () => new SettingsWindow(fake), errors);
-                TryRender("EditorView", () => new EditorView(fake, pvm), errors);
-                TryRender("LauncherWindow", () => new LauncherWindow(null!, history), errors);
-                TryRender("MainWindow", () => new MainWindow(fake, history, "library"), errors);
-
-                app.Shutdown();
-            }
-            catch (Exception ex)
-            {
-                setupError = ex;
-            }
+            var history = new SearchHistoryCoordinator(new EmptySearchHistoryRepository());
+            var package = new PhrasePackageDocument(
+                new PhrasePackageManifest(
+                    PhrasePackageFormat.Format,
+                    PhrasePackageFormat.Version,
+                    Guid.NewGuid(),
+                    "示例话术包",
+                    DateTimeOffset.UtcNow,
+                    0,
+                    0),
+                Array.Empty<PhrasePackageCategory>(),
+                Array.Empty<PhrasePackagePhrase>());
+            var packageSnapshot = new PhrasePackageLocalSnapshot(
+                Array.Empty<Category>(),
+                Array.Empty<Phrase>());
+            var importVm = new ImportPhrasePackageViewModel(fake, package, packageSnapshot);
+            var exportVm = new ExportPhrasePackageViewModel(packageSnapshot);
+            TryRender("OnboardingWindow", () => new OnboardingWindow(new OnboardingViewModel(fake, new AppSettings(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true))), errors);
+            TryRender("NavigationConfirmDialog", () => new NavigationConfirmDialog(), errors);
+            TryRender(
+                "HotkeyCaptureDialog",
+                () => new HotkeyCaptureDialog(
+                    new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space),
+                    (chord, _) => Task.FromResult(RepositoryResult<AppSettings>.Success(
+                        new AppSettings(1, false, false, true, chord, false, true)))),
+                errors);
+            TryRender("CategoryDialog", () => new CategoryDialog(fake), errors);
+            TryRender("ImportPhrasePackageDialog", () => new ImportPhrasePackageDialog(importVm), errors);
+            TryRender("ExportPhrasePackageDialog", () => new ExportPhrasePackageDialog(exportVm), errors);
+            TryRender("PhraseMoveDialog", () => new PhraseMoveDialog(fake, pvm), errors);
+            TryRender("LibraryView", () => new LibraryView(fake, history), errors);
+            TryRender("SettingsView", () => new SettingsView(fake), errors);
+            TryRender("SettingsWindow", () => new SettingsWindow(fake), errors);
+            TryRender("EditorView", () => new EditorView(fake, pvm), errors);
+            TryRender("LauncherWindow", () => new LauncherWindow(null!, history), errors);
+            TryRender("MainWindow", () => new MainWindow(fake, history, "library"), errors);
         });
-        t.SetApartmentState(ApartmentState.STA);
-        t.Start();
-        t.Join();
-
-        if (setupError is not null)
-            throw new Exception("XAML 校验设置阶段异常:\n" + setupError);
 
         if (errors.Count > 0)
             throw new Exception("以下窗口/视图存在 XAML 渲染错误:\n" + string.Join("\n----\n", errors));
     }
+
+    private static AppSettings CreateSettings(ShortcutChord chord) =>
+        new(1, false, false, true, chord, false, true);
 
     private static int CountOccurrences(string text, string value)
     {
@@ -196,26 +353,40 @@ public class XamlParseValidationTests
 
     private static void TryRender(string name, Func<FrameworkElement> factory, List<string> errors)
     {
+        FrameworkElement? element = null;
+        Grid? host = null;
         try
         {
-            var el = factory();
-            if (el is Window w)
+            element = factory();
+            if (element is Window window)
             {
-                w.ApplyTemplate();
-                w.Measure(new Size(1200, 800));
+                window.ApplyTemplate();
+                window.Measure(new Size(1200, 800));
             }
             else
             {
-                var grid = new Grid();
-                grid.Children.Add(el);
-                grid.Measure(new Size(1200, 800));
-                grid.Arrange(new Rect(0, 0, 1200, 800));
+                host = new Grid();
+                host.Children.Add(element);
+                host.Measure(new Size(1200, 800));
+                host.Arrange(new Rect(0, 0, 1200, 800));
             }
         }
         catch (Exception ex)
         {
             errors.Add($"[{name}] {ex.GetType().Name}:\n{ex}");
         }
+        finally
+        {
+            // 渲染测试共用单一 Application；每个样本结束后主动断开视觉树和绑定，
+            // 避免上一个窗口的延迟布局/绑定任务污染后续模态窗口测试。
+            if (host is not null && element is not null)
+                host.Children.Remove(element);
+
+            if (element is Window window)
+                window.Content = null;
+
+            if (element is not null)
+                element.DataContext = null;
+        }
     }
 }
-

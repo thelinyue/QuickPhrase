@@ -5,7 +5,7 @@
              xmlns:local="clr-namespace:QuickPhrase.Desktop"
              xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework">
 
-    <Grid Height="32" Background="{StaticResource AppBackgroundBrush}">
+    <Grid Height="{StaticResource Size.TitleBar.Height}" Background="{DynamicResource Brush.Background.Window}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
@@ -13,21 +13,20 @@
 
         <!-- 拖动 / 双击最大化 / Snap 区域（非命中可见，走原生 caption）。
              仅显示当前页标题（话术库）。 -->
-        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="{StaticResource Thickness.Gap.Inline.Before.LG}">
             <TextBlock Text="{Binding PageTitle, RelativeSource={RelativeSource AncestorType=local:TitleBar}}"
-                       Style="{StaticResource TextListTitle}" FontSize="14" Margin="0"
-                       Foreground="{StaticResource TextBrush}" />
+                       Style="{StaticResource Style.Text.Title.Small}" Margin="0" />
         </StackPanel>
 
         <!-- 系统按钮（命中可见，可点击） -->
         <StackPanel Grid.Column="1" Orientation="Horizontal"
                     shell:WindowChrome.IsHitTestVisibleInChrome="True">
-            <Button x:Name="MinButton" Style="{StaticResource GhostButton}"
-                    Width="46" Height="32" Click="MinButton_Click" Content="—" />
-            <Button x:Name="MaxButton" Style="{StaticResource GhostButton}"
-                    Width="46" Height="32" Click="MaxButton_Click" Content="▢" />
-            <Button x:Name="CloseButton" Style="{StaticResource GhostButton}"
-                    Width="46" Height="32" Click="CloseButton_Click" Content="✕" />
+            <Button x:Name="MinButton" Style="{StaticResource Style.Button.Ghost.Compact}"
+                    Width="{StaticResource Size.TitleBar.CaptionButton.Width}" Click="MinButton_Click" Content="—" />
+            <Button x:Name="MaxButton" Style="{StaticResource Style.Button.Ghost.Compact}"
+                    Width="{StaticResource Size.TitleBar.CaptionButton.Width}" Click="MaxButton_Click" Content="▢" />
+            <Button x:Name="CloseButton" Style="{StaticResource Style.Button.Ghost.Compact}"
+                    Width="{StaticResource Size.TitleBar.CaptionButton.Width}" Click="CloseButton_Click" Content="✕" />
         </StackPanel>
     </Grid>
 </UserControl>

@@ -114,6 +114,30 @@ public sealed class ArchitectureTests
     }
 
     [Fact]
+    public void DesktopViewsAndViewModelsDoNotDependOnWindowsShortcutService()
+    {
+        var desktopRoot = Path.Combine(Root, "desktop/QuickPhrase.Desktop");
+        var governedDirectories = new[]
+        {
+            Path.Combine(desktopRoot, "Views"),
+            Path.Combine(desktopRoot, "ViewModels"),
+        };
+
+        var offendingFiles = governedDirectories
+            .SelectMany(directory => Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            .Where(path => path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+                        || path.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase))
+            .Where(path => File.ReadAllText(path).Contains("WindowsShortcutService", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(Root, path))
+            .ToArray();
+
+        Assert.True(
+            offendingFiles.Length == 0,
+            "Desktop View/ViewModel 只能依赖 IShortcutService，禁止引用 WindowsShortcutService：" +
+            string.Join(", ", offendingFiles));
+    }
+
+    [Fact]
     public void DesktopViewsDependOnTheInProcessCommandContract()
     {
         var mainWindow = File.ReadAllText(Path.Combine(Root, "desktop/QuickPhrase.Desktop/MainWindow.xaml.cs"));

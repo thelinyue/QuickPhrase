@@ -36,7 +36,7 @@ public sealed class Phase2DataTests
             Assert.Equal(18, (await first.Phrases.ListAsync()).Count);
             var settings = await first.Settings.LoadAsync();
             Assert.False(settings.AutoSend);
-            Assert.Equal("Alt + Space", settings.LauncherShortcutDisplay);
+            Assert.Equal(new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), settings.LauncherShortcut);
         }
 
         await using var reopened = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
@@ -279,7 +279,8 @@ public sealed class Phase2DataTests
         Assert.Equal(8, (await reopened.Categories.ListAsync()).Count);
         await using var verify = new SqliteConnection($"Data Source={options.DatabasePath};Mode=ReadOnly;Pooling=False");
         await verify.OpenAsync();
-        Assert.Equal("104e78a09eb50b361fca0f85c605f56e6d600254d4e43ee04f74a3185b342c25",
+        var expectedChecksum = ComputeChecksum(ReadMigrationSql(typeof(QuickPhraseDataRuntime).Assembly, "002_category_hierarchy"));
+        Assert.Equal(expectedChecksum,
             await ScalarAsync(verify, "SELECT checksum FROM schema_migrations WHERE version = 2;"));
     }
 

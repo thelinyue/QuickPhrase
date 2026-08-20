@@ -1,0 +1,161 @@
+<UserControl x:Class="QuickPhrase.Desktop.DesignSystem.Components.ShortcutInput"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root"
+             Style="{StaticResource Style.Component.ShortcutInput}">
+    <StackPanel>
+        <Button x:Name="CaptureButton"
+                Click="CaptureButton_Click"
+                PreviewKeyDown="CaptureButton_PreviewKeyDown">
+            <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource Style.Button.Secondary}">
+                    <!--
+                        实际键盘焦点停留在内部按钮，因此自动化语义必须从 ShortcutInput 外壳向内转发。
+                        冲突错误优先于说明文本；页面未提供名称时仍保留可读的通用名称。
+                    -->
+                    <Setter Property="AutomationProperties.Name"
+                            Value="{Binding Path=(AutomationProperties.Name), ElementName=Root}" />
+                    <Setter Property="AutomationProperties.HelpText"
+                            Value="{Binding ErrorMessage, ElementName=Root}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Path=(AutomationProperties.Name), ElementName=Root}"
+                                     Value="{x:Null}">
+                            <Setter Property="AutomationProperties.Name" Value="快捷键输入" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Path=(AutomationProperties.Name), ElementName=Root}"
+                                     Value="">
+                            <Setter Property="AutomationProperties.Name" Value="快捷键输入" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ErrorMessage, ElementName=Root}"
+                                     Value="{x:Null}">
+                            <Setter Property="AutomationProperties.HelpText"
+                                    Value="{Binding Path=(AutomationProperties.HelpText), ElementName=Root}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ErrorMessage, ElementName=Root}"
+                                     Value="">
+                            <Setter Property="AutomationProperties.HelpText"
+                                    Value="{Binding Path=(AutomationProperties.HelpText), ElementName=Root}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <Grid>
+                <ItemsControl ItemsSource="{Binding DisplayKeys, ElementName=Root}">
+                    <ItemsControl.Style>
+                        <Style TargetType="ItemsControl">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Chord, ElementName=Root}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsCapturing, ElementName=Root}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ItemsControl.Style>
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Border x:Name="Keycap"
+                                        Style="{StaticResource Style.Keycap}"
+                                        Margin="{StaticResource Thickness.Gap.Inline.XS}">
+                                    <TextBlock Text="{Binding}"
+                                               Style="{StaticResource Style.Text.Mono}"
+                                               Foreground="{Binding Foreground, ElementName=CaptureButton}" />
+                                </Border>
+                                <TextBlock x:Name="Separator"
+                                           Text="+"
+                                           Style="{StaticResource Style.Text.Body.Medium}"
+                                           Foreground="{Binding Foreground, ElementName=CaptureButton}"
+                                           Margin="{StaticResource Thickness.Gap.Inline.XS}"
+                                           VerticalAlignment="Center"
+                                           Visibility="Collapsed" />
+                            </Grid>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding}" Value="+">
+                                    <Setter TargetName="Keycap" Property="Visibility" Value="Collapsed" />
+                                    <Setter TargetName="Separator" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Text="未设置"
+                           Foreground="{Binding Foreground, ElementName=CaptureButton}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Medium}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Setter Property="Foreground" Value="{Binding Foreground, ElementName=CaptureButton}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Chord, ElementName=Root}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsCapturing, ElementName=Root}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <TextBlock Text="请按下新的快捷键">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Medium}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsCapturing, ElementName=Root}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <Border BorderBrush="{DynamicResource Brush.Border.Focus}"
+                        BorderThickness="{StaticResource Thickness.Border.Default}"
+                        CornerRadius="{StaticResource Radius.Control}"
+                        IsHitTestVisible="False">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsKeyboardFocused, ElementName=CaptureButton}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                </Border>
+            </Grid>
+        </Button>
+
+        <TextBlock x:Name="ErrorText"
+                   Text="{Binding ErrorMessage, ElementName=Root}"
+                   Margin="{StaticResource Thickness.Gap.Stack.XS}">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Caption}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Error}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ErrorMessage, ElementName=Root}" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ErrorMessage, ElementName=Root}" Value="">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsEnabled, ElementName=Root}" Value="False">
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+    </StackPanel>
+</UserControl>

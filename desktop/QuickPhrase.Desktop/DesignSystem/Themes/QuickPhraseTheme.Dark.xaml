@@ -1,0 +1,96 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Dark Theme 只声明颜色、画刷与阴影语义；页面和模板不得直接使用 Hex。 -->
+    <!-- Brush 和 Effect 使用 DynamicResource，使未来替换主题字典时无需重建控件模板。 -->
+
+    <Color x:Key="Color.Brand.Primary">#75AEFF</Color>
+    <Color x:Key="Color.Brand.Primary.Hover">#8EC5FF</Color>
+    <Color x:Key="Color.Brand.Primary.Pressed">#5D97E8</Color>
+    <Color x:Key="Color.Brand.BlueStrong">#9BCBFF</Color>
+    <Color x:Key="Color.Brand.Ice">#B9DBFF</Color>
+    <Color x:Key="Color.Brand.IceLight">#1D3550</Color>
+    <Color x:Key="Color.Brand.Gold">#F5B940</Color>
+    <Color x:Key="Color.Brand.Gold.Hover">#FFD76A</Color>
+    <Color x:Key="Color.Background.Window">#141B26</Color>
+    <Color x:Key="Color.Background.Navigation">#182331</Color>
+    <Color x:Key="Color.Surface.Primary">#1D2A39</Color>
+    <Color x:Key="Color.Surface.Secondary">#223142</Color>
+    <Color x:Key="Color.Surface.Elevated">#26384B</Color>
+    <Color x:Key="Color.Text.Primary">#F3F7FC</Color>
+    <Color x:Key="Color.Text.Secondary">#C4D0DE</Color>
+    <Color x:Key="Color.Text.Muted">#93A4B8</Color>
+    <Color x:Key="Color.Text.Disabled">#6F8094</Color>
+    <Color x:Key="Color.Text.OnBrand">#172033</Color>
+    <Color x:Key="Color.Border.Default">#3B4B60</Color>
+    <Color x:Key="Color.Border.Subtle">#2B3A4B</Color>
+    <Color x:Key="Color.Border.Focus">#8EC5FF</Color>
+    <Color x:Key="Color.State.Hover">#1F344E</Color>
+    <Color x:Key="Color.State.Selected">#203F67</Color>
+    <Color x:Key="Color.State.SelectedBorder">#75AEFF</Color>
+    <Color x:Key="Color.State.SelectionIndicator">#75AEFF</Color>
+    <Color x:Key="Color.Status.Success">#58C78F</Color>
+    <Color x:Key="Color.Status.Warning">#F3B85B</Color>
+    <Color x:Key="Color.Status.Error">#F07878</Color>
+    <Color x:Key="Color.Favorite.Inactive">#718198</Color>
+    <Color x:Key="Color.Favorite.Active">#F5B940</Color>
+    <Color x:Key="Color.Overlay">#000000</Color>
+    <Color x:Key="Color.Shadow.Default">#0B111A</Color>
+    <Color x:Key="Color.Phrase.Default">#FFFFFF</Color>
+    <Color x:Key="Color.Phrase.Orange">#FF8839</Color>
+    <Color x:Key="Color.Phrase.Blue">#178BFF</Color>
+    <Color x:Key="Color.Phrase.Magenta">#FF73FF</Color>
+    <Color x:Key="Color.Phrase.Purple">#AF60FF</Color>
+    <Color x:Key="Color.Phrase.Green">#41C028</Color>
+    <Color x:Key="Color.Phrase.Pink">#F67E91</Color>
+    <Color x:Key="Color.Phrase.Teal">#00A8A8</Color>
+    <Color x:Key="Color.Phrase.Tan">#CB9563</Color>
+    <Color x:Key="Color.Phrase.Gray">#5C6772</Color>
+
+    <SolidColorBrush x:Key="Brush.Brand.Primary" Color="{DynamicResource Color.Brand.Primary}" />
+    <SolidColorBrush x:Key="Brush.Brand.Primary.Hover" Color="{DynamicResource Color.Brand.Primary.Hover}" />
+    <SolidColorBrush x:Key="Brush.Brand.Primary.Pressed" Color="{DynamicResource Color.Brand.Primary.Pressed}" />
+    <SolidColorBrush x:Key="Brush.Brand.BlueStrong" Color="{DynamicResource Color.Brand.BlueStrong}" />
+    <SolidColorBrush x:Key="Brush.Brand.Ice" Color="{DynamicResource Color.Brand.Ice}" />
+    <SolidColorBrush x:Key="Brush.Brand.IceLight" Color="{DynamicResource Color.Brand.IceLight}" />
+    <SolidColorBrush x:Key="Brush.Brand.Gold" Color="{DynamicResource Color.Brand.Gold}" />
+    <SolidColorBrush x:Key="Brush.Brand.Gold.Hover" Color="{DynamicResource Color.Brand.Gold.Hover}" />
+    <SolidColorBrush x:Key="Brush.Background.Window" Color="{DynamicResource Color.Background.Window}" />
+    <SolidColorBrush x:Key="Brush.Background.Navigation" Color="{DynamicResource Color.Background.Navigation}" />
+    <SolidColorBrush x:Key="Brush.Surface.Primary" Color="{DynamicResource Color.Surface.Primary}" />
+    <SolidColorBrush x:Key="Brush.Surface.Secondary" Color="{DynamicResource Color.Surface.Secondary}" />
+    <SolidColorBrush x:Key="Brush.Surface.Elevated" Color="{DynamicResource Color.Surface.Elevated}" />
+    <SolidColorBrush x:Key="Brush.Text.Primary" Color="{DynamicResource Color.Text.Primary}" />
+    <SolidColorBrush x:Key="Brush.Text.Secondary" Color="{DynamicResource Color.Text.Secondary}" />
+    <SolidColorBrush x:Key="Brush.Text.Muted" Color="{DynamicResource Color.Text.Muted}" />
+    <SolidColorBrush x:Key="Brush.Text.Disabled" Color="{DynamicResource Color.Text.Disabled}" />
+    <SolidColorBrush x:Key="Brush.Text.OnBrand" Color="{DynamicResource Color.Text.OnBrand}" />
+    <SolidColorBrush x:Key="Brush.Border.Default" Color="{DynamicResource Color.Border.Default}" />
+    <SolidColorBrush x:Key="Brush.Border.Subtle" Color="{DynamicResource Color.Border.Subtle}" />
+    <SolidColorBrush x:Key="Brush.Border.Focus" Color="{DynamicResource Color.Border.Focus}" />
+    <SolidColorBrush x:Key="Brush.State.Hover" Color="{DynamicResource Color.State.Hover}" />
+    <SolidColorBrush x:Key="Brush.State.Selected" Color="{DynamicResource Color.State.Selected}" />
+    <SolidColorBrush x:Key="Brush.State.SelectedBorder" Color="{DynamicResource Color.State.SelectedBorder}" />
+    <SolidColorBrush x:Key="Brush.State.SelectionIndicator" Color="{DynamicResource Color.State.SelectionIndicator}" />
+    <SolidColorBrush x:Key="Brush.Status.Success" Color="{DynamicResource Color.Status.Success}" />
+    <SolidColorBrush x:Key="Brush.Status.Warning" Color="{DynamicResource Color.Status.Warning}" />
+    <SolidColorBrush x:Key="Brush.Status.Error" Color="{DynamicResource Color.Status.Error}" />
+    <SolidColorBrush x:Key="Brush.Favorite.Inactive" Color="{DynamicResource Color.Favorite.Inactive}" />
+    <SolidColorBrush x:Key="Brush.Favorite.Active" Color="{DynamicResource Color.Favorite.Active}" />
+    <SolidColorBrush x:Key="Brush.Overlay" Color="{DynamicResource Color.Overlay}" />
+    <SolidColorBrush x:Key="Brush.Shadow.Default" Color="{DynamicResource Color.Shadow.Default}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Default" Color="{DynamicResource Color.Phrase.Default}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Orange" Color="{DynamicResource Color.Phrase.Orange}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Blue" Color="{DynamicResource Color.Phrase.Blue}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Magenta" Color="{DynamicResource Color.Phrase.Magenta}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Purple" Color="{DynamicResource Color.Phrase.Purple}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Green" Color="{DynamicResource Color.Phrase.Green}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Pink" Color="{DynamicResource Color.Phrase.Pink}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Teal" Color="{DynamicResource Color.Phrase.Teal}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Tan" Color="{DynamicResource Color.Phrase.Tan}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Gray" Color="{DynamicResource Color.Phrase.Gray}" />
+
+    <!-- 默认 Card 不使用阴影；仅为 Elevated、Dialog 和 Popup 提供低噪音层级。 -->
+    <DropShadowEffect x:Key="Effect.Shadow.Elevated" Color="{DynamicResource Color.Shadow.Default}" BlurRadius="18" ShadowDepth="2" Opacity="0.30" Direction="270" />
+    <DropShadowEffect x:Key="Effect.Shadow.Dialog" Color="{DynamicResource Color.Shadow.Default}" BlurRadius="30" ShadowDepth="8" Opacity="0.38" Direction="270" />
+    <DropShadowEffect x:Key="Effect.Shadow.Popup" Color="{DynamicResource Color.Shadow.Default}" BlurRadius="22" ShadowDepth="4" Opacity="0.34" Direction="270" />
+</ResourceDictionary>

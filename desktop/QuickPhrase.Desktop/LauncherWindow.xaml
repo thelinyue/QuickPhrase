@@ -4,10 +4,11 @@
         xmlns:local="clr-namespace:QuickPhrase.Desktop"
         xmlns:shared="clr-namespace:QuickPhrase.Desktop.Views.Shared"
         Title=""
-        Width="760"
-        Height="300"
-        MinHeight="260"
-        MaxHeight="520"
+        Width="{StaticResource Size.Launcher.Width}"
+        Height="{StaticResource Size.Launcher.Height}"
+        MinWidth="{StaticResource Size.Launcher.MinimumWidth}"
+        MinHeight="{StaticResource Size.Launcher.MinimumHeight}"
+        MaxHeight="{StaticResource Size.Launcher.MaximumHeight}"
         WindowStartupLocation="Manual"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
@@ -19,7 +20,7 @@
         SizeChanged="OnWindowSizeChanged">
     <Window.Resources>
         <DataTemplate x:Key="LauncherPhraseTemplate">
-            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource PhraseListRowTemplate}">
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Template.Phrase.Row}">
                 <ContentControl.ContextMenu>
                     <ContextMenu Opened="OnContextMenuOpened">
                         <MenuItem Header="发送到输入区" InputGestureText="双击" Click="OnInsertContextMenuClick" />
@@ -29,14 +30,9 @@
             </ContentControl>
         </DataTemplate>
     </Window.Resources>
-    <Border CornerRadius="{StaticResource RadiusLauncher}"
-            Background="{StaticResource SurfaceBrush}"
-            BorderBrush="{StaticResource SeparatorBrush}"
-            BorderThickness="1"
-            Padding="{StaticResource SpaceMd}">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="20" ShadowDepth="6" Opacity="0.18" Color="{StaticResource ShadowColor}" />
-        </Border.Effect>
+    <Border Style="{StaticResource Style.Card.Elevated}"
+            CornerRadius="{StaticResource Radius.Launcher}"
+            Padding="{StaticResource Thickness.LG}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -46,10 +42,7 @@
 
             <TextBox x:Name="QueryBox"
                      Grid.Row="0"
-                     Style="{StaticResource SearchBoxStyle}"
-                     Background="{StaticResource WindowBackgroundBrush}"
-                     BorderBrush="{StaticResource SeparatorBrush}"
-                     Foreground="{StaticResource TextPrimaryBrush}"
+                     Style="{StaticResource Style.Input.Search}"
                      Tag="搜索标题、正文或拼音..."
                      AutomationProperties.Name="Launcher搜索框"
                      GotKeyboardFocus="QueryBox_GotKeyboardFocus"
@@ -71,10 +64,9 @@
 
             <ListBox x:Name="ResultsList"
                      Grid.Row="1"
-                     Margin="0,12,0,8"
+                     Margin="{StaticResource Thickness.Launcher.Section}"
                      BorderThickness="0"
                      Background="Transparent"
-                     Foreground="{StaticResource TextPrimaryBrush}"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.CanContentScroll="True"
@@ -85,17 +77,17 @@
                      ItemTemplate="{StaticResource LauncherPhraseTemplate}"
                      local:PhraseListActions.ShowSendButton="False"
                      local:PhraseListActions.TitleColumnWidth="100"
-                     ItemContainerStyle="{StaticResource PhraseListItemContainerStyle}" />
+                     ItemContainerStyle="{StaticResource Style.ListItem.Phrase}" />
 
             <ScrollViewer x:Name="PreviewHost"
                           Grid.Row="1"
-                          Margin="2,12,2,8"
+                          Margin="{StaticResource Thickness.Launcher.Section}"
                           VerticalScrollBarVisibility="Auto"
                           Visibility="Collapsed">
                 <StackPanel>
-                    <TextBlock x:Name="PreviewTitle" Style="{StaticResource TextH2}" TextWrapping="Wrap" />
-                    <TextBlock x:Name="PreviewCategory" Style="{StaticResource TextCaption}" Margin="0,4,0,10" />
-                    <TextBlock x:Name="PreviewContent" Style="{StaticResource TextBody}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="PreviewTitle" Style="{StaticResource Style.Text.Title.Medium}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="PreviewCategory" Style="{StaticResource Style.Text.Caption}" Margin="{StaticResource Thickness.Launcher.Preview}" />
+                    <TextBlock x:Name="PreviewContent" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" />
                 </StackPanel>
             </ScrollViewer>
 
@@ -123,23 +115,23 @@
                 <StackPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
                     <TextBlock x:Name="QueueText"
                                Visibility="Collapsed"
-                               Style="{StaticResource TextEyebrow}"
-                               Foreground="{StaticResource BrandPrimaryBrush}"
+                               Style="{StaticResource Style.Text.Label}"
+                               Foreground="{DynamicResource Brush.Brand.Primary}"
                                HorizontalAlignment="Right" />
                     <TextBlock x:Name="TargetText"
                                Text="未捕获目标 · 仅支持预览或安全复制"
-                               Style="{StaticResource TextEyebrow}"
+                               Style="{StaticResource Style.Text.Label}"
                                HorizontalAlignment="Right" />
                     <TextBlock x:Name="CapabilityText"
                                Text="无目标 · 插入/发送不可用"
-                               Style="{StaticResource TextCaption}"
+                               Style="{StaticResource Style.Text.Caption}"
                                HorizontalAlignment="Right"
-                               Margin="0,3,0,0" />
+                               Margin="{StaticResource Thickness.Gap.Stack.Before.XS}" />
                 </StackPanel>
-                <TextBlock Text="↑ ↓ 选择" Style="{StaticResource TextCaption}" Margin="0,0,14,0" />
-                <TextBlock x:Name="InsertHintText" Text="Enter 插入" Style="{StaticResource TextEyebrow}" Foreground="{StaticResource BrandPrimaryBrush}" Margin="0,0,14,0" />
-                <TextBlock x:Name="SendHintText" Text="自动发送不支持" Style="{StaticResource TextCaption}" Margin="0,0,14,0" />
-                <TextBlock x:Name="PreviewHintText" Text="Tab 预览 · Esc 关闭" Style="{StaticResource TextCaption}" />
+                <TextBlock Text="↑ ↓ 选择" Style="{StaticResource Style.Text.Caption}" Margin="{StaticResource Thickness.Launcher.FooterHint}" />
+                <TextBlock x:Name="InsertHintText" Text="Enter 插入" Style="{StaticResource Style.Text.Label}" Foreground="{DynamicResource Brush.Brand.Primary}" Margin="{StaticResource Thickness.Launcher.FooterHint}" />
+                <TextBlock x:Name="SendHintText" Text="自动发送不支持" Style="{StaticResource Style.Text.Caption}" Margin="{StaticResource Thickness.Launcher.FooterHint}" />
+                <TextBlock x:Name="PreviewHintText" Text="Tab 预览 · Esc 关闭" Style="{StaticResource Style.Text.Caption}" />
             </DockPanel>
         </Grid>
     </Border>

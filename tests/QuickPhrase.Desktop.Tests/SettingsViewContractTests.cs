@@ -9,41 +9,48 @@ public class SettingsViewContractTests
     [Fact]
     public void SettingsView_UsesImmediateApplySurfaceWithoutGlobalActions()
     {
-        var root = FindRepoRoot();
-        var xaml = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "SettingsView.xaml"));
+        var xaml = ReadDesktopFile("Views", "SettingsView.xaml");
 
         Assert.DoesNotContain("Content=\"保存\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"取消\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Style=\"{StaticResource KeyCap}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AppBackgroundBrush", xaml, StringComparison.Ordinal);
-        Assert.Contains("SurfaceBrush", xaml, StringComparison.Ordinal);
-        Assert.Contains("BorderSubtleBrush", xaml, StringComparison.Ordinal);
+        Assert.Contains("<designSystem:ShortcutInput", xaml, StringComparison.Ordinal);
+        Assert.Contains("{DynamicResource Brush.Background.Window}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{DynamicResource Brush.Surface.Primary}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{DynamicResource Brush.Border.Subtle}", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void SettingsView_UsesUnifiedControlsAndPreservesActionEntries()
+    public void SettingsView_UsesSettingItemForEverySettingAndPreservesActions()
     {
-        var root = FindRepoRoot();
-        var xaml = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "SettingsView.xaml"));
+        var xaml = ReadDesktopFile("Views", "SettingsView.xaml");
 
         var switchCount = Regex.Matches(xaml, "<CheckBox\\b", RegexOptions.CultureInvariant).Count;
-        var styledSwitchCount = Regex.Matches(xaml, "Style=\"\\{StaticResource ToggleSwitchStyle\\}\"", RegexOptions.CultureInvariant).Count;
+        var styledSwitchCount = Regex.Matches(xaml, "Style=\"\\{StaticResource Style\\.Switch\\.Default\\}\"", RegexOptions.CultureInvariant).Count;
         Assert.True(switchCount > 0);
         Assert.Equal(switchCount, styledSwitchCount);
-        Assert.Contains("StaticResource SecondaryButton", xaml, StringComparison.Ordinal);
+        Assert.Equal(10, Regex.Matches(xaml, "<designSystem:SettingItem(?:\\s|>)", RegexOptions.CultureInvariant).Count);
+        Assert.DoesNotContain("<Border Style=\"{StaticResource SettingRow}\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Border Style=\"{StaticResource SettingAction}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Style=\"{StaticResource Style.Button.Secondary}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("DataManagement.RequestImportCommand", xaml, StringComparison.Ordinal);
         Assert.Contains("DataManagement.RequestExportCommand", xaml, StringComparison.Ordinal);
         Assert.Contains("RestartOnboardingCommand", xaml, StringComparison.Ordinal);
+        Assert.Contains("<designSystem:ShortcutInput", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Alt + Space\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Ctrl + Space\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"自定义\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("LauncherShortcut", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("LauncherShortcutDisplay", xaml, StringComparison.Ordinal);
+        Assert.Contains("ApplyRecommendedShortcut_Click", xaml, StringComparison.Ordinal);
+        Assert.Contains("ApplyAlternateShortcut_Click", xaml, StringComparison.Ordinal);
+        Assert.Contains("EditCustomShortcut_Click", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
     public void SettingsView_UsesSectionNavigationInsteadOfOneLongForm()
     {
-        var root = FindRepoRoot();
-        var xamlPath = Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "SettingsView.xaml");
-        var codeBehindPath = Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "SettingsView.xaml.cs");
-        var xaml = File.ReadAllText(xamlPath);
-        var codeBehind = File.ReadAllText(codeBehindPath);
+        var xaml = ReadDesktopFile("Views", "SettingsView.xaml");
+        var codeBehind = ReadDesktopFile("Views", "SettingsView.xaml.cs");
 
         Assert.Contains("x:Name=\"SettingsNavigation\"", xaml, StringComparison.Ordinal);
         Assert.Contains("SelectionChanged=\"SettingsNavigation_SelectionChanged\"", xaml, StringComparison.Ordinal);
@@ -52,29 +59,91 @@ public class SettingsViewContractTests
         Assert.Contains("Content=\"发送行为\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"应用适配\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"数据管理\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"GeneralSection\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"HotkeysSection\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"DeliverySection\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AdaptersSection\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"DataManagementSection\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Visibility=\"Visible\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Visibility=\"Collapsed\"", xaml, StringComparison.Ordinal);
+        Assert.Equal(5, Regex.Matches(xaml, "x:Name=\"(?:General|Hotkeys|Delivery|Adapters|DataManagement)Section\"", RegexOptions.CultureInvariant).Count);
         Assert.Contains("已自动保存", xaml, StringComparison.Ordinal);
         Assert.Contains("SettingsNavigation_SelectionChanged", codeBehind, StringComparison.Ordinal);
-        Assert.Equal(5, Regex.Matches(xaml, "Style=\"\\{StaticResource SettingsSection\\}\"", RegexOptions.CultureInvariant).Count);
-        Assert.DoesNotContain("CornerRadius=\"{StaticResource RadiusSmall}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Style=\"{StaticResource Style.ListItem.Navigation}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Width=\"{StaticResource Size.Settings.Sidebar.GridLength}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("MaxWidth=\"{StaticResource Size.Settings.Content.Maximum}\"", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SettingsView_EachModuleUsesTheSharedPageSkeleton()
+    {
+        var xaml = ReadDesktopFile("Views", "SettingsView.xaml");
+        var sectionNames = new[] { "GeneralSection", "HotkeysSection", "DeliverySection", "AdaptersSection", "DataManagementSection" };
+
+        foreach (var sectionName in sectionNames)
+        {
+            var start = xaml.IndexOf($"x:Name=\"{sectionName}\"", StringComparison.Ordinal);
+            Assert.True(start >= 0, $"未找到设置模块 {sectionName}。");
+            var end = xaml.Length;
+            foreach (var otherName in sectionNames)
+            {
+                var candidate = xaml.IndexOf($"x:Name=\"{otherName}\"", start + 1, StringComparison.Ordinal);
+                if (candidate >= 0 && candidate < end)
+                    end = candidate;
+            }
+
+            var section = xaml[start..end];
+            Assert.Contains("Style.Text.Title.Large", section, StringComparison.Ordinal);
+            Assert.Contains("Style.Text.Body.Small", section, StringComparison.Ordinal);
+            Assert.Contains("Style.Setting.Group", section, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void SettingsView_ContainsNoLegacyVisualResourcesOrStandardVisualLiterals()
+    {
+        var xaml = ReadDesktopFile("Views", "SettingsView.xaml");
+        var legacyKeys = new[]
+        {
+            "SettingsSidebarWidth", "SettingsContentMaxWidth", "SettingsPagePadding",
+            "SettingsHeaderTitle", "SettingsHeaderDescription", "SettingsSectionTitle",
+            "SettingsGroup", "SettingRow", "SettingAction", "TextBody", "TextCaption",
+            "TextMutedBrush", "DangerBrush", "ToggleSwitchStyle", "NavigationItem",
+        };
+
+        foreach (var key in legacyKeys)
+            Assert.DoesNotContain($"{{StaticResource {key}}}", xaml, StringComparison.Ordinal);
+
+        Assert.DoesNotMatch(new Regex("#[0-9A-Fa-f]{3,8}", RegexOptions.CultureInvariant), xaml);
+        Assert.DoesNotContain("FontSize=", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("CornerRadius=", xaml, StringComparison.Ordinal);
+        Assert.DoesNotMatch(new Regex("(?:Margin|Padding|MinWidth|MaxWidth|Width|Height)=\"[1-9][0-9]*(?:,|\")", RegexOptions.CultureInvariant), xaml);
+    }
+
+    [Fact]
+    public void SettingsResources_ExposeSemanticLayoutTokensStylesAndComponent()
+    {
+        var sizes = ReadDesktopFile("DesignSystem", "Tokens", "Sizes.xaml");
+        var thickness = ReadDesktopFile("DesignSystem", "Tokens", "Thickness.xaml");
+        var surfaces = ReadDesktopFile("DesignSystem", "Styles", "Surfaces.xaml");
+        var component = ReadDesktopFile("DesignSystem", "Components", "SettingItem.xaml");
+
+        Assert.Contains("x:Key=\"Size.Settings.Sidebar.GridLength\"", sizes, StringComparison.Ordinal);
+        Assert.Contains("x:Key=\"Size.Settings.Content.Maximum\"", sizes, StringComparison.Ordinal);
+        Assert.Contains("x:Key=\"Thickness.Settings.Page\"", thickness, StringComparison.Ordinal);
+        Assert.Contains("x:Key=\"Style.Setting.Group\"", surfaces, StringComparison.Ordinal);
+        Assert.Contains("x:Key=\"Style.Setting.Row\"", surfaces, StringComparison.Ordinal);
+        Assert.Contains("Style.Component.SettingItem", component, StringComparison.Ordinal);
     }
 
     [Fact]
     public void SettingsWindow_DoesNotGuardCloseWithUnsavedSettings()
     {
-        var root = FindRepoRoot();
-        var code = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "SettingsWindow.xaml.cs"));
+        var code = ReadDesktopFile("SettingsWindow.xaml.cs");
 
         Assert.DoesNotContain("HasUnsavedChanges", code, StringComparison.Ordinal);
         Assert.DoesNotContain("NavigationConfirmDialog", code, StringComparison.Ordinal);
         Assert.DoesNotContain("SaveAndLeave", code, StringComparison.Ordinal);
         Assert.Contains("ApplyPendingChangesAsync", code, StringComparison.Ordinal);
+    }
+
+    private static string ReadDesktopFile(params string[] segments)
+    {
+        var path = Path.Combine(new[] { FindRepoRoot(), "desktop", "QuickPhrase.Desktop" }.Concat(segments).ToArray());
+        return File.ReadAllText(path);
     }
 
     private static string FindRepoRoot()

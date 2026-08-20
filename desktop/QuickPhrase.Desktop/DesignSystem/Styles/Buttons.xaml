@@ -1,0 +1,198 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+        Button 基础模板只负责统一几何、内容布局、焦点环和通用状态。
+        禁用态直接替换语义前景/背景/边框，不降低整个控件 Opacity，确保文字仍可辨认。
+    -->
+    <Style x:Key="Style.Button.Base" TargetType="Button">
+        <Setter Property="Height" Value="{StaticResource Size.Control.Default}" />
+        <Setter Property="Padding" Value="{StaticResource Thickness.Control.Button.Default}" />
+        <Setter Property="BorderThickness" Value="{StaticResource Thickness.Border.Default}" />
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+        <Setter Property="FontSize" Value="{StaticResource Typography.Body.Large.FontSize}" />
+        <Setter Property="FontWeight" Value="{StaticResource Typography.Label.FontWeight}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{StaticResource Radius.Control}"
+                            SnapsToDevicePixels="True">
+                        <Grid>
+                            <Border x:Name="HoverLayer"
+                                    Background="{DynamicResource Brush.State.Hover}"
+                                    CornerRadius="{StaticResource Radius.Control}"
+                                    IsHitTestVisible="False"
+                                    Opacity="0" />
+                            <Border x:Name="PressedLayer"
+                                    Background="{DynamicResource Brush.State.Selected}"
+                                    CornerRadius="{StaticResource Radius.Control}"
+                                    IsHitTestVisible="False"
+                                    Opacity="0" />
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              RecognizesAccessKey="True" />
+                            <Border x:Name="FocusRing"
+                                    BorderBrush="{DynamicResource Brush.Border.Focus}"
+                                    BorderThickness="{StaticResource Thickness.Border.Default}"
+                                    CornerRadius="{StaticResource Radius.Control}"
+                                    IsHitTestVisible="False"
+                                    Visibility="Collapsed" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="HoverLayer" Property="Opacity" Value="0.18" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="HoverLayer" Property="Opacity" Value="0" />
+                            <Setter TargetName="PressedLayer" Property="Opacity" Value="0.28" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="FocusRing" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Background" Value="{DynamicResource Brush.Surface.Secondary}" />
+                            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />
+                            <Setter Property="Cursor" Value="Arrow" />
+                            <Setter TargetName="HoverLayer" Property="Opacity" Value="0" />
+                            <Setter TargetName="PressedLayer" Property="Opacity" Value="0" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="Style.Button.Base.Compact" TargetType="Button" BasedOn="{StaticResource Style.Button.Base}">
+        <Setter Property="Height" Value="{StaticResource Size.Control.Compact}" />
+        <Setter Property="Padding" Value="{StaticResource Thickness.Control.Button.Compact}" />
+    </Style>
+
+    <Style x:Key="Style.Button.Primary" TargetType="Button" BasedOn="{StaticResource Style.Button.Base}">
+        <Setter Property="Background" Value="{DynamicResource Brush.Brand.BlueStrong}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Brand.BlueStrong}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnBrand}" />
+        <Style.Triggers>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsEnabled" Value="True" />
+                    <Condition Property="IsMouseOver" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{DynamicResource Brush.Brand.Primary.Hover}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Brand.Primary.Hover}" />
+            </MultiTrigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsEnabled" Value="True" />
+                    <Condition Property="IsPressed" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{DynamicResource Brush.Brand.Primary.Pressed}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Brand.Primary.Pressed}" />
+            </MultiTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="Style.Button.Secondary" TargetType="Button" BasedOn="{StaticResource Style.Button.Base}">
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Primary}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Style.Triggers>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsEnabled" Value="True" />
+                    <Condition Property="IsMouseOver" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{DynamicResource Brush.State.Hover}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.State.SelectedBorder}" />
+            </MultiTrigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsEnabled" Value="True" />
+                    <Condition Property="IsPressed" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{DynamicResource Brush.State.Selected}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
+            </MultiTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="Style.Button.Ghost" TargetType="Button" BasedOn="{StaticResource Style.Button.Base}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+        <Style.Triggers>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsEnabled" Value="True" />
+                    <Condition Property="IsMouseOver" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{DynamicResource Brush.State.Hover}" />
+                <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+            </MultiTrigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsEnabled" Value="True" />
+                    <Condition Property="IsPressed" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{DynamicResource Brush.State.Selected}" />
+                <Setter Property="Foreground" Value="{DynamicResource Brush.Brand.Primary.Pressed}" />
+            </MultiTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="Style.Button.Danger" TargetType="Button" BasedOn="{StaticResource Style.Button.Base}">
+        <Setter Property="Background" Value="{DynamicResource Brush.Status.Error}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Status.Error}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnBrand}" />
+        <Style.Triggers>
+            <!-- Danger 沿用基础模板的 Hover/Pressed 覆盖层；条件显式排除 Disabled。 -->
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsEnabled" Value="True" />
+                    <Condition Property="IsMouseOver" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{DynamicResource Brush.Status.Error}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Status.Error}" />
+            </MultiTrigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsEnabled" Value="True" />
+                    <Condition Property="IsPressed" Value="True" />
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="{DynamicResource Brush.Status.Error}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Status.Error}" />
+            </MultiTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="Style.Button.Primary.Compact" TargetType="Button" BasedOn="{StaticResource Style.Button.Primary}">
+        <Setter Property="Height" Value="{StaticResource Size.Control.Compact}" />
+        <Setter Property="Padding" Value="{StaticResource Thickness.Control.Button.Compact}" />
+    </Style>
+    <Style x:Key="Style.Button.Secondary.Compact" TargetType="Button" BasedOn="{StaticResource Style.Button.Secondary}">
+        <Setter Property="Height" Value="{StaticResource Size.Control.Compact}" />
+        <Setter Property="Padding" Value="{StaticResource Thickness.Control.Button.Compact}" />
+    </Style>
+    <Style x:Key="Style.Button.Ghost.Compact" TargetType="Button" BasedOn="{StaticResource Style.Button.Ghost}">
+        <Setter Property="Height" Value="{StaticResource Size.Control.Compact}" />
+        <Setter Property="Padding" Value="{StaticResource Thickness.Control.Button.Compact}" />
+    </Style>
+    <Style x:Key="Style.Button.Danger.Compact" TargetType="Button" BasedOn="{StaticResource Style.Button.Danger}">
+        <Setter Property="Height" Value="{StaticResource Size.Control.Compact}" />
+        <Setter Property="Padding" Value="{StaticResource Thickness.Control.Button.Compact}" />
+    </Style>
+
+    <Style x:Key="Style.Button.Icon" TargetType="Button" BasedOn="{StaticResource Style.Button.Ghost.Compact}">
+        <Setter Property="Width" Value="{StaticResource Size.Button.Icon.Width}" />
+        <Setter Property="Height" Value="{StaticResource Size.Button.Icon.Height}" />
+        <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
+    </Style>
+</ResourceDictionary>

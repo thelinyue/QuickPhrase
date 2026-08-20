@@ -6,14 +6,13 @@ namespace QuickPhrase.Desktop.Services
 {
     /// <summary>
     /// 管理应用 Light/Dark 主题切换。订阅 <see cref="PropertyChanged"/> 后，
-    /// 业务侧（设置页/快捷键）可实时切换。切换时合并对应 ResourceDictionary
-    /// 到 Application.Current.Resources.MergedDictionaries 中，
-    /// 晚合并的同名 key 会覆盖早合并的，因此暗色字典放在亮色之后即可生效。
+    /// 业务侧可实时切换。切换只替换 QuickPhraseTheme 聚合器中的颜色主题字典，
+    /// 不重建 Typography、间距、圆角、尺寸、动效和控件 Style。
     /// </summary>
     public sealed class ThemeService : INotifyPropertyChanged
     {
-        public const string LightDictionaryPath = "Themes/QuickPhraseTheme.xaml";
-        public const string DarkDictionaryPath = "Themes/QuickPhraseTheme.Dark.xaml";
+        public const string LightDictionaryPath = "DesignSystem/Themes/QuickPhraseTheme.Light.xaml";
+        public const string DarkDictionaryPath = "DesignSystem/Themes/QuickPhraseTheme.Dark.xaml";
 
         private static ThemeService? _instance;
         private static readonly object SyncRoot = new();
@@ -62,41 +61,40 @@ namespace QuickPhrase.Desktop.Services
         private static void Apply(AppTheme theme)
         {
             var app = System.Windows.Application.Current;
-            if (app == null) return;
+            if (app is null)
+                return;
 
-            var source = theme == AppTheme.Dark
-                ? DarkDictionaryPath
-                : LightDictionaryPath;
+            var themeAggregator = app.Resources.MergedDictionaries.FirstOrDefault(dictionary =>
+                dictionary.Source?.ToString().EndsWith(
+                    "Themes/QuickPhraseTheme.xaml",
+                    StringComparison.OrdinalIgnoreCase) == true);
+            if (themeAggregator is null)
+                return;
 
-            // 切换到 Dark 时移除 Light 颜色覆盖；切换到 Light 时移除 Dark 覆盖
-            // 仅移除追加的覆盖字典，保留 App.xaml 中最初加载的 QuickPhraseTheme.xaml
-            for (var i = app.Resources.MergedDictionaries.Count - 1; i >= 0; i--)
+            var dictionaries = themeAggregator.MergedDictionaries;
+            var themeIndex = -1;
+            for (var index = 0; index < dictionaries.Count; index++)
             {
-                var src = app.Resources.MergedDictionaries[i].Source?.ToString();
-                if (src == null) continue;
-                var isDarkOverlay = src.EndsWith("QuickPhraseTheme.Dark.xaml", StringComparison.OrdinalIgnoreCase);
-                var isLightOverlay = src.EndsWith("QuickPhraseTheme.xaml", StringComparison.OrdinalIgnoreCase);
-                if (!isDarkOverlay && !isLightOverlay) continue;
-
-                // 只移除追加的同名覆盖；App.xaml 里那一份原始 Theme 字典始终保留
-                // 作为 Typography/Spacing/Radius/Height 的兜底来源。
-                // 由于 App.xaml 直接加载的 Theme 与 ThemeService 加载的 source 字符串一致，
-                // 这里无法直接区分。采取保守策略：移除追加的（位置 > 0）的同名 Dark 字典。
-                if (i > 0 && theme == AppTheme.Light && isDarkOverlay)
+                var source = dictionaries[index].Source?.ToString();
+                if (source?.EndsWith("QuickPhraseTheme.Light.xaml", StringComparison.OrdinalIgnoreCase) == true
+                    || source?.EndsWith("QuickPhraseTheme.Dark.xaml", StringComparison.OrdinalIgnoreCase) == true)
                 {
-                    app.Resources.MergedDictionaries.RemoveAt(i);
+                    themeIndex = index;
+                    break;
                 }
             }
 
-            // 仅在 Dark 时追加覆盖字典；Light 已在 App.xaml 中加载
-            if (theme == AppTheme.Dark)
+            var sourcePath = theme == AppTheme.Dark ? DarkDictionaryPath : LightDictionaryPath;
+            var themeDictionary = new System.Windows.ResourceDictionary
             {
-                var overlay = new System.Windows.ResourceDictionary
-                {
-                    Source = new Uri(source, UriKind.Relative)
-                };
-                app.Resources.MergedDictionaries.Add(overlay);
-            }
+                Source = new Uri($"/QuickPhrase;component/{sourcePath}", UriKind.Relative),
+            };
+
+            // 只替换聚合字典中的颜色/Brush/Shadow 层；Typography、Thickness、Radius、Size 和 Motion 保持同一实例。
+            if (themeIndex >= 0)
+                dictionaries[themeIndex] = themeDictionary;
+            else
+                dictionaries.Add(themeDictionary);
         }
 
         private void OnPropertyChanged([CallerMemberName] string? name = null)

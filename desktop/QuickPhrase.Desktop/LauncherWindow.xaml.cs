@@ -74,7 +74,7 @@ public partial class LauncherWindow : Window
             ? "Enter 选择到练习区"
             : hasTarget ? "Enter 插入" : "Enter 安全复制";
         SendHintText.Text = "自动发送不支持";
-        SendHintText.Foreground = (System.Windows.Media.Brush)FindResource("MutedTextBrush");
+
         QueryBox.Text = initialQuery;
         _preview = false;
         RefreshResults();

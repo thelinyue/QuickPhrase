@@ -52,13 +52,16 @@ public sealed record Phrase(
     string ColorKey = "default",
     int SortOrder = 0);
 
+/// <summary>
+/// 应用设置聚合。Launcher 快捷键只以平台无关的 <see cref="ShortcutChord"/> 作为领域真值；
+/// 持久化行版本仍独立负责乐观并发，不能与设置文档 schemaVersion 混用。
+/// </summary>
 public sealed record AppSettings(
     long Version,
     bool LaunchOnStartup,
     bool StartMinimized,
     bool StayInTrayOnClose,
-    string LauncherShortcutDisplay,
-    string LauncherShortcutNormalized,
+    ShortcutChord LauncherShortcut,
     bool AutoSend,
     bool ClipboardCompatibilityMode,
     bool HasCompletedOnboarding = false,
@@ -405,10 +408,4 @@ public interface ITextDeliveryStateMachine
 
 
 // TEMP_MARKER_0819
-
-
-
-
-
-
 

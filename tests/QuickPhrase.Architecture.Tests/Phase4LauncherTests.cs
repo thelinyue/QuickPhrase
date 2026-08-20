@@ -29,21 +29,13 @@ public sealed class Phase4LauncherTests
     }
 
     [Fact]
-    public void WindowsHotkeyChordParsesCanonicalShortcut()
+    public void LegacyStringAndVirtualKeyHotkeyApiIsRemoved()
     {
-        var result = WindowsHotkeyChord.TryParse("Ctrl + Alt + 2", out var chord);
+        var platformAssembly = typeof(WindowsShortcutService).Assembly;
 
-        Assert.True(result);
-        Assert.Equal("Ctrl+Alt+2", chord.Normalized);
-        Assert.Equal((uint)'2', chord.VirtualKey);
-        Assert.NotEqual(0u, chord.Modifiers);
-    }
-
-    [Fact]
-    public void WindowsHotkeyChordRejectsShortcutWithoutModifier()
-    {
-        var result = WindowsHotkeyChord.TryParse("Space", out _);
-        Assert.False(result);
+        Assert.Null(platformAssembly.GetType("QuickPhrase.Platform.Windows.WindowsHotkeyChord"));
+        Assert.Null(platformAssembly.GetType("QuickPhrase.Platform.Windows.WindowsHotkeyService"));
+        Assert.Contains(typeof(IShortcutService), typeof(WindowsShortcutService).GetInterfaces());
     }
 
     [Fact]

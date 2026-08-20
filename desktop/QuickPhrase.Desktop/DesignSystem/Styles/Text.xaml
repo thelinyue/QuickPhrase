@@ -1,0 +1,84 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 文字 Style 只组合 Typography Token；颜色通过主题语义 Brush 动态解析。 -->
+    <Style x:Key="Style.Text.Title.Large" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+        <Setter Property="FontSize" Value="{StaticResource Typography.Title.Large.FontSize}" />
+        <Setter Property="FontWeight" Value="{StaticResource Typography.Title.Large.FontWeight}" />
+        <Setter Property="LineHeight" Value="{StaticResource Typography.Title.Large.LineHeight}" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+    </Style>
+
+    <Style x:Key="Style.Text.Title.Medium" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+        <Setter Property="FontSize" Value="{StaticResource Typography.Title.Medium.FontSize}" />
+        <Setter Property="FontWeight" Value="{StaticResource Typography.Title.Medium.FontWeight}" />
+        <Setter Property="LineHeight" Value="{StaticResource Typography.Title.Medium.LineHeight}" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+    </Style>
+
+    <Style x:Key="Style.Text.Title.Small" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+        <Setter Property="FontSize" Value="{StaticResource Typography.Title.Small.FontSize}" />
+        <Setter Property="FontWeight" Value="{StaticResource Typography.Title.Small.FontWeight}" />
+        <Setter Property="LineHeight" Value="{StaticResource Typography.Title.Small.LineHeight}" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+    </Style>
+
+    <Style x:Key="Style.Text.Body.Large" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+        <Setter Property="FontSize" Value="{StaticResource Typography.Body.Large.FontSize}" />
+        <Setter Property="FontWeight" Value="{StaticResource Typography.Body.Large.FontWeight}" />
+        <Setter Property="LineHeight" Value="{StaticResource Typography.Body.Large.LineHeight}" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+    </Style>
+
+    <Style x:Key="Style.Text.Body.Medium" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+        <Setter Property="FontSize" Value="{StaticResource Typography.Body.Medium.FontSize}" />
+        <Setter Property="FontWeight" Value="{StaticResource Typography.Body.Medium.FontWeight}" />
+        <Setter Property="LineHeight" Value="{StaticResource Typography.Body.Medium.LineHeight}" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+    </Style>
+
+    <Style x:Key="Style.Text.Body.Small" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+        <Setter Property="FontSize" Value="{StaticResource Typography.Body.Small.FontSize}" />
+        <Setter Property="FontWeight" Value="{StaticResource Typography.Body.Small.FontWeight}" />
+        <Setter Property="LineHeight" Value="{StaticResource Typography.Body.Small.LineHeight}" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+    </Style>
+
+    <Style x:Key="Style.Text.Caption" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+        <Setter Property="FontSize" Value="{StaticResource Typography.Caption.FontSize}" />
+        <Setter Property="FontWeight" Value="{StaticResource Typography.Caption.FontWeight}" />
+        <Setter Property="LineHeight" Value="{StaticResource Typography.Caption.LineHeight}" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Muted}" />
+    </Style>
+
+    <Style x:Key="Style.Text.Label" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+        <Setter Property="FontSize" Value="{StaticResource Typography.Label.FontSize}" />
+        <Setter Property="FontWeight" Value="{StaticResource Typography.Label.FontWeight}" />
+        <Setter Property="LineHeight" Value="{StaticResource Typography.Label.LineHeight}" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+    </Style>
+
+    <Style x:Key="Style.Text.Mono" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.Mono}" />
+        <Setter Property="FontSize" Value="{StaticResource Typography.Mono.FontSize}" />
+        <Setter Property="FontWeight" Value="{StaticResource Typography.Mono.FontWeight}" />
+        <Setter Property="LineHeight" Value="{StaticResource Typography.Mono.LineHeight}" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+    </Style>
+</ResourceDictionary>

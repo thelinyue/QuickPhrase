@@ -20,11 +20,12 @@ public sealed class LauncherListLayoutTests
         var launcher = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
         var app = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "App.xaml"));
 
-        Assert.Contains("PhraseListRowTemplate", library);
+        Assert.Contains("Template.Phrase.Row", library);
         Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", library);
-        Assert.Contains("PhraseListRowTemplate", launcher);
+        Assert.Contains("Template.Phrase.Row", launcher);
         Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", launcher);
-        Assert.Contains("Themes/PhraseListResources.xaml", app);
+        Assert.DoesNotContain("Themes/PhraseListResources.xaml", app);
+        Assert.Contains("Themes/Controls.xaml", app);
     }
 
     [Fact]
@@ -34,9 +35,9 @@ public sealed class LauncherListLayoutTests
         var launcher = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
         var codeBehind = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml.cs"));
 
-        var sharedResources = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Themes", "PhraseListResources.xaml"));
+        var sharedResources = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "DesignSystem", "Styles", "Lists.xaml"));
 
-        Assert.Contains("PhraseListRowTemplate", launcher);
+        Assert.Contains("Template.Phrase.Row", launcher);
         Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", launcher);
         Assert.Contains("IndexInCategory", sharedResources);
         Assert.Contains("Title", sharedResources);
@@ -88,7 +89,7 @@ public sealed class LauncherListLayoutTests
 
         Assert.Contains("StatePresenter", library);
         Assert.Contains("StatePresenter", launcher);
-        Assert.Contains("Themes/PhraseListResources.xaml", File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "App.xaml")));
+        Assert.Contains("../DesignSystem/Styles/Lists.xaml", File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Themes", "Controls.xaml")));
     }
 
     [Theory]

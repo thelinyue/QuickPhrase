@@ -5,56 +5,79 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
              mc:Ignorable="d">
-    <!-- 配色/字体与话术库页面保持一致：WindowBackground 底、UiFontFamily/TextPrimaryBrush 文字、控件圆角统一由样式控制 -->
-    <Grid Background="{StaticResource WindowBackgroundBrush}">
+    <!-- 编辑器只编排表单和命令；颜色、排版、间距及控件状态均由全局 Design System 提供。 -->
+    <Grid Background="{DynamicResource Brush.Background.Window}">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- 表单主体：内边距与话术库一级 chips 条一致（左右 20/24、上下 20/16），字段间距统一 16 -->
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="24,20,24,16">
-            <StackPanel MaxWidth="480" HorizontalAlignment="Stretch">
-                <!-- 弹窗标题：使用 TextH2 与库页 H2 同款 -->
-                <TextBlock Text="{Binding HeaderTitle}" Style="{StaticResource TextH2}" Margin="0,0,0,20" />
+        <ScrollViewer Grid.Row="0"
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="{StaticResource Thickness.Page}">
+            <!-- 480px 是编辑表单的单次内容宽度约束，不属于通用控件视觉尺寸。 -->
+            <StackPanel MaxWidth="{StaticResource Size.Editor.Content.Maximum}" HorizontalAlignment="Stretch">
+                <TextBlock Text="{Binding HeaderTitle}"
+                           Style="{StaticResource Style.Text.Title.Medium}"
+                           Margin="{StaticResource Thickness.Section}" />
 
-                <TextBlock Text="标题" Style="{StaticResource TextEyebrow}" Margin="0,0,0,6" />
-                <TextBox x:Name="TitleBox" Style="{StaticResource BaseTextBox}" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16" />
+                <TextBlock Text="标题"
+                           Style="{StaticResource Style.Text.Label}"
+                           Margin="{StaticResource Thickness.Gap.Stack.XS}" />
+                <TextBox x:Name="TitleBox"
+                         Style="{StaticResource Style.Input.Default}"
+                         Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
+                         Margin="{StaticResource Thickness.Gap.Stack.LG}" />
 
-                <TextBlock Text="正文" Style="{StaticResource TextEyebrow}" Margin="0,0,0,6" />
-                <TextBox Style="{StaticResource BaseTextBox}" Text="{Binding Content, UpdateSourceTrigger=PropertyChanged}"
-                         AcceptsReturn="True" Height="140" TextWrapping="Wrap" VerticalContentAlignment="Top"
-                         Padding="12,10" Margin="0,0,0,16" />
+                <TextBlock Text="正文"
+                           Style="{StaticResource Style.Text.Label}"
+                           Margin="{StaticResource Thickness.Gap.Stack.XS}" />
+                <TextBox Style="{StaticResource Style.Input.Default}"
+                         Text="{Binding Content, UpdateSourceTrigger=PropertyChanged}"
+                         AcceptsReturn="True"
+                         Height="{StaticResource Size.Editor.Body.Height}"
+                         TextWrapping="Wrap"
+                         VerticalContentAlignment="Top"
+                         Padding="{StaticResource Thickness.Control.Input.Multiline}"
+                         Margin="{StaticResource Thickness.Gap.Stack.LG}" />
 
-                <TextBlock Text="分类" Style="{StaticResource TextEyebrow}" Margin="0,0,0,6" />
+                <TextBlock Text="分类"
+                           Style="{StaticResource Style.Text.Label}"
+                           Margin="{StaticResource Thickness.Gap.Stack.XS}" />
                 <ComboBox x:Name="CategoryCombo"
-                          Style="{StaticResource ComboBoxFieldStyle}"
+                          Style="{StaticResource Style.Select.Default}"
                           DisplayMemberPath="Name"
-                          SelectedValuePath="Id" SelectedValue="{Binding SelectedCategoryId}"
-                          Margin="0,0,0,16">
-                    <!-- 分类下拉分组：一级分类 / 二级分类（对齐 design-system.md 5.7 optgroup） -->
+                          SelectedValuePath="Id"
+                          SelectedValue="{Binding SelectedCategoryId}"
+                          Margin="{StaticResource Thickness.Gap.Stack.LG}">
+                    <!-- 分组只表达一级/二级分类层级，不改变现有分类绑定与选择语义。 -->
                     <ComboBox.GroupStyle>
                         <GroupStyle>
                             <GroupStyle.HeaderTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding Name}" Style="{StaticResource TextEyebrow}"
-                                               Margin="4,4,0,2" />
+                                    <TextBlock Text="{Binding Name}"
+                                               Style="{StaticResource Style.Text.Label}"
+                                               Margin="{StaticResource Thickness.XS}" />
                                 </DataTemplate>
                             </GroupStyle.HeaderTemplate>
                         </GroupStyle>
                     </ComboBox.GroupStyle>
                 </ComboBox>
 
-                <TextBlock Text="颜色标记" Style="{StaticResource TextEyebrow}" Margin="0,0,0,6" />
-                <!-- 固定色板：ListBoxItem 负责键盘焦点、单选和选中态，ColorKey 只保存稳定 Key。 -->
+                <TextBlock Text="颜色标记"
+                           Style="{StaticResource Style.Text.Label}"
+                           Margin="{StaticResource Thickness.Gap.Stack.XS}" />
+                <!-- 固定色板仍由 ListBoxItem 承担键盘焦点和单选；仅将视觉尺寸、圆角和状态色切换到 Token。 -->
                 <ListBox x:Name="ColorPalette"
                          ItemsSource="{x:Static vm:EditorViewModel.ColorKeys}"
                          SelectedValuePath="Key"
                          SelectedValue="{Binding ColorKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         Background="Transparent" BorderThickness="0" Padding="0"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Padding="{StaticResource Thickness.None}"
                          HorizontalContentAlignment="Left"
                          KeyboardNavigation.DirectionalNavigation="Cycle"
-                         Margin="0,0,0,16"
+                         Margin="{StaticResource Thickness.Gap.Stack.LG}"
                          AutomationProperties.Name="颜色标记色板">
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -64,31 +87,48 @@
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Focusable" Value="True" />
-                            <Setter Property="Padding" Value="0" />
-                            <Setter Property="Margin" Value="0,0,8,0" />
+                            <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
+                            <Setter Property="Margin" Value="{StaticResource Thickness.Gap.Inline.SM}" />
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="VerticalContentAlignment" Value="Stretch" />
                             <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
-                                        <Border x:Name="ColorTile" Width="32" Height="32" CornerRadius="16"
-                                                Background="{Binding Brush}" BorderBrush="{StaticResource BorderNormalBrush}" BorderThickness="1"
+                                        <Border x:Name="ColorTile"
+                                                Width="{StaticResource Size.Control.Compact}"
+                                                Height="{StaticResource Size.Control.Compact}"
+                                                CornerRadius="{StaticResource Radius.XL}"
+                                                Background="{Binding Brush}"
+                                                BorderBrush="{DynamicResource Brush.Border.Default}"
+                                                BorderThickness="{StaticResource Thickness.Border.Default}"
                                                 ToolTip="{Binding Label}">
                                             <Grid>
-                                                <TextBlock x:Name="CheckMark" Text="✓" FontSize="16" FontWeight="Bold"
-                                                           Foreground="{StaticResource TextPrimaryBrush}" HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center" Visibility="Collapsed" />
+                                                <TextBlock x:Name="CheckMark"
+                                                           Text="✓"
+                                                           Style="{StaticResource Style.Text.Title.Medium}"
+                                                           FontWeight="Bold"
+                                                           Foreground="{DynamicResource Brush.Text.Primary}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           Visibility="Collapsed" />
                                             </Grid>
                                         </Border>
                                         <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{DynamicResource Brush.State.SelectedBorder}" />
+                                            </Trigger>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{StaticResource TextPrimaryBrush}" />
+                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{DynamicResource Brush.Text.Primary}" />
                                                 <Setter TargetName="ColorTile" Property="BorderThickness" Value="3" />
                                                 <Setter TargetName="CheckMark" Property="Visibility" Value="Visible" />
                                             </Trigger>
                                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{StaticResource FocusBrush}" />
+                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
+                                            </Trigger>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter TargetName="ColorTile" Property="BorderBrush" Value="{DynamicResource Brush.Text.Disabled}" />
+                                                <Setter TargetName="CheckMark" Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -100,25 +140,37 @@
             </StackPanel>
         </ScrollViewer>
 
-        <!-- 底部操作栏：与话术库底部 App Footer 同款——Surface 底、上方 1px 分隔、右对齐操作按钮 -->
-        <Border Grid.Row="1" Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,1,0,0" Padding="24,16">
+        <!-- 操作栏沿用原命令和可见性绑定，只统一为 Danger / Secondary / Primary 语义按钮。 -->
+        <Border Grid.Row="1"
+                Background="{DynamicResource Brush.Surface.Primary}"
+                BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                BorderThickness="{StaticResource Thickness.Border.Top}"
+                Padding="{StaticResource Thickness.Page}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}"
-                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding ErrorMessage}"
+                           Style="{StaticResource Style.Text.Body.Small}"
+                           Foreground="{DynamicResource Brush.Status.Error}"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button Style="{StaticResource SecondaryButton}" Content="删除"
+                    <Button Style="{StaticResource Style.Button.Danger}"
+                            Content="删除"
                             Command="{Binding DeleteCommand}"
-                            Visibility="{Binding CanDelete, Converter={StaticResource BoolToVisibility}}" Margin="0,0,8,0" />
-                    <Button Style="{StaticResource GhostButton}" Content="取消" Command="{Binding CancelCommand}" Margin="0,0,8,0" />
-                    <Button Style="{StaticResource PrimaryButton}" Content="保存" Command="{Binding SaveCommand}" />
+                            Visibility="{Binding CanDelete, Converter={StaticResource BoolToVisibility}}"
+                            Margin="{StaticResource Thickness.Gap.Inline.SM}" />
+                    <Button Style="{StaticResource Style.Button.Secondary}"
+                            Content="取消"
+                            Command="{Binding CancelCommand}"
+                            Margin="{StaticResource Thickness.Gap.Inline.SM}" />
+                    <Button Style="{StaticResource Style.Button.Primary}"
+                            Content="保存"
+                            Command="{Binding SaveCommand}" />
                 </StackPanel>
             </Grid>
         </Border>
     </Grid>
 </UserControl>
-

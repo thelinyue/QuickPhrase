@@ -4,8 +4,8 @@ using Xunit;
 namespace QuickPhrase.Desktop.Tests;
 
 /// <summary>
-/// 搜索框输入起始位置的回归约束：图标只占用固定视觉区域，文本宿主必须从稳定的左侧输入边界开始。
-/// 该测试读取正式 WPF 主题资源，不涉及 src/ 原型链路。
+/// 搜索框输入起始位置的回归约束：搜索输入框复用基础输入模板，
+/// 文本宿主必须从统一的语义内边距开始，不能再恢复页面或旧样式中的固定偏移。
 /// </summary>
 public sealed class SearchBoxLayoutTests
 {
@@ -13,21 +13,56 @@ public sealed class SearchBoxLayoutTests
     public void SearchBoxPinsContentHostToTheLeftInputOrigin()
     {
         var root = FindRepositoryRoot();
-        var controls = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Themes", "Controls.xaml"));
-        var start = controls.IndexOf("<Style x:Key=\"SearchBoxStyle\"", StringComparison.Ordinal);
-        Assert.True(start >= 0, "找不到 SearchBoxStyle。");
-        var end = controls.IndexOf("</Style>", start, StringComparison.Ordinal);
-        Assert.True(end > start, "SearchBoxStyle 缺少结束标记。");
-        var searchBoxStyle = controls[start..(end + "</Style>".Length)];
+        var inputs = File.ReadAllText(Path.Combine(
+            root,
+            "desktop",
+            "QuickPhrase.Desktop",
+            "DesignSystem",
+            "Styles",
+            "Inputs.xaml"));
 
-        // 输入偏移只能由 PART_ContentHost 的 Margin 提供，避免 Padding 与 Margin 叠加。
-        Assert.Contains("<Setter Property=\"Padding\" Value=\"0\" />", searchBoxStyle);
-        Assert.Contains("<Setter Property=\"HorizontalContentAlignment\" Value=\"Left\" />", searchBoxStyle);
-        Assert.Contains("<Setter Property=\"TextAlignment\" Value=\"Left\" />", searchBoxStyle);
-        Assert.Contains("Margin=\"28,0,16,0\"", searchBoxStyle);
-        Assert.Contains("HorizontalScrollBarVisibility=\"Hidden\"", searchBoxStyle);
-        Assert.Contains("VerticalScrollBarVisibility=\"Hidden\"", searchBoxStyle);
-        Assert.DoesNotContain("Margin=\"{TemplateBinding Padding}\"", searchBoxStyle);
+        var baseStyle = ExtractStyle(inputs, "Style.Input.Base");
+        var searchStyle = ExtractStyle(inputs, "Style.Input.Search");
+
+        Assert.Contains(
+            "BasedOn=\"{StaticResource Style.Input.Base}\"",
+            searchStyle,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<Setter Property=\"Padding\" Value=\"{StaticResource Thickness.Control.Input}\" />",
+            baseStyle,
+            StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PART_ContentHost\"", baseStyle, StringComparison.Ordinal);
+        Assert.Contains(
+            "Margin=\"{TemplateBinding Padding}\"",
+            baseStyle,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "HorizontalScrollBarVisibility=\"Hidden\"",
+            baseStyle,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "VerticalScrollBarVisibility=\"Hidden\"",
+            baseStyle,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("SearchBoxStyle", inputs, StringComparison.Ordinal);
+        Assert.DoesNotContain("Margin=\"28,0,16,0\"", inputs, StringComparison.Ordinal);
+    }
+
+    private static string ExtractStyle(string xaml, string key)
+    {
+        var marker = $"<Style x:Key=\"{key}\"";
+        var start = xaml.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"找不到 {key}。");
+
+        var selfClosingEnd = xaml.IndexOf("/>", start, StringComparison.Ordinal);
+        var openingEnd = xaml.IndexOf('>', start);
+        if (selfClosingEnd >= 0 && selfClosingEnd == openingEnd - 1)
+            return xaml[start..(selfClosingEnd + 2)];
+
+        var end = xaml.IndexOf("</Style>", start, StringComparison.Ordinal);
+        Assert.True(end > start, $"{key} 缺少结束标记。");
+        return xaml[start..(end + "</Style>".Length)];
     }
 
     private static string FindRepositoryRoot()
@@ -39,4 +74,3 @@ public sealed class SearchBoxLayoutTests
         return directory?.FullName ?? throw new DirectoryNotFoundException("找不到 QuickPhrase.sln");
     }
 }
-

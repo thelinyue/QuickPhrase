@@ -10,19 +10,19 @@ namespace QuickPhrase.Desktop.Tests;
 public sealed class TextBoxLayoutTests
 {
     [Fact]
-    public void BaseTextBoxUsesPaddingForContentHostWithoutLeadingIconColumn()
+    public void SharedTextBoxUsesPaddingForContentHostWithoutLeadingIconColumn()
     {
-        var controls = ReadControls();
-        var style = ExtractStyle(controls, "BaseTextBox");
+        var inputs = ReadInputs();
+        var style = ExtractStyle(inputs, "Style.Input.Base");
 
-        Assert.Contains("<Style TargetType=\"TextBox\" BasedOn=\"{StaticResource BaseTextBox}\" />", controls, StringComparison.Ordinal);
+        Assert.Contains("<Style x:Key=\"Style.Input.Default\" TargetType=\"TextBox\" BasedOn=\"{StaticResource Style.Input.Base}\" />", inputs, StringComparison.Ordinal);
 
-        Assert.Contains("<Setter Property=\"Padding\" Value=\"12,0\" />", style);
+        Assert.Contains("<Setter Property=\"Padding\" Value=\"{StaticResource Thickness.Control.Input}\" />", style);
         Assert.Contains("<ScrollViewer x:Name=\"PART_ContentHost\"", style);
         Assert.Contains("Margin=\"{TemplateBinding Padding}\"", style);
         Assert.DoesNotContain("Margin=\"28,0,16,0\"", style);
         Assert.DoesNotContain("<Path", style, StringComparison.Ordinal);
-        Assert.Contains(@"<Trigger Property=""IsKeyboardFocused"" Value=""True"">", style, StringComparison.Ordinal);
+        Assert.Contains(@"<Condition Property=""IsKeyboardFocused"" Value=""True"" />", style, StringComparison.Ordinal);
         Assert.Contains(@"x:Name=""FocusRing""", style, StringComparison.Ordinal);
     }
 
@@ -32,7 +32,7 @@ public sealed class TextBoxLayoutTests
         var root = FindRepositoryRoot();
         var dialog = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "Dialogs", "CategoryDialog.xaml"));
 
-        Assert.Contains("<TextBox x:Name=\"NameBox\" Grid.Row=\"1\" Style=\"{StaticResource BaseTextBox}\"", dialog, StringComparison.Ordinal);
+        Assert.Contains("<TextBox x:Name=\"NameBox\" Grid.Row=\"1\" Style=\"{StaticResource Style.Input.Default}\"", dialog, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -41,26 +41,27 @@ public sealed class TextBoxLayoutTests
         var root = FindRepositoryRoot();
         var onboarding = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "OnboardingWindow.xaml"));
 
-        Assert.Contains("<Style TargetType=\"TextBox\" BasedOn=\"{StaticResource BaseTextBox}\" />", ReadControls(), StringComparison.Ordinal);
-        Assert.Contains("<TextBox Text=\"{Binding CategoryName, UpdateSourceTrigger=PropertyChanged}\" Height=\"36\"", onboarding, StringComparison.Ordinal);
-        Assert.Contains("Padding=\"12,10\"", onboarding, StringComparison.Ordinal);
+        Assert.Contains("<TextBox Text=\"{Binding CategoryName, UpdateSourceTrigger=PropertyChanged}\" Style=\"{StaticResource Style.Input.Default}\"", onboarding, StringComparison.Ordinal);
+        Assert.Contains("<TextBox Text=\"{Binding PhraseTitle, UpdateSourceTrigger=PropertyChanged}\" Style=\"{StaticResource Style.Input.Default}\"", onboarding, StringComparison.Ordinal);
+        Assert.Contains("Padding=\"{StaticResource Thickness.MD}\"", onboarding, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void EditorBodyUsesExplicitTwelveByTenPadding()
+    public void EditorBodyUsesSemanticMultilineInputTokens()
     {
         var root = FindRepositoryRoot();
         var editor = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "EditorView.xaml"));
 
         Assert.Contains("AcceptsReturn=\"True\"", editor, StringComparison.Ordinal);
-        Assert.Contains("Padding=\"12,10\"", editor, StringComparison.Ordinal);
-        Assert.Contains("Style=\"{StaticResource BaseTextBox}\"", editor, StringComparison.Ordinal);
+        Assert.Contains("Height=\"{StaticResource Size.Editor.Body.Height}\"", editor, StringComparison.Ordinal);
+        Assert.Contains("Padding=\"{StaticResource Thickness.Control.Input.Multiline}\"", editor, StringComparison.Ordinal);
+        Assert.Contains("Style=\"{StaticResource Style.Input.Default}\"", editor, StringComparison.Ordinal);
     }
 
-    private static string ReadControls()
+    private static string ReadInputs()
     {
         var root = FindRepositoryRoot();
-        return File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Themes", "Controls.xaml"));
+        return File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "DesignSystem", "Styles", "Inputs.xaml"));
     }
 
     private static string ExtractStyle(string controls, string key)

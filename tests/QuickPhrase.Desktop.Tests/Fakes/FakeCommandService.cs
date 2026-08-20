@@ -15,7 +15,7 @@ public sealed class FakeCommandService : ICommandService
 {
     private readonly List<Phrase> _phrases = new();
     private readonly List<Category> _categories = new();
-    private AppSettings _settings = new(1, false, false, true, "Alt + Space", "alt+space", false, true)
+    private AppSettings _settings = new(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true)
     {
         LauncherEnabledAdapters = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["WXWork"] = true },
     };
@@ -23,6 +23,7 @@ public sealed class FakeCommandService : ICommandService
     public void Seed(IEnumerable<Phrase> phrases) => _phrases.AddRange(phrases);
     public int DeleteCategoryCalls { get; private set; }
     public bool ReturnSettingsConflictOnce { get; set; }
+    public DataError? NextSettingsError { get; set; }
     public int SettingsUpdateCalls { get; private set; }
     public CreatePhraseCommand? LastCreatedPhraseCommand { get; private set; }
     public UpdatePhraseCommand? LastUpdatedPhraseCommand { get; private set; }
@@ -157,6 +158,11 @@ public sealed class FakeCommandService : ICommandService
     public Task<RepositoryResult<AppSettings>> UpdateSettingsAsync(AppSettings settings, CancellationToken cancellationToken = default)
     {
         SettingsUpdateCalls++;
+        if (NextSettingsError is { } nextError)
+        {
+            NextSettingsError = null;
+            return Task.FromResult(RepositoryResult<AppSettings>.Failure(nextError));
+        }
         if (ReturnSettingsConflictOnce)
         {
             ReturnSettingsConflictOnce = false;

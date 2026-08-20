@@ -7,17 +7,29 @@ using QuickPhrase.Desktop.Services;
 
 namespace QuickPhrase.Desktop.ViewModels;
 
+/// <summary>设置页可选择的快捷键预设。Custom 只表示合法组合不属于两个内置预设。</summary>
+public enum LauncherShortcutPreset
+{
+    Recommended,
+    Alternate,
+    Custom,
+}
+
 /// <summary>
 /// 设置页视图模型（通用 / 快捷键 / 发送行为 / 应用适配）。
-/// 设置变化会通过 ICommandService 串行即时落库，ViewModel 不直接访问 SQLite 或 Windows 平台实现。
+/// 普通设置变化通过 ICommandService 串行即时落库；快捷键候选使用显式异步提交，
+/// 只有 Desktop 编排层完成 Stage、SQLite Save、Commit 后才更新当前展示。
 /// </summary>
 public partial class SettingsViewModel : ObservableObject
 {
+    private static readonly ShortcutChord RecommendedShortcut = new(ShortcutModifiers.Alt, ShortcutKey.Space);
+    private static readonly ShortcutChord AlternateShortcut = new(ShortcutModifiers.Ctrl, ShortcutKey.Space);
+
     private readonly ICommandService _commands;
     private readonly object _applyGate = new();
     private Task _applyChain = Task.CompletedTask;
     private bool _isLoading;
-    private AppSettings _base = new(0, false, false, true, string.Empty, string.Empty, false, false);
+    private AppSettings _base = new(0, false, false, true, RecommendedShortcut, false, false);
     private Dictionary<string, bool> _baseAdapters = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>设置页末尾的数据管理入口，内部仍通过 ICommandService 访问话术包服务。</summary>
@@ -26,12 +38,14 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _launchOnStartup;
     [ObservableProperty] private bool _startMinimized;
     [ObservableProperty] private bool _stayInTrayOnClose;
-    [ObservableProperty] private string _launcherShortcutDisplay = "";
+    [ObservableProperty] private ShortcutChord _launcherShortcut = RecommendedShortcut;
     [ObservableProperty] private bool _autoSend;
     [ObservableProperty] private bool _clipboardCompatibilityMode;
     [ObservableProperty] private ObservableCollection<AdapterToggleItem> _adapters = new();
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private bool _isBusy;
+
+    public LauncherShortcutPreset LauncherShortcutPreset => InferShortcutPreset(LauncherShortcut);
 
     /// <summary>
     /// 请求重新打开首次使用向导。
@@ -57,7 +71,7 @@ public partial class SettingsViewModel : ObservableObject
             LaunchOnStartup = settings.LaunchOnStartup;
             StartMinimized = settings.StartMinimized;
             StayInTrayOnClose = settings.StayInTrayOnClose;
-            LauncherShortcutDisplay = settings.LauncherShortcutDisplay;
+            LauncherShortcut = settings.LauncherShortcut;
             AutoSend = settings.AutoSend;
             ClipboardCompatibilityMode = settings.ClipboardCompatibilityMode;
             ReplaceAdapters(settings.LauncherEnabledAdapters);
@@ -80,9 +94,7 @@ public partial class SettingsViewModel : ObservableObject
         _baseAdapters = new Dictionary<string, bool>(settings.LauncherEnabledAdapters, StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// 等待当前已排队的即时保存完成，供关闭流程和单元测试使用。
-    /// </summary>
+    /// <summary>等待当前已排队的即时保存完成，供关闭流程和单元测试使用。</summary>
     public async Task ApplyPendingChangesAsync()
     {
         Task pending;
@@ -93,6 +105,62 @@ public partial class SettingsViewModel : ObservableObject
 
         await pending;
     }
+
+    /// <summary>
+    /// 提交结构化快捷键候选。失败时保留当前快捷键，让捕获弹窗继续显示错误并允许重试。
+    /// </summary>
+    public async Task<RepositoryResult<AppSettings>> ApplyLauncherShortcutAsync(
+        ShortcutChord chord,
+        CancellationToken cancellationToken = default)
+    {
+        var validation = ShortcutChordValidator.Validate(chord);
+        if (!validation.IsValid)
+        {
+            ErrorMessage = validation.ErrorMessage;
+            return RepositoryResult<AppSettings>.Failure(new DataError(
+                validation.ErrorCode ?? "SHORTCUT_INVALID",
+                validation.ErrorMessage ?? "快捷键无效。"));
+        }
+
+        await ApplyPendingChangesAsync();
+        IsBusy = true;
+        ErrorMessage = null;
+        try
+        {
+            var result = await _commands.UpdateSettingsAsync(BuildCandidate(chord), cancellationToken);
+            if (!result.IsSuccess || result.Value is null)
+            {
+                ErrorMessage = result.Error?.Message ?? "快捷键保存失败，请重试。";
+                return result;
+            }
+
+            _base = result.Value;
+            _baseAdapters = new Dictionary<string, bool>(result.Value.LauncherEnabledAdapters, StringComparer.OrdinalIgnoreCase);
+            LauncherShortcut = result.Value.LauncherShortcut;
+            return result;
+        }
+        catch (Exception exception)
+        {
+            var traceId = Guid.NewGuid();
+            System.Diagnostics.Trace.TraceError(
+                "快捷键设置失败。阶段：APPLY_SHORTCUT；结果码：SHORTCUT_APPLY_FAILED；TraceId：{0}；异常类型：{1}",
+                traceId,
+                exception.GetType().Name);
+            ErrorMessage = $"快捷键保存失败，请重试。TraceId：{traceId}";
+            return RepositoryResult<AppSettings>.Failure(new DataError("SHORTCUT_APPLY_FAILED", ErrorMessage));
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    public static LauncherShortcutPreset InferShortcutPreset(ShortcutChord chord) =>
+        chord == RecommendedShortcut
+            ? LauncherShortcutPreset.Recommended
+            : chord == AlternateShortcut
+                ? LauncherShortcutPreset.Alternate
+                : LauncherShortcutPreset.Custom;
 
     private void ReplaceAdapters(IReadOnlyDictionary<string, bool> adapters)
     {
@@ -126,16 +194,23 @@ public partial class SettingsViewModel : ObservableObject
 
     private async Task ApplyAfterAsync(Task previous)
     {
-        try
-        {
-            await previous;
-        }
-        catch
-        {
-            // 前一个提交的错误已经展示在 ErrorMessage 中；后续用户操作仍应允许再次尝试。
-        }
-
+        try { await previous; } catch { }
         await ApplyCurrentSettingsAsync();
+    }
+
+    private AppSettings BuildCandidate(ShortcutChord chord)
+    {
+        var adapters = Adapters.ToDictionary(a => a.Id, a => a.Enabled, StringComparer.OrdinalIgnoreCase);
+        return _base with
+        {
+            LaunchOnStartup = LaunchOnStartup,
+            StartMinimized = StartMinimized,
+            StayInTrayOnClose = StayInTrayOnClose,
+            LauncherShortcut = chord,
+            AutoSend = AutoSend,
+            ClipboardCompatibilityMode = ClipboardCompatibilityMode,
+            LauncherEnabledAdapters = adapters,
+        };
     }
 
     private async Task ApplyCurrentSettingsAsync()
@@ -144,21 +219,7 @@ public partial class SettingsViewModel : ObservableObject
         ErrorMessage = null;
         try
         {
-            var adapters = Adapters.ToDictionary(a => a.Id, a => a.Enabled, StringComparer.OrdinalIgnoreCase);
-            // 使用 with 保留引导处理状态和其他扩展字段，普通设置更新不能覆盖它们。
-            var settings = _base with
-            {
-                LaunchOnStartup = LaunchOnStartup,
-                StartMinimized = StartMinimized,
-                StayInTrayOnClose = StayInTrayOnClose,
-                LauncherShortcutDisplay = LauncherShortcutDisplay,
-                LauncherShortcutNormalized = NormalizeShortcut(LauncherShortcutDisplay),
-                AutoSend = AutoSend,
-                ClipboardCompatibilityMode = ClipboardCompatibilityMode,
-                LauncherEnabledAdapters = adapters,
-            };
-
-            var result = await _commands.UpdateSettingsAsync(settings);
+            var result = await _commands.UpdateSettingsAsync(BuildCandidate(LauncherShortcut));
             if (result.IsSuccess && result.Value is not null)
             {
                 _base = result.Value;
@@ -169,9 +230,14 @@ public partial class SettingsViewModel : ObservableObject
                 ErrorMessage = result.Error?.Message ?? "设置保存失败。";
             }
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            ErrorMessage = $"设置保存失败：{ex.Message}";
+            var traceId = Guid.NewGuid();
+            System.Diagnostics.Trace.TraceError(
+                "设置保存失败。阶段：APPLY_SETTINGS；结果码：SETTINGS_SAVE_FAILED；TraceId：{0}；异常类型：{1}",
+                traceId,
+                exception.GetType().Name);
+            ErrorMessage = $"设置保存失败，请重试。TraceId：{traceId}";
         }
         finally
         {
@@ -179,10 +245,12 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
+    partial void OnLauncherShortcutChanged(ShortcutChord value) =>
+        OnPropertyChanged(nameof(LauncherShortcutPreset));
+
     partial void OnLaunchOnStartupChanged(bool value) => QueueApply();
     partial void OnStartMinimizedChanged(bool value) => QueueApply();
     partial void OnStayInTrayOnCloseChanged(bool value) => QueueApply();
-    partial void OnLauncherShortcutDisplayChanged(string value) => QueueApply();
     partial void OnAutoSendChanged(bool value) => QueueApply();
     partial void OnClipboardCompatibilityModeChanged(bool value) => QueueApply();
 
@@ -191,15 +259,4 @@ public partial class SettingsViewModel : ObservableObject
     /// </summary>
     [RelayCommand]
     private void RestartOnboarding() => RestartOnboardingRequested?.Invoke(this, EventArgs.Empty);
-
-    /// <summary>设置页仅保存展示名；归一化用于快捷键冲突比对，不依赖 Win32。</summary>
-    private static string NormalizeShortcut(string display)
-    {
-        var parts = display.Split('+', StringSplitOptions.RemoveEmptyEntries)
-            .Select(p => p.Trim().ToLowerInvariant())
-            .Where(p => p.Length > 0)
-            .Distinct()
-            .ToArray();
-        return string.Join("+", parts);
-    }
 }

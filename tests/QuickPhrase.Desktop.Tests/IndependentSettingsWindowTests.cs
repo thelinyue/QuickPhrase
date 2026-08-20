@@ -20,6 +20,16 @@ public class IndependentSettingsWindowTests
         Assert.DoesNotContain("WindowStartupLocation=\"CenterOwner\"", settingsXaml, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void SettingsSave_UsesStagedHotkeyTransaction_WithoutReconfiguringAfterSave()
+    {
+        var root = FindRepoRoot();
+        var controller = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "ApplicationController.cs"));
+
+        Assert.Contains("_hotkeys.ApplyShortcutChangeAsync(", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("ApplySettingsHotkeysAsync", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("await _hotkeys.ConfigureAsync(result.Value", controller, StringComparison.Ordinal);
+    }
     private static string FindRepoRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

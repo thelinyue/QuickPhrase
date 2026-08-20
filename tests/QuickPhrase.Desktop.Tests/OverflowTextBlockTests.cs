@@ -15,7 +15,7 @@ public sealed class OverflowTextBlockTests
     [Fact]
     public void ShortText_DoesNotExposeOverflowInteraction()
     {
-        var state = RunSta(() =>
+        var state = WpfTestApplicationHost.Invoke(_ =>
         {
             var control = CreateMeasuredControl("短文案", 240);
             return new
@@ -39,7 +39,7 @@ public sealed class OverflowTextBlockTests
     public void LongText_ExposesCompleteTextThroughTooltipAndKeyboardFocus()
     {
         const string text = "这是需要在列表中折叠显示、并在聚焦或悬停时查看完整内容的长文案。";
-        var state = RunSta(() =>
+        var state = WpfTestApplicationHost.Invoke(_ =>
         {
             var control = CreateMeasuredControl(text, 120);
             return new
@@ -61,9 +61,26 @@ public sealed class OverflowTextBlockTests
     }
 
     [Fact]
+    public void LongText_TooltipUsesSharedPopupSurfaceStyle()
+    {
+        WpfTestApplicationHost.Invoke(application =>
+        {
+            var control = CreateMeasuredControl("这是一段需要触发完整提示浮层的长文案。", 120);
+            var tooltip = Assert.IsType<System.Windows.Controls.ToolTip>(control.ToolTip);
+            var border = Assert.IsType<Border>(tooltip.Content);
+
+            Assert.Same(application.FindResource("Style.Popup.Surface"), border.Style);
+            Assert.Equal(DependencyProperty.UnsetValue, border.ReadLocalValue(Border.PaddingProperty));
+            Assert.Equal(DependencyProperty.UnsetValue, border.ReadLocalValue(Border.BackgroundProperty));
+            Assert.Equal(DependencyProperty.UnsetValue, border.ReadLocalValue(Border.BorderBrushProperty));
+            Assert.Equal(DependencyProperty.UnsetValue, border.ReadLocalValue(Border.BorderThicknessProperty));
+            Assert.Equal(DependencyProperty.UnsetValue, border.ReadLocalValue(Border.CornerRadiusProperty));
+        });
+    }
+    [Fact]
     public void ResizingFromWideToNarrow_EnablesOverflowInteraction()
     {
-        var state = RunSta(() =>
+        var state = WpfTestApplicationHost.Invoke(_ =>
         {
             var control = CreateMeasuredControl("一段较长的中文、English、12345 混合文案", 500);
             var wasShort = !control.HasOverflow;
@@ -87,7 +104,7 @@ public sealed class OverflowTextBlockTests
     [Fact]
     public void NewlineAndContinuousText_UseActualLayoutOverflow()
     {
-        var state = RunSta(() =>
+        var state = WpfTestApplicationHost.Invoke(_ =>
         {
             var newlineControl = CreateMeasuredControl("第一行\n第二行", 500);
             var continuousControl = CreateMeasuredControl(new string('a', 80), 120);
@@ -110,7 +127,7 @@ public sealed class OverflowTextBlockTests
     {
         const string firstText = "第一条很长的完整文案，用于验证浮层内容会同步更新。";
         const string secondText = "第二条很长的完整文案，更新后浮层不能继续保留旧文本。";
-        var tooltipText = RunSta(() =>
+        var tooltipText = WpfTestApplicationHost.Invoke(_ =>
         {
             var control = CreateMeasuredControl(firstText, 120);
             control.Text = secondText;
@@ -123,7 +140,7 @@ public sealed class OverflowTextBlockTests
     [Fact]
     public void ResizingFromNarrowToWide_RemovesOverflowInteraction()
     {
-        var state = RunSta(() =>
+        var state = WpfTestApplicationHost.Invoke(_ =>
         {
             var control = CreateMeasuredControl("这是一段会在窄容器中溢出的完整中文文案。", 120);
             var wasOverflowing = control.HasOverflow;
@@ -169,27 +186,6 @@ public sealed class OverflowTextBlockTests
         return text.Text;
     }
 
-    private static T RunSta<T>(Func<T> action)
-    {
-        T? result = default;
-        Exception? exception = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                result = action();
-            }
-            catch (Exception ex)
-            {
-                exception = ex;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (exception is not null) throw new Xunit.Sdk.XunitException(exception.ToString());
-        return result!;
-    }
 }
 
 

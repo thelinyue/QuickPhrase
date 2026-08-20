@@ -8,7 +8,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
-using WpfBrush = System.Windows.Media.Brush;
 using WpfBrushes = System.Windows.Media.Brushes;
 using WpfToolTip = System.Windows.Controls.ToolTip;
 using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
@@ -153,11 +152,7 @@ public sealed class OverflowTextBlock : TextBlock
 
         var border = new Border
         {
-            Padding = new Thickness(12, 8, 12, 8),
-            Background = TryFindResource("SurfaceBrush") as WpfBrush ?? WpfBrushes.White,
-            BorderBrush = TryFindResource("DividerBrush") as WpfBrush ?? WpfBrushes.LightGray,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
+            Style = (Style)FindResource("Style.Popup.Surface"),
             Child = scrollHost,
         };
 

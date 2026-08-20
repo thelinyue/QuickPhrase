@@ -161,11 +161,30 @@ public partial class SettingsView : System.Windows.Controls.UserControl
         return value.EndsWith(".qphrase", StringComparison.OrdinalIgnoreCase) ? value : value + ".qphrase";
     }
 
-    private void EditLauncherShortcut_Click(object sender, RoutedEventArgs e)
+    private async void ApplyRecommendedShortcut_Click(object sender, RoutedEventArgs e) =>
+        await ApplyShortcutPresetAsync(new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space));
+
+    private async void ApplyAlternateShortcut_Click(object sender, RoutedEventArgs e) =>
+        await ApplyShortcutPresetAsync(new ShortcutChord(ShortcutModifiers.Ctrl, ShortcutKey.Space));
+
+    private async Task ApplyShortcutPresetAsync(ShortcutChord chord)
     {
-        var owner = Window.GetWindow(this);
-        var dlg = new HotkeyCaptureDialog(ViewModel.LauncherShortcutDisplay) { Owner = owner };
-        if (dlg.ShowDialog() == true)
-            ViewModel.LauncherShortcutDisplay = dlg.Display;
+        var result = await ViewModel.ApplyLauncherShortcutAsync(chord);
+        if (!result.IsSuccess)
+            ShowShortcutError(result.Error?.Message ?? "快捷键保存失败，请重试。");
     }
+
+    private void EditCustomShortcut_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new HotkeyCaptureDialog(
+            ViewModel.LauncherShortcut,
+            ViewModel.ApplyLauncherShortcutAsync)
+        {
+            Owner = Window.GetWindow(this),
+        };
+        dialog.ShowDialog();
+    }
+
+    private void ShowShortcutError(string message) =>
+        WpfMessageBox.Show(Window.GetWindow(this), message, "快捷键", MessageBoxButton.OK, MessageBoxImage.Warning);
 }

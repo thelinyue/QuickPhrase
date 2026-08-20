@@ -2,9 +2,10 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:onboarding="clr-namespace:QuickPhrase.Desktop.Onboarding"
-        Title="闪语 · 使用引导" Width="640" Height="520" MinWidth="560" MinHeight="480"
+        Title="闪语 · 使用引导" Width="{StaticResource Size.Onboarding.Width}" Height="{StaticResource Size.Onboarding.Height}" MinWidth="{StaticResource Size.Onboarding.MinimumWidth}" MinHeight="{StaticResource Size.Onboarding.MinimumHeight}"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
-        Background="{StaticResource WindowBackgroundBrush}" ShowInTaskbar="False"
+        Style="{StaticResource Style.Dialog.Window}"
+        Background="{DynamicResource Brush.Background.Window}" ShowInTaskbar="False"
         UseLayoutRounding="True" SnapsToDevicePixels="True">
     <Window.Resources>
         <!--
@@ -53,17 +54,17 @@
             </Style.Triggers>
         </Style>
 
-        <Style x:Key="StepButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+        <Style x:Key="StepButton" TargetType="Button" BasedOn="{StaticResource Style.Button.Primary}">
             <Setter Property="MinWidth" Value="140" />
-            <Setter Property="Height" Value="38" />
+            <Setter Property="Height" Value="{StaticResource Size.Control.Default}" />
         </Style>
-        <Style x:Key="FooterGhostButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
+        <Style x:Key="FooterGhostButton" TargetType="Button" BasedOn="{StaticResource Style.Button.Ghost}">
             <Setter Property="MinWidth" Value="88" />
-            <Setter Property="Height" Value="38" />
+            <Setter Property="Height" Value="{StaticResource Size.Control.Default}" />
         </Style>
-        <Style x:Key="FooterPrimaryButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+        <Style x:Key="FooterPrimaryButton" TargetType="Button" BasedOn="{StaticResource Style.Button.Primary}">
             <Setter Property="MinWidth" Value="140" />
-            <Setter Property="Height" Value="38" />
+            <Setter Property="Height" Value="{StaticResource Size.Control.Default}" />
         </Style>
 
         <Style x:Key="WelcomeFooterButton" TargetType="Button" BasedOn="{StaticResource FooterGhostButton}">
@@ -131,15 +132,19 @@
             </Style.Triggers>
         </Style>
 
-        <Style x:Key="SingleCategoryField" TargetType="Border">
+        <!-- 单分类只读字段复用 Card 表面，并收敛为输入控件的高度、圆角与内边距。 -->
+        <Style x:Key="SingleCategoryField" TargetType="Border" BasedOn="{StaticResource Style.Card.Default}">
             <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="Height" Value="{StaticResource Size.Control.Default}" />
+            <Setter Property="CornerRadius" Value="{StaticResource Radius.Control}" />
+            <Setter Property="Padding" Value="{StaticResource Thickness.Control.Input}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding HasSingleCategory}" Value="True">
                     <Setter Property="Visibility" Value="Visible" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="MultipleCategoryField" TargetType="ComboBox" BasedOn="{StaticResource ComboBoxFieldStyle}">
+        <Style x:Key="MultipleCategoryField" TargetType="ComboBox" BasedOn="{StaticResource Style.Select.Default}">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding HasMultipleCategories}" Value="True">
@@ -148,39 +153,39 @@
             </Style.Triggers>
         </Style>
 
-        <Style x:Key="PracticeOpenedStatusText" TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
-            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+        <Style x:Key="PracticeOpenedStatusText" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Medium}">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Muted}" />
             <Style.Triggers>
-                <DataTrigger Binding="{Binding PracticeStarting}" Value="True"><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" /></DataTrigger>
-                <DataTrigger Binding="{Binding PracticeOpened}" Value="True"><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" /></DataTrigger>
+                <DataTrigger Binding="{Binding PracticeStarting}" Value="True"><Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" /></DataTrigger>
+                <DataTrigger Binding="{Binding PracticeOpened}" Value="True"><Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" /></DataTrigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="PracticeSearchedStatusText" TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
-            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
-            <Style.Triggers><DataTrigger Binding="{Binding PracticeSearched}" Value="True"><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" /></DataTrigger></Style.Triggers>
+        <Style x:Key="PracticeSearchedStatusText" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Medium}">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Muted}" />
+            <Style.Triggers><DataTrigger Binding="{Binding PracticeSearched}" Value="True"><Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" /></DataTrigger></Style.Triggers>
         </Style>
-        <Style x:Key="PracticeInsertedStatusText" TargetType="TextBlock" BasedOn="{StaticResource TextBody}">
-            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
-            <Style.Triggers><DataTrigger Binding="{Binding PracticeInserted}" Value="True"><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" /></DataTrigger></Style.Triggers>
+        <Style x:Key="PracticeInsertedStatusText" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Medium}">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Muted}" />
+            <Style.Triggers><DataTrigger Binding="{Binding PracticeInserted}" Value="True"><Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" /></DataTrigger></Style.Triggers>
         </Style>
     </Window.Resources>
 
-    <Grid Margin="32,24,32,24">
+    <Grid Margin="{StaticResource Thickness.Page}">
         <Grid.RowDefinitions>
-            <RowDefinition Height="28" />
-            <RowDefinition Height="70" />
+            <RowDefinition Height="{StaticResource Size.Onboarding.TitleBar.GridLength}" />
+            <RowDefinition Height="{StaticResource Size.Onboarding.Header.GridLength}" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="82" />
+            <RowDefinition Height="{StaticResource Size.Onboarding.Footer.GridLength}" />
         </Grid.RowDefinitions>
 
         <!-- Header：产品身份，不随步骤变化。 -->
         <Grid Grid.Row="0">
-            <TextBlock Text="闪语" Style="{StaticResource TextCaption}" Foreground="{StaticResource BrandPrimaryBrush}" />
-            <TextBlock Text="念起，即达" Style="{StaticResource TextCaption}" HorizontalAlignment="Right" />
+            <TextBlock Text="闪语" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Brand.Primary}" />
+            <TextBlock Text="念起，即达" Style="{StaticResource Style.Text.Caption}" HorizontalAlignment="Right" />
         </Grid>
 
         <!-- StepHeader：标题和进度固定在同一行区域。 -->
-        <Grid Grid.Row="1" Margin="0,8,0,0">
+        <Grid Grid.Row="1" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -189,34 +194,34 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Text="{Binding StepTitle}" Style="{StaticResource TextH1}" />
-            <TextBlock Grid.Column="1" Text="{Binding StepNumber, StringFormat=第 {0} 步 / 5}" Style="{StaticResource TextCaption}" VerticalAlignment="Center" />
-            <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Value="{Binding StepNumber}" Maximum="5" Height="4" Margin="0,12,0,0"
-                         Foreground="{StaticResource BrandPrimaryBrush}" Background="{StaticResource SeparatorBrush}" />
+            <TextBlock Text="{Binding StepTitle}" Style="{StaticResource Style.Text.Title.Large}" />
+            <TextBlock Grid.Column="1" Text="{Binding StepNumber, StringFormat=第 {0} 步 / 5}" Style="{StaticResource Style.Text.Caption}" VerticalAlignment="Center" />
+            <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Value="{Binding StepNumber, Mode=OneWay}" Maximum="5" Height="{StaticResource Size.Onboarding.Progress.Height}" Margin="{StaticResource Thickness.Gap.Stack.Before.MD}"
+                         Foreground="{DynamicResource Brush.Brand.Primary}" Background="{DynamicResource Brush.Border.Subtle}" />
         </Grid>
 
         <!-- Content：所有步骤共用剩余空间，内容始终从同一个顶部起点开始。 -->
-        <Grid x:Name="ContentRegion" Grid.Row="2" Margin="0,18,0,14" ClipToBounds="True">
+        <Grid x:Name="ContentRegion" Grid.Row="2" Margin="{StaticResource Thickness.Onboarding.Content}" ClipToBounds="True">
             <Border x:Name="WelcomeStepPanel" Style="{StaticResource WelcomeStepPanel}">
                 <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel VerticalAlignment="Top">
-                        <TextBlock Text="让常用表达，随手可得。" Style="{StaticResource TextH2}" />
-                        <TextBlock Text="用约 30–60 秒完成基础设置，之后按 Alt + Space 就能快速找到话术。" Style="{StaticResource TextBody}" TextWrapping="Wrap" Margin="0,12,0,0" />
-                        <StackPanel Margin="0,18,0,0">
-                            <TextBlock Text="这次会完成" Style="{StaticResource TextCaption}" Foreground="{StaticResource TextPrimaryBrush}" />
-                            <TextBlock Text="1  创建一个一级分类" Style="{StaticResource TextBody}" Margin="0,8,0,0" />
-                            <TextBlock Text="2  保存一条常用话术" Style="{StaticResource TextBody}" Margin="0,6,0,0" />
-                            <TextBlock Text="3  用闪念体验一次快速查找" Style="{StaticResource TextBody}" Margin="0,6,0,0" />
+                        <TextBlock Text="让常用表达，随手可得。" Style="{StaticResource Style.Text.Title.Medium}" />
+                        <TextBlock Text="用约 30–60 秒完成基础设置，之后按 Alt + Space 就能快速找到话术。" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Gap.Stack.Before.MD}" />
+                        <StackPanel Margin="{StaticResource Thickness.Gap.Stack.Before.XL}">
+                            <TextBlock Text="这次会完成" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Primary}" />
+                            <TextBlock Text="1  创建一个一级分类" Style="{StaticResource Style.Text.Body.Medium}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
+                            <TextBlock Text="2  保存一条常用话术" Style="{StaticResource Style.Text.Body.Medium}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
+                            <TextBlock Text="3  用闪念体验一次快速查找" Style="{StaticResource Style.Text.Body.Medium}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
                         </StackPanel>
-                        <Border Background="{StaticResource SurfaceSecondaryBrush}" BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1"
-                                CornerRadius="{StaticResource RadiusSmall}" Padding="12,10" Margin="0,18,0,0">
+                        <Border Style="{StaticResource Style.Card.Default}"
+                                Padding="{StaticResource Thickness.MD}" Margin="{StaticResource Thickness.Gap.Stack.Before.XL}">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="快捷键：Alt + Space。按下后输入关键词，再按 Enter 选择。" Style="{StaticResource TextCaption}" TextWrapping="Wrap" VerticalAlignment="Center" />
-                                <Button Grid.Column="1" Content="修改快捷键" Command="{Binding ModifyShortcutCommand}" Style="{StaticResource GhostButton}" Height="32" Margin="16,0,0,0" />
+                                <TextBlock Text="快捷键：Alt + Space。按下后输入关键词，再按 Enter 选择。" Style="{StaticResource Style.Text.Caption}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="修改快捷键" Command="{Binding ModifyShortcutCommand}" Style="{StaticResource Style.Button.Ghost.Compact}" Margin="{StaticResource Thickness.Gap.Inline.Before.LG}" />
                             </Grid>
                         </Border>
                     </StackPanel>
@@ -226,10 +231,10 @@
             <Border x:Name="CategoryStepPanel" Style="{StaticResource CategoryStepPanel}">
                 <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel VerticalAlignment="Top">
-                        <TextBlock Text="先从一个清晰的分类开始。" Style="{StaticResource TextH2}" />
-                        <TextBlock Text="例如：客户沟通、售后回复、项目协作。" Style="{StaticResource TextBody}" TextWrapping="Wrap" Margin="0,10,0,18" />
-                        <TextBlock Text="分类名称" Style="{StaticResource TextCaption}" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBox Text="{Binding CategoryName, UpdateSourceTrigger=PropertyChanged}" Height="36" Margin="0,8,0,0" MaxLength="80">
+                        <TextBlock Text="先从一个清晰的分类开始。" Style="{StaticResource Style.Text.Title.Medium}" />
+                        <TextBlock Text="例如：客户沟通、售后回复、项目协作。" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Onboarding.IntroDescription}" />
+                        <TextBlock Text="分类名称" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Primary}" />
+                        <TextBox Text="{Binding CategoryName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Style.Input.Default}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" MaxLength="80">
                             <TextBox.InputBindings>
                                 <KeyBinding Key="Enter" Command="{Binding CreateCategoryAndContinueCommand}" />
                             </TextBox.InputBindings>
@@ -241,24 +246,23 @@
             <Border x:Name="PhraseStepPanel" Style="{StaticResource PhraseStepPanel}">
                 <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel VerticalAlignment="Top">
-                        <TextBlock Text="把最常用的一句话先存下来。" Style="{StaticResource TextH2}" />
-                        <TextBlock Text="这条话术会保存到选定的一级分类中，之后可以随时修改。" Style="{StaticResource TextBody}" TextWrapping="Wrap" Margin="0,10,0,18" />
+                        <TextBlock Text="把最常用的一句话先存下来。" Style="{StaticResource Style.Text.Title.Medium}" />
+                        <TextBlock Text="这条话术会保存到选定的一级分类中，之后可以随时修改。" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Onboarding.IntroDescription}" />
 
-                        <TextBlock Text="保存到" Style="{StaticResource TextCaption}" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <Border Style="{StaticResource SingleCategoryField}" Background="{StaticResource SurfacePrimaryBrush}"
-                                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1" CornerRadius="{StaticResource RadiusSmall}"
-                                Height="36" Padding="12,0" Margin="0,8,0,0">
-                            <TextBlock Text="{Binding SelectedCategoryDisplayName}" Style="{StaticResource TextBody}" VerticalAlignment="Center" />
+                        <TextBlock Text="保存到" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Primary}" />
+                        <Border Style="{StaticResource SingleCategoryField}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}">
+                            <TextBlock Text="{Binding SelectedCategoryDisplayName}" Style="{StaticResource Style.Text.Body.Medium}" VerticalAlignment="Center" />
                         </Border>
                         <ComboBox Style="{StaticResource MultipleCategoryField}" ItemsSource="{Binding Categories}"
-                                  SelectedItem="{Binding SelectedCategory}" DisplayMemberPath="Name" Margin="0,8,0,0" />
+                                  SelectedItem="{Binding SelectedCategory}" DisplayMemberPath="Name" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
 
-                        <TextBlock Text="话术标题" Style="{StaticResource TextCaption}" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,14,0,0" />
-                        <TextBox Text="{Binding PhraseTitle, UpdateSourceTrigger=PropertyChanged}" Height="36" Margin="0,8,0,0" MaxLength="120" />
+                        <TextBlock Text="话术标题" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Primary}" Margin="{StaticResource Thickness.Gap.Stack.Before.LG}" />
+                        <TextBox Text="{Binding PhraseTitle, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Style.Input.Default}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" MaxLength="120" />
 
-                        <TextBlock Text="话术内容" Style="{StaticResource TextCaption}" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,14,0,0" />
+                        <TextBlock Text="话术内容" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Primary}" Margin="{StaticResource Thickness.Gap.Stack.Before.LG}" />
                         <TextBox Text="{Binding PhraseContent, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap"
-                                 VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" Height="88" Padding="12,10" Margin="0,8,0,0" />
+                                 Style="{StaticResource Style.Input.Default}" VerticalContentAlignment="Top"
+                                 VerticalScrollBarVisibility="Auto" Height="{StaticResource Size.Onboarding.PhraseBody.Height}" Padding="{StaticResource Thickness.MD}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
                     </StackPanel>
                 </ScrollViewer>
             </Border>
@@ -266,45 +270,45 @@
             <Border x:Name="PracticeStepPanel" Style="{StaticResource PracticeStepPanel}">
                 <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel VerticalAlignment="Top">
-                        <TextBlock Text="用真实闪念找回刚才的话术。" Style="{StaticResource TextH2}" />
-                        <TextBlock Text="打开闪念，输入刚才的话术标题或正文中的关键词，再按 Enter 选择。练习只把结果返回给本向导，不会触碰剪贴板，也不会发送到其他应用。" Style="{StaticResource TextBody}" TextWrapping="Wrap" Margin="0,10,0,16" />
+                        <TextBlock Text="用真实闪念找回刚才的话术。" Style="{StaticResource Style.Text.Title.Medium}" />
+                        <TextBlock Text="打开闪念，输入刚才的话术标题或正文中的关键词，再按 Enter 选择。练习只把结果返回给本向导，不会触碰剪贴板，也不会发送到其他应用。" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Onboarding.CopyBlock}" />
                         <Button Content="打开闪念（Alt + Space）" Command="{Binding BeginPracticeCommand}" Style="{StaticResource StepButton}" HorizontalAlignment="Left" />
-                        <TextBlock Text="{Binding PracticeHint}" Style="{StaticResource TextCaption}" TextWrapping="Wrap" Margin="0,12,0,14" />
+                        <TextBlock Text="{Binding PracticeHint}" Style="{StaticResource Style.Text.Caption}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Onboarding.CopyBlock}" />
                         <StackPanel>
-                            <Grid Margin="0,0,0,8">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <Ellipse Width="8" Height="8" HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <Grid Margin="{StaticResource Thickness.Gap.Stack.SM}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="{StaticResource Size.Onboarding.PracticeIndicator.Gutter.GridLength}" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Ellipse Width="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" Height="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <Ellipse.Style>
                                         <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="{StaticResource SeparatorBrush}" />
+                                            <Setter Property="Fill" Value="{DynamicResource Brush.Border.Subtle}" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding PracticeStarting}" Value="True"><Setter Property="Fill" Value="{StaticResource BrandPrimaryBrush}" /></DataTrigger>
-                                                <DataTrigger Binding="{Binding PracticeOpened}" Value="True"><Setter Property="Fill" Value="{StaticResource BrandPrimaryBrush}" /></DataTrigger>
+                                                <DataTrigger Binding="{Binding PracticeStarting}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Brand.Primary}" /></DataTrigger>
+                                                <DataTrigger Binding="{Binding PracticeOpened}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Brand.Primary}" /></DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </Ellipse.Style>
                                 </Ellipse>
                                 <TextBlock Grid.Column="1" Text="{Binding PracticeOpenedStatus}" Style="{StaticResource PracticeOpenedStatusText}" />
                             </Grid>
-                            <Grid Margin="0,0,0,8">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <Ellipse Width="8" Height="8" HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <Grid Margin="{StaticResource Thickness.Gap.Stack.SM}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="{StaticResource Size.Onboarding.PracticeIndicator.Gutter.GridLength}" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Ellipse Width="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" Height="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <Ellipse.Style>
                                         <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="{StaticResource SeparatorBrush}" />
-                                            <Style.Triggers><DataTrigger Binding="{Binding PracticeSearched}" Value="True"><Setter Property="Fill" Value="{StaticResource BrandPrimaryBrush}" /></DataTrigger></Style.Triggers>
+                                            <Setter Property="Fill" Value="{DynamicResource Brush.Border.Subtle}" />
+                                            <Style.Triggers><DataTrigger Binding="{Binding PracticeSearched}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Brand.Primary}" /></DataTrigger></Style.Triggers>
                                         </Style>
                                     </Ellipse.Style>
                                 </Ellipse>
                                 <TextBlock Grid.Column="1" Text="{Binding PracticeSearchedStatus}" Style="{StaticResource PracticeSearchedStatusText}" />
                             </Grid>
                             <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <Ellipse Width="8" Height="8" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="{StaticResource Size.Onboarding.PracticeIndicator.Gutter.GridLength}" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Ellipse Width="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" Height="{StaticResource Size.Onboarding.PracticeIndicator.Diameter}" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <Ellipse.Style>
                                         <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="{StaticResource SeparatorBrush}" />
-                                            <Style.Triggers><DataTrigger Binding="{Binding PracticeInserted}" Value="True"><Setter Property="Fill" Value="{StaticResource BrandPrimaryBrush}" /></DataTrigger></Style.Triggers>
+                                            <Setter Property="Fill" Value="{DynamicResource Brush.Border.Subtle}" />
+                                            <Style.Triggers><DataTrigger Binding="{Binding PracticeInserted}" Value="True"><Setter Property="Fill" Value="{DynamicResource Brush.Brand.Primary}" /></DataTrigger></Style.Triggers>
                                         </Style>
                                     </Ellipse.Style>
                                 </Ellipse>
@@ -318,14 +322,13 @@
             <Border x:Name="CompleteStepPanel" Style="{StaticResource CompleteStepPanel}">
                 <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel VerticalAlignment="Top">
-                        <TextBlock Text="设置已完成" Style="{StaticResource TextH2}" />
-                        <TextBlock Text="以后按 Alt + Space 打开闪念，就能快速找到常用话术。你也可以在话术库中继续整理和完善内容。" Style="{StaticResource TextBody}" TextWrapping="Wrap" Margin="0,12,0,20" />
-                        <Border Background="{StaticResource SurfaceSecondaryBrush}" BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1"
-                                CornerRadius="{StaticResource RadiusSmall}" Padding="12,10">
-                            <TextBlock Text="第一条话术已经准备好，随时可以开始使用。" Style="{StaticResource TextBody}" />
+                        <TextBlock Text="设置已完成" Style="{StaticResource Style.Text.Title.Medium}" />
+                        <TextBlock Text="以后按 Alt + Space 打开闪念，就能快速找到常用话术。你也可以在话术库中继续整理和完善内容。" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Onboarding.IntroDescription}" />
+                        <Border Style="{StaticResource Style.Card.Default}" Padding="{StaticResource Thickness.MD}">
+                            <TextBlock Text="第一条话术已经准备好，随时可以开始使用。" Style="{StaticResource Style.Text.Body.Medium}" />
                         </Border>
-                        <CheckBox Content="开机时启动闪语" IsChecked="{Binding LaunchOnStartup}" Margin="0,18,0,0" />
-                        <TextBlock Text="{Binding StartupWarning}" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Margin="0,10,0,0" />
+                        <CheckBox Content="开机时启动闪语" IsChecked="{Binding LaunchOnStartup}" Style="{StaticResource Style.Switch.Default}" Margin="{StaticResource Thickness.Gap.Stack.Before.XL}" />
+                        <TextBlock Text="{Binding StartupWarning}" Foreground="{DynamicResource Brush.Status.Error}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Gap.Stack.Before.MD}" />
                     </StackPanel>
                 </ScrollViewer>
             </Border>
@@ -334,23 +337,23 @@
         <!-- Footer：固定错误提示区和固定导航区，按钮只随步骤切换。 -->
         <Grid Grid.Row="3">
             <Grid.RowDefinitions>
-                <RowDefinition Height="28" />
+                <RowDefinition Height="{StaticResource Size.Onboarding.FooterStatus.GridLength}" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <TextBlock Grid.Row="0" Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}"
-                       TextWrapping="Wrap" VerticalAlignment="Center" MaxHeight="28" />
+            <TextBlock Grid.Row="0" Text="{Binding ErrorMessage}" Foreground="{DynamicResource Brush.Status.Error}"
+                       TextWrapping="Wrap" VerticalAlignment="Center" MaxHeight="{StaticResource Size.Onboarding.FooterStatus.Height}" />
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="返回" Command="{Binding BackCommand}" Style="{StaticResource BackFooterButton}" Margin="0,0,10,0" />
+                    <Button Content="返回" Command="{Binding BackCommand}" Style="{StaticResource BackFooterButton}" Margin="{StaticResource Thickness.Gap.Inline.MD}" />
                     <Button Content="跳过引导" Command="{Binding SkipCommand}" Style="{StaticResource WelcomeFooterButton}" />
                     <Button Content="跳过引导" Command="{Binding SkipCommand}" Style="{StaticResource CategoryFooterButton}" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Content="开始设置 →" Command="{Binding StartCommand}" Style="{StaticResource WelcomeFooterPrimaryButton}" />
                     <Button Content="创建并继续 →" Command="{Binding CreateCategoryAndContinueCommand}" Style="{StaticResource CategoryFooterPrimaryButton}" IsDefault="True" />
-                    <Button Content="保存并继续 →" Command="{Binding SavePhraseAndContinueCommand}" Style="{StaticResource PhraseFooterPrimaryButton}" Margin="10,0,0,0" />
-                    <Button Content="继续 →" Command="{Binding FinishCommand}" Style="{StaticResource PracticeFooterPrimaryButton}" Margin="10,0,0,0" />
+                    <Button Content="保存并继续 →" Command="{Binding SavePhraseAndContinueCommand}" Style="{StaticResource PhraseFooterPrimaryButton}" Margin="{StaticResource Thickness.Gap.Inline.Before.MD}" />
+                    <Button Content="继续 →" Command="{Binding FinishCommand}" Style="{StaticResource PracticeFooterPrimaryButton}" Margin="{StaticResource Thickness.Gap.Inline.Before.MD}" />
                     <Button Content="进入话术库 →" Command="{Binding CloseCompleteCommand}" Style="{StaticResource CompleteFooterButton}" />
                 </StackPanel>
             </Grid>

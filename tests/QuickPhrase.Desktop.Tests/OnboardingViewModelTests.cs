@@ -322,7 +322,7 @@ public sealed class OnboardingViewModelTests
     private static OnboardingViewModel CreateViewModel(
         FakeCommandService fake,
         Func<OnboardingViewModel, Task<bool>>? startPractice = null) =>
-        new(fake, new AppSettings(1, false, false, true, "Alt + Space", "Alt+Space", false, true), startPractice);
+        new(fake, new AppSettings(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true), startPractice);
 
     private static Category RootCategory(string name) =>
         new(Guid.NewGuid(), null, name, 0, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);

@@ -1,0 +1,9 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 动效只服务 Hover、Pressed、Focus、Popup 和短状态切换，不增加持续装饰动画。 -->
+    <Duration x:Key="Motion.Duration.Fast">0:0:0.080</Duration>
+    <Duration x:Key="Motion.Duration.Normal">0:0:0.140</Duration>
+    <Duration x:Key="Motion.Duration.Slow">0:0:0.200</Duration>
+    <CubicEase x:Key="Motion.Easing.Standard" EasingMode="EaseOut" />
+    <CubicEase x:Key="Motion.Easing.Emphasized" EasingMode="EaseInOut" />
+</ResourceDictionary>

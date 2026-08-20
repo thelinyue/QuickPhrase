@@ -231,7 +231,7 @@ public partial class MainWindow : Window
 
         var dialog = new Window
         {
-            Style = (Style)FindResource("DialogWindow"),
+            Style = (Style)FindResource("Style.Dialog.Window"),
             Width = 520,
             MinHeight = 360,
             MaxHeight = Math.Max(400, workingArea.Height * 0.85),
@@ -297,17 +297,18 @@ public partial class MainWindow : Window
 ["shortcuts"] = "快捷键", ["trash"] = "回收站",
         };
         var name = names.TryGetValue(key, out var n) ? n : key;
-        return new Border
+        var placeholder = new Border
         {
-            Background = (System.Windows.Media.Brush)FindResource("SurfaceBrush"),
             Child = new TextBlock
             {
                 Text = $"{name}（后续 Phase 实现）",
-                Style = (Style)FindResource("TextH2"),
+                Style = (Style)FindResource("Style.Text.Title.Medium"),
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             },
         };
+        placeholder.SetResourceReference(System.Windows.Controls.Panel.BackgroundProperty, "Brush.Surface.Primary");
+        return placeholder;
     }
 
     private void CenterOnCurrentMonitor()

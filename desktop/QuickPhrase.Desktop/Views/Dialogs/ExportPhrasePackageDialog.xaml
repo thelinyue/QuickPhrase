@@ -2,10 +2,10 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:core="clr-namespace:QuickPhrase.Core;assembly=QuickPhrase.Core"
-        Width="560" Height="620" MinWidth="500" MinHeight="460"
-        Style="{StaticResource DialogWindow}" Title="导出话术包"
+        Width="{StaticResource Size.Dialog.Export.Width}" Height="{StaticResource Size.Dialog.Export.Height}" MinWidth="{StaticResource Size.Dialog.Export.MinimumWidth}" MinHeight="{StaticResource Size.Dialog.Export.MinimumHeight}"
+        Style="{StaticResource Style.Dialog.Window}" Title="导出话术包"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize">
-    <Grid Margin="24,20,24,20">
+    <Grid Margin="{StaticResource Thickness.Dialog}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -13,9 +13,9 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Text="导出范围" Style="{StaticResource TextEyebrow}" Margin="0,0,0,8" />
+        <TextBlock Text="导出范围" Style="{StaticResource Style.Text.Label}" Margin="{StaticResource Thickness.Gap.Stack.SM}" />
         <ComboBox x:Name="ScopeCombo" Grid.Row="1" SelectedIndex="0" SelectionChanged="ScopeCombo_SelectionChanged"
-                  Margin="0,0,0,12">
+                  Margin="{StaticResource Thickness.Gap.Stack.MD}">
             <ComboBoxItem Tag="All" Content="全部话术" />
             <ComboBoxItem Tag="Categories" Content="按分类" />
             <ComboBoxItem Tag="Phrases" Content="按话术" />
@@ -34,16 +34,16 @@
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <TextBlock Text="选择分类" Style="{StaticResource TextH2}" />
-                        <Button Style="{StaticResource GhostButton}" Content="全选" Click="SelectAll_Click" Margin="16,0,8,0" />
-                        <Button Style="{StaticResource GhostButton}" Content="全不选" Click="SelectNone_Click" />
+                    <StackPanel Orientation="Horizontal" Margin="{StaticResource Thickness.Gap.Stack.SM}">
+                        <TextBlock Text="选择分类" Style="{StaticResource Style.Text.Title.Medium}" />
+                        <Button Style="{StaticResource Style.Button.Ghost.Compact}" Content="全选" Click="SelectAll_Click" Margin="{StaticResource Thickness.Dialog.InlineAction}" />
+                        <Button Style="{StaticResource Style.Button.Ghost.Compact}" Content="全不选" Click="SelectNone_Click" />
                     </StackPanel>
                     <ItemsControl ItemsSource="{Binding Categories}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <CheckBox Content="{Binding Category.Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                          Margin="0,5,0,5" />
+                                          Margin="{StaticResource Thickness.Dialog.Option}" />
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -60,18 +60,18 @@
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <TextBlock Text="选择话术" Style="{StaticResource TextH2}" />
-                        <Button Style="{StaticResource GhostButton}" Content="全选" Click="SelectAll_Click" Margin="16,0,8,0" />
-                        <Button Style="{StaticResource GhostButton}" Content="全不选" Click="SelectNone_Click" />
+                    <StackPanel Orientation="Horizontal" Margin="{StaticResource Thickness.Gap.Stack.SM}">
+                        <TextBlock Text="选择话术" Style="{StaticResource Style.Text.Title.Medium}" />
+                        <Button Style="{StaticResource Style.Button.Ghost.Compact}" Content="全选" Click="SelectAll_Click" Margin="{StaticResource Thickness.Dialog.InlineAction}" />
+                        <Button Style="{StaticResource Style.Button.Ghost.Compact}" Content="全不选" Click="SelectNone_Click" />
                     </StackPanel>
                     <ItemsControl ItemsSource="{Binding Phrases}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Margin="0,5,0,5">
+                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Margin="{StaticResource Thickness.Dialog.Option}">
                                     <StackPanel>
-                                        <TextBlock Text="{Binding Phrase.Title}" Style="{StaticResource TextBody}" />
-                                        <TextBlock Text="{Binding CategoryName}" Style="{StaticResource TextCaption}" />
+                                        <TextBlock Text="{Binding Phrase.Title}" Style="{StaticResource Style.Text.Body.Medium}" />
+                                        <TextBlock Text="{Binding CategoryName}" Style="{StaticResource Style.Text.Caption}" />
                                     </StackPanel>
                                 </CheckBox>
                             </DataTemplate>
@@ -80,18 +80,18 @@
                 </StackPanel>
 
                 <TextBlock Text="全部话术将自动包含其所属分类及祖先分类。导出文件不包含标签、颜色和本机设置。"
-                           Style="{StaticResource TextCaption}" TextWrapping="Wrap" Margin="0,16,0,0" />
-                <TextBlock Text="包名称" Style="{StaticResource TextEyebrow}" Margin="0,16,0,8" />
-                <TextBox x:Name="NameBox" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource BaseTextBox}" />
+                           Style="{StaticResource Style.Text.Caption}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Dialog.Footer}" />
+                <TextBlock Text="包名称" Style="{StaticResource Style.Text.Label}" Margin="{StaticResource Thickness.Dialog.SectionLabel}" />
+                <TextBox x:Name="NameBox" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Style.Input.Default}" />
             </StackPanel>
         </ScrollViewer>
 
-        <StackPanel Grid.Row="3" Margin="0,16,0,0">
-            <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}"
-                       Style="{StaticResource TextCaption}" TextWrapping="Wrap" Margin="0,0,0,8" />
+        <StackPanel Grid.Row="3" Margin="{StaticResource Thickness.Dialog.Footer}">
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource Brush.Status.Error}"
+                       Style="{StaticResource Style.Text.Caption}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Gap.Stack.SM}" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Style="{StaticResource GhostButton}" Content="取消" Click="Cancel_Click" IsCancel="True" Margin="0,0,8,0" />
-                <Button Style="{StaticResource PrimaryButton}" Content="继续" Click="Confirm_Click" IsDefault="True" />
+                <Button Style="{StaticResource Style.Button.Ghost}" Content="取消" Click="Cancel_Click" IsCancel="True" Margin="{StaticResource Thickness.Gap.Inline.SM}" />
+                <Button Style="{StaticResource Style.Button.Primary}" Content="继续" Click="Confirm_Click" IsDefault="True" />
             </StackPanel>
         </StackPanel>
     </Grid>

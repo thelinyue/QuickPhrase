@@ -3,7 +3,7 @@ using System;
 namespace QuickPhrase.Desktop.Converters;
 
 /// <summary>
-/// 分类颜色辅助：基于分类名稳定映射到 PhraseColor* 调色板（取 base 色），
+/// 分类颜色辅助：基于分类名稳定映射到 Brush.Phrase.* 调色板（取 base 色），
 /// 并提供 Tint 调淡（降饱和度 + 提高亮度），用于二级分类基于其对应一级
 /// 分类颜色派生出更浅的层级色。
 /// </summary>
@@ -12,11 +12,11 @@ internal static class CategoryColorHelper
     // 分类标识使用固定色板中的非默认颜色；default 的白色保留给“无颜色”话术。
     private static readonly string[] Palette =
     {
-        "PhraseColorOrange", "PhraseColorBlue", "PhraseColorMagenta", "PhraseColorPurple",
-        "PhraseColorGreen", "PhraseColorPink", "PhraseColorTeal", "PhraseColorTan", "PhraseColorGray"
+        "Brush.Phrase.Orange", "Brush.Phrase.Blue", "Brush.Phrase.Magenta", "Brush.Phrase.Purple",
+        "Brush.Phrase.Green", "Brush.Phrase.Pink", "Brush.Phrase.Teal", "Brush.Phrase.Tan", "Brush.Phrase.Gray"
     };
 
-    /// <summary>按分类名稳定哈希到 PhraseColor* 调色板，取得 base 色笔刷。</summary>
+    /// <summary>按分类名稳定哈希到 Brush.Phrase.* 调色板，取得 base 色笔刷。</summary>
     public static System.Windows.Media.Brush GetBrush(string name)
     {
         var app = System.Windows.Application.Current;
@@ -28,7 +28,7 @@ internal static class CategoryColorHelper
         var resourceKey = Palette[hash % Palette.Length];
 
         if (app.Resources[resourceKey] is System.Windows.Media.Brush brush) return brush;
-        if (app.Resources["PhraseColorDefault"] is System.Windows.Media.Brush fallback) return fallback;
+        if (app.Resources["Brush.Phrase.Default"] is System.Windows.Media.Brush fallback) return fallback;
         return System.Windows.Media.Brushes.Gray;
     }
 

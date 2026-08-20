@@ -48,19 +48,52 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public async Task ShortcutChange_AppliesImmediately_AndNormalizes()
+    public async Task ShortcutChange_AppliesStructuredChord_OnlyAfterSuccessfulSave()
     {
         var fake = new FakeCommandService();
         var vm = new SettingsViewModel(fake);
         await vm.LoadAsync();
+        var ctrlSpace = new ShortcutChord(ShortcutModifiers.Ctrl, ShortcutKey.Space);
 
-        vm.LauncherShortcutDisplay = "ALT + SPACE + ALT";
-        await vm.ApplyPendingChangesAsync();
+        var result = await vm.ApplyLauncherShortcutAsync(ctrlSpace);
 
-        var saved = await fake.GetSettingsAsync();
-        Assert.Equal("alt+space", saved.LauncherShortcutNormalized);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ctrlSpace, vm.LauncherShortcut);
+        Assert.Equal(ctrlSpace, (await fake.GetSettingsAsync()).LauncherShortcut);
+        Assert.Equal(LauncherShortcutPreset.Alternate, vm.LauncherShortcutPreset);
     }
 
+    [Fact]
+    public async Task ShortcutChange_WhenSaveFails_KeepsOldChordAndReportsError()
+    {
+        var fake = new FakeCommandService
+        {
+            NextSettingsError = new DataError("HOTKEY_CONFLICT", "快捷键已被其他程序占用。"),
+        };
+        var vm = new SettingsViewModel(fake);
+        await vm.LoadAsync();
+        var oldChord = vm.LauncherShortcut;
+
+        var result = await vm.ApplyLauncherShortcutAsync(
+            new ShortcutChord(ShortcutModifiers.Ctrl | ShortcutModifiers.Shift, ShortcutKey.F12));
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(oldChord, vm.LauncherShortcut);
+        Assert.Equal(oldChord, (await fake.GetSettingsAsync()).LauncherShortcut);
+        Assert.Equal("快捷键已被其他程序占用。", vm.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData(ShortcutModifiers.Alt, ShortcutKey.Space, LauncherShortcutPreset.Recommended)]
+    [InlineData(ShortcutModifiers.Ctrl, ShortcutKey.Space, LauncherShortcutPreset.Alternate)]
+    [InlineData(ShortcutModifiers.Ctrl | ShortcutModifiers.Shift, ShortcutKey.F12, LauncherShortcutPreset.Custom)]
+    public void InferShortcutPreset_ReturnsStablePreset(
+        ShortcutModifiers modifiers,
+        ShortcutKey key,
+        LauncherShortcutPreset expected)
+    {
+        Assert.Equal(expected, SettingsViewModel.InferShortcutPreset(new ShortcutChord(modifiers, key)));
+    }
     [Fact]
     public async Task RapidChanges_KeepLatestValue()
     {
@@ -95,7 +128,7 @@ public class SettingsViewModelTests
     public async Task ImmediateApply_PreservesCompletedOnboardingState()
     {
         var fake = new FakeCommandService();
-        await fake.UpdateSettingsAsync(new AppSettings(1, false, false, true, "Alt + Space", "Alt+Space", false, true, true, 1));
+        await fake.UpdateSettingsAsync(new AppSettings(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true, true, 1));
         var vm = new SettingsViewModel(fake);
         await vm.LoadAsync();
 
