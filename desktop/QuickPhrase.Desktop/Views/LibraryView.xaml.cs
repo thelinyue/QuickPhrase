@@ -56,19 +56,8 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         SizeChanged += OnSizeChanged;
     }
 
-    /// <summary>响应式断点（对齐 design-system.md 6）：标题列宽随窗口宽度收缩�?/summary>
-    private void OnSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        CloseBlankAreaMenu();
-
-        var w = e.NewSize.Width;
-        _viewModel.TitleColumnWidth = w switch
-        {
-            >= 1024 => new GridLength(160),
-            >= 768 => new GridLength(130),
-            _ => new GridLength(100)
-        };
-    }
+    /// <summary>视图尺寸变化时关闭空白区域菜单，避免菜单继续锚定到已经变化的列表位置。</summary>
+    private void OnSizeChanged(object sender, SizeChangedEventArgs e) => CloseBlankAreaMenu();
 
     /// <summary>
     /// 菜单只在视图可见期间绑定滚动和窗口事件。使用 AddHandler 监听 ListBox 内部

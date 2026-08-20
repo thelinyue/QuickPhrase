@@ -1,4 +1,3 @@
-using System.Windows;
 using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -63,8 +62,6 @@ public partial class PhraseLibraryViewModel : ObservableObject
     [ObservableProperty] private Guid? _selectedCategoryId;
     // 一级分类可见性筛选（true = 选中一级后只显示该一级内的话术）
     [ObservableProperty] private bool _isCategoryFilterActive;
-    // 话术行标题列宽（响应式断点：≥1024→160 / 768–1023→130 / <768→100，对齐 design-system.md 6）
-    [ObservableProperty] private GridLength _titleColumnWidth = new(160);
     // 扁平化列表：SubHeaderItem（二级标题条）与 PhraseItemViewModel（话术行）混合，
     // 与原型"一级直挂话术 + 二级内联区"的嵌套树呈现方式一致。
     [ObservableProperty] private ObservableCollection<object> _visibleItems = new();

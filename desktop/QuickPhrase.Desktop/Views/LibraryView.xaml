@@ -5,12 +5,24 @@
 <UserControl x:Class="QuickPhrase.Desktop.LibraryView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              xmlns:local="clr-namespace:QuickPhrase.Desktop"
              xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
+             xmlns:desktopControls="clr-namespace:QuickPhrase.Desktop.Controls"
              xmlns:shared="clr-namespace:QuickPhrase.Desktop.Views.Shared"
              Background="{DynamicResource Brush.Background.Default}">
 
     <UserControl.Resources>
+        <!-- 紧凑列表参数仅服务于话术库页面，使用语义资源集中表达，避免视觉字面量散落在模板中。 -->
+        <sys:Double x:Key="Size.Library.SubHeader.Height">24</sys:Double>
+        <sys:Double x:Key="Size.Library.SubHeader.ArrowWidth">16</sys:Double>
+        <sys:Double x:Key="Size.Library.CompactPhrase.Height">28</sys:Double>
+        <sys:Double x:Key="Size.Library.CompactPhrase.ActionSize">24</sys:Double>
+        <GridLength x:Key="Size.Library.SubHeader.ArrowColumn">16</GridLength>
+        <GridLength x:Key="Size.Library.CompactPhrase.IndexColumn">24</GridLength>
+        <GridLength x:Key="Size.Library.CompactList.GapColumn">4</GridLength>
+        <Thickness x:Key="Thickness.Library.CompactHorizontal">8,0</Thickness>
+
         <!-- 业务专属分类控件只保留 Toggle/展开语义；全部视觉状态消费全局 Token。 -->
         <Style x:Key="Style.Library.CategoryChip" TargetType="ToggleButton">
             <Setter Property="Height" Value="{StaticResource Size.Control.Compact}" />
@@ -60,7 +72,7 @@
         </Style>
 
         <Style x:Key="Style.Library.SubHeaderButton" TargetType="ToggleButton">
-            <Setter Property="Height" Value="{StaticResource Size.Phrase.Row.Minimum}" />
+            <Setter Property="Height" Value="{StaticResource Size.Library.SubHeader.Height}" />
             <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
             <Setter Property="Margin" Value="{StaticResource Thickness.None}" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -75,7 +87,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderThickness="{StaticResource Thickness.Border.Bottom}"
                                 BorderBrush="{DynamicResource Brush.Border.Default}">
-                            <ContentPresenter Margin="{StaticResource Thickness.Control.Input}"
+                            <ContentPresenter Margin="{StaticResource Thickness.Library.CompactHorizontal}"
                                               VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -102,7 +114,7 @@
         <Style x:Key="Style.Library.SubHeaderChevron" TargetType="Path">
             <Setter Property="Data" Value="M6 9l6 6 6-6" />
             <Setter Property="Stretch" Value="Uniform" />
-            <Setter Property="Width" Value="12" />
+            <Setter Property="Width" Value="{StaticResource Size.Library.SubHeader.ArrowWidth}" />
             <Setter Property="Height" Value="12" />
             <Setter Property="Fill" Value="{DynamicResource Brush.Text.Secondary}" />
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -112,12 +124,81 @@
         <!-- ContextMenu 保持既有命令和层级，仅统一菜单与危险操作视觉。 -->
         <Style TargetType="MenuItem" BasedOn="{StaticResource Style.Menu.Item}" />
         <Style TargetType="Separator" BasedOn="{StaticResource Style.Menu.Separator}" />
-        <!-- 话术行模板（三列：序号·发送共享 / 标题 / 内容）
-             序号列与 32px 紧凑控件尺寸一致，同时作为发送按钮占位：默认显示序号；鼠标悬停整行时隐藏序号、
-             显示发送按钮。一、二级话术行不设额外缩进，水平与垂直方向完全对齐。 -->
+        <!-- 话术库专属紧凑行：编号固定 24px，标题按内容自适应，正文只占用剩余空间。
+             该模板不替换 Launcher 使用的共享 Template.Phrase.Row，避免页面级密度调整扩散到启动器。 -->
+        <DataTemplate x:Key="Template.Library.CompactPhraseRow">
+            <ContentControl>
+                <ContentControl.Template>
+                    <ControlTemplate TargetType="ContentControl">
+                        <Grid x:Name="RowRoot" Height="{StaticResource Size.Library.CompactPhrase.Height}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="{StaticResource Size.Library.CompactPhrase.IndexColumn}" />
+                                <ColumnDefinition Width="{StaticResource Size.Library.CompactList.GapColumn}" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="{StaticResource Size.Library.CompactList.GapColumn}" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 编号与显式发送按钮复用固定槽位，避免悬停时改变标题起始位置。 -->
+                            <Grid Grid.Column="0">
+                                <TextBlock x:Name="IndexText"
+                                           Style="{StaticResource Style.Text.Mono}"
+                                           HorizontalAlignment="Right"
+                                           VerticalAlignment="Center"
+                                           Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}, Path=Foreground}"
+                                           Text="{Binding IndexInCategory}" />
+                                <Button x:Name="SendBtn"
+                                        Style="{StaticResource Style.Button.Icon}"
+                                        Width="{StaticResource Size.Library.CompactPhrase.ActionSize}"
+                                        Height="{StaticResource Size.Library.CompactPhrase.ActionSize}"
+                                        Content="➤"
+                                        Opacity="0"
+                                        IsHitTestVisible="False"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Center"
+                                        ToolTip="直接发送"
+                                        AutomationProperties.Name="直接发送"
+                                        Command="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBox}}, Path=(local:PhraseListActions.SendCommand)}"
+                                        CommandParameter="{Binding}" />
+                            </Grid>
+                            <desktopControls:OverflowTextBlock Grid.Column="2"
+                                                               Style="{StaticResource Style.Text.Label}"
+                                                               VerticalAlignment="Center"
+                                                               TextWrapping="NoWrap"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}, Path=Foreground}"
+                                                               Text="{Binding Title}" />
+                            <desktopControls:OverflowTextBlock Grid.Column="4"
+                                                               Style="{StaticResource Style.Text.Body.Medium}"
+                                                               VerticalAlignment="Center"
+                                                               TextWrapping="NoWrap"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Text="{Binding Content}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBox}}, Path=(local:PhraseListActions.ShowSendButton)}" Value="False">
+                                <Setter TargetName="SendBtn" Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsMouseOver, ElementName=RowRoot}" Value="True" />
+                                    <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBox}}, Path=(local:PhraseListActions.ShowSendButton)}" Value="True" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter TargetName="IndexText" Property="Visibility" Value="Collapsed" />
+                                <Setter TargetName="SendBtn" Property="Opacity" Value="1" />
+                                <Setter TargetName="SendBtn" Property="IsHitTestVisible" Value="True" />
+                            </MultiDataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </ContentControl.Template>
+            </ContentControl>
+        </DataTemplate>
+
+        <!-- 话术行模板（三列：序号·发送共享 / 标题 / 内容）。
+             页面专属模板只收紧几何规格，完整管理菜单与现有命令保持不变。 -->
         <!-- 宿主只注入话术库完整管理菜单；序号·标题·正文显示结构来自共享资源。 -->
         <DataTemplate x:Key="PhraseRowTemplate" DataType="{x:Type vm:PhraseItemViewModel}">
-            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Template.Phrase.Row}">
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Template.Library.CompactPhraseRow}">
                 <ContentControl.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="发送到输入区" InputGestureText="双击"
@@ -168,7 +249,8 @@
                 </ToggleButton.ContextMenu>
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="{StaticResource Size.Library.SubHeader.ArrowColumn}" />
+                        <ColumnDefinition Width="{StaticResource Size.Library.CompactList.GapColumn}" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <!-- 左侧仅显示展开/收起箭头：展开朝下（0°），收起朝右（-90°），随 IsExpanded 旋转。
@@ -180,9 +262,8 @@
                         </Path.RenderTransform>
                     </Path>
                     <!-- 文字颜色继承 SubHeaderButton（默认 TextPrimaryBrush） -->
-                    <TextBlock Grid.Column="1" Text="{Binding Name}" Style="{StaticResource Style.Text.Label}"
-                               VerticalAlignment="Center"
-                               Margin="{StaticResource Thickness.Gap.Inline.SM}" />
+                    <TextBlock Grid.Column="2" Text="{Binding Name}" Style="{StaticResource Style.Text.Label}"
+                               VerticalAlignment="Center" />
                 </Grid>
             </ToggleButton>
         </DataTemplate>
@@ -326,10 +407,13 @@
                      ItemTemplateSelector="{StaticResource PhraseRowSelector}"
                      local:PhraseListActions.ShowSendButton="True"
                      local:PhraseListActions.SendCommand="{Binding DataContext.InsertSendCommand, RelativeSource={RelativeSource Self}}"
-                     local:PhraseListActions.TitleColumnWidth="{Binding DataContext.TitleColumnWidth, RelativeSource={RelativeSource Self}}"
                      MouseDoubleClick="PhraseList_MouseDoubleClick">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource Style.ListItem.Phrase.Library}">
+                        <Setter Property="Height" Value="{StaticResource Size.Library.CompactPhrase.Height}" />
+                        <Setter Property="MinHeight" Value="{StaticResource Size.Library.CompactPhrase.Height}" />
+                        <Setter Property="Padding" Value="{StaticResource Thickness.Library.CompactHorizontal}" />
+                        <Setter Property="Margin" Value="{StaticResource Thickness.None}" />
                         <!-- 拖拽排序仍由话术库宿主处理；共享样式只负责行的视觉状态。 -->
                         <EventSetter Event="PreviewMouseLeftButtonDown" Handler="PhraseItem_PreviewMouseLeftButtonDown" />
                         <EventSetter Event="PreviewMouseMove" Handler="PhraseItem_PreviewMouseMove" />
@@ -337,7 +421,19 @@
                         <EventSetter Event="DragOver" Handler="PhraseItem_DragOver" />
                         <EventSetter Event="Drop" Handler="PhraseItem_Drop" />
                         <Style.Triggers>
+                            <!-- 只有正常分类树中的二级话术缩进；搜索结果保持无标题的平铺列表。 -->
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsSubCategory}" Value="True" />
+                                    <Condition Binding="{Binding DataContext.SearchQuery, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}" Value="" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Margin" Value="{StaticResource Thickness.Gap.Inline.Before.LG}" />
+                            </MultiDataTrigger>
                             <DataTrigger Binding="{Binding IsSubHeader}" Value="True">
+                                <Setter Property="Height" Value="{StaticResource Size.Library.SubHeader.Height}" />
+                                <Setter Property="MinHeight" Value="{StaticResource Size.Library.SubHeader.Height}" />
+                                <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
+                                <Setter Property="Margin" Value="{StaticResource Thickness.None}" />
                                 <Setter Property="Focusable" Value="False" />
                                 <Setter Property="Cursor" Value="Arrow" />
                                 <Setter Property="Template">
