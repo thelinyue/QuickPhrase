@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using QuickPhrase.Core;
 
 namespace QuickPhrase.Desktop.Tests;
@@ -555,6 +556,32 @@ public sealed class HotkeyCoordinatorTests
         Assert.Equal(2, writes[1].ExpectedVersion);
         Assert.Single(service.RollbackTokens);
         Assert.Equal(AltSpace, service.ActiveChord);
+    }
+
+    [Fact]
+    public async Task Activated_ReportsCoordinatorReceiveTimestampBeforeUiDispatch()
+    {
+        var service = new FakeShortcutService();
+        Action? pendingUiAction = null;
+        await using var coordinator = new HotkeyCoordinator(service, action => pendingUiAction = action);
+        await coordinator.ConfigureAsync(CreateSettings(AltSpace));
+        coordinator.SetPracticeMode(true);
+
+        long received = 0;
+        var pressed = false;
+        coordinator.LauncherActivationReceived += timestamp => received = timestamp;
+        coordinator.LauncherHotkeyPressed += () => pressed = true;
+
+        var before = Stopwatch.GetTimestamp();
+        service.RaiseActivated();
+        var after = Stopwatch.GetTimestamp();
+
+        Assert.InRange(received, before, after);
+        Assert.False(pressed);
+        Assert.NotNull(pendingUiAction);
+
+        pendingUiAction();
+        Assert.True(pressed);
     }
 
     private static AppSettings CreateSettings(ShortcutChord chord) =>

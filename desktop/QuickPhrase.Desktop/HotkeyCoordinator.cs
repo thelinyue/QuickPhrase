@@ -52,6 +52,12 @@ internal sealed class HotkeyCoordinator : IDisposable, IAsyncDisposable
         paused,
     };
 
+    /// <summary>
+    /// 记录协调器收到快捷键激活的单调时钟时间戳，供隔离 Launcher smoke 计算热呼出耗时；
+    /// 该事件不表达 Win32 RegisterHotKey 已通过，也不参与正式产品编排。
+    /// </summary>
+    internal event Action<long>? LauncherActivationReceived;
+
     public event Action? LauncherHotkeyPressed;
 
     public event Action? StatusChanged;
@@ -461,6 +467,8 @@ internal sealed class HotkeyCoordinator : IDisposable, IAsyncDisposable
     private void Service_Activated(object? sender, EventArgs e)
     {
         if (disposed || paused || !LauncherAvailable) return;
+        var receivedTimestamp = Stopwatch.GetTimestamp();
+        LauncherActivationReceived?.Invoke(receivedTimestamp);
         dispatchToUi(() =>
         {
             if (!disposed && !paused && LauncherAvailable)
