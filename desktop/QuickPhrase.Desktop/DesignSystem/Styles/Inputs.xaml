@@ -86,7 +86,7 @@
 
     <!--
         ComboBox 使用原生 PART_Popup 和 ItemsPresenter，保留键盘选择与容器虚拟化能力；
-        视觉状态只修改语义 Brush，不在页面复制下拉框模板。
+        视觉状态只修改语义 Brush，并转发 ItemTemplateSelector 以保留 DisplayMemberPath，不在页面复制下拉框模板。
     -->
     <Style x:Key="Style.Select.Default" TargetType="ComboBox">
         <Setter Property="Height" Value="{StaticResource Size.Control.Default}" />
@@ -123,6 +123,7 @@
                                               VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                               Content="{TemplateBinding SelectionBoxItem}"
                                               ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
                                               ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
                                               IsHitTestVisible="False" />
                         </Border>

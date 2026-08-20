@@ -457,6 +457,40 @@ public sealed class DesignSystemStyleTests
     }
 
     [Fact]
+    public void Runtime_ComboBoxDisplayMemberPath_RendersSelectedProperty()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var resources = CreateDesignSystemResources();
+            var category = new CategoryDisplayProbe("客户跟进");
+            var comboBox = new ComboBox
+            {
+                Style = Assert.IsType<Style>(resources["Style.Select.Default"]),
+                ItemsSource = new[] { category },
+                DisplayMemberPath = nameof(CategoryDisplayProbe.Name),
+                SelectedIndex = 0,
+            };
+            var window = ShowInTestWindow(comboBox, resources);
+            try
+            {
+                comboBox.ApplyTemplate();
+                comboBox.UpdateLayout();
+                PumpDispatcher();
+
+                var presenter = Assert.IsType<ContentPresenter>(FindVisualDescendant<ContentPresenter>(
+                    comboBox,
+                    candidate => ReferenceEquals(candidate.Content, category)));
+                var text = Assert.IsType<TextBlock>(FindVisualDescendant<TextBlock>(presenter));
+                Assert.Equal(category.Name, text.Text);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void Runtime_ComboBoxTemplate_PreservesSelectionPopupItemsHostAndMaxHeight()
     {
         WpfTestApplicationHost.Invoke(_ =>
@@ -696,6 +730,8 @@ public sealed class DesignSystemStyleTests
             Assert.DoesNotMatch(dynamicMetricPattern, xaml);
         }
     }
+
+    private sealed record CategoryDisplayProbe(string Name);
 
     private sealed class ValidationProbe
     {
