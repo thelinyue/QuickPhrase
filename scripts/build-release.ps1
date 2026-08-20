@@ -94,9 +94,11 @@ if ($Stage -in @('Publish', 'All')) {
 
   Invoke-Step 'Phase 5/5.1 verification' { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-phase51.ps1 -IncludeDesktopSmoke }
   Invoke-Step 'Debug build' { dotnet build QuickPhrase.sln -c Debug --no-restore --verbosity minimal }
-  Invoke-Step 'Debug tests' { dotnet test QuickPhrase.sln -c Debug --no-build --verbosity minimal }
+  Invoke-Step 'Debug Desktop tests' { dotnet test tests/QuickPhrase.Desktop.Tests/QuickPhrase.Desktop.Tests.csproj -c Debug --no-build --verbosity minimal }
+  Invoke-Step 'Debug Architecture tests' { dotnet test tests/QuickPhrase.Architecture.Tests/QuickPhrase.Architecture.Tests.csproj -c Debug --no-build --verbosity minimal }
   Invoke-Step 'Release build' { dotnet build QuickPhrase.sln -c Release --no-restore --verbosity minimal }
-  Invoke-Step 'Release tests' { dotnet test QuickPhrase.sln -c Release --no-build --verbosity minimal }
+  Invoke-Step 'Release Desktop tests' { dotnet test tests/QuickPhrase.Desktop.Tests/QuickPhrase.Desktop.Tests.csproj -c Release --no-build --verbosity minimal }
+  Invoke-Step 'Release Architecture tests' { dotnet test tests/QuickPhrase.Architecture.Tests/QuickPhrase.Architecture.Tests.csproj -c Release --no-build --verbosity minimal }
   Invoke-Step 'win-x64 restore' { dotnet restore desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -r win-x64 }
   Invoke-Step 'Self-contained ReadyToRun publish' {
     dotnet publish desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -c Release -r win-x64 --self-contained true --no-restore -o $publishRoot `

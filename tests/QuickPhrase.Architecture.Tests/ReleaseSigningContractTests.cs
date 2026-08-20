@@ -151,13 +151,30 @@ public sealed class ReleaseSigningContractTests
             "actions/setup-dotnet@v4",
             "dotnet restore",
             "dotnet build QuickPhrase.sln -c Release",
-            "dotnet test QuickPhrase.sln -c Release",
+            "dotnet test tests/QuickPhrase.Desktop.Tests/QuickPhrase.Desktop.Tests.csproj -c Release",
+            "dotnet test tests/QuickPhrase.Architecture.Tests/QuickPhrase.Architecture.Tests.csproj -c Release",
             "invoke-launcher-smoke.ps1 -Mode Native",
             "invoke-launcher-smoke.ps1 -Mode Performance",
         })
             Assert.Contains(expected, workflow, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ReleaseQualityGatesRunWindowsTestProjectsSequentially()
+    {
+        foreach (var file in new[]
+        {
+            Path.Combine(Root, ".github", "workflows", "ci.yml"),
+            Path.Combine(Root, "scripts", "verify-phase51.ps1"),
+            Path.Combine(Root, "scripts", "build-release.ps1"),
+        })
+        {
+            var source = File.ReadAllText(file);
+            Assert.Contains("tests/QuickPhrase.Desktop.Tests/QuickPhrase.Desktop.Tests.csproj", source, StringComparison.Ordinal);
+            Assert.Contains("tests/QuickPhrase.Architecture.Tests/QuickPhrase.Architecture.Tests.csproj", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("dotnet test QuickPhrase.sln", source, StringComparison.Ordinal);
+        }
+    }
     [Fact]
     public void CandidateWorkflowCannotPublishAStableRelease()
     {
