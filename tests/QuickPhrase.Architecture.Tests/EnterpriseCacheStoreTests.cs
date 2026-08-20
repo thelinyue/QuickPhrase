@@ -64,9 +64,19 @@ public sealed class EnterpriseCacheStoreTests
         Assert.Equal("cursor-a", state.Cursor);
     }
 
+    [Fact]
+    public async Task IncrementalTransactionFailureDoesNotAdvanceCursorOrReplaceVisibleCache()
+    {
+        using var temp=new TemporaryDirectory();await using var runtime=await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));var category=Guid.NewGuid();var phrase=Guid.NewGuid();await runtime.EnterpriseSyncStore.ApplyFullPageAsync("active",new[]{EnterpriseSyncChange.CategoryUpsert(category,null,"分类",0,1),EnterpriseSyncChange.PhraseUpsert(phrase,category,"旧话术","旧正文",0,1)});await runtime.EnterpriseSyncStore.CompleteFullAsync("active","cursor-old",1,DateTimeOffset.UtcNow);
+        await using(var connection=new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={runtime.DatabasePath};Pooling=False")){await connection.OpenAsync();await using var command=connection.CreateCommand();command.CommandText="CREATE TRIGGER fail_enterprise_update BEFORE UPDATE ON enterprise_phrases_cache WHEN NEW.title='触发失败' BEGIN SELECT RAISE(ABORT,'injected'); END;";await command.ExecuteNonQueryAsync();}
+        await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(()=>runtime.EnterpriseSyncStore.ApplyIncrementalPageAsync(new[]{EnterpriseSyncChange.PhraseUpsert(phrase,category,"触发失败","新正文",0,2)},"cursor-new",2,DateTimeOffset.UtcNow));
+        Assert.Equal("旧话术",Assert.Single(await runtime.EnterpriseCatalog.ListPhrasesAsync()).Title);var state=await runtime.EnterpriseSyncStore.ReadStateAsync();Assert.Equal("cursor-old",state.Cursor);Assert.Equal(1,state.ReleaseNumber);
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public string Path { get; } = Directory.CreateTempSubdirectory("QuickPhrase-M3-Cache-").FullName;
         public void Dispose() => Directory.Delete(Path, recursive: true);
     }
 }
+
