@@ -7,16 +7,18 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
 {
     private readonly IPhraseRepository _source;
     private readonly SearchService _search;
+    private readonly IEnterpriseCatalog? _enterprise;
     private readonly SemaphoreSlim _mutationGate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly object _rebuildLock = new();
     private Task? _rebuildTask;
     private bool _rebuildRequested;
 
-    private PhraseSearchRuntime(IPhraseRepository source, SearchService search)
+    private PhraseSearchRuntime(IPhraseRepository source, SearchService search, IEnterpriseCatalog? enterprise)
     {
         _source = source;
         _search = search;
+        _enterprise = enterprise;
         Phrases = new IndexedPhraseRepository(this);
         Search = search;
     }
@@ -41,7 +43,7 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
             if (!isCommitted(result)) return result;
             try
             {
-                var phrases = await _source.ListAsync(linked.Token);
+                var phrases = await LoadAllPhrasesAsync(linked.Token);
                 _search.Replace(phrases, allowPinyinFallback: false, out var degraded);
                 if (degraded) ScheduleRebuild();
             }
@@ -67,16 +69,45 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
     public static async Task<PhraseSearchRuntime> CreateAsync(
         IPhraseRepository repository,
         IPinyinProvider pinyinProvider,
+        IEnterpriseCatalog? enterpriseCatalog = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(pinyinProvider);
         var search = new SearchService(pinyinProvider);
-        var runtime = new PhraseSearchRuntime(repository, search);
-        var phrases = await repository.ListAsync(cancellationToken);
+        var runtime = new PhraseSearchRuntime(repository, search, enterpriseCatalog);
+        var phrases = await runtime.LoadAllPhrasesAsync(cancellationToken);
         search.Replace(phrases, allowPinyinFallback: true, out var degraded);
         if (degraded) runtime.ScheduleRebuild();
         return runtime;
+    }
+
+    /// <summary>企业缓存提交后在短临界区重建个人+企业联合索引；数据库失败时调用方不得调用本方法。</summary>
+    public async Task RefreshEnterpriseAsync(CancellationToken cancellationToken = default)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
+        await _mutationGate.WaitAsync(linked.Token);
+        try
+        {
+            var phrases = await LoadAllPhrasesAsync(linked.Token);
+            _search.Replace(phrases, allowPinyinFallback: false, out var degraded);
+            if (degraded) ScheduleRebuild();
+        }
+        catch
+        {
+            _search.MarkDirty("企业话术已同步，但搜索索引刷新失败；正在后台恢复。");
+            ScheduleRebuild();
+            throw;
+        }
+        finally { _mutationGate.Release(); }
+    }
+
+    private async Task<IReadOnlyList<Phrase>> LoadAllPhrasesAsync(CancellationToken cancellationToken)
+    {
+        var personal = await _source.ListAsync(cancellationToken);
+        if (_enterprise is null) return personal;
+        var enterprise = await _enterprise.ListPhrasesAsync(cancellationToken);
+        return personal.Concat(enterprise).ToArray();
     }
 
     public async ValueTask DisposeAsync()
@@ -188,7 +219,7 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
             await _mutationGate.WaitAsync(_shutdown.Token);
             try
             {
-                var phrases = await _source.ListAsync(_shutdown.Token);
+                var phrases = await LoadAllPhrasesAsync(_shutdown.Token);
                 _search.Replace(phrases, allowPinyinFallback: false, out _);
             }
             finally

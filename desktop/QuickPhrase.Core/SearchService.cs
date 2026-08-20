@@ -9,7 +9,8 @@ namespace QuickPhrase.Core;
 /// </summary>
 internal sealed class SearchService : ISearchService
 {
-    private ImmutableDictionary<Guid, SearchEntry> _snapshot = ImmutableDictionary<Guid, SearchEntry>.Empty;
+    private readonly record struct SearchKey(PhraseScope Scope, Guid Id);
+    private ImmutableDictionary<SearchKey, SearchEntry> _snapshot = ImmutableDictionary<SearchKey, SearchEntry>.Empty;
     private SearchIndexStatus _status = new(SearchIndexState.Ready, 0);
     private readonly IPinyinProvider _pinyin;
 
@@ -88,17 +89,17 @@ internal sealed class SearchService : ISearchService
     internal void Replace(IReadOnlyList<Phrase> phrases, bool allowPinyinFallback, out bool degraded)
     {
         degraded = false;
-        var builder = ImmutableDictionary.CreateBuilder<Guid, SearchEntry>();
+        var builder = ImmutableDictionary.CreateBuilder<SearchKey, SearchEntry>();
         foreach (var phrase in phrases)
         {
             if (TryBuildEntry(phrase, out var entry))
             {
-                builder[phrase.Id] = entry;
+                builder[new SearchKey(phrase.Scope, phrase.Id)] = entry;
                 continue;
             }
 
             if (!allowPinyinFallback) throw new InvalidOperationException("拼音索引构建失败。");
-            builder[phrase.Id] = BuildFallbackEntry(phrase);
+            builder[new SearchKey(phrase.Scope, phrase.Id)] = BuildFallbackEntry(phrase);
             degraded = true;
         }
 
@@ -111,15 +112,15 @@ internal sealed class SearchService : ISearchService
 
     internal void Upsert(SearchEntry entry, bool markReady = true)
     {
-        var next = Volatile.Read(ref _snapshot).SetItem(entry.Phrase.Id, entry);
+        var next = Volatile.Read(ref _snapshot).SetItem(new SearchKey(entry.Phrase.Scope, entry.Phrase.Id), entry);
         Interlocked.Exchange(ref _snapshot, next);
         if (markReady)
             Interlocked.Exchange(ref _status, new SearchIndexStatus(SearchIndexState.Ready, Status.SnapshotVersion + 1));
     }
 
-    internal void Remove(Guid id)
+    internal void Remove(Guid id, PhraseScope scope = PhraseScope.Personal)
     {
-        var next = Volatile.Read(ref _snapshot).Remove(id);
+        var next = Volatile.Read(ref _snapshot).Remove(new SearchKey(scope, id));
         Interlocked.Exchange(ref _snapshot, next);
         Interlocked.Exchange(ref _status, new SearchIndexStatus(SearchIndexState.Ready, Status.SnapshotVersion + 1));
     }
