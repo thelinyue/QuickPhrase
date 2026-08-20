@@ -7,6 +7,31 @@ namespace QuickPhrase.Architecture.Tests;
 public sealed class ReleaseSigningContractTests
 {
     [Fact]
+    public void PrivacyPolicyMatchesLocalAndEnterpriseSyncBehavior()
+    {
+        var privacy = File.ReadAllText(Path.Combine(Root, "PRIVACY.md"));
+        Assert.Contains("默认本地模式", privacy, StringComparison.Ordinal);
+        Assert.Contains("%LOCALAPPDATA%\\QuickPhrase", privacy, StringComparison.Ordinal);
+        Assert.Contains("企业同步", privacy, StringComparison.Ordinal);
+        Assert.Contains("密码不持久化", privacy, StringComparison.Ordinal);
+        Assert.Contains("Windows DPAPI", privacy, StringComparison.Ordinal);
+        Assert.Contains("企业话术标题及正文", privacy, StringComparison.Ordinal);
+        Assert.Contains("不包含广告或第三方分析", privacy, StringComparison.Ordinal);
+        Assert.DoesNotContain("从不联网", privacy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SecurityPolicyDefinesPrivateReportingAndResponseTargets()
+    {
+        var security = File.ReadAllText(Path.Combine(Root, "SECURITY.md"));
+        Assert.Contains("0.0.1", security, StringComparison.Ordinal);
+        Assert.Contains("Private Vulnerability Reporting", security, StringComparison.Ordinal);
+        Assert.Contains("3 个工作日", security, StringComparison.Ordinal);
+        Assert.Contains("7 个工作日", security, StringComparison.Ordinal);
+        Assert.Contains("不得提交公开 Issue", security, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RepositoryPublishesRequiredSignPathPolicies()
     {
         foreach (var file in new[] { "PRIVACY.md", "SECURITY.md", "CODE_SIGNING.md" })
