@@ -64,11 +64,29 @@ public class SettingsViewContractTests
         Assert.Contains("Content=\"应用适配\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"数据管理\"", xaml, StringComparison.Ordinal);
         Assert.Equal(5, Regex.Matches(xaml, "x:Name=\"(?:General|Hotkeys|Delivery|Adapters|DataManagement)Section\"", RegexOptions.CultureInvariant).Count);
-        Assert.Contains("已自动保存", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("已自动保存", xaml, StringComparison.Ordinal);
         Assert.Contains("SettingsNavigation_SelectionChanged", codeBehind, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource Style.ListItem.Navigation}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Width=\"{StaticResource Size.Settings.Sidebar.GridLength}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("MaxWidth=\"{StaticResource Size.Settings.Content.Maximum}\"", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SettingsView_CollapsesEmptyDataManagementFeedback()
+    {
+        var xaml = ReadDesktopFile("Views", "SettingsView.xaml");
+
+        Assert.Contains("x:Key=\"Style.Settings.DataFeedback\"", xaml, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(
+            xaml,
+            Regex.Escape("Style=\"{StaticResource Style.Settings.DataFeedback}\""),
+            RegexOptions.CultureInvariant).Count);
+        Assert.Contains("<Trigger Property=\"Text\" Value=\"{x:Null}\">", xaml, StringComparison.Ordinal);
+        Assert.Contains("<Trigger Property=\"Text\" Value=\"\">", xaml, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(
+            xaml,
+            "<Setter Property=\"Visibility\" Value=\"Collapsed\" />",
+            RegexOptions.CultureInvariant).Count);
     }
 
     [Fact]

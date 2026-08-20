@@ -18,12 +18,7 @@
                 BorderBrush="{DynamicResource Brush.Border.Default}"
                 BorderThickness="{StaticResource Thickness.Border.Right}">
             <Grid Margin="{StaticResource Thickness.Settings.Navigation}">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
                 <ListBox x:Name="SettingsNavigation"
-                         Grid.Row="0"
                          BorderThickness="{StaticResource Thickness.None}"
                          Background="{DynamicResource Brush.Surface.Default}"
                          SelectedIndex="0"
@@ -37,12 +32,6 @@
                     <ListBoxItem Style="{StaticResource Style.ListItem.Navigation}" Content="应用适配" AutomationProperties.Name="应用适配设置" />
                     <ListBoxItem Style="{StaticResource Style.ListItem.Navigation}" Content="数据管理" AutomationProperties.Name="数据管理设置" />
                 </ListBox>
-                <TextBlock Grid.Row="1"
-                           Text="✓ 已自动保存"
-                           Style="{StaticResource Style.Text.Caption}"
-                           Foreground="{DynamicResource Brush.Text.Secondary}"
-                           Margin="{StaticResource Thickness.Settings.NavigationStatus}"
-                           AutomationProperties.Name="设置已自动保存" />
             </Grid>
         </Border>
 
@@ -241,6 +230,21 @@
                                        Style="{StaticResource Style.Text.Title.Small}"
                                        Margin="{StaticResource Thickness.Settings.SectionTitle}" />
                             <Border Style="{StaticResource Style.Setting.Group}">
+                                <Border.Resources>
+                                    <!-- 数据管理反馈为空时必须折叠，避免文本 Margin 在卡片底部形成无意义占位。 -->
+                                    <Style x:Key="Style.Settings.DataFeedback"
+                                           TargetType="{x:Type TextBlock}"
+                                           BasedOn="{StaticResource Style.Text.Caption}">
+                                        <Style.Triggers>
+                                            <Trigger Property="Text" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </Trigger>
+                                            <Trigger Property="Text" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Resources>
                                 <StackPanel>
                                     <designSystem:SettingItem Title="导入话术包"
                                                               Description="从本机话术包添加内容，不影响现有分类。"
@@ -262,11 +266,11 @@
                                         </designSystem:SettingItem.ControlContent>
                                     </designSystem:SettingItem>
                                     <TextBlock Text="{Binding DataManagement.StatusMessage}"
-                                               Style="{StaticResource Style.Text.Caption}"
+                                               Style="{StaticResource Style.Settings.DataFeedback}"
                                                Margin="{StaticResource Thickness.Settings.DataStatus}" />
                                     <TextBlock Text="{Binding DataManagement.ErrorMessage}"
                                                Foreground="{DynamicResource Brush.Status.Error}"
-                                               Style="{StaticResource Style.Text.Caption}"
+                                               Style="{StaticResource Style.Settings.DataFeedback}"
                                                TextWrapping="Wrap"
                                                Margin="{StaticResource Thickness.Settings.DataError}" />
                                 </StackPanel>
