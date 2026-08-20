@@ -2,54 +2,189 @@
 
 状态：`PHASE4_VERIFY_PASS`
 
-本阶段实现 Native Launcher、会话内全局快捷键协调、首次引导、托盘菜单、正式管理界面 IPC 接入，以及 WebView2 故障隔离。文本插入、发送、剪贴板和目标识别仍是明确标注的模拟行为，真实 Windows 投递留给 Phase 5。
+验证日期：2026-08-20
+
+当前 Phase 4 正式链路为 Pure WPF Native Launcher。Launcher smoke 已恢复为独立、隔离、自动退出的 EXE 诊断模式，不使用旧 WebView2、React、IPC 或网页桥接链路。
 
 ## 验证环境
 
-- 主要平台：Windows 11 x64
-- SDK：`.NET 10`（由 `global.json` 固定）
-- WebView2：稳定版 Evergreen Runtime，Desktop 包版本 `1.0.4078.44`
-- Node/npm：使用工作区现有 React/Vite 工具链
+- 平台：Windows x64 桌面会话
+- SDK：`.NET SDK 10.0.400`
+- 配置：`Release`
+- Smoke 数据：固定内存话术与内存搜索历史
+- 快捷键输入：内存 `IShortcutService` 合成 Alt+Space 激活
+- 窗口：单一真实 `LauncherWindow`，全程复用
+- 诊断根目录：`%TEMP%\QuickPhrase-Smoke\`
 
-## 已执行命令
+## 实际执行命令
 
-| 命令 | 结果 |
-| --- | --- |
-| `dotnet build QuickPhrase.sln --no-restore` | 通过，零警告 |
-| `dotnet build QuickPhrase.sln -c Release --no-restore` | 通过，零警告 |
-| `dotnet test QuickPhrase.sln --no-build` | 通过，35/35 |
-| `dotnet test QuickPhrase.sln -c Release --no-build` | 通过 |
-| `npm run build` | 通过，生成 `dist/client`、`dist/server` 和 Sites hosting 产物 |
-| `npm run test:sites` | 通过 |
-| `node scripts/qa.mjs` | 通过，中文搜索、多结果、零结果、降级、首次使用、编辑器、设置和窄屏检查通过 |
-| `dotnet run --no-build -c Release --project desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -- --smoke-native-launcher` | 通过，退出码 0 |
-| `dotnet run --no-build -c Release --project desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -- --smoke-launcher-performance` | 通过 |
-| `dotnet run --no-build -c Release --project desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -- --smoke-webview-lifecycle` | 通过，退出码 0 |
-
-## 性能证据
-
-Launcher Release 热呼出 smoke：预热 10 次后执行 200 次，计时从呼出请求到首个可见渲染帧。
-
-```text
-LAUNCHER_PERF count=200 p50=8.417ms p95=13.287ms p99=17.137ms
+```powershell
+dotnet build QuickPhrase.sln -c Release --no-restore --verbosity minimal
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-launcher-smoke.ps1 -Mode Native -Configuration Release
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-launcher-smoke.ps1 -Mode Performance -Configuration Release
 ```
 
-P95 低于 120ms 门槛。性能报告写入 `%TEMP%\QuickPhrase-launcher-perf.txt`。此前独立 Release smoke 也通过（P95 12.978ms）。
+结果：
 
-## 关键验收结论
+- Release 构建通过，0 警告、0 错误。
+- Native smoke 在 30 秒 watchdog 内完成，退出码 0。
+- Performance smoke 在 60 秒 watchdog 内完成，退出码 0。
+- 两次运行结束后均未发现带 smoke 参数的 QuickPhrase 残留进程。
 
-- Native Launcher 为纯 WPF 窗口，不创建或依赖 WebView2；管理窗口关闭后仍可呼出。
-- 搜索直接调用 Core 内存 `ISearchService`，不在 Launcher 查询 SQLite。
-- `Alt + Space`、话术快捷键、暂停/恢复和冲突状态由 Desktop/Platform.Windows 协调；Phase 4 不注册真实目标投递能力。
-- `Enter` 和 `Ctrl + Enter` 的反馈明确为模拟操作，绝不宣称已经写入或发送到目标应用。
-- WebView2 的 IPC 使用版本化 camelCase 协议；资源缺失、页面失败、Runtime 不可用和进程异常都显示原生中文故障面板，不注销 Launcher 或托盘能力。
-- 管理窗口关闭时解除 WebView2 事件订阅并释放 Controller；生命周期 smoke 以 `BrowserProcessExited` 为主要退出信号。
-- 首次引导由原生 WPF 承载，“试一下”不依赖 WebView2。
+## Native Launcher 核心链路
+
+Native smoke 使用真实 WPF 控件和事件路由验证：
+
+```text
+内存 Alt+Space Activated
+→ HotkeyCoordinator 收到 IShortcutService.Activated
+→ WPF Dispatcher
+→ LauncherWindow 显示
+→ Render/Input Dispatcher 完成
+→ QueryBox 获得键盘焦点
+→ 输入固定搜索词 Smoke
+→ ResultsList 展示固定内存结果
+→ WPF Down KeyDown 移动选择
+→ WPF Enter KeyDown 选择话术
+→ Practice SelectionHandler 接收结果
+→ LauncherWindow 隐藏并回到 Hidden
+```
+
+实际输出：
+
+```text
+LAUNCHER_COLD_START interactive=600.683ms gate=none
+LAUNCHER_SMOKE_PASS
+```
+
+诊断目录：
+
+```text
+C:\Users\林樾\AppData\Local\Temp\QuickPhrase-Smoke\20260820-221146-612-13504
+```
+
+## Launcher 热呼出性能定义
+
+P95 `<= 120ms` 只约束应用已经完成初始化并驻留后台后的 Launcher 热呼出。
+
+计时起点：
+
+```text
+HotkeyCoordinator 收到 IShortcutService.Activated，
+完成可用性检查后立即记录 Stopwatch 时间戳。
+```
+
+计时不包含内存测试服务调用 `RaiseActivated()` 之前的测试注入层耗时。
+
+计时终点必须同时满足：
+
+```text
+LauncherWindow.IsVisible == true
+Render Dispatcher 已完成
+Input Dispatcher 已完成
+QueryBox.IsVisible == true
+QueryBox.IsEnabled == true
+QueryBox.IsKeyboardFocusWithin == true
+LauncherLifecycleState == Interactive
+```
+
+采样方式：
+
+- 测试前完成一次完整核心链路初始化。
+- 预热 10 次，不进入统计。
+- 正式采样 200 次。
+- 200 次循环复用同一个 LauncherWindow。
+- 每次循环必须稳定经过 `Hidden → Activating → Visible → Interactive → Hiding → Hidden`。
+- 百分位使用 nearest-rank：`rank = Ceiling(percentile × count)`。
+
+## 实际性能结果
+
+```text
+LAUNCHER_COLD_START interactive=600.508ms gate=none
+LAUNCHER_PERF count=200 warmup=10 p50=40.324ms p95=66.786ms p99=80.257ms threshold=120ms
+LAUNCHER_SMOKE_PASS
+```
+
+结论：
+
+```text
+P95 = 66.786ms <= 120ms
+```
+
+发布质量门槛通过。
+
+冷启动耗时只作为当前环境诊断记录，**不作为发布门槛**，也不与 Launcher 热呼出 P95 混用。
+
+Performance 诊断目录：
+
+```text
+C:\Users\林樾\AppData\Local\Temp\QuickPhrase-Smoke\20260820-221154-297-35348
+```
+
+`performance-samples.csv` 包含 200 条正式样本；`result.json` 记录：
+
+```text
+WarmupCount = 10
+SampleCount = 200
+WindowInstanceCount = 1
+FinalLifecycleState = Disposed
+ExitCode = 0
+```
+
+## 隔离与安全边界
+
+Smoke 不创建或访问：
+
+- 用户 SQLite 数据库或 `%LOCALAPPDATA%\QuickPhrase`。
+- 真实企业微信、微信或其他外部应用。
+- 真实前台窗口和投递目标。
+- 真实剪贴板、UI Automation 或文字发送链路。
+- Win32 全局快捷键注册。
+- 托盘、单实例服务或正式投递队列。
+
+固定内存话术只存在于 smoke 进程中。Enter 使用 Practice `LauncherInvocationContext`，只把固定测试话术回传给 runner，不进入真实投递。
+
+Smoke **不替代 Platform.Windows 的 RegisterHotKey 测试**。它只验证：
+
+```text
+HotkeyCoordinator + WPF Dispatcher + LauncherWindow
+```
+
+Win32 `RegisterHotKey`、原生消息窗口、系统快捷键冲突、权限级别和真实 Windows 全局激活继续由 Platform.Windows 自动测试及 Windows 人工矩阵承担。
+
+## Watchdog 与失败诊断
+
+统一入口：
+
+```text
+scripts/invoke-launcher-smoke.ps1
+```
+
+超时：
+
+- Native：30 秒。
+- Performance：60 秒。
+
+watchdog 直接启动已构建的 QuickPhrase.exe，只持有本次明确 PID；超时时只终止该 PID，不按进程名结束用户正在运行的 QuickPhrase。
+
+每次运行在 `%TEMP%\QuickPhrase-Smoke\` 下生成独立目录，包含：
+
+```text
+result.json
+stdout.log
+stderr.log
+performance-samples.csv（Performance）
+exception.txt（失败时）
+launcher-failure.png（窗口已创建且失败时）
+watchdog-timeout.txt（超时时）
+```
+
+失败截图只通过 WPF `RenderTargetBitmap` 捕获 LauncherWindow 自身客户区，不截取桌面或外部应用。
 
 ## 数据安全说明
 
-本轮没有修改已执行的 `001_initial.sql` 迁移内容。若本地数据库已应用迁移 1，启动时会继续使用原校验和；不会删除、重建或覆盖用户数据库。`HasCompletedOnboarding` 作为现有设置 JSON 的可选字段向后兼容旧数据。
+本轮 Launcher smoke 不修改数据库 schema、迁移、用户设置、用户话术、搜索历史或投递安全链。所有诊断内容只包含固定 Smoke 数据，不记录用户话术正文、联系人、聊天内容、剪贴板或真实窗口标题。
 
-## 下一阶段
+## 后续边界
 
-`Phase 5 — Windows Integration 与安全投递`
+Phase 5 继续负责 Windows 目标识别、受保护 Clipboard 插入、重新验证、显式发送和企业微信人工矩阵。Launcher smoke 通过不能替代企业微信真实会话验收，也不能单独写入 `PHASE6_VERIFY_PASS_WIN11`。

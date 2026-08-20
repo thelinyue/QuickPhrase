@@ -37,6 +37,21 @@ public sealed class LauncherSmokeScriptContractTests
         Assert.DoesNotContain("Stop-Process -Name", source, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Phase4Validation_DefinesActualHotOpenMetricAndIsolationBoundary()
+    {
+        var root = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "docs", "phase4-validation.md"));
+
+        Assert.Contains("HotkeyCoordinator 收到", source, StringComparison.Ordinal);
+        Assert.Contains("预热 10 次", source, StringComparison.Ordinal);
+        Assert.Contains("正式采样 200 次", source, StringComparison.Ordinal);
+        Assert.Contains("120ms", source, StringComparison.Ordinal);
+        Assert.Contains("不替代 Platform.Windows 的 RegisterHotKey 测试", source, StringComparison.Ordinal);
+        Assert.Contains("冷启动", source, StringComparison.Ordinal);
+        Assert.Contains("不作为发布门槛", source, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
