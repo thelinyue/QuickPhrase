@@ -462,7 +462,7 @@ internal sealed class LauncherSmokeRunner : IAsyncDisposable
             ?? throw SmokeFailure("LAUNCHER_SMOKE_KEYBOARD_SELECTION_FAILED", "Launcher 尚未连接到 PresentationSource。", "KEYBOARD");
         target.RaiseEvent(new System.Windows.Input.KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, key)
         {
-            RoutedEvent = Keyboard.KeyDownEvent,
+            RoutedEvent = Keyboard.PreviewKeyDownEvent,
         });
     }
 

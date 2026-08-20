@@ -1,4 +1,4 @@
-param([switch]$IncludeDesktopSmoke)
+﻿param([switch]$IncludeDesktopSmoke)
 
 $ErrorActionPreference = "Stop"
 $workspace = Split-Path -Parent $PSScriptRoot

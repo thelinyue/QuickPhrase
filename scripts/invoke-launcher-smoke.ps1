@@ -1,4 +1,4 @@
-param(
+﻿param(
   [Parameter(Mandatory = $true)]
   [ValidateSet('Native', 'Performance')]
   [string]$Mode,
@@ -42,9 +42,16 @@ if (-not $completed) {
   exit 124
 }
 
+$process.WaitForExit()
+$resultPath = Join-Path $runDirectory 'result.json'
+$exitCode = if (Test-Path -LiteralPath $resultPath) {
+  [int]((Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json).ExitCode)
+} else {
+  1
+}
 Get-Content -LiteralPath $stdout -ErrorAction SilentlyContinue
 Get-Content -LiteralPath $stderr -ErrorAction SilentlyContinue
-if ($process.ExitCode -ne 0) {
-  Write-Error "Launcher smoke 失败，退出码 $($process.ExitCode)，诊断目录：$runDirectory"
+if ($exitCode -ne 0) {
+  Write-Host "Launcher smoke 失败，退出码 $exitCode，诊断目录：$runDirectory" -ForegroundColor Red
 }
-exit $process.ExitCode
+exit $exitCode
