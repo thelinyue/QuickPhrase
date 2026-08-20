@@ -32,12 +32,12 @@ Invoke-Step "Release regression tests" {
 }
 
 Invoke-Step "Native launcher performance smoke" {
-  & dotnet run --no-build -c Release --project desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -- --smoke-launcher-performance
+  & powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-launcher-smoke.ps1 -Mode Performance -Configuration Release
 }
 
 if ($IncludeDesktopSmoke) {
   Invoke-Step "Native launcher smoke" {
-    & dotnet run --no-build -c Release --project desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -- --smoke-native-launcher
+    & powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-launcher-smoke.ps1 -Mode Native -Configuration Release
   }
 }
 

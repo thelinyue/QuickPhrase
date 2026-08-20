@@ -14,10 +14,10 @@ Invoke-Step "Phase 5.1 tests" { dotnet test QuickPhrase.sln -c Release --no-rest
 Invoke-Step "Release build" { dotnet build QuickPhrase.sln -c Release --no-restore --verbosity minimal }
 
 Invoke-Step "Launcher performance smoke" {
-  dotnet run --no-build -c Release --project desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -- --smoke-launcher-performance
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-launcher-smoke.ps1 -Mode Performance -Configuration Release
 }
 if ($IncludeDesktopSmoke) {
-  Invoke-Step "Native Launcher smoke" { dotnet run --no-build -c Release --project desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -- --smoke-native-launcher }
+  Invoke-Step "Native Launcher smoke" { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-launcher-smoke.ps1 -Mode Native -Configuration Release }
 }
 
 Write-Host "PHASE5_1_INFRA_PASS" -ForegroundColor Green

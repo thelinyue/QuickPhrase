@@ -25,11 +25,11 @@ Invoke-Step "Release build" { dotnet build QuickPhrase.sln -c Release --no-resto
 Invoke-Step "Release tests" { dotnet test QuickPhrase.sln -c Release --no-build --verbosity minimal }
 
 Invoke-Step "Launcher performance smoke" {
-  dotnet run --no-build -c Release --project desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -- --smoke-launcher-performance
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-launcher-smoke.ps1 -Mode Performance -Configuration Release
 }
 if ($IncludeDesktopSmoke) {
   Invoke-Step "Fake Target delivery smoke" {
-    dotnet run --no-build -c Release --project desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -- --smoke-native-launcher
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-launcher-smoke.ps1 -Mode Native -Configuration Release
   }
 }
 

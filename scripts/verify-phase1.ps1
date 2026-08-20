@@ -18,7 +18,7 @@ Invoke-Step ".NET build" { dotnet build QuickPhrase.sln --no-restore }
 Invoke-Step ".NET tests" { dotnet test QuickPhrase.sln --no-build --verbosity minimal }
 
 if ($IncludeDesktopSmoke) {
-  Invoke-Step "Native Launcher smoke" { dotnet run --no-build --project desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -- --smoke-native-launcher }
+  Invoke-Step "Native Launcher smoke" { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-launcher-smoke.ps1 -Mode Native -Configuration Debug }
 }
 
 Write-Host "PHASE1_VERIFY_PASS" -ForegroundColor Green
