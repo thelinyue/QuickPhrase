@@ -81,10 +81,16 @@ public class SettingsViewContractTests
             xaml,
             Regex.Escape("Style=\"{StaticResource Style.Settings.DataFeedback}\""),
             RegexOptions.CultureInvariant).Count);
-        Assert.Contains("<Trigger Property=\"Text\" Value=\"{x:Null}\">", xaml, StringComparison.Ordinal);
-        Assert.Contains("<Trigger Property=\"Text\" Value=\"\">", xaml, StringComparison.Ordinal);
+        var styleStart = xaml.IndexOf("<Style x:Key=\"Style.Settings.DataFeedback\"", StringComparison.Ordinal);
+        Assert.True(styleStart >= 0, "未找到数据管理反馈样式。");
+        var styleEnd = xaml.IndexOf("</Style>", styleStart, StringComparison.Ordinal);
+        Assert.True(styleEnd > styleStart, "数据管理反馈样式边界异常。");
+        var feedbackStyle = xaml[styleStart..(styleEnd + "</Style>".Length)];
+
+        Assert.Contains("<Trigger Property=\"Text\" Value=\"{x:Null}\">", feedbackStyle, StringComparison.Ordinal);
+        Assert.Contains("<Trigger Property=\"Text\" Value=\"\">", feedbackStyle, StringComparison.Ordinal);
         Assert.Equal(2, Regex.Matches(
-            xaml,
+            feedbackStyle,
             "<Setter Property=\"Visibility\" Value=\"Collapsed\" />",
             RegexOptions.CultureInvariant).Count);
     }
