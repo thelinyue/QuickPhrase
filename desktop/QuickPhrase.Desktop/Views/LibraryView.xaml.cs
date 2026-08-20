@@ -516,7 +516,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     {
         if (e.OriginalSource is DependencyObject d && FindAncestor<System.Windows.Controls.ContextMenu>(d) is not null) return;
         if (e.OriginalSource is DependencyObject d2 && IsContextMenuItem(d2)) return;
-        if (sender is ListBoxItem item && item.DataContext is CategoryItem cat)
+        if (sender is ListBoxItem item && item.DataContext is CategoryItem cat && cat.CanManage)
         {
             _dragCategorySource = cat;
             _dragCategoryOrigin = e.GetPosition(null);
@@ -535,7 +535,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
     private void CategoryChip_DragOver(object sender, System.Windows.DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(typeof(CategoryItem)) ? System.Windows.DragDropEffects.Move : System.Windows.DragDropEffects.None;
+        e.Effects = e.Data.GetData(typeof(CategoryItem)) is CategoryItem source && source.CanManage && sender is ListBoxItem target && target.DataContext is CategoryItem destination && destination.CanManage ? System.Windows.DragDropEffects.Move : System.Windows.DragDropEffects.None;
         e.Handled = true;
     }
 
@@ -544,7 +544,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         if (e.Handled) return;
         if (sender is not ListBoxItem targetItem || targetItem.DataContext is not CategoryItem targetCat) return;
         if (e.Data.GetData(typeof(CategoryItem)) is not CategoryItem sourceCat) return;
-        if (ReferenceEquals(sourceCat, targetCat)) return;
+        if (!sourceCat.CanManage || !targetCat.CanManage || ReferenceEquals(sourceCat, targetCat)) return;
 
         var list = _viewModel.TopCategories;
         var srcIdx = list.IndexOf(sourceCat);
@@ -561,7 +561,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     private void PhraseItem_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (e.OriginalSource is DependencyObject d && IsContextMenuItem(d)) return;
-        if (sender is ListBoxItem item && item.DataContext is PhraseItemViewModel phrase)
+        if (sender is ListBoxItem item && item.DataContext is PhraseItemViewModel phrase && phrase.CanManage)
         {
             _dragPhraseSource = phrase;
             _dragPhraseOrigin = e.GetPosition(null);
@@ -580,7 +580,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
     private void PhraseItem_DragOver(object sender, System.Windows.DragEventArgs e)
     {
-        if (e.Data.GetData(typeof(PhraseItemViewModel)) is PhraseItemViewModel src && sender is ListBoxItem item && item.DataContext is PhraseItemViewModel tgt && src.CategoryId == tgt.CategoryId)
+        if (e.Data.GetData(typeof(PhraseItemViewModel)) is PhraseItemViewModel src && sender is ListBoxItem item && item.DataContext is PhraseItemViewModel tgt && src.CanManage && tgt.CanManage && src.CategoryId == tgt.CategoryId)
             e.Effects = System.Windows.DragDropEffects.Move;
         else
             e.Effects = System.Windows.DragDropEffects.None;
@@ -592,7 +592,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         if (e.Handled) return;
         if (sender is not ListBoxItem targetItem || targetItem.DataContext is not PhraseItemViewModel targetPhrase) return;
         if (e.Data.GetData(typeof(PhraseItemViewModel)) is not PhraseItemViewModel sourcePhrase) return;
-        if (ReferenceEquals(sourcePhrase, targetPhrase)) return;
+        if (!sourcePhrase.CanManage || !targetPhrase.CanManage || ReferenceEquals(sourcePhrase, targetPhrase)) return;
         if (sourcePhrase.CategoryId != targetPhrase.CategoryId) return; // 仅允许同分类内重�?
 
         var ordered = _viewModel.VisibleItems.OfType<PhraseItemViewModel>()
