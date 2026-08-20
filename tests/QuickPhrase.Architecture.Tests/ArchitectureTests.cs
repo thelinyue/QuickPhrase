@@ -1,4 +1,4 @@
-using System.Xml.Linq;
+﻿using System.Xml.Linq;
 
 namespace QuickPhrase.Architecture.Tests;
 
@@ -85,10 +85,11 @@ public sealed class ArchitectureTests
     [Fact]
     public void FinalPublishIsPureWpfAndContainsNoWebAssets()
     {
-        var publish = Path.Combine(Root, "artifacts/release/1.0.0/publish");
-        if (!Directory.Exists(publish)) return;
+        var releaseRoot = Path.Combine(Root, "artifacts", "release");
+        if (!Directory.Exists(releaseRoot)) return;
 
-        var suspicious = Directory.GetFiles(publish, "*", SearchOption.AllDirectories)
+        var suspicious = Directory.GetDirectories(releaseRoot, "publish", SearchOption.AllDirectories)
+            .SelectMany(publish => Directory.GetFiles(publish, "*", SearchOption.AllDirectories))
             .Where(path => path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
                         || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
                         || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
@@ -103,14 +104,17 @@ public sealed class ArchitectureTests
     [Fact]
     public void ReleaseManifestDoesNotDeclareWebRuntimeArtifacts()
     {
-        var manifestPath = Path.Combine(Root, "artifacts/release/1.0.0/release-manifest.json");
-        if (!File.Exists(manifestPath)) return;
+        var releaseRoot = Path.Combine(Root, "artifacts", "release");
+        if (!Directory.Exists(releaseRoot)) return;
 
-        var manifest = File.ReadAllText(manifestPath);
-        Assert.DoesNotContain("WebView2", manifest, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("MicrosoftEdgeWebView2", manifest, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("bootstrapperUrl", manifest, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("standaloneX64Url", manifest, StringComparison.OrdinalIgnoreCase);
+        foreach (var manifestPath in Directory.GetFiles(releaseRoot, "release-manifest.json", SearchOption.AllDirectories))
+        {
+            var manifest = File.ReadAllText(manifestPath);
+            Assert.DoesNotContain("WebView2", manifest, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("MicrosoftEdgeWebView2", manifest, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("bootstrapperUrl", manifest, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("standaloneX64Url", manifest, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     [Fact]

@@ -1,13 +1,20 @@
 ; 闪语（QuickPhrase）按当前用户安装的 Inno Setup 脚本（纯 WPF 自包含安装包，无 WebView2 运行时依赖）。
-#define AppVersion "1.0.0"
+#ifndef AppVersion
+  #define AppVersion "0.0.1"
+#endif
+#ifndef ReleaseRoot
+  #define ReleaseRoot "..\artifacts\release\0.0.1"
+#endif
+#ifndef OutputBase
+  #define OutputBase "QuickPhrase-Setup-0.0.1"
+#endif
 #define AppId "{E9DBDCE4-4E86-4F88-A845-7E91B5D7726C}"
 #define AppExeName "QuickPhrase.exe"
-#define OutputBase "QuickPhrase-Setup-1.0.0"
 
 [Setup]
 AppId={{#AppId}}
 AppName=闪语
-AppVerName=闪语 1.0.0
+AppVerName=闪语 {#AppVersion}
 AppVersion={#AppVersion}
 AppPublisher=QuickPhrase Contributors
 DefaultDirName={localappdata}\Programs\QuickPhrase
@@ -16,7 +23,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-OutputDir=..\artifacts\release\1.0.0\installers
+OutputDir={#ReleaseRoot}\installers
 OutputBaseFilename={#OutputBase}
 SetupIconFile=..\assets\quickphrase.ico
 UninstallDisplayName=闪语
@@ -29,7 +36,7 @@ CloseApplications=yes
 RestartApplications=no
 
 [Files]
-Source: "..\artifacts\release\1.0.0\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ReleaseRoot}\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\闪语"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"

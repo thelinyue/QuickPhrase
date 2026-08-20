@@ -102,6 +102,46 @@ public sealed class ReleaseSigningContractTests
         Assert.DoesNotContain("gh release create", workflow, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void ReleaseBuildSupportsCandidateStagesAndDerivedNames()
+    {
+        var build = File.ReadAllText(Path.Combine(Root, "scripts", "build-release.ps1"));
+        foreach (var expected in new[]
+        {
+            "[string]$Version = '0.0.1'",
+            "[switch]$UnsignedCandidate",
+            "[string]$Stage = 'All'",
+            "'Publish'",
+            "'Installer'",
+            "IncludeSourceRevisionInInformationalVersion=false",
+            "QuickPhrase-Setup-$Version",
+            "QuickPhrase-$Version-win-x64",
+            "Copy-Item -Path (Join-Path $publishRoot '*')",
+        })
+            Assert.Contains(expected, build, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InstallerUsesCommandLineVersionAndReleaseMacros()
+    {
+        var installer = File.ReadAllText(Path.Combine(Root, "installer", "QuickPhrase.iss"));
+        Assert.Contains("#ifndef AppVersion", installer, StringComparison.Ordinal);
+        Assert.Contains("#ifndef ReleaseRoot", installer, StringComparison.Ordinal);
+        Assert.Contains("#ifndef OutputBase", installer, StringComparison.Ordinal);
+        Assert.Contains("{#ReleaseRoot}\\publish\\*", installer, StringComparison.Ordinal);
+        Assert.Contains("OutputDir={#ReleaseRoot}\\installers", installer, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FinalizeScriptRequiresValidAuthenticodeAndTimestamp()
+    {
+        var finalize = File.ReadAllText(Path.Combine(Root, "scripts", "finalize-signed-release.ps1"));
+        Assert.Contains("Get-AuthenticodeSignature", finalize, StringComparison.Ordinal);
+        Assert.Contains("SignatureStatus]::Valid", finalize, StringComparison.Ordinal);
+        Assert.Contains("TimeStamperCertificate", finalize, StringComparison.Ordinal);
+        Assert.Contains("signed = $true", finalize, StringComparison.Ordinal);
+    }
+
     private static string Root
     {
         get
