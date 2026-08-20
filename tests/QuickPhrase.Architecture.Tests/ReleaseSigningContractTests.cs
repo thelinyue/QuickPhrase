@@ -198,6 +198,7 @@ public sealed class ReleaseSigningContractTests
             "'Publish'",
             "'Installer'",
             "IncludeSourceRevisionInInformationalVersion=false",
+            "dotnet restore desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -r win-x64",
             "QuickPhrase-Setup-$Version",
             "QuickPhrase-$Version-win-x64",
             "Copy-Item -Path (Join-Path $publishRoot '*')",
