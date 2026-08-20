@@ -24,10 +24,10 @@ public partial class SettingsView : System.Windows.Controls.UserControl
     /// </summary>
     public event EventHandler? RestartOnboardingRequested;
 
-    public SettingsView(ICommandService commands)
+    public SettingsView(ICommandService commands, ISyncAccountService? syncAccounts = null, ISyncProvider? syncProvider = null)
     {
         InitializeComponent();
-        ViewModel = new SettingsViewModel(commands);
+        ViewModel = new SettingsViewModel(commands, syncAccounts, syncProvider);
         DataContext = ViewModel;
         ShowSection(SettingsNavigation.SelectedIndex);
         ViewModel.RestartOnboardingRequested += ViewModel_RestartOnboardingRequested;
@@ -53,7 +53,7 @@ public partial class SettingsView : System.Windows.Controls.UserControl
     private void SettingsNavigation_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (GeneralSection is null || HotkeysSection is null || DeliverySection is null ||
-            AdaptersSection is null || DataManagementSection is null)
+            AdaptersSection is null || EnterpriseSyncSection is null || DataManagementSection is null)
             return;
 
         ShowSection(SettingsNavigation.SelectedIndex);
@@ -65,8 +65,22 @@ public partial class SettingsView : System.Windows.Controls.UserControl
         HotkeysSection.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
         DeliverySection.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
         AdaptersSection.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
-        DataManagementSection.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
+        EnterpriseSyncSection.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
+        DataManagementSection.Visibility = index == 5 ? Visibility.Visible : Visibility.Collapsed;
     }
+    private void EnterprisePassword_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.EnterpriseSync is not null && sender is PasswordBox passwordBox)
+            ViewModel.EnterpriseSync.Password = passwordBox.Password;
+    }
+
+    private async void ClearEnterpriseCache_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.EnterpriseSync is null) return;
+        var choice = WpfMessageBox.Show(Window.GetWindow(this), "只清除本机企业缓存，不会删除个人话术或服务器数据。清除后需重新同步才能使用企业话术。是否继续？", "确认清除企业缓存", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
+        if (choice == MessageBoxResult.OK) await ViewModel.EnterpriseSync.ClearEnterpriseCacheAsync();
+    }
+
     private void ViewModel_RestartOnboardingRequested(object? sender, EventArgs e) =>
         RestartOnboardingRequested?.Invoke(this, e);
 

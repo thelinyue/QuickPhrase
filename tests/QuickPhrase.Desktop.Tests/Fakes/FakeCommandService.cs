@@ -97,8 +97,8 @@ public sealed class FakeCommandService : ICommandService
         return Task.FromResult(true);
     }
 
-    public Task<bool> InsertPhraseAsync(Guid id, CancellationToken cancellationToken = default)
-        => Task.FromResult(_phrases.Any(p => p.Id == id));
+    public Task<bool> InsertPhraseAsync(Phrase phrase, CancellationToken cancellationToken = default)
+        => Task.FromResult(_phrases.Any(p => p.Id == phrase.Id && p.Scope == phrase.Scope));
 
     public Task<IReadOnlyList<Category>> ListCategoriesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<Category>>(_categories.ToArray());

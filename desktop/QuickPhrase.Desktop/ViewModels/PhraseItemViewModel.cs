@@ -28,6 +28,10 @@ public partial class PhraseItemViewModel : ObservableObject
     public Guid CategoryId => _model.CategoryId;
     public ShortcutMode ShortcutMode => _model.ShortcutMode;
     public ShortcutValue? ShortcutValue => _model.Shortcut;
+    public PhraseScope Scope => _model.Scope;
+    public bool IsEnterprise => Scope == PhraseScope.Enterprise;
+    public bool CanManage => !IsEnterprise;
+    public string ScopeLabel => IsEnterprise ? "企业" : "个人";
     public PhraseLibraryViewModel? Owner { get; set; }
 
     [ObservableProperty] private string _title;
@@ -59,6 +63,10 @@ public partial class PhraseItemViewModel : ObservableObject
         Shortcut = model.Shortcut?.Display;
         ColorKey = model.ColorKey;
         SortOrder = model.SortOrder;
+        OnPropertyChanged(nameof(Scope));
+        OnPropertyChanged(nameof(IsEnterprise));
+        OnPropertyChanged(nameof(CanManage));
+        OnPropertyChanged(nameof(ScopeLabel));
     }
 
     /// <summary>回放底层领域记录，用于构造 UpdatePhraseCommand 等写操作。</summary>

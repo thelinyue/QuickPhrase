@@ -12,7 +12,7 @@ public class IndependentSettingsWindowTests
         var controller = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "ApplicationController.cs"));
         var settingsXaml = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "SettingsWindow.xaml"));
 
-        Assert.Contains("_settingsWindow = new SettingsWindow(_commands);", controller, StringComparison.Ordinal);
+        Assert.Contains("_settingsWindow = new SettingsWindow(_commands, _dataRuntime?.SyncAccounts, _dataRuntime?.SyncProvider);", controller, StringComparison.Ordinal);
         Assert.DoesNotContain("new SettingsWindow(_commands, owner)", controller, StringComparison.Ordinal);
         Assert.Contains("RequestShutdownIfNoProductWindows", controller, StringComparison.Ordinal);
         Assert.Contains("_management is { IsVisible: true } || _settingsWindow is { IsVisible: true }", controller, StringComparison.Ordinal);
