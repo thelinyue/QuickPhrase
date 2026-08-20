@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\QuickPhrase.Core\QuickPhrase.Core.csproj" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
     <PackageReference Include="PinyinM.NET" Version="2.0.0" />
   </ItemGroup>
 
