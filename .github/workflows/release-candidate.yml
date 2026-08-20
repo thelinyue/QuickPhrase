@@ -1,3 +1,4 @@
+# 仅允许发布负责人从默认分支手动触发；本工作流不创建 tag 或 GitHub Release。
 name: release-candidate-build
 
 on:
