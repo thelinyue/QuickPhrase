@@ -211,12 +211,12 @@
                         <MenuItem Header="新增话术" Command="{Binding Owner.NewCommand}" />
                         <MenuItem Header="插入一条话术"
                                   Command="{Binding Owner.InsertCommand}" CommandParameter="{Binding}" />
-                        <MenuItem Header="编辑" Command="{Binding Owner.EditCommand}" CommandParameter="{Binding}" />
+                        <MenuItem Header="编辑" IsEnabled="{Binding CanManage}" Command="{Binding Owner.EditCommand}" CommandParameter="{Binding}" />
                         <MenuItem Header="排序" IsEnabled="False" />
-                        <MenuItem Header="移动到其它分类" Command="{Binding Owner.MoveCommand}" CommandParameter="{Binding}" />
+                        <MenuItem Header="移动到其它分类" IsEnabled="{Binding CanManage}" Command="{Binding Owner.MoveCommand}" CommandParameter="{Binding}" />
                         <MenuItem Header="复制到其它分类" IsEnabled="False" />
                         <Separator />
-                        <MenuItem Header="删除" Command="{Binding Owner.DeleteCommand}" CommandParameter="{Binding}" />
+                        <MenuItem Header="删除" IsEnabled="{Binding CanManage}" Command="{Binding Owner.DeleteCommand}" CommandParameter="{Binding}" />
                         <Separator />
                         <MenuItem Header="如何批量操作？" IsEnabled="False" />
                     </ContextMenu>

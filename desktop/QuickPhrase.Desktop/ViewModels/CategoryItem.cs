@@ -14,4 +14,10 @@ public sealed record CategoryItem(
     int Count = 0,
     bool IsExpanded = false,
     bool IsSelected = false,
-    long Version = 0);
+    long Version = 0,
+    PhraseScope Scope = PhraseScope.Personal,
+    bool IsSynthetic = false)
+{
+    public bool IsEnterprise => Scope == PhraseScope.Enterprise;
+    public bool CanManage => !IsEnterprise;
+}

@@ -13,7 +13,7 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
     private readonly ITargetDetector _targetDetector;
     private readonly IAdapterResolver _adapterResolver;
     private readonly IClipboardTransaction _clipboard;
-    private readonly Func<Guid, CancellationToken, Task> _usageRecorder;
+    private readonly Func<Phrase, CancellationToken, Task> _usageRecorder;
     private readonly Action<DeliveryTrace>? _traceWriter;
     private readonly SemaphoreSlim _deliveryGate = new(1, 1);
     private readonly ConcurrentDictionary<Guid, long> _traceStarts = new();
@@ -22,7 +22,7 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
         ITargetDetector targetDetector,
         IAdapterResolver adapterResolver,
         IClipboardTransaction clipboard,
-        Func<Guid, CancellationToken, Task> usageRecorder,
+        Func<Phrase, CancellationToken, Task> usageRecorder,
         Action<DeliveryTrace>? traceWriter = null)
     {
         _targetDetector = targetDetector;
@@ -253,7 +253,7 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
 
     private async Task RecordUsageAsync(DeliveryRequest request, CancellationToken cancellationToken)
     {
-        try { await _usageRecorder(request.Phrase.Id, cancellationToken).ConfigureAwait(false); }
+        try { await _usageRecorder(request.Phrase, cancellationToken).ConfigureAwait(false); }
         catch (Exception exception) { Console.Error.WriteLine($"使用次数保存失败：{exception.Message}"); }
     }
 
@@ -301,7 +301,7 @@ public static class TextDeliveryFactory
     public static ITextDeliveryStateMachine Create(
         ITargetDetector targetDetector,
         IAdapterResolver adapterResolver,
-        Func<Guid, CancellationToken, Task> usageRecorder,
+        Func<Phrase, CancellationToken, Task> usageRecorder,
         Action<DeliveryTrace>? traceWriter = null) =>
         new TextDeliveryStateMachine(targetDetector, adapterResolver, new ClipboardTransaction(), usageRecorder, traceWriter);
 }

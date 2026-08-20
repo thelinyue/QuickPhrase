@@ -13,6 +13,7 @@ namespace QuickPhrase.Desktop.ViewModels;
 /// </summary>
 public partial class PhraseLibraryViewModel : ObservableObject
 {
+    private static readonly Guid EnterpriseRootId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
     private readonly ICommandService _commands;
     private readonly Func<string, Task<bool>>? _recordSearchHistory;
     private Dictionary<Guid, string> _categoryNames = new();
@@ -95,33 +96,20 @@ public partial class PhraseLibraryViewModel : ObservableObject
                 .GroupBy(p => p.CategoryId)
                 .ToDictionary(g => g.Key, g => g.Count());
 
-            // 一级分类（ParentId == null）按 SortOrder 排序
-            var topCategories = categories
-                .Where(c => c.ParentId == null)
-                .OrderBy(c => c.SortOrder)
-                .Select(c => new CategoryItem(
-                    c.Id, c.Name, c.ParentId, c.SortOrder,
-                    counts.TryGetValue(c.Id, out var n) ? n : 0,
-                    IsExpanded: false, Version: c.Version))
+            // 企业分类挂在独立只读根节点下；个人分类仍保持原有两级结构。
+            var mappedCategories = categories
+                .Where(c => c.Scope == PhraseScope.Personal)
+                .Select(c => new CategoryItem(c.Id, c.Name, c.ParentId, c.SortOrder, counts.TryGetValue(c.Id, out var count) ? count : 0, IsExpanded: c.ParentId is not null, Version: c.Version, Scope: c.Scope))
                 .ToList();
-
-            // 二级分类挂在各自一级下
-            var topIds = topCategories.Select(c => c.Id).ToHashSet();
-            foreach (var top in topCategories.ToList())
+            var enterpriseCategories = categories.Where(c => c.Scope == PhraseScope.Enterprise).ToArray();
+            if (enterpriseCategories.Length > 0)
             {
-                var subs = categories
-                    .Where(c => c.ParentId == top.Id)
-                    .OrderBy(c => c.SortOrder)
-                    .Select(c => new CategoryItem(
-                        c.Id, c.Name, c.ParentId, c.SortOrder,
-                        counts.TryGetValue(c.Id, out var n) ? n : 0,
-                        IsExpanded: true, Version: c.Version));
-                // 二级列表作为平铺项追加到 Categories，便于 UI 按需分组
-                foreach (var sub in subs) topCategories.Add(sub);
+                mappedCategories.Add(new CategoryItem(EnterpriseRootId, "企业话术", null, int.MaxValue, enterpriseCategories.Sum(c => counts.TryGetValue(c.Id, out var count) ? count : 0), IsExpanded: true, Scope: PhraseScope.Enterprise, IsSynthetic: true));
+                mappedCategories.AddRange(enterpriseCategories.Select(c => new CategoryItem(c.Id, c.Name, c.ParentId ?? EnterpriseRootId, c.SortOrder, counts.TryGetValue(c.Id, out var count) ? count : 0, IsExpanded: true, Version: c.Version, Scope: PhraseScope.Enterprise)));
             }
-            Categories = new ObservableCollection<CategoryItem>(topCategories);
-            // 默认进入第一个真实一级分类；首次安装无分类时保持未选中状态。
-            var defaultTop = topCategories.FirstOrDefault(c => c.ParentId == null);
+            Categories = new ObservableCollection<CategoryItem>(mappedCategories);
+            var topIds = mappedCategories.Where(c => c.ParentId is null).Select(c => c.Id).ToHashSet();
+            var defaultTop = mappedCategories.FirstOrDefault(c => c.ParentId is null && c.Scope == PhraseScope.Personal) ?? mappedCategories.FirstOrDefault(c => c.ParentId is null);
             SelectedCategoryId = defaultTop?.Id;
             IsCategoryFilterActive = defaultTop is not null;
             RefreshTopCategories();
@@ -228,14 +216,18 @@ public partial class PhraseLibraryViewModel : ObservableObject
     [RelayCommand]
     private void NewSubCategory(CategoryItem? category)
     {
-        if (category is not null) NewSubCategoryRequested?.Invoke(this, category);
+        if (category is null) return;
+        if (!category.CanManage) { StatusMessage = "企业分类由管理员维护。"; return; }
+        NewSubCategoryRequested?.Invoke(this, category);
     }
 
     /// <summary>在指定分类下新建话术（由一级 chip / 二级标题条右键菜单触发）。</summary>
     [RelayCommand]
     private void NewPhraseInCategory(CategoryItem? category)
     {
-        if (category is not null) NewPhraseInCategoryRequested?.Invoke(this, category);
+        if (category is null) return;
+        if (!category.CanManage) { StatusMessage = "企业分类由管理员维护。"; return; }
+        NewPhraseInCategoryRequested?.Invoke(this, category);
     }
 
     /// <summary>打开设置（由底部 App Footer 设置按钮触发）。</summary>
@@ -246,14 +238,18 @@ public partial class PhraseLibraryViewModel : ObservableObject
     [RelayCommand]
     private void RenameCategory(CategoryItem? category)
     {
-        if (category is not null) RenameCategoryRequested?.Invoke(this, category);
+        if (category is null) return;
+        if (!category.CanManage) { StatusMessage = "企业分类由管理员维护。"; return; }
+        RenameCategoryRequested?.Invoke(this, category);
     }
 
     /// <summary>删除分类（由右键菜单触发）。</summary>
     [RelayCommand]
     private void DeleteCategory(CategoryItem? category)
     {
-        if (category is not null) DeleteCategoryRequested?.Invoke(this, category);
+        if (category is null) return;
+        if (!category.CanManage) { StatusMessage = "企业分类由管理员维护。"; return; }
+        DeleteCategoryRequested?.Invoke(this, category);
     }
 
     /// <summary>
@@ -263,54 +259,30 @@ public partial class PhraseLibraryViewModel : ObservableObject
     /// </summary>
     public void RebuildVisibleItems()
     {
-        var tops = Categories.Where(c => c.ParentId == null).OrderBy(c => c.SortOrder).ToList();
+        var roots = Categories.Where(c => c.ParentId is null).OrderBy(c => c.Scope).ThenBy(c => c.SortOrder).ToList();
         var items = new List<object>();
-
-        if (!string.IsNullOrWhiteSpace(SearchQuery))
-        {
-            // 有搜索词时，结果已经由 Core 搜索服务筛选并排序；此时必须跨分类直接展示，
-            // 否则默认选中的一级分类会把其它分类的匹配结果再次隐藏。
-            items.AddRange(Phrases);
-        }
-        else if (SelectedCategoryId is null)
-        {
-            // 「全部」：遍历每个一级，一级直挂话术（按 SortOrder） + 其下二级区
-            foreach (var top in tops)
-            {
-                foreach (var p in Phrases.Where(p => p.CategoryId == top.Id).OrderBy(p => p.SortOrder)) items.Add(p);
-                foreach (var sub in Categories.Where(c => c.ParentId == top.Id).OrderBy(c => c.SortOrder))
-                {
-                    var parentName = Categories.FirstOrDefault(c => c.Id == sub.ParentId)?.Name;
-                    items.Add(new SubHeaderItem(sub) { ParentName = parentName });
-                    if (sub.IsExpanded)
-                        foreach (var p in Phrases.Where(p => p.CategoryId == sub.Id).OrderBy(p => p.SortOrder)) items.Add(p);
-                }
-            }
-        }
+        if (!string.IsNullOrWhiteSpace(SearchQuery)) items.AddRange(Phrases);
+        else if (SelectedCategoryId is null) foreach (var root in roots) AppendCategory(root, items, includeHeader: false);
         else
         {
-            var top = tops.FirstOrDefault(c => c.Id == SelectedCategoryId);
-            if (top is not null)
-            {
-                foreach (var p in Phrases.Where(p => p.CategoryId == top.Id).OrderBy(p => p.SortOrder)) items.Add(p);
-                foreach (var sub in Categories.Where(c => c.ParentId == top.Id).OrderBy(c => c.SortOrder))
-                {
-                    var parentName = Categories.FirstOrDefault(c => c.Id == sub.ParentId)?.Name;
-                    items.Add(new SubHeaderItem(sub) { ParentName = parentName });
-                    if (sub.IsExpanded)
-                        foreach (var p in Phrases.Where(p => p.CategoryId == sub.Id).OrderBy(p => p.SortOrder)) items.Add(p);
-                }
-            }
+            var root = roots.FirstOrDefault(c => c.Id == SelectedCategoryId);
+            if (root is not null) AppendCategory(root, items, includeHeader: false);
         }
-
-        // 重新编号 + 二级归属标记（归属二级分类的话术更深缩进）
-        var idx = 1;
-        foreach (var item in items.OfType<PhraseItemViewModel>())
+        var index = 1;
+        foreach (var phrase in items.OfType<PhraseItemViewModel>())
         {
-            item.IndexInCategory = idx++;
-            item.IsSubCategory = Categories.Any(c => c.ParentId == item.CategoryId);
+            phrase.IndexInCategory = index++;
+            phrase.IsSubCategory = Categories.FirstOrDefault(c => c.Id == phrase.CategoryId)?.ParentId is not null;
         }
         VisibleItems = new ObservableCollection<object>(items);
+    }
+
+    private void AppendCategory(CategoryItem category, List<object> items, bool includeHeader)
+    {
+        if (includeHeader) items.Add(new SubHeaderItem(category) { ParentName = Categories.FirstOrDefault(c => c.Id == category.ParentId)?.Name });
+        foreach (var phrase in Phrases.Where(p => p.CategoryId == category.Id).OrderBy(p => p.SortOrder)) items.Add(phrase);
+        if (!category.IsExpanded && !category.IsSynthetic) return;
+        foreach (var child in Categories.Where(c => c.ParentId == category.Id).OrderBy(c => c.SortOrder)) AppendCategory(child, items, includeHeader: true);
     }
 
     /// <summary>
@@ -320,6 +292,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
     public async Task ReorderPhrasesAsync(Guid categoryId, IList<PhraseItemViewModel> orderedItems)
     {
         if (orderedItems is null || orderedItems.Count == 0) return;
+        if (orderedItems.Any(item => !item.CanManage)) { StatusMessage = "企业话术由管理员维护。"; return; }
         var anyFailed = false;
         for (var i = 0; i < orderedItems.Count; i++)
         {
@@ -354,6 +327,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
     public async Task ReorderCategoriesAsync(IList<CategoryItem> orderedTops)
     {
         if (orderedTops is null || orderedTops.Count == 0) return;
+        if (orderedTops.Any(item => !item.CanManage)) { StatusMessage = "企业分类由管理员维护。"; return; }
         // 先把所有目标 sort_order 抬高 10*N+1，避免与现有值冲突；写入目标值
         for (var i = 0; i < orderedTops.Count; i++)
         {
@@ -427,7 +401,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
     private async Task Insert(PhraseItemViewModel? item)
     {
         if (item is null) return;
-        var ok = await _commands.InsertPhraseAsync(item.Id);
+        var ok = await _commands.InsertPhraseAsync(item.ToPhrase());
         if (!ok)
         {
             StatusMessage = "插入未执行（当前目标窗口不可用）";
@@ -461,6 +435,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
     private void Move(PhraseItemViewModel? item)
     {
         if (item is null) return;
+        if (!item.CanManage) { StatusMessage = "企业话术由管理员维护。"; return; }
         MoveRequested?.Invoke(this, item);
     }
 
@@ -468,6 +443,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
     private async Task Delete(PhraseItemViewModel? item)
     {
         if (item is null) return;
+        if (!item.CanManage) { StatusMessage = "企业话术由管理员维护。"; return; }
         var ok = await _commands.DeletePhraseAsync(item.Id, item.Version);
         if (ok)
         {
@@ -484,7 +460,9 @@ public partial class PhraseLibraryViewModel : ObservableObject
     [RelayCommand]
     private void Edit(PhraseItemViewModel? item)
     {
-        if (item is not null) EditRequested?.Invoke(this, item);
+        if (item is null) return;
+        if (!item.CanManage) { StatusMessage = "企业话术由管理员维护。"; return; }
+        EditRequested?.Invoke(this, item);
     }
 
     [RelayCommand]

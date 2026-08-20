@@ -8,6 +8,12 @@ public static class CoreAssemblyMarker
     public const string Phase = "Phase 3 — Search";
 }
 
+public enum PhraseScope
+{
+    Personal,
+    Enterprise,
+}
+
 public enum ShortcutMode
 {
     None,
@@ -34,7 +40,8 @@ public sealed record Category(
     int SortOrder,
     long Version,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    PhraseScope Scope = PhraseScope.Personal);
 
 public sealed record Phrase(
     Guid Id,
@@ -49,7 +56,8 @@ public sealed record Phrase(
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc,
     string ColorKey = "default",
-    int SortOrder = 0);
+    int SortOrder = 0,
+    PhraseScope Scope = PhraseScope.Personal);
 
 /// <summary>
 /// 应用设置聚合。Launcher 快捷键只以平台无关的 <see cref="ShortcutChord"/> 作为领域真值；

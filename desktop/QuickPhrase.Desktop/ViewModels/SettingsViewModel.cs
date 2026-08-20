@@ -34,6 +34,7 @@ public partial class SettingsViewModel : ObservableObject
 
     /// <summary>设置页末尾的数据管理入口，内部仍通过 ICommandService 访问话术包服务。</summary>
     public DataManagementViewModel DataManagement { get; }
+    public EnterpriseSyncSettingsViewModel? EnterpriseSync { get; }
 
     [ObservableProperty] private bool _launchOnStartup;
     [ObservableProperty] private bool _startMinimized;
@@ -54,10 +55,11 @@ public partial class SettingsViewModel : ObservableObject
     /// </summary>
     public event EventHandler? RestartOnboardingRequested;
 
-    public SettingsViewModel(ICommandService commands)
+    public SettingsViewModel(ICommandService commands, ISyncAccountService? syncAccounts = null, ISyncProvider? syncProvider = null)
     {
         _commands = commands;
         DataManagement = new DataManagementViewModel(commands);
+        if (syncAccounts is not null && syncProvider is not null) EnterpriseSync = new EnterpriseSyncSettingsViewModel(syncAccounts, syncProvider);
     }
 
     public async Task LoadAsync()
@@ -76,6 +78,7 @@ public partial class SettingsViewModel : ObservableObject
             ClipboardCompatibilityMode = settings.ClipboardCompatibilityMode;
             ReplaceAdapters(settings.LauncherEnabledAdapters);
             ErrorMessage = null;
+            if (EnterpriseSync is not null) await EnterpriseSync.LoadAsync();
         }
         finally
         {

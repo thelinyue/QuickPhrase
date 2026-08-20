@@ -1,3 +1,4 @@
+using System.Net.Http;
 using QuickPhrase.Core;
 
 namespace QuickPhrase.Platform.Windows;
@@ -11,6 +12,7 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
     private readonly SqliteWriteQueue _writeQueue;
     private readonly PhraseSearchRuntime _searchRuntime;
     private readonly SqlitePhrasePackageImporter _packageImporter;
+    private readonly QuickPhraseHubSyncProvider _hubSync;
     private readonly PhrasePackageFileStore _packageFiles = new();
 
     private QuickPhraseDataRuntime(
@@ -20,7 +22,9 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
         SqlitePhrasePackageImporter packageImporter,
         ICategoryRepository categories,
         ISettingsRepository settings,
-        ISearchHistoryRepository searchHistory)
+        ISearchHistoryRepository searchHistory,
+        SqliteEnterpriseSyncStore enterpriseSyncStore,
+        QuickPhraseHubSyncProvider hubSync)
     {
         Options = options;
         _writeQueue = writeQueue;
@@ -31,6 +35,11 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
         Categories = categories;
         Settings = settings;
         SearchHistory = searchHistory;
+        EnterpriseSyncStore = enterpriseSyncStore;
+        EnterpriseCatalog = enterpriseSyncStore;
+        _hubSync = hubSync;
+        SyncProvider = hubSync;
+        SyncAccounts = hubSync;
     }
 
     public QuickPhraseDataOptions Options { get; }
@@ -40,6 +49,12 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
     public ICategoryRepository Categories { get; }
     public ISettingsRepository Settings { get; }
     public ISearchHistoryRepository SearchHistory { get; }
+    public IEnterpriseCatalog EnterpriseCatalog { get; }
+    internal SqliteEnterpriseSyncStore EnterpriseSyncStore { get; }
+    public ISyncProvider SyncProvider { get; }
+    public ISyncAccountService SyncAccounts { get; }
+
+    internal Task RefreshEnterpriseSearchAsync(CancellationToken cancellationToken = default) => _searchRuntime.RefreshEnterpriseAsync(cancellationToken);
 
     public static async Task<QuickPhraseDataRuntime> OpenAsync(QuickPhraseDataOptions options, CancellationToken cancellationToken = default)
     {
@@ -54,8 +69,10 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
             var clock = options.TimeProvider;
             var rawPhrases = new SqlitePhraseRepository(connections, queue, clock);
             var rawCategories = new SqliteCategoryRepository(connections, queue, clock);
-            var searchRuntime = await PhraseSearchRuntime.CreateAsync(rawPhrases, new PinyinMProvider(), cancellationToken);
             var searchHistory = new SqliteSearchHistoryRepository(connections, queue, clock);
+            var enterpriseSyncStore = new SqliteEnterpriseSyncStore(connections, queue, clock);
+            var searchRuntime = await PhraseSearchRuntime.CreateAsync(rawPhrases, new PinyinMProvider(), enterpriseSyncStore, cancellationToken);
+            var hubSync = new QuickPhraseHubSyncProvider(enterpriseSyncStore, new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, new DpapiTokenStore(options.SecretsDirectory), searchRuntime.RefreshEnterpriseAsync, clock);
             return new QuickPhraseDataRuntime(
                 options,
                 queue,
@@ -63,7 +80,9 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
                 new SqlitePhrasePackageImporter(queue, clock),
                 searchRuntime.WrapCategoryRepository(rawCategories),
                 new SqliteSettingsRepository(connections, queue, clock),
-                searchHistory);
+                searchHistory,
+                enterpriseSyncStore,
+                hubSync);
         }
         catch
         {
@@ -89,6 +108,7 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
 
     public async ValueTask DisposeAsync()
     {
+        await _hubSync.DisposeAsync();
         await _searchRuntime.DisposeAsync();
         await _writeQueue.DisposeAsync();
     }

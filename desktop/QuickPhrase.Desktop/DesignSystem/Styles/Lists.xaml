@@ -193,14 +193,24 @@
                                     Command="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBox}}, Path=(local:PhraseListActions.SendCommand)}"
                                     CommandParameter="{Binding}" />
                         </Grid>
-                        <desktopControls:OverflowTextBlock Grid.Column="1"
-                                                           Style="{StaticResource Style.Text.Label}"
-                                                           VerticalAlignment="Center"
-                                                           Margin="{StaticResource Thickness.Gap.Inline.MD}"
-                                                           TextWrapping="NoWrap"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}, Path=Foreground}"
-                                                           Text="{Binding Title}" />
+                        <Grid Grid.Column="1" Margin="{StaticResource Thickness.Gap.Inline.MD}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Border Grid.Column="0"
+                                    Background="{DynamicResource Brush.Accent.Soft}"
+                                    CornerRadius="{StaticResource Radius.XS}"
+                                    Padding="{StaticResource Thickness.Gap.Inline.XS}"
+                                    Margin="{StaticResource Thickness.Gap.Inline.XS}"
+                                    Visibility="{Binding IsEnterprise, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="企业" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Accent.Primary.Pressed}" />
+                            </Border>
+                            <desktopControls:OverflowTextBlock Grid.Column="1"
+                                                               Style="{StaticResource Style.Text.Label}"
+                                                               VerticalAlignment="Center"
+                                                               TextWrapping="NoWrap"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}, Path=Foreground}"
+                                                               Text="{Binding Title}" />
+                        </Grid>
                         <desktopControls:OverflowTextBlock Grid.Column="2"
                                                            Style="{StaticResource Style.Text.Body.Medium}"
                                                            VerticalAlignment="Center"
