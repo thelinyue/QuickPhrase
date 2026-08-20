@@ -53,14 +53,14 @@ Native smoke 使用真实 WPF 控件和事件路由验证：
 实际输出：
 
 ```text
-LAUNCHER_COLD_START interactive=600.683ms gate=none
+LAUNCHER_COLD_START interactive=592.614ms gate=none
 LAUNCHER_SMOKE_PASS
 ```
 
 诊断目录：
 
 ```text
-C:\Users\林樾\AppData\Local\Temp\QuickPhrase-Smoke\20260820-221146-612-13504
+C:\Users\林樾\AppData\Local\Temp\QuickPhrase-Smoke\20260820-222316-881-17220
 ```
 
 ## Launcher 热呼出性能定义
@@ -100,15 +100,15 @@ LauncherLifecycleState == Interactive
 ## 实际性能结果
 
 ```text
-LAUNCHER_COLD_START interactive=600.508ms gate=none
-LAUNCHER_PERF count=200 warmup=10 p50=40.324ms p95=66.786ms p99=80.257ms threshold=120ms
+LAUNCHER_COLD_START interactive=595.787ms gate=none
+LAUNCHER_PERF count=200 warmup=10 p50=43.484ms p95=67.882ms p99=76.268ms threshold=120ms
 LAUNCHER_SMOKE_PASS
 ```
 
 结论：
 
 ```text
-P95 = 66.786ms <= 120ms
+P95 = 67.882ms <= 120ms
 ```
 
 发布质量门槛通过。
@@ -118,7 +118,7 @@ P95 = 66.786ms <= 120ms
 Performance 诊断目录：
 
 ```text
-C:\Users\林樾\AppData\Local\Temp\QuickPhrase-Smoke\20260820-221154-297-35348
+C:\Users\林樾\AppData\Local\Temp\QuickPhrase-Smoke\20260820-222302-630-18440
 ```
 
 `performance-samples.csv` 包含 200 条正式样本；`result.json` 记录：
