@@ -260,7 +260,7 @@ internal sealed class LauncherSmokeRunner : IAsyncDisposable
         this.options = options;
         diagnostics = LauncherSmokeDiagnostics.Create(options.OutputDirectory, options.Mode);
         searchHistory = new SearchHistoryCoordinator(new LauncherSmokeHistoryRepository());
-        launcher = new LauncherWindow(new LauncherSmokeSearchService(), searchHistory);
+        launcher = new LauncherWindow(new LauncherSmokeSearchService(), searchHistory, hideOnDeactivate: false);
         hotkeys = new HotkeyCoordinator(
             shortcutService,
             action => System.Windows.Application.Current.Dispatcher.BeginInvoke(

@@ -33,7 +33,7 @@ public partial class LauncherWindow : Window
     private const double LauncherChromeHeight = 128;
     private const double PhraseRowHeight = 32;
 
-    public LauncherWindow(ISearchService search, SearchHistoryCoordinator searchHistory)
+    public LauncherWindow(ISearchService search, SearchHistoryCoordinator searchHistory, bool hideOnDeactivate = true)
     {
         _search = search;
         _searchHistory = searchHistory;
@@ -43,7 +43,8 @@ public partial class LauncherWindow : Window
         ResultsList.SelectedIndex = 0;
         Loaded += (_, _) => FocusSearchBox();
         PreviewKeyDown += OnPreviewKeyDown;
-        Deactivated += (_, _) => HideLauncher();
+        if (hideOnDeactivate)
+            Deactivated += (_, _) => HideLauncher();
         Closing += OnClosing;
         UpdateTitleColumnWidth();
     }

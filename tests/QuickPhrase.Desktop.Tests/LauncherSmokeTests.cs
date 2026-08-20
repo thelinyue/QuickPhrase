@@ -148,6 +148,20 @@ public sealed class LauncherSmokeTests
         Assert.True(controllerIndex > parseIndex, "Smoke 必须在 ApplicationController 创建前分流。");
     }
 
+    [Fact]
+    public void Smoke_DisablesExternalDeactivationHideWithoutChangingProductDefault()
+    {
+        var root = FindRepositoryRoot();
+        var runner = File.ReadAllText(Path.Combine(
+            root, "desktop", "QuickPhrase.Desktop", "LauncherSmokeRunner.cs"));
+        var launcher = File.ReadAllText(Path.Combine(
+            root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml.cs"));
+
+        Assert.Contains("hideOnDeactivate: false", runner, StringComparison.Ordinal);
+        Assert.Contains("bool hideOnDeactivate = true", launcher, StringComparison.Ordinal);
+        Assert.Contains("if (hideOnDeactivate)", launcher, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
