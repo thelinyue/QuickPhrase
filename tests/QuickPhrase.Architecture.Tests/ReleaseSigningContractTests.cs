@@ -114,10 +114,27 @@ public sealed class ReleaseSigningContractTests
     {
         var workflow = File.ReadAllText(Path.Combine(
             Root, ".github", "workflows", "release-candidate.yml"));
-        Assert.Contains("workflow_dispatch", workflow, StringComparison.Ordinal);
-        Assert.Contains("0.0.1-rc.1", workflow, StringComparison.Ordinal);
-        Assert.Contains("unsigned", workflow, StringComparison.OrdinalIgnoreCase);
+        foreach (var expected in new[]
+        {
+            "workflow_dispatch",
+            "default: 0.0.1-rc.1",
+            "confirmWeComAcceptance",
+            "contents: read",
+            "build-release.ps1",
+            "-UnsignedCandidate",
+            "-Stage All",
+            "actions/upload-artifact@v4",
+            "QuickPhrase-${{ inputs.version }}-win-x64-unsigned.zip",
+            "QuickPhrase-Setup-${{ inputs.version }}-unsigned.exe",
+            "SHA256SUMS.txt",
+            "release-manifest.json",
+        })
+            Assert.Contains(expected, workflow, StringComparison.Ordinal);
+
         Assert.DoesNotContain("gh release create", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("git tag", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("signpath/github-action", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("push:", workflow, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
