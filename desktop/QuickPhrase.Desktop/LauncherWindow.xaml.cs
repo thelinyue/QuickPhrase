@@ -54,11 +54,13 @@ public partial class LauncherWindow : Window
     public string SearchErrorText { get; private set; } = "搜索索引初始化失败，请重试。";
 
     public bool IsLauncherVisible => IsVisible;
+    internal LauncherLifecycleState LifecycleState { get; private set; } = LauncherLifecycleState.Created;
     public bool IsPracticeMode => _invocationContext?.Mode == LauncherInvocationMode.Practice;
 
     public void Open(string initialQuery = "", DeliveryTarget? target = null, Guid? phraseId = null, AdapterStatusSnapshot? status = null, LauncherInvocationContext? invocationContext = null)
     {
         if (_closing) return;
+        LifecycleState = LauncherLifecycleState.Activating;
         _target = target;
         _invocationContext = invocationContext;
         _preferredPhraseId = phraseId;
@@ -84,14 +86,22 @@ public partial class LauncherWindow : Window
         RefreshResults();
         PositionOnCurrentMonitor();
         if (!IsVisible) Show(); else Activate();
+        LifecycleState = LauncherLifecycleState.Visible;
         FocusSearchBox();
     }
 
     public void HideLauncher()
     {
         CloseSearchHistory();
-        if (!IsVisible) return;
+        if (!IsVisible)
+        {
+            if (LifecycleState is not LauncherLifecycleState.Disposed)
+                LifecycleState = LauncherLifecycleState.Hidden;
+            return;
+        }
+        LifecycleState = LauncherLifecycleState.Hiding;
         Hide();
+        LifecycleState = LauncherLifecycleState.Hidden;
         // Hide 之后再次收起窗口内历史覆盖层，作为排队焦点回调之前的最终关闭屏障。
         CloseSearchHistory();
         Hidden?.Invoke();
@@ -107,6 +117,7 @@ public partial class LauncherWindow : Window
     {
         _closing = true;
         CloseSearchHistory();
+        LifecycleState = LauncherLifecycleState.Disposed;
         Close();
     }
 
@@ -114,6 +125,27 @@ public partial class LauncherWindow : Window
     {
         if (!IsVisible) return Task.CompletedTask;
         return Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render).Task;
+    }
+
+    /// <summary>
+    /// 等待当前复用窗口完成 Render/Input 调度并获得搜索输入焦点；
+    /// smoke 以此作为“热呼出可交互”的统一终点。
+    /// </summary>
+    internal async Task WaitForInteractiveAsync(CancellationToken cancellationToken)
+    {
+        await Dispatcher.InvokeAsync(
+            () => { },
+            System.Windows.Threading.DispatcherPriority.Render).Task.WaitAsync(cancellationToken);
+        await Dispatcher.InvokeAsync(
+            () => { },
+            System.Windows.Threading.DispatcherPriority.Input).Task.WaitAsync(cancellationToken);
+
+        if (!IsVisible || !QueryBox.IsVisible || !QueryBox.IsEnabled || !QueryBox.IsKeyboardFocusWithin)
+        {
+            throw new InvalidOperationException(
+                $"Launcher 未进入可输入状态。Visible={IsVisible}，QueryVisible={QueryBox.IsVisible}，Enabled={QueryBox.IsEnabled}，Focus={QueryBox.IsKeyboardFocusWithin}。");
+        }
+        LifecycleState = LauncherLifecycleState.Interactive;
     }
 
     private void QueryBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => OpenSearchHistory();

@@ -7,14 +7,14 @@ namespace QuickPhrase.Desktop.Tests;
 public sealed class LauncherSmokeTests
 {
     [Theory]
-    [InlineData("--smoke-native-launcher", LauncherSmokeMode.Native)]
-    [InlineData("--smoke-launcher-performance", LauncherSmokeMode.Performance)]
-    public void Options_ParseSingleMode(string argument, LauncherSmokeMode expected)
+    [InlineData("--smoke-native-launcher", "Native")]
+    [InlineData("--smoke-launcher-performance", "Performance")]
+    public void Options_ParseSingleMode(string argument, string expected)
     {
         var result = LauncherSmokeOptions.Parse([argument]);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(expected, result.Options.Mode);
+        Assert.Equal(expected, result.Options.Mode.ToString());
     }
 
     [Fact]
@@ -68,5 +68,21 @@ public sealed class LauncherSmokeTests
     {
         Assert.Throws<ArgumentException>(() =>
             LauncherPerformanceSummary.Create([], TimeSpan.FromMilliseconds(120)));
+    }
+
+    [Fact]
+    public void LauncherLifecycleState_ContainsStableReuseStates()
+    {
+        Assert.Equal(new[]
+        {
+            "Created",
+            "Activating",
+            "Visible",
+            "Interactive",
+            "Hiding",
+            "Hidden",
+            "Disposed",
+            "Faulted",
+        }, Enum.GetNames<LauncherLifecycleState>());
     }
 }
