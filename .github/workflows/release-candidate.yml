@@ -1,0 +1,70 @@
+name: release-candidate-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Candidate SemVer
+        required: true
+        default: 0.0.1-rc.1
+      confirmWeComAcceptance:
+        description: Confirm current WeCom manual matrix
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: powershell
+
+jobs:
+  build-unsigned-candidate:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 10.0.400
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.400
+
+      - name: Restore
+        run: dotnet restore QuickPhrase.sln
+
+      - name: Install Inno Setup 6.7.3
+        run: |
+          $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            winget install --id JRSoftware.InnoSetup --version 6.7.3 --exact --silent --accept-package-agreements --accept-source-agreements
+            if ($LASTEXITCODE -ne 0) { throw "Inno Setup 6.7.3 安装失败，退出码 $LASTEXITCODE。" }
+          }
+          $listing = winget list --id JRSoftware.InnoSetup --exact --accept-source-agreements | Out-String
+          if ($listing -notmatch '6\.7\.3') { throw "未检测到 Inno Setup 6.7.3：$listing" }
+
+      - name: Validate gate and build unsigned candidate
+        run: |
+          $version = '${{ inputs.version }}'
+          if ($version -notmatch '^0\.0\.1-rc\.[1-9]\d*$') { throw "候选版本必须匹配 0.0.1-rc.N：$version" }
+          if ('${{ inputs.confirmWeComAcceptance }}' -ne 'true') { throw '尚未确认企业微信人工矩阵。' }
+          $env:QUICKPHRASE_WECOM_ACCEPTANCE = 'passed'
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Version $version -UnsignedCandidate -Stage All
+          if ($LASTEXITCODE -ne 0) { throw "候选构建失败，退出码 $LASTEXITCODE。" }
+
+      - name: Upload unsigned candidate bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickPhrase-${{ inputs.version }}-unsigned
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            artifacts/release/${{ inputs.version }}/QuickPhrase-${{ inputs.version }}-win-x64-unsigned.zip
+            artifacts/release/${{ inputs.version }}/installers/QuickPhrase-Setup-${{ inputs.version }}-unsigned.exe
+            artifacts/release/${{ inputs.version }}/SHA256SUMS.txt
+            artifacts/release/${{ inputs.version }}/release-manifest.json
