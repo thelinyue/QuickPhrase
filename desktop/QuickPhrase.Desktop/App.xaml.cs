@@ -92,6 +92,35 @@ public partial class App : System.Windows.Application
         // 主题资源引用会在此处根据当前偏好覆盖。Light 已通过 App.xaml 加载，
         // 这里根据用户偏好决定是否追加 Dark 覆盖字典。
         ThemeService.Instance.Initialize();
+        // Launcher smoke 必须在单实例、托盘、真实数据和平台服务创建前分流，
+        // 保证诊断只运行隔离的 HotkeyCoordinator + LauncherWindow 链路。
+        var smokeParse = LauncherSmokeOptions.Parse(e.Args);
+        if (!smokeParse.IsSuccess)
+        {
+            Console.Error.WriteLine($"{smokeParse.ErrorCode}：{smokeParse.ErrorMessage}");
+            Shutdown(2);
+            return;
+        }
+
+        if (smokeParse.Options.Mode != LauncherSmokeMode.None)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            var exitCode = 1;
+            try
+            {
+                exitCode = await LauncherSmokeRunner.RunAsync(smokeParse.Options);
+            }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine($"LAUNCHER_SMOKE_UNEXPECTED：Launcher smoke 未处理异常。{exception.Message}");
+            }
+            finally
+            {
+                Shutdown(exitCode);
+            }
+            return;
+        }
+
         StartupTrace.Mark("native-startup");
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         _controller = new ApplicationController();

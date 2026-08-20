@@ -135,6 +135,19 @@ public sealed class LauncherSmokeTests
         Assert.Equal(TimeSpan.FromMilliseconds(120), LauncherSmokeRunner.PerformanceThreshold);
     }
 
+    [Fact]
+    public void App_HandlesSmokeBeforeApplicationControllerConstruction()
+    {
+        var root = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(
+            root, "desktop", "QuickPhrase.Desktop", "App.xaml.cs"));
+        var parseIndex = source.IndexOf("LauncherSmokeOptions.Parse", StringComparison.Ordinal);
+        var controllerIndex = source.IndexOf("new ApplicationController", StringComparison.Ordinal);
+
+        Assert.True(parseIndex >= 0, "App 未解析 Launcher smoke 参数。");
+        Assert.True(controllerIndex > parseIndex, "Smoke 必须在 ApplicationController 创建前分流。");
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
