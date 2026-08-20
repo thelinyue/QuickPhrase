@@ -153,8 +153,27 @@ public sealed class ArchitectureTests
         Assert.DoesNotContain("ManagementBridge", libraryView, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void DesktopRuntimeTestsDisableParallelizationForSharedWpfApplication()
+    {
+        var assemblyInfoPath = Path.Combine(
+            Root,
+            "tests",
+            "QuickPhrase.Desktop.Tests",
+            "AssemblyInfo.cs");
+
+        Assert.True(
+            File.Exists(assemblyInfoPath),
+            "Desktop 运行时控件测试共享唯一 WPF Application，必须提供程序集级串行化配置。");
+
+        var source = File.ReadAllText(assemblyInfoPath);
+        Assert.Contains(
+            "[assembly: Xunit.CollectionBehavior(DisableTestParallelization = true)]",
+            source,
+            StringComparison.Ordinal);
+    }
+
     private static XElement Load(string relative) => XDocument.Load(Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar))).Root!;
     private static string[] ProjectReferences(XElement root) => root.Descendants("ProjectReference").Select(x => x.Attribute("Include")!.Value).ToArray();
     private static string[] PackageReferences(XElement root) => root.Descendants("PackageReference").Select(x => x.Attribute("Include")!.Value).ToArray();
 }
-
