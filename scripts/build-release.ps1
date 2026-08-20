@@ -99,7 +99,7 @@ if ($Stage -in @('Publish', 'All')) {
   Invoke-Step 'Release build' { dotnet build QuickPhrase.sln -c Release --no-restore --verbosity minimal }
   Invoke-Step 'Release Desktop tests' { dotnet test tests/QuickPhrase.Desktop.Tests/QuickPhrase.Desktop.Tests.csproj -c Release --no-build --verbosity minimal }
   Invoke-Step 'Release Architecture tests' { dotnet test tests/QuickPhrase.Architecture.Tests/QuickPhrase.Architecture.Tests.csproj -c Release --no-build --verbosity minimal }
-  Invoke-Step 'win-x64 restore' { dotnet restore desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -r win-x64 }
+  Invoke-Step 'win-x64 restore' { dotnet restore desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -r win-x64 -p:PublishReadyToRun=true }
   Invoke-Step 'Self-contained ReadyToRun publish' {
     dotnet publish desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -c Release -r win-x64 --self-contained true --no-restore -o $publishRoot `
       -p:RuntimeIdentifier=win-x64 -p:PublishTrimmed=false -p:PublishSingleFile=false -p:PublishReadyToRun=true -p:DebugType=None `
