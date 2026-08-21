@@ -78,6 +78,18 @@ public sealed class OverflowTextBlockTests
         });
     }
     [Fact]
+    public void LongText_TooltipStaysOpenWhenManagedByToolTipService()
+    {
+        var staysOpen = WpfTestApplicationHost.Invoke(_ =>
+        {
+            var control = CreateMeasuredControl("这是一段需要由 ToolTipService 显示的长文案。", 120);
+            var tooltip = Assert.IsType<System.Windows.Controls.ToolTip>(control.ToolTip);
+            return tooltip.StaysOpen;
+        });
+
+        Assert.True(staysOpen);
+    }
+    [Fact]
     public void ResizingFromWideToNarrow_EnablesOverflowInteraction()
     {
         var state = WpfTestApplicationHost.Invoke(_ =>

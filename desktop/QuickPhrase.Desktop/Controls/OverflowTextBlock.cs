@@ -162,7 +162,9 @@ public sealed class OverflowTextBlock : TextBlock
             PlacementTarget = this,
             Placement = PlacementMode.Custom,
             CustomPopupPlacementCallback = PlaceTooltip,
-            StaysOpen = false,
+            // 此 ToolTip 通过控件的 ToolTip 属性交由 ToolTipService 延迟显示；
+            // WPF 不支持 StaysOpen=false。浮层关闭仍由本控件的鼠标、焦点和卸载逻辑负责。
+            StaysOpen = true,
             HasDropShadow = true,
             MaxWidth = maxWidth,
             MaxHeight = maxHeight,
