@@ -12,6 +12,8 @@ public sealed class PhraseBatchImportCsvFileStore
 {
     public const long MaxFileBytes = 50L * 1024 * 1024;
     private static readonly UTF8Encoding Utf8WithBom = new(encoderShouldEmitUTF8Identifier: true);
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+    private static readonly Lazy<Encoding> StrictGb18030 = new(CreateStrictGb18030Encoding);
 
     /// <summary>将固定 CSV 模板以 UTF-8 BOM 编码写入目标路径，保证 Windows Excel 可正确识别中文。</summary>
     public async Task WriteTemplateAsync(string path, CancellationToken cancellationToken = default)
@@ -78,7 +80,10 @@ public sealed class PhraseBatchImportCsvFileStore
             if (fileInfo.Length > MaxFileBytes)
                 throw new PhraseBatchImportFileException("CSV_TOO_LARGE", "CSV 批量导入文件不能超过 50 MB。");
 
-            var csv = await File.ReadAllTextAsync(fullPath, Encoding.UTF8, cancellationToken);
+            // Excel/WPS 在简体中文 Windows 中将 CSV 另存为“CSV”时，常写出 GBK/GB18030 字节。
+            // 平台层负责把文件字节安全还原为文本；Core 仍只处理平台无关的固定 CSV 格式与领域校验。
+            var bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken);
+            var csv = DecodeCsvBytes(bytes);
             var document = PhraseBatchImportCsv.Parse(csv);
             Log("读取", traceId, "CSV_READ_OK", started);
             return document;
@@ -115,6 +120,40 @@ public sealed class PhraseBatchImportCsvFileStore
         }
     }
 
+    /// <summary>
+    /// 以严格 UTF-8 优先读取 CSV，只有 UTF-8 字节序列无效时才回退 GB18030。
+    /// 该顺序避免把正常 UTF-8 中文误解释为本地代码页，也不允许替换字符掩盖损坏文件。
+    /// </summary>
+    private static string DecodeCsvBytes(byte[] bytes)
+    {
+        try
+        {
+            return StrictUtf8.GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            try
+            {
+                return StrictGb18030.Value.GetString(bytes);
+            }
+            catch (DecoderFallbackException exception)
+            {
+                throw new PhraseBatchImportFileException(
+                    "CSV_ENCODING_UNSUPPORTED",
+                    "CSV 文件编码无法识别，请使用 UTF-8 或 GB18030/GBK 编码保存后重试。",
+                    exception);
+            }
+        }
+    }
+
+    private static Encoding CreateStrictGb18030Encoding()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding(
+            "GB18030",
+            EncoderFallback.ExceptionFallback,
+            DecoderFallback.ExceptionFallback);
+    }
     private static string ValidatePath(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
