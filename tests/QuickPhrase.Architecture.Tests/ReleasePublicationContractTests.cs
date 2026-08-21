@@ -92,6 +92,7 @@ public sealed class ReleasePublicationContractTests
             "scripts/verify-phase6.ps1",
             "actions/upload-artifact@v4",
             "gh release create",
+            "GH_TOKEN: ${{ github.token }}",
             "--generate-notes",
             "--notes",
             "SHA256SUMS.txt",

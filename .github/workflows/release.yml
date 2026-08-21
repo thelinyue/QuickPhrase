@@ -87,6 +87,8 @@ jobs:
             artifacts/release/${{ inputs.version }}/release-manifest.json
 
       - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $version = '${{ inputs.version }}'
           $root = "artifacts/release/$version"
