@@ -1,7 +1,7 @@
 # QuickPhrase Codex 开发执行文档
 
-状态：Architecture v1.1 已冻结为纯 WPF；Phase 6 Windows 11 发布基础设施已完成。  
-当前下一步：完成企业微信人工安全矩阵和 Windows 11 安装/升级/卸载矩阵后写入 `PHASE6_VERIFY_PASS_WIN11`。
+状态：Architecture v1.1 已冻结为纯 WPF；Phase 6 Windows 11 发布基础设施已完成。
+当前下一步：提交 SignPath Foundation Open Source Project 申请；获批并生成有效签名资产后，完成正式版 `v0.0.1` 的最终验证与单独发布审批。
 
 ## 执行纪律
 
@@ -27,7 +27,7 @@
 - WPF ViewModel 无 Web/Bridge DTO。
 - 主界面、话术库、编辑器、设置和 Launcher 全部由当前 WPF XAML 实现。
 - `src/` 等 Prototype 与生产 csproj 无依赖关系。
-- 最终 `artifacts/release/1.0.0/publish` 不含 HTML、JS、CSS bundle 或 WebView2 Runtime 安装器。
+- 最终 `artifacts/release/0.0.1/publish` 不含 HTML、JS、CSS bundle 或 WebView2 Runtime 安装器。
 
 ### 当前结果
 
@@ -93,7 +93,7 @@
 
 强制安全测试包括 HWND 复用、PID/线程/启动时间变化、Launcher 后切换窗口、插入验证不确定、插入与发送之间切换窗口、发送后验证不确定、剪贴板新复制内容、UIA 超时/取消/UIPI 和运行时能力不满足时的安全拒绝。
 
-结果：`IMPLEMENTED / WECOM INSERT PROFILE FROZEN / MANUAL MATRIX IN PROGRESS`。证据见 [phase5-validation.md](phase5-validation.md)。
+结果：`PHASE5_VERIFY_PASS`。当前主流版本企业微信人工矩阵已由发布负责人明确确认通过；证据见 [phase5-validation.md](phase5-validation.md)。
 
 ## Phase 5.1：连续投递与启动性能
 
@@ -107,18 +107,18 @@
 
 ## Phase 6：Windows 11 Release
 
-### 已完成/待验收
+### 已完成/待签名
 
 - `.NET 10 win-x64` self-contained、非裁剪构建。
 - 按用户安装的纯 WPF Inno Setup EXE。
 - 开机启动、单实例、托盘、升级备份、卸载保留数据和重装流程。
-- 当前发布目录：`artifacts/release/1.0.0`。
+- 正式版目标目录：`artifacts/release/0.0.1`；公开未签名候选为 `v0.0.1-rc.1`。
 - 中文产品名：`闪语`；程序集、安装目录、AppId 和数据目录保持 `QuickPhrase` 以兼容升级。
 - 发布清单不得包含 WebView2 Runtime、WebView2 前置安装器或网页 bundle。
 
-主要平台为 Windows 11 x64；Windows 10 22H2 为 `UNVERIFIED / NOT SUPPORTED IN V1.0.0`。
+主要平台为 Windows 11 x64；Windows 10 22H2 为 `UNVERIFIED / NOT SUPPORTED IN V0.0.1`。
 
-当前结果：`PHASE6_INFRA_PASS`。当前主流版本企业微信运行时能力人工矩阵、冷/热启动采样、Windows 11 VM 安装/升级/卸载矩阵仍需补录，完成后才写入 `PHASE6_VERIFY_PASS_WIN11`。证据见 [phase6-validation.md](phase6-validation.md)。
+当前结果：企业微信人工矩阵与 Windows 11 x64 安装/升级/启动/卸载保留数据矩阵均已由发布负责人明确确认通过。SignPath Foundation 审批、双阶段签名、可信时间戳和 signed stable 资产验证仍未完成，因此尚不写入 `PHASE6_VERIFY_PASS_WIN11`。证据见 [phase6-validation.md](phase6-validation.md)。
 
 ## 统一验证命令
 
@@ -137,13 +137,13 @@ npm run test:sites
 
 ## Frozen Status
 
-**QuickPhrase Architecture v1.1 — FROZEN**  
-Phase 0：**AUDITED / PURE WPF BOUNDARY**  
-Phase 1：**COMPLETED**  
-Phase 2：**COMPLETED**  
-Phase 3：**COMPLETED**  
-Phase 4：**COMPLETED**  
-Phase 5：**IMPLEMENTED / MANUAL MATRIX IN PROGRESS**  
-Phase 5.1：**INFRASTRUCTURE PASS**  
-Phase 6：**INFRASTRUCTURE PASS / WIN11 MATRIX PENDING**
+**QuickPhrase Architecture v1.1 — FROZEN**
 
+- Phase 0：**AUDITED / PURE WPF BOUNDARY**
+- Phase 1：**COMPLETED**
+- Phase 2：**COMPLETED**
+- Phase 3：**COMPLETED**
+- Phase 4：**COMPLETED**
+- Phase 5：**VERIFY PASS**
+- Phase 5.1：**INFRASTRUCTURE PASS**
+- Phase 6：**MANUAL MATRIX PASS / SIGNING PENDING**

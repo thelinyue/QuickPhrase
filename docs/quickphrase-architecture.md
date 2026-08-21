@@ -300,14 +300,14 @@ SEARCH_INDEX_DIRTY
 - Core 无平台泄漏。
 - Desktop 无 Web/Bridge/IPC 符号。
 - `QuickPhrase.Desktop.csproj` 无 WebView2/React 包。
-- 最终 `artifacts/release/1.0.0/publish` 无网页资源。
+- 最终 `artifacts/release/0.0.1/publish` 无网页资源。
 
 ## 15. Frozen Status
 
-Phase 1–4：`COMPLETED`  
-Phase 5：`IMPLEMENTED / WECOM INSERT PROFILE FROZEN / MANUAL MATRIX IN PROGRESS`  
-Phase 5.1：`INFRASTRUCTURE PASS / QUEUE + STARTUP OPTIMIZATION COMPLETE`  
-Phase 6：`INFRASTRUCTURE PASS / ARTIFACTS READY / WIN11 MATRIX PENDING`
+- Phase 1–4：`COMPLETED`
+- Phase 5：`VERIFY PASS / WECOM INSERT PROFILE FROZEN`
+- Phase 5.1：`INFRASTRUCTURE PASS / QUEUE + STARTUP OPTIMIZATION COMPLETE`
+- Phase 6：`MANUAL MATRIX PASS / SIGNING PENDING`
 
 插件、AI、团队、文件/图片话术、浏览器扩展、跨平台、后台发送和自动更新进入 V2 Backlog。
 

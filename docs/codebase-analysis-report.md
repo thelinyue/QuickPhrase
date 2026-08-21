@@ -2,7 +2,7 @@
 
 > 生成时间：2026-08-18
 > 分析依据：基于仓库实际源码、配置与文档的逐文件阅读。推测内容已显式标注。
-> 当前项目状态（来自 `docs/phase6-validation.md`）：`PHASE6_INFRA_PASS`，最终门禁 `PHASE6_VERIFY_PASS_WIN11` 尚未写入。
+> 当前项目状态（2026-08-21 状态同步，来自 `docs/phase6-validation.md`）：企业微信与 Windows 11 人工矩阵已确认通过；SignPath 审批、正式签名资产验证和最终发布批准仍待完成，因此 `PHASE6_VERIFY_PASS_WIN11` 尚未写入。
 
 ---
 
@@ -183,9 +183,9 @@ Core 不知道 Windows；React 不拥有业务能力；WebView2 非核心运行�
 
 ## 7. 问题与建议（按优先级）
 
-### P0 — 发布门禁（已知未通过，阻断 1.0.0 正式发布）
-1. **Phase 6 最终门禁未关闭**：状态仍为 `PHASE6_INFRA_PASS`，`PHASE6_VERIFY_PASS_WIN11` 未写入。当前主流版本企业微信运行时能力矩阵（含 Enter 插入、Ctrl+Enter 显式发送与异常中断）+ Windows 11 安装/冷启动矩阵仍需发布负责人以时间/TraceId/安装矩阵证据确认（详见 `docs/phase6-validation.md` 第 31–38 行）。
-2. **Windows 10 标记为不支持**（`UNVERIFIED / NOT SUPPORTED IN V1.0.0`）；安装器**未签名**，SmartScreen “未知发布者”为已知限制。
+### P0 — 发布门禁（签名链未完成，阻断 v0.0.1 正式发布）
+1. **Phase 6 最终门禁未关闭**：企业微信运行时能力矩阵与 Windows 11 安装/升级/启动/卸载保留数据矩阵已由发布负责人明确确认通过；SignPath Foundation 审批、双阶段签名、可信时间戳、signed stable 资产验证及新的发布批准仍未完成。
+2. **Windows 10 标记为不支持**（`UNVERIFIED / NOT SUPPORTED IN V0.0.1`）；公开 `v0.0.1-rc.1` 候选安装器仍未签名，SmartScreen “未知发布者”为已知限制。
 
 ### P1 — 潜在风险 / 技术债
 3. **`UiAutomationWorker` 名不副实**：文件命名与架构文档均声称 UIA 用于 Chrome/Edge，但 V1 企业微信仅用 Clipboard+Ctrl+V；源码中该 Worker 实际**未调用任何 UIA API**（仅占位 MTA 线程）。建议：确认其为预留能力还是死代码，若是后者应加注释或移除，避免误导维护者。
