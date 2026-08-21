@@ -365,7 +365,7 @@ public sealed class GlobalDesignSystemTokenTests
         {
             Assert.Equal("SolidColorBrush", pair.Value.Name.LocalName);
             var expectedColorKey = pair.Key.Replace("Brush.", "Color.", StringComparison.Ordinal);
-            var resourceKind = pair.Key.StartsWith("Brush.Phrase.", StringComparison.Ordinal) ? "StaticResource" : "DynamicResource";
+            const string resourceKind = "DynamicResource";
             Assert.Equal($"{{{resourceKind} {expectedColorKey}}}", pair.Value.Attribute("Color")?.Value);
         }
 

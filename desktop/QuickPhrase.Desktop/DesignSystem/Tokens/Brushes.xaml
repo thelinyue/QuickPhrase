@@ -27,16 +27,16 @@
     <SolidColorBrush x:Key="Brush.Overlay" Color="{DynamicResource Color.Overlay}" />
     <SolidColorBrush x:Key="Brush.Shadow.Default" Color="{DynamicResource Color.Shadow.Default}" />
 
-    <SolidColorBrush x:Key="Brush.Phrase.Default" Color="{StaticResource Color.Phrase.Default}" />
-    <SolidColorBrush x:Key="Brush.Phrase.Orange" Color="{StaticResource Color.Phrase.Orange}" />
-    <SolidColorBrush x:Key="Brush.Phrase.Blue" Color="{StaticResource Color.Phrase.Blue}" />
-    <SolidColorBrush x:Key="Brush.Phrase.Magenta" Color="{StaticResource Color.Phrase.Magenta}" />
-    <SolidColorBrush x:Key="Brush.Phrase.Purple" Color="{StaticResource Color.Phrase.Purple}" />
-    <SolidColorBrush x:Key="Brush.Phrase.Green" Color="{StaticResource Color.Phrase.Green}" />
-    <SolidColorBrush x:Key="Brush.Phrase.Pink" Color="{StaticResource Color.Phrase.Pink}" />
-    <SolidColorBrush x:Key="Brush.Phrase.Teal" Color="{StaticResource Color.Phrase.Teal}" />
-    <SolidColorBrush x:Key="Brush.Phrase.Tan" Color="{StaticResource Color.Phrase.Tan}" />
-    <SolidColorBrush x:Key="Brush.Phrase.Gray" Color="{StaticResource Color.Phrase.Gray}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Default" Color="{DynamicResource Color.Phrase.Default}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Orange" Color="{DynamicResource Color.Phrase.Orange}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Blue" Color="{DynamicResource Color.Phrase.Blue}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Magenta" Color="{DynamicResource Color.Phrase.Magenta}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Purple" Color="{DynamicResource Color.Phrase.Purple}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Green" Color="{DynamicResource Color.Phrase.Green}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Pink" Color="{DynamicResource Color.Phrase.Pink}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Teal" Color="{DynamicResource Color.Phrase.Teal}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Tan" Color="{DynamicResource Color.Phrase.Tan}" />
+    <SolidColorBrush x:Key="Brush.Phrase.Gray" Color="{DynamicResource Color.Phrase.Gray}" />
 
     <!-- 默认 Card 不使用阴影；仅为 Elevated、Dialog 和 Popup 提供低噪音层级。 -->
     <DropShadowEffect x:Key="Effect.Shadow.Elevated" Color="{DynamicResource Color.Shadow.Default}" BlurRadius="18" ShadowDepth="2" Opacity="0.22" Direction="270" />

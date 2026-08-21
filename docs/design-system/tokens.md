@@ -13,7 +13,7 @@ Token → Theme Resource → Style / ControlTemplate → Component → Page
 - 资源键统一使用点分语义命名。
 - 品牌原色和固定话术色板位于 `Colors.xaml`；主题语义 `Color.*` 位于 Light/Dark Theme 字典。
 - `Brush.*` 由对应 `Color.*` 创建，页面和模板优先消费 Brush。
-- 主题语义 `Color.*` 与 `Brush.*` 使用 `{DynamicResource ...}`；固定话术色板通过 `StaticResource` 映射。
+- 主题语义 `Color.*` 与 `Brush.*` 使用 `{DynamicResource ...}`；固定话术色板也使用 `DynamicResource`，以兼容正式 App.xaml 的嵌套资源字典加载。
 - Typography、Thickness、Radius、Size 和 Motion 使用 `{StaticResource ...}`。
 - Light/Dark 主题键集合必须完全同构。
 - 不保留旧 Resource Key，不建立兼容 Alias。

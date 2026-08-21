@@ -88,6 +88,19 @@ public sealed class LauncherSmokeTests
     }
 
     [Fact]
+    public void Runner_ValidatesPhrasePaletteResourcesBeforeLauncherInitialization()
+    {
+        var root = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(
+            root, "desktop", "QuickPhrase.Desktop", "LauncherSmokeRunner.cs"));
+        var validationIndex = source.IndexOf("VerifyPhrasePaletteResources();", StringComparison.Ordinal);
+        var initializationIndex = source.IndexOf("await searchHistory.InitializeAsync", StringComparison.Ordinal);
+
+        Assert.True(validationIndex >= 0, "Launcher smoke 必须验证正式 Application.Resources 中的话术色板。");
+        Assert.True(initializationIndex > validationIndex, "话术色板资源验证必须先于 Launcher 初始化执行。");
+    }
+
+    [Fact]
     public void Runner_DoesNotReferenceExternalDeliveryOrPersistenceServices()
     {
         var root = FindRepositoryRoot();

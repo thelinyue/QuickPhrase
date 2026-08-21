@@ -230,7 +230,7 @@ internal sealed class LauncherSmokeDiagnostics
 
 /// <summary>
 /// 独立 Launcher smoke 运行器。所有数据和快捷键事件均在内存中构造，
-/// 真实验证范围限定为 HotkeyCoordinator、WPF Dispatcher 与单一 LauncherWindow 生命周期。
+/// 真实验证范围限定为 Application.Resources 话术色板、HotkeyCoordinator、WPF Dispatcher 与单一 LauncherWindow 生命周期。
 /// </summary>
 internal sealed class LauncherSmokeRunner : IAsyncDisposable
 {
@@ -292,6 +292,38 @@ internal sealed class LauncherSmokeRunner : IAsyncDisposable
         return await runner.RunCoreAsync(timeout.Token);
     }
 
+    /// <summary>
+    /// 在 smoke 的真实 Application 资源树中读取全部话术色板。
+    /// 资源字典采用延迟解析；主动读取可在创建 Launcher 前发现 StaticResource 跨字典解析失败，
+    /// 并把错误收敛为可诊断的 RESOURCE 阶段失败。
+    /// </summary>
+    private static void VerifyPhrasePaletteResources()
+    {
+        var resources = System.Windows.Application.Current?.Resources
+            ?? throw SmokeFailure("LAUNCHER_SMOKE_RESOURCE_UNAVAILABLE", "Application.Resources 尚未初始化。", "RESOURCE");
+        foreach (var key in new[]
+        {
+            "Brush.Phrase.Default", "Brush.Phrase.Orange", "Brush.Phrase.Blue", "Brush.Phrase.Magenta",
+            "Brush.Phrase.Purple", "Brush.Phrase.Green", "Brush.Phrase.Pink", "Brush.Phrase.Teal",
+            "Brush.Phrase.Tan", "Brush.Phrase.Gray",
+        })
+        {
+            try
+            {
+                if (resources[key] is not SolidColorBrush)
+                    throw SmokeFailure("LAUNCHER_SMOKE_RESOURCE_INVALID", $"资源 {key} 未解析为 SolidColorBrush。", "RESOURCE");
+            }
+            catch (LauncherSmokeException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw SmokeFailure("LAUNCHER_SMOKE_RESOURCE_INVALID", $"资源 {key} 解析失败：{exception.Message}", "RESOURCE");
+            }
+        }
+    }
+
     private async Task<int> RunCoreAsync(CancellationToken cancellationToken)
     {
         var startedAtUtc = DateTimeOffset.UtcNow;
@@ -305,6 +337,8 @@ internal sealed class LauncherSmokeRunner : IAsyncDisposable
 
         try
         {
+            stage = "RESOURCE";
+            VerifyPhrasePaletteResources();
             await searchHistory.InitializeAsync(cancellationToken);
             await hotkeys.ConfigureAsync(
                 new AppSettings(1, false, false, true, AltSpace, false, true, true),
