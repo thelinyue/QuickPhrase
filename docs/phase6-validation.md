@@ -1,48 +1,67 @@
 # QuickPhrase Phase 6 Windows 11 验证记录
 
-状态：`PHASE6_INFRA_PASS`  
-最终门禁：尚未写入 `PHASE6_VERIFY_PASS_WIN11`。企业微信人工矩阵与 Windows 11 VM/Sandbox 安装矩阵仍需由发布负责人完成。
+状态：Windows 11 人工矩阵已由发布负责人明确确认通过。
+最终门禁：正式签名资产尚未生成和验证，因此暂不写入 `PHASE6_VERIFY_PASS_WIN11`。
 
 ## 已通过的工程门禁
 
 | 项目 | 结果 |
 | --- | --- |
 | .NET SDK | 10.0.400 |
-| Debug build/test | 本次通过，0 warning；Architecture 213/213，Desktop 199/199 |
-| Release build/test | 本次通过，0 warning；Architecture 213/213，Desktop 199/199 |
-| React build | 通过 |
-| Management-only build | 通过，独立 `dist/management` |
-| Sites tests | 通过，4/4 |
-| Inno Setup | 6.7.3，online/offline 均编译成功 |
+| 正式产品边界 | `.NET 10 LTS + Pure WPF`；生产项目不依赖 WebView2、React、网页资源或外部运行环境 |
+| 主分支 CI | `windows-ci` run `32404969586` 通过；Desktop 232/232，Architecture 245/245，0 warning / 0 error |
+| 候选构建 | `release-candidate-build` run `32404984862` 通过，源代码修订为 `b8c2e66bfc6b54f2dd13124cf7ec4eaae3d13e78` |
 | Self-contained 发布 | `win-x64`、ReadyToRun、非裁剪、非单文件 |
-| EXE 版本 | FileVersion `1.0.0.0`，ProductVersion `1.0.0` |
-| 管理资源 | 仅包含 `Web/management.html` 及实际依赖，不含原型 `index.html` 或演示壁纸 |
-| 发布清单 | 已生成 `release-manifest.json` 与 `SHA256SUMS.txt` |
+| Launcher smoke | Native smoke 通过；真实 `LauncherWindow` 生命周期复用，独立测试数据，结束后无残留测试进程 |
+| Launcher 热呼出性能 | 预热后 200 次：P50 `59.722ms`、P95 `84.789ms`、P99 `95.665ms`；P95 满足 `≤120ms` 门槛 |
+| 冷启动 | `3465.420ms`，单独记录，不计入 Launcher 热呼出发布门槛 |
+| 未签名候选 | `v0.0.1-rc.1` 已公开为 Pre-release，资产哈希与 Actions artifact 一致 |
 
-## 产物
+## 人工验收结论
 
-- [在线安装器](../artifacts/release/1.0.0/installers/QuickPhrase-Setup-1.0.0-online.exe)
-- [离线安装器](../artifacts/release/1.0.0/installers/QuickPhrase-Setup-1.0.0-offline.exe)
-- [SHA256SUMS](../artifacts/release/1.0.0/SHA256SUMS.txt)
-- [release-manifest.json](../artifacts/release/1.0.0/release-manifest.json)
+### 企业微信
 
-发布版中文产品名为“闪语”；程序文件、安装目录、AppId 和数据路径保留 QuickPhrase，确保升级兼容。安装器未签名，SmartScreen 未知发布者提示属于已知限制。
+当前主流版本企业微信人工安全矩阵已由发布负责人明确确认通过，验收范围和安全边界见 [phase5-validation.md](phase5-validation.md)。自动化测试不替代真实企业微信 GUI 验收，也不把 `SendTriggered` 误写为目标应用最终 `Sent`。
 
-## 尚待人工确认
+### Windows 11
 
-1. 在当前主流版本企业微信上验证版本号不参与准入；普通 `Enter` 始终使用受保护 Clipboard + `Ctrl+V`，并通过运行时目标、前台窗口和焦点/Caret 检查。
-2. 验证 `Ctrl+Enter` 默认确认、取消零副作用、快捷发送模式、已有草稿、焦点切换和异常中断；完整按键注入只记录 `SendTriggered`，不宣称最终 `Sent`。
-3. 5 条连续真实 `InsertOnly` 按 FIFO、每条只插入一次且不发送；累计至少 30 次，单条执行 P95 ≤ 300ms。
-4. Windows 11 x64 冷启动 10 次、热打开/关闭 20 次，Management Ready 分别满足 P95 ≤ 2s / ≤ 1s。
-5. 在线/离线安装、无 Runtime、已有 Runtime、升级前备份、卸载保留数据和重装恢复话术。
-6. 管理窗口关闭后无活跃 WebView2 Controller，并在无其他 WebView 时收到 BrowserProcessExited。
-7. 稳定空闲五分钟内无 QuickPhrase 可归因的周期性持久化写入。
+2026-08-21，发布负责人明确确认 Windows 11 人工矩阵通过。该确认覆盖本阶段定义的 Windows 11 x64 安装与运行范围：
 
-完整门禁命令：
+- 当前用户安装与首次启动。
+- 自包含运行，不依赖预装 .NET Runtime。
+- 升级路径及升级前数据备份。
+- 开机启动、单实例、托盘和 Launcher 冷/热启动。
+- 卸载后保留 `Data`、`Backups` 与 `Logs`，重装后恢复使用原数据。
+- 发布目录不包含 WebView2 Runtime、网页 bundle 或其他生产外部环境依赖。
+
+本记录只保存发布负责人的明确验收结论，不伪造 TraceId、截图编号或自动化无法取得的人工观察数据。Windows 10 固定记录为 `UNVERIFIED / NOT SUPPORTED IN V0.0.1`。
+
+## 未签名候选证据
+
+- Release：https://github.com/thelinyue/QuickPhrase/releases/tag/v0.0.1-rc.1
+- Candidate workflow：https://github.com/thelinyue/QuickPhrase/actions/runs/32404984862
+- CI workflow：https://github.com/thelinyue/QuickPhrase/actions/runs/32404969586
+- 应用包：`QuickPhrase-0.0.1-rc.1-win-x64-unsigned.zip`
+- 安装器：`QuickPhrase-Setup-0.0.1-rc.1-unsigned.exe`
+
+候选版未签名，Windows SmartScreen 可能显示未知发布者警告；它只用于候选测试和 SignPath Foundation 申请，不是正式版。
+
+## 最终门禁仍待完成
+
+在以下事项完成前，不创建或发布正式版 `v0.0.1`，也不运行最终 Phase 6 验证：
+
+1. SignPath Foundation 批准 QuickPhrase Open Source Project。
+2. GitHub App、Secret、Variables、Signing Policy 和两个 Artifact Configuration 配置完成。
+3. 应用四个 QuickPhrase 自有 PE 与安装器均取得有效 Authenticode 签名和可信时间戳。
+4. 签名资产的 manifest、SHA-256、来源 revision 和 GitHub Actions provenance 核对通过。
+5. 发布负责人对签名正式版 tag、commit 和最终资产给予新的明确发布批准。
+
+完整门禁命令只允许对已经生成的 signed stable `0.0.1` 资产执行：
 
 ```powershell
 $env:QUICKPHRASE_WECOM_ACCEPTANCE = "passed"
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-phase6.ps1 -IncludeDesktopSmoke
+$env:QUICKPHRASE_WIN11_ACCEPTANCE = "passed"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-phase6.ps1 -Version 0.0.1
 ```
 
-只有上述人工项目全部有时间、TraceId 或安装矩阵证据，才允许将状态改为 `PHASE6_VERIFY_PASS_WIN11`。Windows 10 固定记录为 `UNVERIFIED / NOT SUPPORTED IN V1.0.0`。
+该脚本还会验证正式资产存在、`release-manifest.json` 声明 `signed=true` 和 `releaseChannel=stable`、哈希一致，以及应用与安装器均具有有效签名和时间戳。只有脚本在真实签名资产上通过后，才允许记录 `PHASE6_VERIFY_PASS_WIN11`。
