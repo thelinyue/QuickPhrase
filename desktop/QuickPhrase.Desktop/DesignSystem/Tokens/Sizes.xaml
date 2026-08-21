@@ -38,6 +38,12 @@
     <sys:Double x:Key="Size.SettingsWindow.MinimumWidth">560</sys:Double>
     <sys:Double x:Key="Size.SettingsWindow.MinimumHeight">480</sys:Double>
 
+    <!-- 独立新建窗口与编辑器内容宽度对齐，避免从话术库启动时依赖主窗口尺寸。 -->
+    <sys:Double x:Key="Size.NewPhraseWindow.Width">520</sys:Double>
+    <sys:Double x:Key="Size.NewPhraseWindow.Height">600</sys:Double>
+    <sys:Double x:Key="Size.NewPhraseWindow.MinimumWidth">460</sys:Double>
+    <sys:Double x:Key="Size.NewPhraseWindow.MinimumHeight">360</sys:Double>
+
     <sys:Double x:Key="Size.Launcher.Width">760</sys:Double>
     <sys:Double x:Key="Size.Launcher.Height">300</sys:Double>
     <sys:Double x:Key="Size.Launcher.MinimumWidth">680</sys:Double>
@@ -46,9 +52,9 @@
 
     <!-- 首次引导的行高使用 GridLength，确保 RowDefinition 不接收错误的 Double 类型。 -->
     <sys:Double x:Key="Size.Onboarding.Width">640</sys:Double>
-    <sys:Double x:Key="Size.Onboarding.Height">520</sys:Double>
+    <sys:Double x:Key="Size.Onboarding.Height">640</sys:Double>
     <sys:Double x:Key="Size.Onboarding.MinimumWidth">560</sys:Double>
-    <sys:Double x:Key="Size.Onboarding.MinimumHeight">480</sys:Double>
+    <sys:Double x:Key="Size.Onboarding.MinimumHeight">640</sys:Double>
     <GridLength x:Key="Size.Onboarding.TitleBar.GridLength">28</GridLength>
     <GridLength x:Key="Size.Onboarding.Header.GridLength">72</GridLength>
     <GridLength x:Key="Size.Onboarding.Footer.GridLength">80</GridLength>
@@ -59,7 +65,10 @@
     <sys:Double x:Key="Size.Onboarding.FooterStatus.Height">28</sys:Double>
     <GridLength x:Key="Size.Onboarding.FooterStatus.GridLength">28</GridLength>
 
+    <!-- 话术库底部应用栏固定为 48px，保证品牌图标与设置入口在常见 DPI 下完整可见。 -->
+    <sys:Double x:Key="Size.Library.Footer.Height">48</sys:Double>
     <sys:Double x:Key="Size.Library.BrandIcon">24</sys:Double>
+    <sys:Double x:Key="Size.Library.SettingsIcon">18</sys:Double>
     <sys:Double x:Key="Size.List.SelectionIndicator.Width">3</sys:Double>
     <GridLength x:Key="Size.SearchHistory.Gutter.GridLength">8</GridLength>
     <sys:Double x:Key="Size.StatePresenter.MinimumHeight">84</sys:Double>

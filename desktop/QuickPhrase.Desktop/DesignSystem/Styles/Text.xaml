@@ -64,6 +64,27 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
     </Style>
 
+    <!-- 语义文字变体只覆盖主题色，不复制 Typography Token，保证深浅主题可同步切换。 -->
+    <Style x:Key="Style.Text.Caption.Primary" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Caption}">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+    </Style>
+
+    <Style x:Key="Style.Text.Caption.Accent" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Caption}">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Primary}" />
+    </Style>
+
+    <Style x:Key="Style.Text.InputHint" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Medium}">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+    </Style>
+
+    <Style x:Key="Style.Text.Status.Error" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Body.Small}">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Error}" />
+    </Style>
+
+    <Style x:Key="Style.Text.Title.Large.Secondary" TargetType="TextBlock" BasedOn="{StaticResource Style.Text.Title.Large}">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+    </Style>
+
     <Style x:Key="Style.Text.Label" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
         <Setter Property="FontSize" Value="{StaticResource Typography.Label.FontSize}" />

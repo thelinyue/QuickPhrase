@@ -33,6 +33,8 @@ public partial class SettingsView : System.Windows.Controls.UserControl
         ViewModel.RestartOnboardingRequested += ViewModel_RestartOnboardingRequested;
         ViewModel.DataManagement.ImportRequested += DataManagement_ImportRequested;
         ViewModel.DataManagement.ExportRequested += DataManagement_ExportRequested;
+        ViewModel.DataManagement.BatchImportRequested += DataManagement_BatchImportRequested;
+        ViewModel.DataManagement.BatchImportTemplateRequested += DataManagement_BatchImportTemplateRequested;
 
         Loaded += async (_, _) => await ViewModel.LoadAsync();
         PreviewKeyDown += (_, e) =>
@@ -120,6 +122,65 @@ public partial class SettingsView : System.Windows.Controls.UserControl
         }
     }
 
+    private async void DataManagement_BatchImportRequested(object? sender, EventArgs e)
+    {
+        var open = new FileOpenDialog
+        {
+            Filter = "CSV 批量导入文件 (*.csv)|*.csv",
+            DefaultExt = ".csv",
+            CheckFileExists = true,
+            Multiselect = false,
+            Title = "选择 CSV 批量导入文件",
+        };
+        if (open.ShowDialog(Window.GetWindow(this)) != true) return;
+
+        var import = await ViewModel.DataManagement.LoadBatchImportAsync(open.FileName);
+        if (import is null)
+        {
+            ShowDataManagementError(ViewModel.DataManagement.ErrorMessage ?? "CSV 批量导入文件读取失败。");
+            return;
+        }
+
+        var preview = new ImportPhrasePackageDialog(import) { Owner = Window.GetWindow(this) };
+        if (preview.ShowDialog() != true) return;
+
+        var result = await ViewModel.DataManagement.ConfirmImportAsync(import);
+        if (result is null) return;
+        if (result.Succeeded)
+        {
+            WpfMessageBox.Show(Window.GetWindow(this),
+                $"CSV 批量导入完成。\n新增分类：{result.NewCategoryCount}\n新增话术：{result.NewPhraseCount}\n跳过重复：{result.SkippedDuplicateCount}",
+                "批量导入完成", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else
+        {
+            ShowDataManagementError(result.Message);
+        }
+    }
+
+    private async void DataManagement_BatchImportTemplateRequested(object? sender, EventArgs e)
+    {
+        var save = new FileSaveDialog
+        {
+            Filter = "CSV 文件 (*.csv)|*.csv",
+            DefaultExt = ".csv",
+            AddExtension = true,
+            OverwritePrompt = true,
+            FileName = "QuickPhrase批量导入模板.csv",
+            Title = "保存 CSV 批量导入模板",
+        };
+        if (save.ShowDialog(Window.GetWindow(this)) != true) return;
+
+        var succeeded = await ViewModel.DataManagement.WriteBatchImportTemplateAsync(save.FileName);
+        if (succeeded)
+        {
+            WpfMessageBox.Show(Window.GetWindow(this), "CSV 批量导入模板已生成。", "模板已生成", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else
+        {
+            ShowDataManagementError(ViewModel.DataManagement.ErrorMessage ?? "CSV 批量导入模板生成失败。");
+        }
+    }
     private async void DataManagement_ExportRequested(object? sender, EventArgs e)
     {
         var export = await ViewModel.DataManagement.LoadExportAsync();

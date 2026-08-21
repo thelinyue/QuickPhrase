@@ -14,7 +14,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <TextBlock Text="分类名称" Style="{StaticResource Style.Text.Label}" Margin="{StaticResource Thickness.Gap.Stack.SM}" />
-        <TextBox x:Name="NameBox" Grid.Row="1" Style="{StaticResource Style.Input.Default}" />
+        <TextBox x:Name="NameBox" Grid.Row="1" Style="{StaticResource Style.Input.Default}" AutomationProperties.Name="分类名称" />
         <TextBlock x:Name="ErrorText" Grid.Row="2" Foreground="{DynamicResource Brush.Status.Error}"
                    Style="{StaticResource Style.Text.Caption}" TextWrapping="Wrap"
                    MinHeight="{StaticResource Size.Dialog.Status.MinimumHeight}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />

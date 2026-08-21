@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Threading.Tasks;
 using QuickPhrase.Core;
 using QuickPhrase.Desktop.Tests.Fakes;
@@ -8,18 +7,6 @@ namespace QuickPhrase.Desktop.Tests;
 
 public class SettingsViewModelTests
 {
-    [Fact]
-    public async Task Load_PopulatesAdapters_WithoutPersisting()
-    {
-        var fake = new FakeCommandService();
-        var vm = new SettingsViewModel(fake);
-
-        await vm.LoadAsync();
-
-        Assert.Contains(vm.Adapters, a => a.Id == "WXWork" && a.Enabled);
-        Assert.Equal(0, fake.SettingsUpdateCalls);
-    }
-
     [Fact]
     public async Task ToggleSetting_AppliesImmediately()
     {
@@ -32,19 +19,6 @@ public class SettingsViewModelTests
 
         Assert.True((await fake.GetSettingsAsync()).LaunchOnStartup);
         Assert.Equal(1, fake.SettingsUpdateCalls);
-    }
-
-    [Fact]
-    public async Task ToggleAdapter_AppliesImmediately()
-    {
-        var fake = new FakeCommandService();
-        var vm = new SettingsViewModel(fake);
-        await vm.LoadAsync();
-
-        vm.Adapters.First(a => a.Id == "WXWork").Enabled = false;
-        await vm.ApplyPendingChangesAsync();
-
-        Assert.False((await fake.GetSettingsAsync()).LauncherEnabledAdapters["WXWork"]);
     }
 
     [Fact]

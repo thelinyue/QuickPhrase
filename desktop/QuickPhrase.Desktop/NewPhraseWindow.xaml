@@ -1,0 +1,34 @@
+<!-- 独立新建话术窗口：不设置 Owner，避免依附话术库主窗口；表单复用 EditorView。 -->
+<Window x:Class="QuickPhrase.Desktop.NewPhraseWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:QuickPhrase.Desktop"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="闪语 · 新建话术"
+        Icon="pack://application:,,,/QuickPhrase;component/Assets/quickphrase.ico"
+        Width="{StaticResource Size.NewPhraseWindow.Width}"
+        Height="{StaticResource Size.NewPhraseWindow.Height}"
+        MinWidth="{StaticResource Size.NewPhraseWindow.MinimumWidth}"
+        MinHeight="{StaticResource Size.NewPhraseWindow.MinimumHeight}"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        Style="{StaticResource Style.Window.Shell}">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="{StaticResource Size.TitleBar.Height}"
+                            ResizeBorderThickness="{StaticResource Thickness.Window.ResizeBorder}"
+                            GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="{StaticResource Size.TitleBar.GridLength}" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <local:TitleBar Grid.Row="0" PageTitle="新建话术" />
+        <ContentControl x:Name="EditorHost"
+                        Grid.Row="1"
+                        Style="{StaticResource Style.Surface.ContentRegion}" />
+    </Grid>
+</Window>

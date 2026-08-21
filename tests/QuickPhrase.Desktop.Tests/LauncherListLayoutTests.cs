@@ -56,6 +56,24 @@ public sealed class LauncherListLayoutTests
     }
 
     [Fact]
+    public void LauncherFooterUsesOneAlignedHintLineWithoutInternalTargetStatus()
+    {
+        var root = FindRepositoryRoot();
+        var launcher = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
+        var codeBehind = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml.cs"));
+
+        Assert.Contains("<TextBlock Grid.Row=", launcher);
+        Assert.Contains("<Run x:Name=\"InsertHintText\"", launcher);
+        Assert.Contains("<Run x:Name=\"SendHintText\"", launcher);
+        Assert.DoesNotContain("QueueText", launcher);
+        Assert.DoesNotContain("TargetText", launcher);
+        Assert.DoesNotContain("CapabilityText", launcher);
+        Assert.DoesNotContain("已捕获", launcher);
+        Assert.DoesNotContain("已验证", codeBehind);
+        Assert.DoesNotContain("AdapterStatusSnapshot", codeBehind);
+    }
+
+    [Fact]
     public void LauncherContextMenuContainsOnlySafeInsertAndCopyActions()
     {
         var root = FindRepositoryRoot();

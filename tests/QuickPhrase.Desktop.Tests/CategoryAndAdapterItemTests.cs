@@ -3,7 +3,7 @@ using Xunit;
 
 namespace QuickPhrase.Desktop.Tests;
 
-public class CategoryAndAdapterItemTests
+public class CategoryItemTests
 {
     [Fact]
     public void CategoryItem_CarriesFields()
@@ -13,15 +13,4 @@ public class CategoryAndAdapterItemTests
         Assert.Null(item.ParentId);
     }
 
-    [Fact]
-    public void AdapterToggleItem_MapsKnownDisplayName()
-    {
-        var wx = new AdapterToggleItem("WXWork", true);
-        Assert.Equal("企业微信", wx.DisplayName);
-        Assert.True(wx.Enabled);
-
-        var other = new AdapterToggleItem("SomethingElse", false);
-        Assert.Equal("SomethingElse", other.DisplayName);
-        Assert.False(other.Enabled);
-    }
 }

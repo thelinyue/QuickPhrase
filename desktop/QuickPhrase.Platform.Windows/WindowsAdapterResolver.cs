@@ -5,13 +5,12 @@ using QuickPhrase.Core;
 namespace QuickPhrase.Platform.Windows;
 
 /// <summary>
-/// 仅解析当前阶段批准的企业微信 Adapter，其余目标统一交给安全 Copy Only。
-/// Windows 目标上下文由本程序集管理，不把 HWND、PID 等类型传入 Core。
+/// 优先解析企业微信专属 Adapter；其余目标进入通用文本输入 Adapter，
+/// 仍由运行时目标与焦点验证决定是否允许插入。Windows 目标上下文由本程序集管理，
+/// 不把 HWND、PID 等类型传入 Core。
 /// </summary>
 public sealed class WindowsAdapterResolver : IAdapterResolver, IDisposable
 {
-    public static IReadOnlySet<string> KnownAdapterIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "WXWork" };
-
     private readonly Func<DeliveryTarget, string?> _productVersionReader;
     private readonly Func<DeliveryTarget, bool> _targetValidator;
     private readonly WindowsTargetContextStore _contexts;
@@ -39,11 +38,8 @@ public sealed class WindowsAdapterResolver : IAdapterResolver, IDisposable
         if (string.Equals(target.ApplicationId, "WXWork", StringComparison.OrdinalIgnoreCase))
             return new WeComAdapter(target, productVersion, _clipboard, _targetValidator, _contexts);
 
-        return new UnknownApplicationAdapter(target.ApplicationId);
+        return new GenericTextInputAdapter(target, _clipboard, _targetValidator, _contexts, _uiAutomation);
     }
-
-    public static bool IsKnownAdapterId(string? adapterId) =>
-        !string.IsNullOrWhiteSpace(adapterId) && KnownAdapterIds.Contains(adapterId);
 
     /// <summary>返回设置页使用的脱敏能力快照；不会读取输入框或话术内容。</summary>
     public AdapterStatusSnapshot GetStatus(DeliveryTarget? target)
@@ -89,19 +85,6 @@ public sealed record AdapterStatusSnapshot(
     CapabilityStatus SendText,
     CapabilityStatus VerifySend,
     string FallbackMode);
-
-internal sealed class UnknownApplicationAdapter(string applicationId) : IApplicationAdapter
-{
-    public string AdapterId => "Unknown";
-    public string? DetectedProductVersion => null;
-    public AdapterProfile Profile { get; } = new("Unknown", applicationId, "unverified", CapabilityStatus.Unverified,
-        CapabilityStatus.Unverified, CapabilityStatus.Unsupported, CapabilityStatus.Unsupported, "CopyOnly", null);
-    public AdapterCapabilities DetectCapabilities() => new(CapabilityStatus.Unverified, CapabilityStatus.Unverified, CapabilityStatus.Unsupported, CapabilityStatus.Unsupported);
-    public Task<InsertResult> InsertAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(new InsertResult(false, false, "CAPABILITY_UNVERIFIED"));
-    public Task<VerificationResult> VerifyInsertAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(VerificationResult.Failed("CAPABILITY_UNVERIFIED"));
-    public Task<SendResult> SendAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(new SendResult(false, Code: "CAPABILITY_UNSUPPORTED"));
-    public Task<VerificationResult> VerifySendAsync(DeliveryRequest request, CancellationToken cancellationToken) => Task.FromResult(VerificationResult.Failed("CAPABILITY_UNSUPPORTED"));
-}
 
 /// <summary>
 /// 企业微信运行时能力 Adapter。客户端版本只保留为诊断元数据；所有插入和发送准入均由

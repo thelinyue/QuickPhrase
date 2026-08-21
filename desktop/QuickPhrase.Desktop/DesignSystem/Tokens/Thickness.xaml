@@ -24,8 +24,8 @@
     <Thickness x:Key="Thickness.Popup">12</Thickness>
     <Thickness x:Key="Thickness.Control.Button.Compact">12,0</Thickness>
     <Thickness x:Key="Thickness.Control.Button.Default">16,0</Thickness>
-    <Thickness x:Key="Thickness.Control.Input">12,0</Thickness>
-    <Thickness x:Key="Thickness.Control.Input.Multiline">12,10</Thickness>
+    <Thickness x:Key="Thickness.Control.Input">6,0</Thickness>
+    <Thickness x:Key="Thickness.Control.Input.Multiline">6,10</Thickness>
     <Thickness x:Key="Thickness.Window.ResizeBorder">6</Thickness>
 
     <!-- Inline Token 作为右侧间距，Stack Token 作为下侧间距，便于列表和表单保持一致节奏。 -->
@@ -52,7 +52,7 @@
     <Thickness x:Key="Thickness.Onboarding.Content">0,20,0,16</Thickness>
     <Thickness x:Key="Thickness.Onboarding.IntroDescription">0,12,0,20</Thickness>
     <Thickness x:Key="Thickness.Onboarding.CopyBlock">0,12,0,16</Thickness>
-    <Thickness x:Key="Thickness.Library.Header">20,8,20,8</Thickness>
+    <Thickness x:Key="Thickness.Library.Header">16,8,20,8</Thickness>
     <Thickness x:Key="Thickness.Library.Toolbar">16,8,16,8</Thickness>
     <Thickness x:Key="Thickness.Library.Footer">20,0,20,0</Thickness>
 

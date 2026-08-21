@@ -47,7 +47,7 @@ QuickPhrase 的最高原则是宁可不能发送，也不能发错窗口、发�
 - 企业同步密码或设备 Token 泄露。
 - 企业同步认证、只读边界或缓存隔离绕过。
 - SQLite 数据损坏、迁移失败或越权读取。
-- GitHub Actions、SignPath workflow 或 Artifact Configuration 被篡改。
+- GitHub Actions、发布工作流、发布脚本或安装器配置被篡改。
 - Release tag、安装器、哈希或 manifest 被替换。
 
 ## 修复和披露

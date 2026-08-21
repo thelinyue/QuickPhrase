@@ -15,13 +15,11 @@ public partial class PhraseLibraryViewModel : ObservableObject
 {
     private static readonly Guid EnterpriseRootId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
     private readonly ICommandService _commands;
-    private readonly Func<string, Task<bool>>? _recordSearchHistory;
     private Dictionary<Guid, string> _categoryNames = new();
 
-    public PhraseLibraryViewModel(ICommandService commands, Func<string, Task<bool>>? recordSearchHistory = null)
+    public PhraseLibraryViewModel(ICommandService commands)
     {
         _commands = commands;
-        _recordSearchHistory = recordSearchHistory;
     }
 
     [ObservableProperty] private string _searchQuery = "";
@@ -99,7 +97,9 @@ public partial class PhraseLibraryViewModel : ObservableObject
             // 企业分类挂在独立只读根节点下；个人分类仍保持原有两级结构。
             var mappedCategories = categories
                 .Where(c => c.Scope == PhraseScope.Personal)
-                .Select(c => new CategoryItem(c.Id, c.Name, c.ParentId, c.SortOrder, counts.TryGetValue(c.Id, out var count) ? count : 0, IsExpanded: c.ParentId is not null, Version: c.Version, Scope: c.Scope))
+                // 一级分类也必须在首次加载时展开，否则 AppendCategory 会在根节点提前返回，
+                // 已成功创建的二级分类不会进入 VisibleItems，用户会误以为创建失败。
+                .Select(c => new CategoryItem(c.Id, c.Name, c.ParentId, c.SortOrder, counts.TryGetValue(c.Id, out var count) ? count : 0, IsExpanded: true, Version: c.Version, Scope: c.Scope))
                 .ToList();
             var enterpriseCategories = categories.Where(c => c.Scope == PhraseScope.Enterprise).ToArray();
             if (enterpriseCategories.Length > 0)
@@ -408,11 +408,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
             return;
         }
 
-        var historySaved = string.IsNullOrWhiteSpace(SearchQuery) || _recordSearchHistory is null
-            || await _recordSearchHistory(SearchQuery.Trim());
-        StatusMessage = historySaved
-            ? "已请求插入到当前窗口"
-            : "已请求插入到当前窗口，但历史搜索保存失败";
+        StatusMessage = "已请求插入到当前窗口";
     }
 
     [RelayCommand]

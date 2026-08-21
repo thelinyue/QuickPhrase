@@ -30,7 +30,7 @@ public sealed class LibraryCompactListLayoutTests
     }
 
     [Fact]
-    public void PhraseRow_UsesCompactContentDrivenColumnsAndNestedIndent()
+    public void PhraseRow_UsesSeparateLeftSendActionAndKeepsIndexVisibleOnHover()
     {
         var markup = ReadDesktopFile("Views", "LibraryView.xaml");
         var template = Slice(markup, "<DataTemplate x:Key=\"Template.Library.CompactPhraseRow\"", "</DataTemplate>");
@@ -38,14 +38,28 @@ public sealed class LibraryCompactListLayoutTests
         var itemStyle = Slice(phraseList, "<ListBox.ItemContainerStyle>", "</ListBox.ItemContainerStyle>");
 
         Assert.Contains("<sys:Double x:Key=\"Size.Library.CompactPhrase.Height\">28</sys:Double>", markup);
+        Assert.Contains("<GridLength x:Key=\"Size.Library.CompactPhrase.SendActionColumn\">24</GridLength>", markup);
         Assert.Contains("<GridLength x:Key=\"Size.Library.CompactPhrase.IndexColumn\">24</GridLength>", markup);
         Assert.Contains("<Thickness x:Key=\"Thickness.Library.CompactHorizontal\">8,0</Thickness>", markup);
         Assert.Contains("Height=\"{StaticResource Size.Library.CompactPhrase.Height}\"", template);
+        Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Library.CompactPhrase.SendActionColumn}\" />", template);
         Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Library.CompactPhrase.IndexColumn}\" />", template);
         Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Library.CompactList.GapColumn}\" />", template);
         Assert.Contains("<ColumnDefinition Width=\"Auto\" />", template);
         Assert.Contains("<ColumnDefinition Width=\"*\" />", template);
-        Assert.Equal(2, template.Split("<ColumnDefinition Width=\"{StaticResource Size.Library.CompactList.GapColumn}\" />", StringSplitOptions.None).Length - 1);
+        Assert.Equal(3, template.Split("<ColumnDefinition Width=\"{StaticResource Size.Library.CompactList.GapColumn}\" />", StringSplitOptions.None).Length - 1);
+        var sendButton = Slice(template, "<Button x:Name=\"SendBtn\"", "/>");
+        var indexText = Slice(template, "<TextBlock x:Name=\"IndexText\"", "/>");
+
+        Assert.Contains("Grid.Column=\"0\"", sendButton);
+        Assert.Contains("Content=\"←\"", sendButton);
+        Assert.Contains("Path=(local:PhraseListActions.SendCommand)", sendButton);
+        Assert.Contains("Grid.Column=\"2\"", indexText);
+        Assert.True(template.IndexOf("<Button x:Name=\"SendBtn\"", StringComparison.Ordinal) < template.IndexOf("<TextBlock x:Name=\"IndexText\"", StringComparison.Ordinal));
+        Assert.DoesNotContain("<Setter TargetName=\"IndexText\" Property=\"Visibility\" Value=\"Collapsed\" />", template);
+        Assert.Contains("<Condition Binding=\"{Binding IsMouseOver, ElementName=RowRoot}\" Value=\"True\" />", template);
+        Assert.Contains("<Setter TargetName=\"SendBtn\" Property=\"Opacity\" Value=\"1\" />", template);
+        Assert.Contains("<Setter TargetName=\"SendBtn\" Property=\"IsHitTestVisible\" Value=\"True\" />", template);
 
         Assert.Contains("<Setter Property=\"Height\" Value=\"{StaticResource Size.Library.CompactPhrase.Height}\" />", itemStyle);
         Assert.Contains("<Setter Property=\"MinHeight\" Value=\"{StaticResource Size.Library.CompactPhrase.Height}\" />", itemStyle);
@@ -54,6 +68,26 @@ public sealed class LibraryCompactListLayoutTests
         Assert.Contains("<Condition Binding=\"{Binding IsSubCategory}\" Value=\"True\" />", itemStyle);
         Assert.Contains("Binding DataContext.SearchQuery", itemStyle);
         Assert.Contains("<Setter Property=\"Margin\" Value=\"{StaticResource Thickness.Gap.Inline.Before.LG}\" />", itemStyle);
+    }
+
+    [Fact]
+    public void CategoryLabels_UseColorFillAndSpecifiedTextHierarchy()
+    {
+        var markup = ReadDesktopFile("Views", "LibraryView.xaml");
+        var topCategoryStyle = Slice(markup, "<Style x:Key=\"Style.Library.CategoryChip\"", "</Style>");
+        var subCategoryTemplate = Slice(markup, "<DataTemplate x:Key=\"SubHeaderTemplate\"", "</DataTemplate>");
+
+        Assert.Contains("<Setter Property=\"Foreground\" Value=\"{DynamicResource Brush.Text.OnAccent}\" />", topCategoryStyle);
+        Assert.Contains("x:Name=\"DefaultCategoryBackground\"", topCategoryStyle);
+        Assert.Contains("Background=\"{Binding Name, Converter={StaticResource CategoryBackgroundBrush}}\"", topCategoryStyle);
+        Assert.Contains("x:Name=\"SelectedCategoryBackground\"", topCategoryStyle);
+        Assert.Contains("ConverterParameter=deep", topCategoryStyle);
+        Assert.Contains("<Setter TargetName=\"SelectedCategoryBackground\" Property=\"Visibility\" Value=\"Visible\" />", topCategoryStyle);
+        Assert.DoesNotContain("<Trigger Property=\"IsMouseOver\" Value=\"True\">", topCategoryStyle);
+        Assert.DoesNotContain("Brush.Accent.Primary", topCategoryStyle);
+
+        Assert.Contains("Foreground=\"{DynamicResource Brush.Text.Primary}\"", subCategoryTemplate);
+        Assert.Contains("FontWeight=\"Bold\"", subCategoryTemplate);
     }
 
     [Fact]

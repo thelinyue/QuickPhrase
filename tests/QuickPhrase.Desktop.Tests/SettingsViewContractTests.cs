@@ -14,7 +14,7 @@ public class SettingsViewContractTests
         Assert.DoesNotContain("Content=\"保存\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"取消\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<designSystem:ShortcutInput", xaml, StringComparison.Ordinal);
-        Assert.Contains("{DynamicResource Brush.Background.Default}", xaml, StringComparison.Ordinal);
+        Assert.Contains("Style=\"{StaticResource Style.Surface.Page}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("{DynamicResource Brush.Surface.Default}", xaml, StringComparison.Ordinal);
         Assert.Contains("{DynamicResource Brush.Border.Default}", xaml, StringComparison.Ordinal);
     }
@@ -28,12 +28,15 @@ public class SettingsViewContractTests
         var styledSwitchCount = Regex.Matches(xaml, "Style=\"\\{StaticResource Style\\.Switch\\.Default\\}\"", RegexOptions.CultureInvariant).Count;
         Assert.True(switchCount > 0);
         Assert.Equal(switchCount, styledSwitchCount);
-        Assert.Equal(10, Regex.Matches(xaml, "<designSystem:SettingItem(?:\\s|>)", RegexOptions.CultureInvariant).Count);
+        Assert.Equal(12, Regex.Matches(xaml, "<designSystem:SettingItem(?:\\s|>)", RegexOptions.CultureInvariant).Count);
         Assert.DoesNotContain("<Border Style=\"{StaticResource SettingRow}\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Border Style=\"{StaticResource SettingAction}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource Style.Button.Secondary}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("DataManagement.RequestImportCommand", xaml, StringComparison.Ordinal);
         Assert.Contains("DataManagement.RequestExportCommand", xaml, StringComparison.Ordinal);
+        Assert.Contains("DataManagement.RequestBatchImportTemplateCommand", xaml, StringComparison.Ordinal);
+        Assert.Contains("DataManagement.RequestBatchImportCommand", xaml, StringComparison.Ordinal);
+        Assert.Contains("批量导入（CSV）", xaml, StringComparison.Ordinal);
         Assert.Contains("RestartOnboardingCommand", xaml, StringComparison.Ordinal);
         Assert.Contains("<designSystem:ShortcutInput", xaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"Alt + Space\"", xaml, StringComparison.Ordinal);

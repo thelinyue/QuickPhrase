@@ -15,6 +15,8 @@ public partial class EditorView : System.Windows.Controls.UserControl
 
     public event EventHandler<Phrase>? PhraseSaved;
     public event EventHandler? CloseRequested;
+    /// <summary>新建窗口在没有分类时请求就地打开一级分类对话框。</summary>
+    public event EventHandler? CreateRootCategoryRequested;
 
     public EditorView(ICommandService commands, PhraseItemViewModel? existing, Guid? defaultCategoryId = null)
     {
@@ -46,6 +48,9 @@ public partial class EditorView : System.Windows.Controls.UserControl
         TitleBox.SelectAll();
     }
 
+    private void CreateRootCategory_Click(object sender, RoutedEventArgs e) =>
+        CreateRootCategoryRequested?.Invoke(this, EventArgs.Empty);
+
     private void OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
@@ -60,4 +65,3 @@ public partial class EditorView : System.Windows.Controls.UserControl
         }
     }
 }
-

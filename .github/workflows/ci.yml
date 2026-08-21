@@ -22,6 +22,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Installer script tests
+        run: node --test tests/installer-shortcut.test.mjs
+
       - name: Setup .NET 10.0.400
         uses: actions/setup-dotnet@v4
         with:

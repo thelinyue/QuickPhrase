@@ -21,7 +21,6 @@ internal sealed class ApplicationController : IAsyncDisposable
     private readonly QuickPhraseDataOptions _dataOptions;
     private readonly WindowsTargetDetector _targetDetector;
     private readonly WindowsAdapterResolver _adapterResolver;
-    private readonly ForegroundApplicationWatcher _foregroundWatcher;
     private readonly ITextDeliveryStateMachine _delivery;
     private readonly DeliveryQueueCoordinator _deliveryQueue;
     private readonly UsageUpdateQueue _usageUpdates;
@@ -35,11 +34,14 @@ internal sealed class ApplicationController : IAsyncDisposable
     private ICommandService? _commands;
     private AppSettings? _settings;
     private Forms.NotifyIcon? _tray;
+    // 快捷键是全局状态，菜单项文字必须随状态同步，避免用户在托盘中误以为仍可暂停或恢复。
+    private Forms.ToolStripMenuItem? _hotkeyToggleMenuItem;
     // NotifyIcon 依赖托盘图标流的生命周期，必须保持到托盘销毁完成。
     private Icon? _trayIcon;
     private Stream? _trayIconStream;
     private MainWindow? _management;
     private SettingsWindow? _settingsWindow;
+    private NewPhraseWindow? _newPhraseWindow;
     private LauncherWindow? _launcher;
     private DeliveryTarget? _lastExternalTarget;
     private OnboardingCoordinator? _onboarding;
@@ -56,13 +58,11 @@ internal sealed class ApplicationController : IAsyncDisposable
         _targetDetector = new WindowsTargetDetector();
         _adapterResolver = new WindowsAdapterResolver(
             targetValidator: target => _targetDetector.Validate(target, requireForeground: false).IsValid);
-        _foregroundWatcher = new ForegroundApplicationWatcher();
         _traceWriter = new DeliveryTraceWriter(Path.Combine(_dataOptions.RootPath, "Logs"));
         _startupRegistration = new WindowsStartupRegistration();
         _usageUpdates = new UsageUpdateQueue(RecordUsageCoreAsync);
         _delivery = TextDeliveryFactory.Create(_targetDetector, _adapterResolver, RecordUsageAsync, _traceWriter.Write);
         _deliveryQueue = new DeliveryQueueCoordinator(_delivery);
-        _deliveryQueue.StatusChanged += status => DispatchToUi(() => _launcher?.SetQueueStatus(status));
         _deliveryQueue.ItemFailed += result => DispatchToUi(() => ShowDeliveryNotification(result, Forms.ToolTipIcon.Warning));
         _deliveryQueue.ItemCompleted += OnDeliveryCompleted;
         _deliveryQueue.BatchCompleted += summary => DispatchToUi(() =>
@@ -72,7 +72,6 @@ internal sealed class ApplicationController : IAsyncDisposable
         });
         _hotkeys.LauncherHotkeyPressed += ToggleLauncherFromHotkey;
         _hotkeys.StatusChanged += OnHotkeyStatusChanged;
-        _foregroundWatcher.Changed += OnForegroundChanged;
         NetworkChange.NetworkAvailabilityChanged += NetworkAvailabilityChanged;
     }
 
@@ -137,15 +136,21 @@ internal sealed class ApplicationController : IAsyncDisposable
                 throw new InvalidOperationException($"找不到内置图标资源：{ApplicationIconResourceUri}");
 
             iconStream = resource.Stream;
-            icon = new Icon(iconStream);
+            // 托盘使用系统当前小图标尺寸，避免默认 32px 图层在标准 DPI 下被 Shell 二次缩放。
+            icon = new Icon(iconStream, Forms.SystemInformation.SmallIconSize);
             menu = new Forms.ContextMenuStrip();
-            menu.Items.Add("打开话术库", null, (_, _) => OpenManagement());
-            menu.Items.Add("打开闪念", null, (_, _) => OpenLauncher(captureTarget: false));
-            menu.Items.Add("新建话术", null, (_, _) => OpenManagement("editor"));
-            menu.Items.Add("暂停快捷键", null, (_, _) => _hotkeys.SetPaused(!_hotkeys.IsPaused));
-            menu.Items.Add("设置", null, (_, _) => OpenSettings());
+            // 托盘优先承载工作中的高频动作；编辑、状态控制和应用级操作分别分组，减少用户扫描菜单的成本。
+            menu.Items.Add("打开闪念", null, (_, _) => ExecuteTrayAction(() => OpenLauncher(captureTarget: false)));
+            menu.Items.Add("打开话术库", null, (_, _) => ExecuteTrayAction(() => OpenManagement()));
             menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add("退出", null, (_, _) => System.Windows.Application.Current.Shutdown());
+            menu.Items.Add("新建话术", null, (_, _) => ExecuteTrayAction(() => OpenNewPhrase()));
+            menu.Items.Add(new Forms.ToolStripSeparator());
+            _hotkeyToggleMenuItem = new Forms.ToolStripMenuItem();
+            _hotkeyToggleMenuItem.Click += (_, _) => ToggleHotkeysFromTray();
+            menu.Items.Add(_hotkeyToggleMenuItem);
+            menu.Items.Add("设置…", null, (_, _) => ExecuteTrayAction(OpenSettings));
+            menu.Items.Add(new Forms.ToolStripSeparator());
+            menu.Items.Add("退出闪语", null, (_, _) => System.Windows.Application.Current.Shutdown());
 
             tray = new Forms.NotifyIcon
             {
@@ -154,11 +159,12 @@ internal sealed class ApplicationController : IAsyncDisposable
                 Text = "闪语",
                 ContextMenuStrip = menu,
             };
-            tray.DoubleClick += (_, _) => OpenManagement();
+            tray.DoubleClick += (_, _) => ExecuteTrayAction(() => OpenManagement());
 
             _trayIconStream = iconStream;
             _trayIcon = icon;
             _tray = tray;
+            UpdateTrayHotkeyPresentation();
         }
         catch (Exception exception)
         {
@@ -188,11 +194,47 @@ internal sealed class ApplicationController : IAsyncDisposable
 
         if (_commands is null) return;
         if (_searchHistory is null) return;
-        _management = new MainWindow(_commands, _searchHistory, scene ?? "library");
+        _management = new MainWindow(_commands, _searchHistory, scene ?? "library", OpenNewPhrase);
         _management.SettingsRequested += (_, _) => OpenSettings();
         _management.Closed += (_, _) => OnManagementClosed();
         _management.Show();
         if (scene is not null) _management.NavigateTo(scene);
+    }
+
+    /// <summary>
+    /// 打开或激活唯一的独立新建话术窗口。窗口不设置 Owner，因此不会打开、激活或依附话术库；
+    /// 重复请求只恢复现有草稿窗口，避免同一用户误建多个未保存话术。
+    /// </summary>
+    public void OpenNewPhrase(Guid? defaultCategoryId = null)
+    {
+        if (_newPhraseWindow is { IsVisible: true })
+        {
+            if (_newPhraseWindow.WindowState == WindowState.Minimized)
+                _newPhraseWindow.WindowState = WindowState.Normal;
+            _newPhraseWindow.Activate();
+            return;
+        }
+
+        if (_commands is null) return;
+        _newPhraseWindow = new NewPhraseWindow(_commands, defaultCategoryId);
+        _newPhraseWindow.PhraseSaved += NewPhraseWindow_PhraseSaved;
+        _newPhraseWindow.Closed += NewPhraseWindow_Closed;
+        _newPhraseWindow.Show();
+    }
+
+    private void NewPhraseWindow_PhraseSaved(object? sender, Phrase phrase) =>
+        _management?.RefreshPhrase(phrase);
+
+    private void NewPhraseWindow_Closed(object? sender, EventArgs e)
+    {
+        if (sender is NewPhraseWindow window)
+        {
+            window.PhraseSaved -= NewPhraseWindow_PhraseSaved;
+            window.Closed -= NewPhraseWindow_Closed;
+            if (ReferenceEquals(_newPhraseWindow, window)) _newPhraseWindow = null;
+        }
+
+        RequestShutdownIfNoProductWindows();
     }
 
     /// <summary>
@@ -228,7 +270,7 @@ internal sealed class ApplicationController : IAsyncDisposable
     }
 
     /// <summary>
-    /// 主窗口关闭后，如果设置窗口仍然可见，则保留进程和设置窗口。
+    /// 主窗口关闭后，只要设置或独立新建窗口仍可见，就保留进程。
     /// 只有最后一个产品窗口也关闭时，才按“关闭后留在托盘”设置决定是否退出。
     /// </summary>
     private void OnManagementClosed()
@@ -240,12 +282,12 @@ internal sealed class ApplicationController : IAsyncDisposable
     }
 
     /// <summary>
-    /// 统一处理产品窗口关闭后的退出判断，避免关闭话术库时误退出仍在显示的独立设置窗口。
+    /// 统一处理产品窗口关闭后的退出判断，避免关闭话术库或设置时误退出仍在显示的独立窗口。
     /// </summary>
     private void RequestShutdownIfNoProductWindows(bool suppressExit = false)
     {
         if (suppressExit || _settings is not { StayInTrayOnClose: false }) return;
-        if (_management is { IsVisible: true } || _settingsWindow is { IsVisible: true }) return;
+        if (_management is { IsVisible: true } || _settingsWindow is { IsVisible: true } || _newPhraseWindow is { IsVisible: true }) return;
         System.Windows.Application.Current?.Shutdown();
     }
 
@@ -255,7 +297,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         if (_launcher is { IsVisible: true })
         {
             if (invocationContext is not null)
-                _launcher.Open(initialQuery, target, phraseId, _adapterResolver.GetStatus(target), invocationContext);
+                _launcher.Open(initialQuery, target, phraseId, _adapterResolver.GetStatus(target).SendText == CapabilityStatus.Verified, invocationContext);
             _launcher.Activate();
             return;
         }
@@ -273,9 +315,9 @@ internal sealed class ApplicationController : IAsyncDisposable
 
         var resolvedTarget = captureTarget ? target ?? _targetDetector.CaptureForeground() : target;
         if (resolvedTarget is not null) _lastExternalTarget = resolvedTarget;
-        var status = _adapterResolver.GetStatus(resolvedTarget);
+        var canExplicitSend = _adapterResolver.GetStatus(resolvedTarget).SendText == CapabilityStatus.Verified;
         _hotkeys.SetLauncherVisible(true);
-        _launcher.Open(initialQuery, resolvedTarget, phraseId, status, invocationContext);
+        _launcher.Open(initialQuery, resolvedTarget, phraseId, canExplicitSend, invocationContext);
     }
 
     public bool ShouldShowOnboarding => _settings is { HasCompletedOnboarding: false };
@@ -395,8 +437,10 @@ internal sealed class ApplicationController : IAsyncDisposable
         _suppressManagementCloseExit = true;
         _onboarding?.Close();
         _settingsWindow?.Close();
+        _newPhraseWindow?.Close();
         _management?.Close();
         _launcher?.DisposeLauncher();
+        _hotkeyToggleMenuItem = null;
         _tray?.Dispose();
         _tray = null;
         _trayIcon?.Dispose();
@@ -408,7 +452,6 @@ internal sealed class ApplicationController : IAsyncDisposable
         NetworkChange.NetworkAvailabilityChanged -= NetworkAvailabilityChanged;
         _networkSyncDebounce?.Cancel();
         _networkSyncDebounce?.Dispose();
-        _foregroundWatcher.Dispose();
         _adapterResolver.Dispose();
         await _usageUpdates.DisposeAsync();
         (_delivery as IDisposable)?.Dispose();
@@ -420,7 +463,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         _ = QueueOrDeliverPhraseAsync(phrase, target, mode, query);
     private void OnCreatePhraseRequested(string seed)
     {
-        OpenManagement("editor");
+        OpenNewPhrase();
         if (!string.IsNullOrWhiteSpace(seed))
             _tray?.ShowBalloonTip(1600, "闪语", $"已打开新话术编辑器，可继续填写“{seed}”。", Forms.ToolTipIcon.Info);
     }
@@ -441,21 +484,103 @@ internal sealed class ApplicationController : IAsyncDisposable
     internal static bool RequiresSendConfirmation(SendMode mode, AppSettings settings) =>
         mode == SendMode.InsertAndSend && !settings.QuickSendWithoutConfirmation;
 
+    /// <summary>
+    /// 快捷发送引导的继续条件。选择“开启并继续”时，必须先确认设置已成功持久化；
+    /// 任意取消或保存失败都保持零投递副作用，避免用户误以为本次已发送。
+    /// </summary>
+    internal static bool CanProceedWithQuickSendGuide(QuickSendGuideDecision decision, bool quickSendEnabledSuccessfully) =>
+        decision == QuickSendGuideDecision.ContinueOnce ||
+        decision == QuickSendGuideDecision.EnableAndContinue && quickSendEnabledSuccessfully;
+
+    /// <summary>
+    /// 显示 Ctrl+Enter 的风险引导。该窗口不设置 Owner，保持与既有 MessageBox 一致的 Launcher 生命周期，
+    /// 投递前仍会在 Platform 层重新验证目标，用户切换前台窗口不会绕过安全边界。
+    /// </summary>
+    private static QuickSendGuideDecision ShowQuickSendGuideDialog()
+    {
+        var dialog = new QuickSendGuideDialog();
+        dialog.ShowDialog();
+        return dialog.Decision;
+    }
+
+    /// <summary>
+    /// 将“快捷发送模式”作为一次明确授权保存。读取最新设置并在乐观并发冲突后重试一次；
+    /// 只有 SQLite 保存成功且应用内快照同步后，调用方才可以继续本次 Ctrl+Enter 投递。
+    /// </summary>
+    private async Task<RepositoryResult<AppSettings>> EnableQuickSendWithoutConfirmationAsync(CancellationToken cancellationToken)
+    {
+        if (_commands is null || _settings is null)
+            return RepositoryResult<AppSettings>.Failure(new DataError("DATA_UNAVAILABLE", "本地设置尚未就绪，无法开启快捷发送模式。"));
+
+        try
+        {
+            var current = await _commands.GetSettingsAsync(cancellationToken);
+            _settings = current;
+            if (current.QuickSendWithoutConfirmation)
+                return RepositoryResult<AppSettings>.Success(current);
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var result = await ApplySettingsAsync(
+                    current with { QuickSendWithoutConfirmation = true },
+                    cancellationToken);
+                if (result.IsSuccess ||
+                    !string.Equals(result.Error?.Code, "VERSION_CONFLICT", StringComparison.OrdinalIgnoreCase) ||
+                    attempt == 1)
+                {
+                    return result;
+                }
+
+                current = await _commands.GetSettingsAsync(cancellationToken);
+                _settings = current;
+                if (current.QuickSendWithoutConfirmation)
+                    return RepositoryResult<AppSettings>.Success(current);
+            }
+        }
+        catch (Exception exception)
+        {
+            var traceId = Guid.NewGuid();
+            Console.Error.WriteLine(
+                $"开启快捷发送模式失败。阶段：ENABLE_QUICK_SEND；结果码：QUICK_SEND_ENABLE_FAILED；TraceId：{traceId}；异常类型：{exception.GetType().Name}");
+            return RepositoryResult<AppSettings>.Failure(new DataError(
+                "QUICK_SEND_ENABLE_FAILED",
+                $"开启快捷发送模式失败，请重试。TraceId：{traceId}"));
+        }
+
+        return RepositoryResult<AppSettings>.Failure(new DataError("QUICK_SEND_ENABLE_FAILED", "开启快捷发送模式失败，请重试。"));
+    }
+
+    private static void ShowQuickSendEnableFailure(DataError? error)
+    {
+        var details = error?.Message ?? "设置保存失败，请重试。";
+        System.Windows.MessageBox.Show(
+            $"快捷发送模式未能开启，本次不会发送。\n\n{details}",
+            "开启快捷发送失败",
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
+    }
     private async Task<DeliveryResult?> QueueOrDeliverPhraseAsync(Phrase phrase, DeliveryTarget? target, SendMode mode, string? query)
     {
-        var settings = _settings ?? new AppSettings(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true)
-        {
-            LauncherEnabledAdapters = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["WXWork"] = true },
-        };
+        var settings = _settings ?? new AppSettings(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true);
         if (RequiresSendConfirmation(mode, settings))
         {
-            var choice = System.Windows.MessageBox.Show(
-                "将发送目标输入框中的全部内容，已有草稿可能一并发送。\n\n闪语不会读取输入框正文，也无法确认目标应用最终是否完成发送。是否继续？",
-                "确认快捷发送",
-                MessageBoxButton.OKCancel,
-                MessageBoxImage.Warning,
-                MessageBoxResult.Cancel);
-            if (choice != MessageBoxResult.OK) return null;
+            var decision = ShowQuickSendGuideDialog();
+            var quickSendEnabledSuccessfully = false;
+            if (decision == QuickSendGuideDecision.EnableAndContinue)
+            {
+                var settingsResult = await EnableQuickSendWithoutConfirmationAsync(CancellationToken.None);
+                quickSendEnabledSuccessfully = settingsResult.IsSuccess && settingsResult.Value is not null;
+                if (quickSendEnabledSuccessfully)
+                {
+                    settings = settingsResult.Value!;
+                }
+                else
+                {
+                    ShowQuickSendEnableFailure(settingsResult.Error);
+                }
+            }
+
+            if (!CanProceedWithQuickSendGuide(decision, quickSendEnabledSuccessfully)) return null;
         }
 
         // 适配器解析会读取目标进程元数据，必须离开 WPF UI 线程，避免闪念提交时窗口失去响应。
@@ -627,23 +752,72 @@ internal sealed class ApplicationController : IAsyncDisposable
             return;
         }
 
-        var target = _targetDetector.CaptureForeground();
-        var adapter = target is null ? null : _adapterResolver.Resolve(target);
-        if (adapter is null || _settings is null || !LauncherEligibilityPolicy.CanOpen(adapter.AdapterId, _settings.LauncherEnabledAdapters)) return;
-        OpenLauncher(target: target);
+        // 快捷键全局可用：捕获当前前台窗口仅用于后续安全投递，不再作为闪念呼出的准入条件。
+        OpenLauncher(target: _targetDetector.CaptureForeground(), captureTarget: false);
     }
 
+    /// <summary>
+    /// 托盘菜单与快捷键协调器共享同一个暂停状态。协调器可能在非 UI 回调中触发状态变化，
+    /// 因此所有 NotifyIcon 和 ToolStripMenuItem 的更新都统一切回 WPF UI 线程。
+    /// </summary>
     private void OnHotkeyStatusChanged()
     {
-        if (_hotkeys.LauncherErrorCode == "HOTKEY_CONFLICT")
+        DispatchToUi(() =>
         {
-            if (!_hotkeyConflictNotified && _tray is not null)
+            UpdateTrayHotkeyPresentation();
+            if (_hotkeys.LauncherErrorCode == "HOTKEY_CONFLICT")
             {
-                _hotkeyConflictNotified = true;
-                _tray.ShowBalloonTip(3000, "闪语", "全局快捷键 Alt + Space 被其他程序占用，已临时释放。请在设置中更换快捷键或关闭冲突程序。", Forms.ToolTipIcon.Warning);
+                if (!_hotkeyConflictNotified && _tray is not null)
+                {
+                    _hotkeyConflictNotified = true;
+                    _tray.ShowBalloonTip(3000, "闪语", "全局快捷键 Alt + Space 被其他程序占用，已临时释放。请在设置中更换快捷键或关闭冲突程序。", Forms.ToolTipIcon.Warning);
+                }
             }
+            else _hotkeyConflictNotified = false;
+        });
+    }
+
+    /// <summary>
+    /// 托盘在数据运行时尚未就绪时已经可见。此处避免打开一个没有内容的窗口，
+    /// 并直接向用户说明应用仍在初始化，而不是静默忽略点击。
+    /// </summary>
+    private void ExecuteTrayAction(Action action)
+    {
+        if (_dataRuntime is null || _commands is null || _searchHistory is null)
+        {
+            _tray?.ShowBalloonTip(1500, "闪语正在启动", "正在初始化话术数据，请稍候。", Forms.ToolTipIcon.Info);
+            return;
         }
-        else _hotkeyConflictNotified = false;
+
+        action();
+    }
+
+    /// <summary>
+    /// 从托盘切换全局闪念快捷键，并在菜单文字、托盘提示和气泡通知中同步展示最终状态。
+    /// </summary>
+    private void ToggleHotkeysFromTray()
+    {
+        var isPaused = !_hotkeys.IsPaused;
+        _hotkeys.SetPaused(isPaused);
+        UpdateTrayHotkeyPresentation();
+        _tray?.ShowBalloonTip(
+            1600,
+            "闪语",
+            isPaused ? "闪念快捷键已暂停。可在托盘菜单中恢复。" : "闪念快捷键已恢复。",
+            Forms.ToolTipIcon.Info);
+    }
+
+    /// <summary>
+    /// 只呈现快捷键暂停状态，不用“快捷键是否已注册”替代暂停状态，避免把冲突、作用域变化
+    /// 等运行时条件误解为用户主动暂停。菜单打开前与状态变化后都会调用本方法。
+    /// </summary>
+    private void UpdateTrayHotkeyPresentation()
+    {
+        var isPaused = _hotkeys.IsPaused;
+        if (_hotkeyToggleMenuItem is not null)
+            _hotkeyToggleMenuItem.Text = isPaused ? "恢复闪念快捷键" : "暂停闪念快捷键";
+        if (_tray is not null)
+            _tray.Text = isPaused ? "闪语（快捷键已暂停）" : "闪语";
     }
 
     private void NetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e)
@@ -678,8 +852,6 @@ internal sealed class ApplicationController : IAsyncDisposable
         }
     }
 
-    private void OnForegroundChanged() => DispatchToUi(UpdateLauncherScope);
-
     private void OnLauncherHidden()
     {
         _hotkeys.SetLauncherVisible(false);
@@ -687,19 +859,9 @@ internal sealed class ApplicationController : IAsyncDisposable
         UpdateLauncherScope();
     }
 
-    private void UpdateLauncherScope()
-    {
-        if (_settings is null)
-        {
-            _hotkeys.SetLauncherScopeActive(false, null);
-            return;
-        }
-        var target = _targetDetector.CaptureForeground();
-        var adapter = target is null ? null : _adapterResolver.Resolve(target);
-        var active = adapter is not null && LauncherEligibilityPolicy.CanOpen(adapter.AdapterId, _settings.LauncherEnabledAdapters);
-        if (active) _lastExternalTarget = target;
-        _hotkeys.SetLauncherScopeActive(active, active ? adapter!.AdapterId : null);
-    }
+    /// <summary>闪念快捷键在数据运行时完成初始化后始终保持全局可用，不依赖前台应用类型。</summary>
+    private void UpdateLauncherScope() =>
+        _hotkeys.SetLauncherScopeActive(_settings is not null, null);
 
     private void DispatchToUi(Action action)
     {

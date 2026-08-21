@@ -12,7 +12,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <TextBlock Text="选择目标分类" Style="{StaticResource Style.Text.Label}" Margin="{StaticResource Thickness.Dialog.Label}" />
-        <ComboBox x:Name="CategoryCombo" Grid.Row="1" Style="{StaticResource Style.Select.Default}"
+        <ComboBox x:Name="CategoryCombo" Grid.Row="1" Style="{StaticResource Style.Select.Default}" AutomationProperties.Name="目标分类"
                   ItemsSource="{Binding Categories}" DisplayMemberPath="Name" SelectedValuePath="Id" />
         <TextBlock x:Name="ErrorText" Grid.Row="2" Foreground="{DynamicResource Brush.Status.Error}"
                    Style="{StaticResource Style.Text.Caption}" VerticalAlignment="Center" />

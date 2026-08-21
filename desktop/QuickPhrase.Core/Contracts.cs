@@ -74,8 +74,6 @@ public sealed record AppSettings(
     bool HasCompletedOnboarding = false,
     int OnboardingVersion = 0)
 {
-    /// <summary>只保存开发者登记的 Adapter 开关；具体前台准入仍由 Desktop 重新校验。</summary>
-    public Dictionary<string, bool> LauncherEnabledAdapters { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed record CreatePhraseCommand(
@@ -99,7 +97,11 @@ public sealed record UpdatePhraseCommand(
     string ColorKey = "default",
     int SortOrder = 0);
 
-public sealed record CreateCategoryCommand(Guid Id, string Name, Guid? ParentId = null, int SortOrder = 0);
+/// <summary>
+/// 创建分类请求。未指定 SortOrder 的一级分类由持久化层追加到现有一级分类末尾；
+/// 二级分类仍使用默认排序 0。调用方传入明确排序值时，持久化层原样保留。
+/// </summary>
+public sealed record CreateCategoryCommand(Guid Id, string Name, Guid? ParentId = null, int? SortOrder = null);
 public sealed record RenameCategoryCommand(Guid Id, long ExpectedVersion, string Name, int SortOrder);
 public sealed record MoveCategoryCommand(Guid Id, long ExpectedVersion, Guid? ParentId, int SortOrder);
 

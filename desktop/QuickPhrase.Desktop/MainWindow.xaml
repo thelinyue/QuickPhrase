@@ -11,8 +11,7 @@
         MinWidth="{StaticResource Size.MainWindow.MinimumWidth}"
         MinHeight="{StaticResource Size.MainWindow.MinimumHeight}"
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource Brush.Background.Default}"
-        FontFamily="{StaticResource Typography.FontFamily.UI}">
+        Style="{StaticResource Style.Window.Shell}">
 
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="{StaticResource Size.TitleBar.Height}"
@@ -30,6 +29,6 @@
         <local:TitleBar x:Name="TitleBarControl" Grid.Row="0" />
         <ContentControl x:Name="ContentRegion"
                         Grid.Row="1"
-                        Background="{DynamicResource Brush.Surface.Default}" />
+                        Style="{StaticResource Style.Surface.ContentRegion}" />
     </Grid>
 </Window>

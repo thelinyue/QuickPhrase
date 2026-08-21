@@ -25,5 +25,7 @@ public interface ICommandService
     Task<PhrasePackageLocalSnapshot> CapturePhrasePackageSnapshotAsync(CancellationToken cancellationToken = default);
     Task<PhrasePackageDocument> ReadPhrasePackageAsync(string path, CancellationToken cancellationToken = default);
     Task WritePhrasePackageAsync(string path, PhrasePackageDocument document, CancellationToken cancellationToken = default);
+    Task<PhrasePackageDocument> ReadBatchImportCsvAsync(string path, CancellationToken cancellationToken = default);
+    Task WriteBatchImportTemplateAsync(string path, CancellationToken cancellationToken = default);
     Task<PhrasePackageImportResult> ImportPhrasePackageAsync(PhrasePackageImportPlan plan, CancellationToken cancellationToken = default);
 }

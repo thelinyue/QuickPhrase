@@ -4,30 +4,56 @@ import { readFile } from "node:fs/promises";
 
 const script = await readFile(new URL("../installer/QuickPhrase.iss", import.meta.url), "utf8");
 
-test("installer exposes the desktop shortcut option on the finished page", () => {
-  assert.doesNotMatch(script, /Name:\s*"\{autodesktop\}\\闪语";.*Tasks:\s*desktopicon/);
-  assert.doesNotMatch(script, /Name:\s*"desktopicon";/);
-  assert.match(script, /TNewCheckBox/);
-  assert.match(script, /Caption\s*:=\s*'创建桌面快捷方式\(&D\)'/);
-  assert.match(script, /Checked\s*:=\s*True/);
-  assert.match(script, /wpFinished/);
+function section(name) {
+  const match = script.match(new RegExp(`\\[${name}\\]([\\s\\S]*?)(?=\\n\\[|$)`, "i"));
+  assert.ok(match, `安装器脚本缺少 [${name}] 节。`);
+  return match[1];
+}
+
+
+test("installer creates the desktop shortcut through native tasks and application icons", () => {
+  const tasks = section("Tasks");
+
+  assert.match(tasks, /Name:\s*"desktopicon";\s*Description:\s*"创建桌面快捷方式\(&D\)"/);
+  assert.doesNotMatch(tasks, /Name:\s*"desktopicon";[^\r\n]*\bunchecked\b/i);
+  const icons = section("Icons");
+  assert.match(
+    icons,
+    /Name:\s*"\{group\}\\闪语";\s*Filename:\s*"\{app\}\\\{#AppExeName\}";\s*WorkingDir:\s*"\{app\}";\s*IconFilename:\s*"\{app\}\\\{#AppExeName\}";\s*IconIndex:\s*0/,
+  );
+  assert.match(
+    icons,
+    /Name:\s*"\{autodesktop\}\\闪语";\s*Filename:\s*"\{app\}\\\{#AppExeName\}";\s*WorkingDir:\s*"\{app\}";\s*IconFilename:\s*"\{app\}\\\{#AppExeName\}";\s*IconIndex:\s*0;\s*Tasks:\s*desktopicon/,
+  );
 });
 
-test("installer creates or overwrites the current-user desktop shortcut", () => {
-  assert.match(script, /\{autodesktop\}\\闪语\.lnk/);
-  assert.match(script, /ExpandConstant\('\{app\}\\\{#AppExeName\}'\)/);
-  assert.match(script, /WorkingDirectory\s*:=\s*ExpandConstant\('\{app\}'\)/);
-  assert.match(script, /SetWorkingDirectory\(WorkingDirectory\)/);
-  assert.match(script, /IPersistFile/);
-  assert.match(script, /PersistFile\.Save\(.*True\)/);
-  assert.match(script, /[\[]UninstallDelete[\]][\s\S]*Type:\s*files;\s*Name:\s*"\{autodesktop\}\\闪语\.lnk"/);
+test("installer offers a default checked launch option on the finished page", () => {
+  const run = section("Run");
+
+  assert.match(
+    run,
+    /Filename:\s*"\{app\}\\\{#AppExeName\}";\s*Description:\s*"打开闪语\(&L\)";\s*WorkingDir:\s*"\{app\}";\s*Flags:\s*nowait\s+postinstall\s+skipifsilent/,
+  );
+  assert.doesNotMatch(run, /Filename:[^\r\n]*打开闪语[^\r\n]*\bunchecked\b/i);
 });
 
-test("installer handles silent installation and shortcut failures without aborting", () => {
-  assert.match(script, /WizardSilent/);
-  assert.match(script, /ssPostInstall/);
-  assert.match(script, /try[\s\S]*except/);
-  assert.match(script, /桌面快捷方式创建失败，但安装已完成/);
+test("interactive uninstall offers opt-in local data cleanup and silent uninstall preserves data", () => {
+  const code = section("Code");
+
+  assert.match(code, /TNewCheckBox\.Create\(Form\)/);
+  assert.match(code, /Caption\s*:=\s*'删除本地数据和日志（不可恢复）'/);
+  assert.match(code, /CleanupDataCheckBox\.Checked\s*:=\s*False/);
+  assert.match(code, /DeleteLocalDataRequested\s*:=\s*False/);
+  assert.match(code, /if\s+UninstallSilent\s+then[\s\S]*?Result\s*:=\s*True/);
+  assert.match(code, /ExpandConstant\('\{localappdata\}\\QuickPhrase'\)/);
+  assert.match(code, /if\s+not\s+IsExpectedUserDataRoot\(DataRoot\)\s+then/);
+  assert.match(code, /DelTree\(DataRoot,\s*True,\s*True,\s*True\)/);
+  assert.match(code, /DeleteLocalDataIfRequested;/);
+});
+
+test("installer no longer contains the former custom desktop shortcut implementation", () => {
+  assert.doesNotMatch(script, /DesktopShortcutCheckBox|CreateDesktopShortcut|CreateComObject|IShellLinkW|IPersistFile/);
+  assert.doesNotMatch(script, /\[UninstallDelete\][\s\S]*\{autodesktop\}\\闪语\.lnk/i);
 });
 
 

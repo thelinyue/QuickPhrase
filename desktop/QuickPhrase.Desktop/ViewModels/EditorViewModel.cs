@@ -55,6 +55,9 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
 
     public bool IsNew => _isNew;
 
+    /// <summary>分类加载结果只通过该属性驱动新建窗口的空分类提示，不改变既有分类选择规则。</summary>
+    public bool HasCategories => Categories.Count > 0;
+
     public event EventHandler<Phrase>? Saved;
     public event EventHandler? Cancelled;
     public event EventHandler? Deleted;
@@ -82,16 +85,21 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
         }
     }
 
-    public async Task LoadCategoriesAsync()
+    /// <summary>重新加载分类，并可在新建分类成功后优先选中实际持久化的分类。</summary>
+    public async Task LoadCategoriesAsync(Guid? preferredCategoryId = null)
     {
         var list = await _commands.ListCategoriesAsync();
         Categories = new ObservableCollection<CategoryItem>(
             list.Select(c => new CategoryItem(c.Id, c.Name, c.ParentId)));
-        if (_defaultCategoryId.HasValue && Categories.Any(c => c.Id == _defaultCategoryId.Value))
+        if (preferredCategoryId.HasValue && Categories.Any(c => c.Id == preferredCategoryId.Value))
+            SelectedCategoryId = preferredCategoryId.Value;
+        else if (_defaultCategoryId.HasValue && Categories.Any(c => c.Id == _defaultCategoryId.Value))
             SelectedCategoryId = _defaultCategoryId.Value;
         else if (_isNew && SelectedCategoryId == Guid.Empty && Categories.Count > 0)
             SelectedCategoryId = Categories[0].Id;
     }
+
+    partial void OnCategoriesChanged(ObservableCollection<CategoryItem> value) => OnPropertyChanged(nameof(HasCategories));
 
     public bool HasUnsavedChanges =>
         Title != _baseTitle || Content != _baseContent || SelectedCategoryId != _baseCategoryId || NormalizeColorKey(ColorKey) != _baseColorKey;

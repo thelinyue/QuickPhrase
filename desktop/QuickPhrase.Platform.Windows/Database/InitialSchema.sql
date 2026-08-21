@@ -56,7 +56,7 @@ CREATE TABLE settings (
 
 -- 仅保存应用运行所需的默认设置，不包含任何示例业务数据。
 INSERT INTO settings (key, value_json, version, updated_at_utc) VALUES
-('app.settings', '{"schemaVersion":3,"shortcuts":{"flashLauncher":{"modifiers":2,"keyCode":1}},"launchOnStartup":false,"startMinimized":false,"stayInTrayOnClose":true,"quickSendWithoutConfirmation":false,"clipboardCompatibilityMode":true}', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+('app.settings', '{"schemaVersion":1,"shortcuts":{"flashLauncher":{"modifiers":2,"keyCode":1}},"launchOnStartup":false,"startMinimized":false,"stayInTrayOnClose":true,"quickSendWithoutConfirmation":false,"clipboardCompatibilityMode":true,"hasCompletedOnboarding":false,"onboardingVersion":0}', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 
 CREATE TABLE search_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,7 +68,7 @@ CREATE TABLE search_history (
 CREATE INDEX ix_search_history_last_searched_at
     ON search_history(last_searched_at_utc DESC, id DESC);
 
--- M3 企业同步缓存。只新增企业域表，不创建 M4 个人 outbox 或个人游标。
+-- 企业同步缓存。仅保存企业域表，不创建个人同步投递或个人游标。
 CREATE TABLE sync_accounts (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     hub_address TEXT NOT NULL,
@@ -121,4 +121,4 @@ INSERT INTO enterprise_sync_state(id, release_number) VALUES (1, 0);
 
 
 
-PRAGMA user_version = 3;
+PRAGMA user_version = 1;

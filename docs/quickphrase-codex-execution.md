@@ -1,7 +1,7 @@
 # QuickPhrase Codex 开发执行文档
 
 状态：Architecture v1.1 已冻结为纯 WPF；Phase 6 Windows 11 发布基础设施已完成。
-当前下一步：提交 SignPath Foundation Open Source Project 申请；获批并生成有效签名资产后，完成正式版 `v0.0.1` 的最终验证与单独发布审批。
+当前下一步：从不可变标签 `v0.0.1` 触发未签名正式发布工作流，完成最终资产、SHA-256 和 GitHub Release 核验。
 
 ## 执行纪律
 
@@ -107,18 +107,18 @@
 
 ## Phase 6：Windows 11 Release
 
-### 已完成/待签名
+### 已完成/待发布
 
 - `.NET 10 win-x64` self-contained、非裁剪构建。
 - 按用户安装的纯 WPF Inno Setup EXE。
 - 开机启动、单实例、托盘、升级备份、卸载保留数据和重装流程。
-- 正式版目标目录：`artifacts/release/0.0.1`；公开未签名候选为 `v0.0.1-rc.1`。
+- 正式版目标目录：`artifacts/release/0.0.1`；正式资产当前未附带 Authenticode 签名，并公开 `SHA256SUMS.txt`。
 - 中文产品名：`闪语`；程序集、安装目录、AppId 和数据目录保持 `QuickPhrase` 以兼容升级。
 - 发布清单不得包含 WebView2 Runtime、WebView2 前置安装器或网页 bundle。
 
 主要平台为 Windows 11 x64；Windows 10 22H2 为 `UNVERIFIED / NOT SUPPORTED IN V0.0.1`。
 
-当前结果：企业微信人工矩阵与 Windows 11 x64 安装/升级/启动/卸载保留数据矩阵均已由发布负责人明确确认通过。SignPath Foundation 审批、双阶段签名、可信时间戳和 signed stable 资产验证仍未完成，因此尚不写入 `PHASE6_VERIFY_PASS_WIN11`。证据见 [phase6-validation.md](phase6-validation.md)。
+当前结果：企业微信人工矩阵与 Windows 11 x64 安装/升级/启动/卸载保留数据矩阵均已由发布负责人明确确认通过。未签名稳定资产通过版本、哈希、纯 WPF 发布边界和 GitHub Release 核验后，才写入 `PHASE6_VERIFY_PASS_WIN11`。证据见 [phase6-validation.md](phase6-validation.md)。
 
 ## 统一验证命令
 

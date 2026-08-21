@@ -132,6 +132,12 @@ public sealed class CommandService : ICommandService
     public Task WritePhrasePackageAsync(string path, PhrasePackageDocument document, CancellationToken cancellationToken = default) =>
         RequirePhrasePackages().WriteAsync(path, document, cancellationToken);
 
+    public Task<PhrasePackageDocument> ReadBatchImportCsvAsync(string path, CancellationToken cancellationToken = default) =>
+        RequirePhrasePackages().ReadBatchImportCsvAsync(path, cancellationToken);
+
+    public Task WriteBatchImportTemplateAsync(string path, CancellationToken cancellationToken = default) =>
+        RequirePhrasePackages().WriteBatchImportTemplateAsync(path, cancellationToken);
+
     public Task<PhrasePackageImportResult> ImportPhrasePackageAsync(PhrasePackageImportPlan plan, CancellationToken cancellationToken = default) =>
         RequirePhrasePackages().ImportAsync(plan, cancellationToken);
 

@@ -45,7 +45,7 @@ public sealed class HotkeyCoordinatorTests
         await using var coordinator = new HotkeyCoordinator(service, action => action());
         await coordinator.ConfigureAsync(CreateSettings(AltSpace));
 
-        coordinator.SetLauncherScopeActive(true, "WXWork");
+        coordinator.SetLauncherScopeActive(true, null);
         Assert.True(service.IsEnabled);
         Assert.True(coordinator.LauncherAvailable);
 

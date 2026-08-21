@@ -2,7 +2,7 @@
 
 > 生成时间：2026-08-18
 > 分析依据：基于仓库实际源码、配置与文档的逐文件阅读。推测内容已显式标注。
-> 当前项目状态（2026-08-21 状态同步，来自 `docs/phase6-validation.md`）：企业微信与 Windows 11 人工矩阵已确认通过；SignPath 审批、正式签名资产验证和最终发布批准仍待完成，因此 `PHASE6_VERIFY_PASS_WIN11` 尚未写入。
+> 当前项目状态（2026-08-21 状态同步，来自 `docs/phase6-validation.md`）：企业微信与 Windows 11 人工矩阵已确认通过；未签名稳定版仍需完成资产、哈希、纯 WPF 发布边界和 GitHub Release 核验，随后写入 `PHASE6_VERIFY_PASS_WIN11`。
 
 ---
 
@@ -184,7 +184,7 @@ Core 不知道 Windows；React 不拥有业务能力；WebView2 非核心运行�
 ## 7. 问题与建议（按优先级）
 
 ### P0 — 发布门禁（签名链未完成，阻断 v0.0.1 正式发布）
-1. **Phase 6 最终门禁未关闭**：企业微信运行时能力矩阵与 Windows 11 安装/升级/启动/卸载保留数据矩阵已由发布负责人明确确认通过；SignPath Foundation 审批、双阶段签名、可信时间戳、signed stable 资产验证及新的发布批准仍未完成。
+1. **Phase 6 最终门禁未关闭**：企业微信运行时能力矩阵与 Windows 11 安装/升级/启动/卸载保留数据矩阵已由发布负责人明确确认通过；未签名稳定资产、SHA-256、纯 WPF 发布边界、GitHub Release 和新的发布批准仍需在正式标签上核验。
 2. **Windows 10 标记为不支持**（`UNVERIFIED / NOT SUPPORTED IN V0.0.1`）；公开 `v0.0.1-rc.1` 候选安装器仍未签名，SmartScreen “未知发布者”为已知限制。
 
 ### P1 — 潜在风险 / 技术债

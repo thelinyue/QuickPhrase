@@ -14,7 +14,7 @@
         </Grid.RowDefinitions>
 
         <TextBlock Text="导出范围" Style="{StaticResource Style.Text.Label}" Margin="{StaticResource Thickness.Gap.Stack.SM}" />
-        <ComboBox x:Name="ScopeCombo" Grid.Row="1" SelectedIndex="0" SelectionChanged="ScopeCombo_SelectionChanged"
+        <ComboBox x:Name="ScopeCombo" Grid.Row="1" SelectedIndex="0" SelectionChanged="ScopeCombo_SelectionChanged" AutomationProperties.Name="导出范围"
                   Margin="{StaticResource Thickness.Gap.Stack.MD}">
             <ComboBoxItem Tag="All" Content="全部话术" />
             <ComboBoxItem Tag="Categories" Content="按分类" />
@@ -82,7 +82,7 @@
                 <TextBlock Text="全部话术将自动包含其所属分类及祖先分类。导出文件不包含标签、颜色和本机设置。"
                            Style="{StaticResource Style.Text.Caption}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Dialog.Footer}" />
                 <TextBlock Text="包名称" Style="{StaticResource Style.Text.Label}" Margin="{StaticResource Thickness.Dialog.SectionLabel}" />
-                <TextBox x:Name="NameBox" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Style.Input.Default}" />
+                <TextBox x:Name="NameBox" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Style.Input.Default}" AutomationProperties.Name="话术包名称" />
             </StackPanel>
         </ScrollViewer>
 

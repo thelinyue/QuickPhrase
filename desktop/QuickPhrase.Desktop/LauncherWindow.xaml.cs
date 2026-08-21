@@ -5,7 +5,6 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using CommunityToolkit.Mvvm.Input;
 using QuickPhrase.Core;
-using QuickPhrase.Platform.Windows;
 using QuickPhrase.Desktop.Views.Shared;
 using QuickPhrase.Desktop.Onboarding;
 
@@ -59,7 +58,7 @@ public partial class LauncherWindow : Window
     internal void MarkLifecycleFaulted() => LifecycleState = LauncherLifecycleState.Faulted;
     public bool IsPracticeMode => _invocationContext?.Mode == LauncherInvocationMode.Practice;
 
-    public void Open(string initialQuery = "", DeliveryTarget? target = null, Guid? phraseId = null, AdapterStatusSnapshot? status = null, LauncherInvocationContext? invocationContext = null)
+    public void Open(string initialQuery = "", DeliveryTarget? target = null, Guid? phraseId = null, bool canExplicitSend = false, LauncherInvocationContext? invocationContext = null)
     {
         if (_closing) return;
         LifecycleState = LauncherLifecycleState.Activating;
@@ -68,18 +67,12 @@ public partial class LauncherWindow : Window
         _preferredPhraseId = phraseId;
         _submissionGuard.Reset();
         var hasTarget = target is not null;
-        TargetText.Text = hasTarget
-            ? $"已捕获目标 · {target!.DisplayName} · 动作前会再次验证"
-            : "未捕获目标 · 仅支持预览或安全复制";
-        CapabilityText.Text = status is null
-            ? "无目标 · 插入/发送不可用"
-            : $"Profile {status.ProfileVersion ?? "未确认"} · 插入 {CapabilityLabel(status.InsertText)} · 显式发送 {CapabilityLabel(status.SendText)}";
         InsertHintText.Text = IsPracticeMode
             ? "Enter 选择到练习区"
-            : hasTarget ? "Enter 插入" : "Enter 安全复制";
+            : hasTarget ? "Enter 尝试插入，无法验证时安全复制" : "Enter 安全复制";
         SendHintText.Text = IsPracticeMode
             ? "练习模式不发送"
-            : status?.SendText == CapabilityStatus.Verified
+            : canExplicitSend
                 ? "Ctrl+Enter 显式发送"
                 : "Ctrl+Enter 当前目标不支持发送";
 
@@ -107,12 +100,6 @@ public partial class LauncherWindow : Window
         // Hide 之后再次收起窗口内历史覆盖层，作为排队焦点回调之前的最终关闭屏障。
         CloseSearchHistory();
         Hidden?.Invoke();
-    }
-
-    internal void SetQueueStatus(DeliveryQueueStatus status)
-    {
-        QueueText.Text = status.IsProcessing ? $"处理中 · 等待 {status.WaitingCount}" : string.Empty;
-        QueueText.Visibility = status.IsProcessing ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public void DisposeLauncher()
@@ -198,7 +185,12 @@ public partial class LauncherWindow : Window
         }));
     }
 
-    private void OnQueryChanged(object sender, TextChangedEventArgs e) => RefreshResults();
+    private void OnQueryChanged(object sender, TextChangedEventArgs e)
+    {
+        RefreshResults();
+        // 文本变化可能来自热键预填或用户输入；窗口可见时统一展示历史记录。
+        OpenSearchHistory();
+    }
 
     private void FocusSearchBox()
     {
@@ -216,9 +208,24 @@ public partial class LauncherWindow : Window
     {
         if (!IsInitialized) return;
 
+        var query = QueryBox.Text ?? string.Empty;
+        if (IsSearchQueryEmpty(query))
+        {
+            // 空查询是闪念的紧凑入口：既不展开默认话术，也不保留可被 Enter 误投递的选择项。
+            _results = [];
+            _items = [];
+            _preview = false;
+            _previewPhrase = null;
+            SearchErrorText = string.Empty;
+            ResultsList.ItemsSource = null;
+            ResultsList.SelectedIndex = -1;
+            ApplyViewState();
+            return;
+        }
+
         try
         {
-            var response = _search.Search(new SearchRequest(QueryBox.Text ?? string.Empty, 8));
+            var response = _search.Search(new SearchRequest(query, 8));
             _results = response.Items;
             _items = _results
                 .Select((item, index) => LauncherPhraseListItem.FromPhrase(item.Phrase, index + 1))
@@ -271,6 +278,8 @@ public partial class LauncherWindow : Window
         PreviewContent.Text = _previewPhrase.Content;
     }
 
+    private static bool IsSearchQueryEmpty(string? query) => string.IsNullOrWhiteSpace(query);
+
     /// <summary>根据列表项数计算 Launcher 高度，保持共享话术行的固定节奏。</summary>
     internal static double CalculateListHeight(int itemCount)
     {
@@ -280,14 +289,16 @@ public partial class LauncherWindow : Window
 
     private void ApplyViewState()
     {
+        var isSearchQueryEmpty = IsSearchQueryEmpty(QueryBox.Text);
         var hasResults = _items.Count > 0;
         var hasError = !string.IsNullOrWhiteSpace(SearchErrorText);
-        ResultsList.Visibility = (!_preview && hasResults && !hasError) ? Visibility.Visible : Visibility.Collapsed;
-        PreviewHost.Visibility = (_preview && hasResults && !hasError) ? Visibility.Visible : Visibility.Collapsed;
-        EmptyState.Visibility = (!_preview && !hasResults && !hasError) ? Visibility.Visible : Visibility.Collapsed;
+        QueryHintText.Visibility = isSearchQueryEmpty ? Visibility.Visible : Visibility.Collapsed;
+        ResultsList.Visibility = (!isSearchQueryEmpty && !_preview && hasResults && !hasError) ? Visibility.Visible : Visibility.Collapsed;
+        PreviewHost.Visibility = (!isSearchQueryEmpty && _preview && hasResults && !hasError) ? Visibility.Visible : Visibility.Collapsed;
+        EmptyState.Visibility = (!isSearchQueryEmpty && !_preview && !hasResults && !hasError) ? Visibility.Visible : Visibility.Collapsed;
         LoadingState.Visibility = Visibility.Collapsed;
         SearchRetryState.Description = hasError ? SearchErrorText : "搜索索引初始化失败，请重试。";
-        SearchRetryState.Visibility = hasError ? Visibility.Visible : Visibility.Collapsed;
+        SearchRetryState.Visibility = !isSearchQueryEmpty && hasError ? Visibility.Visible : Visibility.Collapsed;
         PreviewHintText.Text = _preview ? "Tab 返回列表 · Esc 关闭" : "Tab 预览 · Esc 关闭";
         if (_preview)
         {
@@ -495,14 +506,6 @@ public partial class LauncherWindow : Window
         Left = workArea.Left + Math.Max(0, (workArea.Width - Width) / 2);
         Top = workArea.Top + Math.Max(0, (workArea.Height - Height) / 3);
     }
-
-    private static string CapabilityLabel(CapabilityStatus status) => status switch
-    {
-        CapabilityStatus.Verified => "已验证",
-        CapabilityStatus.Unverified => "未确认",
-        CapabilityStatus.Unsupported => "不支持",
-        _ => "未知",
-    };
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {

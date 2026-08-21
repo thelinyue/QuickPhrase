@@ -49,6 +49,35 @@ public sealed class DataManagementViewModelTests
     }
 
     [Fact]
+    public async Task LoadBatchImport_UsesCsvDocumentAndBuildsExistingPreview()
+    {
+        var fake = new FakeCommandService();
+        var category = new PhrasePackageCategory(Guid.NewGuid(), "客户", null, 0);
+        fake.NextBatchImportCsvDocument = Package([category], [new PhrasePackagePhrase(Guid.NewGuid(), "欢迎", "您好", category.Id, 0)]);
+        var data = new DataManagementViewModel(fake);
+
+        var import = await data.LoadBatchImportAsync("sample.csv");
+
+        Assert.NotNull(import);
+        Assert.Equal(1, import!.NewCategoryCount);
+        Assert.Equal(1, import.NewPhraseCount);
+        Assert.Null(data.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task WriteBatchImportTemplate_DelegatesPathAndRestoresBusyState()
+    {
+        var fake = new FakeCommandService();
+        var data = new DataManagementViewModel(fake);
+
+        var succeeded = await data.WriteBatchImportTemplateAsync("template.csv");
+
+        Assert.True(succeeded);
+        Assert.Equal("template.csv", fake.LastBatchImportTemplatePath);
+        Assert.False(data.IsBusy);
+        Assert.Equal("CSV 批量导入模板已生成。", data.StatusMessage);
+    }
+    [Fact]
     public async Task Export_RejectsEmptySelection_AndUsesDefaultName()
     {
         var fake = new FakeCommandService();

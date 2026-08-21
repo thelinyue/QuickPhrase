@@ -180,7 +180,7 @@
 
         <!-- Header：产品身份，不随步骤变化。 -->
         <Grid Grid.Row="0">
-            <TextBlock Text="闪语" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Accent.Primary}" />
+            <TextBlock Text="闪语" Style="{StaticResource Style.Text.Caption.Accent}" />
             <TextBlock Text="念起，即达" Style="{StaticResource Style.Text.Caption}" HorizontalAlignment="Right" />
         </Grid>
 
@@ -200,15 +200,14 @@
                          Foreground="{DynamicResource Brush.Accent.Primary}" Background="{DynamicResource Brush.Border.Default}" />
         </Grid>
 
-        <!-- Content：所有步骤共用剩余空间，内容始终从同一个顶部起点开始。 -->
+        <!-- Content：最小高度已按完整步骤内容预留空间，因此不使用页面级滚动条；长话术正文仍由输入框自身滚动。 -->
         <Grid x:Name="ContentRegion" Grid.Row="2" Margin="{StaticResource Thickness.Onboarding.Content}" ClipToBounds="True">
             <Border x:Name="WelcomeStepPanel" Style="{StaticResource WelcomeStepPanel}">
-                <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel VerticalAlignment="Top">
+                <StackPanel VerticalAlignment="Top">
                         <TextBlock Text="让常用表达，随手可得。" Style="{StaticResource Style.Text.Title.Medium}" />
                         <TextBlock Text="用约 30–60 秒完成基础设置，之后按 Alt + Space 就能快速找到话术。" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Gap.Stack.Before.MD}" />
                         <StackPanel Margin="{StaticResource Thickness.Gap.Stack.Before.XL}">
-                            <TextBlock Text="这次会完成" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Primary}" />
+                            <TextBlock Text="这次会完成" Style="{StaticResource Style.Text.Caption.Primary}" />
                             <TextBlock Text="1  创建一个一级分类" Style="{StaticResource Style.Text.Body.Medium}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
                             <TextBlock Text="2  保存一条常用话术" Style="{StaticResource Style.Text.Body.Medium}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
                             <TextBlock Text="3  用闪念体验一次快速查找" Style="{StaticResource Style.Text.Body.Medium}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
@@ -224,52 +223,46 @@
                                 <Button Grid.Column="1" Content="修改快捷键" Command="{Binding ModifyShortcutCommand}" Style="{StaticResource Style.Button.Ghost.Compact}" Margin="{StaticResource Thickness.Gap.Inline.Before.LG}" />
                             </Grid>
                         </Border>
-                    </StackPanel>
-                </ScrollViewer>
+                </StackPanel>
             </Border>
 
             <Border x:Name="CategoryStepPanel" Style="{StaticResource CategoryStepPanel}">
-                <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel VerticalAlignment="Top">
+                <StackPanel VerticalAlignment="Top">
                         <TextBlock Text="先从一个清晰的分类开始。" Style="{StaticResource Style.Text.Title.Medium}" />
                         <TextBlock Text="例如：客户沟通、售后回复、项目协作。" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Onboarding.IntroDescription}" />
-                        <TextBlock Text="分类名称" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Primary}" />
-                        <TextBox Text="{Binding CategoryName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Style.Input.Default}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" MaxLength="80">
+                        <TextBlock Text="分类名称" Style="{StaticResource Style.Text.Caption.Primary}" />
+                        <TextBox Text="{Binding CategoryName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Style.Input.Default}" AutomationProperties.Name="引导分类名称" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" MaxLength="80">
                             <TextBox.InputBindings>
                                 <KeyBinding Key="Enter" Command="{Binding CreateCategoryAndContinueCommand}" />
                             </TextBox.InputBindings>
                         </TextBox>
-                    </StackPanel>
-                </ScrollViewer>
+                </StackPanel>
             </Border>
 
             <Border x:Name="PhraseStepPanel" Style="{StaticResource PhraseStepPanel}">
-                <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel VerticalAlignment="Top">
+                <StackPanel VerticalAlignment="Top">
                         <TextBlock Text="把最常用的一句话先存下来。" Style="{StaticResource Style.Text.Title.Medium}" />
                         <TextBlock Text="这条话术会保存到选定的一级分类中，之后可以随时修改。" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Onboarding.IntroDescription}" />
 
-                        <TextBlock Text="保存到" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Primary}" />
+                        <TextBlock Text="保存到" Style="{StaticResource Style.Text.Caption.Primary}" />
                         <Border Style="{StaticResource SingleCategoryField}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}">
                             <TextBlock Text="{Binding SelectedCategoryDisplayName}" Style="{StaticResource Style.Text.Body.Medium}" VerticalAlignment="Center" />
                         </Border>
-                        <ComboBox Style="{StaticResource MultipleCategoryField}" ItemsSource="{Binding Categories}"
+                        <ComboBox Style="{StaticResource MultipleCategoryField}" ItemsSource="{Binding Categories}" AutomationProperties.Name="引导话术分类"
                                   SelectedItem="{Binding SelectedCategory}" DisplayMemberPath="Name" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
 
-                        <TextBlock Text="话术标题" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Primary}" Margin="{StaticResource Thickness.Gap.Stack.Before.LG}" />
-                        <TextBox Text="{Binding PhraseTitle, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Style.Input.Default}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" MaxLength="120" />
+                        <TextBlock Text="话术标题" Style="{StaticResource Style.Text.Caption.Primary}" Margin="{StaticResource Thickness.Gap.Stack.Before.LG}" />
+                        <TextBox Text="{Binding PhraseTitle, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Style.Input.Default}" AutomationProperties.Name="引导话术标题" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" MaxLength="120" />
 
-                        <TextBlock Text="话术内容" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Primary}" Margin="{StaticResource Thickness.Gap.Stack.Before.LG}" />
-                        <TextBox Text="{Binding PhraseContent, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap"
+                        <TextBlock Text="话术内容" Style="{StaticResource Style.Text.Caption.Primary}" Margin="{StaticResource Thickness.Gap.Stack.Before.LG}" />
+                        <TextBox Text="{Binding PhraseContent, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="引导话术内容" AcceptsReturn="True" TextWrapping="Wrap"
                                  Style="{StaticResource Style.Input.Default}" VerticalContentAlignment="Top"
-                                 VerticalScrollBarVisibility="Auto" Height="{StaticResource Size.Onboarding.PhraseBody.Height}" Padding="{StaticResource Thickness.MD}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
-                    </StackPanel>
-                </ScrollViewer>
+                                 VerticalScrollBarVisibility="Auto" Height="{StaticResource Size.Onboarding.PhraseBody.Height}" Padding="{StaticResource Thickness.Control.Input.Multiline}" Margin="{StaticResource Thickness.Gap.Stack.Before.SM}" />
+                </StackPanel>
             </Border>
 
             <Border x:Name="PracticeStepPanel" Style="{StaticResource PracticeStepPanel}">
-                <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel VerticalAlignment="Top">
+                <StackPanel VerticalAlignment="Top">
                         <TextBlock Text="用真实闪念找回刚才的话术。" Style="{StaticResource Style.Text.Title.Medium}" />
                         <TextBlock Text="打开闪念，输入刚才的话术标题或正文中的关键词，再按 Enter 选择。练习只把结果返回给本向导，不会触碰剪贴板，也不会发送到其他应用。" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Onboarding.CopyBlock}" />
                         <Button Content="打开闪念（Alt + Space）" Command="{Binding BeginPracticeCommand}" Style="{StaticResource StepButton}" HorizontalAlignment="Left" />
@@ -315,22 +308,19 @@
                                 <TextBlock Grid.Column="1" Text="{Binding PracticeInsertedStatus}" Style="{StaticResource PracticeInsertedStatusText}" />
                             </Grid>
                         </StackPanel>
-                    </StackPanel>
-                </ScrollViewer>
+                </StackPanel>
             </Border>
 
             <Border x:Name="CompleteStepPanel" Style="{StaticResource CompleteStepPanel}">
-                <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel VerticalAlignment="Top">
+                <StackPanel VerticalAlignment="Top">
                         <TextBlock Text="设置已完成" Style="{StaticResource Style.Text.Title.Medium}" />
                         <TextBlock Text="以后按 Alt + Space 打开闪念，就能快速找到常用话术。你也可以在话术库中继续整理和完善内容。" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Onboarding.IntroDescription}" />
                         <Border Style="{StaticResource Style.Card.Default}" Padding="{StaticResource Thickness.MD}">
                             <TextBlock Text="第一条话术已经准备好，随时可以开始使用。" Style="{StaticResource Style.Text.Body.Medium}" />
                         </Border>
-                        <CheckBox Content="开机时启动闪语" IsChecked="{Binding LaunchOnStartup}" Style="{StaticResource Style.Switch.Default}" Margin="{StaticResource Thickness.Gap.Stack.Before.XL}" />
+                        <CheckBox Content="开机时启动闪语" IsChecked="{Binding LaunchOnStartup}" AutomationProperties.Name="开机时启动闪语" Style="{StaticResource Style.Switch.Default}" Margin="{StaticResource Thickness.Gap.Stack.Before.XL}" />
                         <TextBlock Text="{Binding StartupWarning}" Foreground="{DynamicResource Brush.Status.Error}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Gap.Stack.Before.MD}" />
-                    </StackPanel>
-                </ScrollViewer>
+                </StackPanel>
             </Border>
         </Grid>
 

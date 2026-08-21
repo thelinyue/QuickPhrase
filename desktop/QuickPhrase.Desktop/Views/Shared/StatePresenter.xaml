@@ -5,7 +5,7 @@
              x:Name="Presenter"
              MinHeight="{StaticResource Size.StatePresenter.MinimumHeight}">
     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{StaticResource Thickness.XXL}">
-        <TextBlock Text="○" Style="{StaticResource Style.Text.Title.Large}" Foreground="{DynamicResource Brush.Text.Secondary}"
+        <TextBlock Text="○" Style="{StaticResource Style.Text.Title.Large.Secondary}"
                    HorizontalAlignment="Center" />
         <TextBlock Text="{Binding Title, ElementName=Presenter}"
                    Style="{StaticResource Style.Text.Title.Small}" HorizontalAlignment="Center"

@@ -42,6 +42,11 @@ internal sealed class SqliteCategoryRepository : SqliteRepositoryBase, ICategory
         if (await CategoryNameExistsAsync(connection, transaction, command.ParentId, normalized.Normalized, null, cancellationToken))
             return RepositoryResult<Category>.Failure(Validation("分类名称已经存在。"));
 
+        // 分类写入经过单写者队列。一级分类的末尾排序必须在同一写事务内计算，
+        // 否则并发新建可能读取到相同的最大排序值，导致界面顺序不稳定。
+        var sortOrder = command.SortOrder ?? (command.ParentId is null
+            ? categories.Where(category => category.ParentId is null).Select(category => category.SortOrder).DefaultIfEmpty(-10).Max() + 10
+            : 0);
         var now = Now();
         await using var insert = connection.CreateCommand();
         insert.Transaction = transaction;
@@ -50,12 +55,12 @@ internal sealed class SqliteCategoryRepository : SqliteRepositoryBase, ICategory
         insert.Parameters.AddWithValue("$parentId", (object?)command.ParentId?.ToString() ?? DBNull.Value);
         insert.Parameters.AddWithValue("$name", normalized.Display);
         insert.Parameters.AddWithValue("$normalized", normalized.Normalized);
-        insert.Parameters.AddWithValue("$sortOrder", command.SortOrder);
+        insert.Parameters.AddWithValue("$sortOrder", sortOrder);
         insert.Parameters.AddWithValue("$created", now.ToString("O"));
         insert.Parameters.AddWithValue("$updated", now.ToString("O"));
         await insert.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return RepositoryResult<Category>.Success(new Category(command.Id, command.ParentId, normalized.Display, command.SortOrder, 1, now, now), Change(command.Id, "create"));
+        return RepositoryResult<Category>.Success(new Category(command.Id, command.ParentId, normalized.Display, sortOrder, 1, now, now), Change(command.Id, "create"));
     }
 
     private async Task<RepositoryResult<Category>> RenameCoreAsync(SqliteConnection connection, RenameCategoryCommand command, CancellationToken cancellationToken)

@@ -4,14 +4,12 @@ using System.Text;
 namespace QuickPhrase.Platform.Windows;
 
 /// <summary>
-/// 负责创建当前 SQLite 结构，并按顺序执行 v1→v2→v3 前向迁移。
-/// v3 只新增企业同步缓存表；任何校验失败都会回滚，绝不通过删除数据库来“修复”结构。
+/// 未发布阶段的 SQLite 初始化器。产品只承认一份当前 V1 结构；
+/// 任何版本或表结构不符合该定义的开发数据库都会被清空并按初始脚本重建，不执行迁移。
 /// </summary>
 internal sealed class DatabaseInitializer
 {
-    private const int CurrentSchemaVersion = 3;
-    private const int Version2Schema = 2;
-    private const int LegacySchemaVersion = 1;
+    private const int CurrentSchemaVersion = 1;
     private readonly SqliteConnectionFactory _connections;
     private readonly QuickPhraseDataOptions _options;
 
@@ -30,25 +28,52 @@ internal sealed class DatabaseInitializer
         }
 
         var schemaVersion = await ReadSchemaVersionAsync(cancellationToken);
-        switch (schemaVersion)
+        if (schemaVersion == CurrentSchemaVersion && await HasCurrentSchemaAsync(cancellationToken))
+            return;
+
+        await RebuildDevelopmentDatabaseAsync(schemaVersion, cancellationToken);
+    }
+
+    private async Task RebuildDevelopmentDatabaseAsync(int detectedSchemaVersion, CancellationToken cancellationToken)
+    {
+        var traceId = Guid.NewGuid();
+        try
         {
-            case LegacySchemaVersion:
-                await MigrateVersion1ToVersion2Async(cancellationToken);
-                await MigrateVersion2ToVersion3Async(cancellationToken);
-                return;
-            case Version2Schema:
-                if (!await HasVersion2SchemaAsync(cancellationToken))
-                    throw InvalidSchema("v2");
-                await MigrateVersion2ToVersion3Async(cancellationToken);
-                return;
-            case CurrentSchemaVersion:
-                if (await HasCurrentSchemaAsync(cancellationToken)) return;
-                throw InvalidSchema("v3");
-            default:
-                throw new DataStoreException(
-                    "DATABASE_UNSUPPORTED_VERSION",
-                    $"检测到不受支持的本地数据库版本 v{schemaVersion}。为避免误迁移或丢失数据，QuickPhrase 不会自动重建数据库。\n"
-                    + $"数据目录：{_options.DataDirectory}");
+            DeleteDatabaseFiles();
+            await CreateCurrentSchemaAsync(cancellationToken);
+            Console.Error.WriteLine(
+                $"检测到未发布阶段的旧开发数据，已清空并按 V1 重建。阶段：DATABASE_REBUILD；结果码：DATABASE_V1_REBUILT；" +
+                $"检测版本：{detectedSchemaVersion}；数据目录：{_options.DataDirectory}；TraceId：{traceId}");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                $"未发布阶段本地数据重建失败。阶段：DATABASE_REBUILD；结果码：DATABASE_REBUILD_FAILED；" +
+                $"数据目录：{_options.DataDirectory}；TraceId：{traceId}；异常类型：{exception.GetType().Name}");
+            throw new DataStoreException(
+                "DATABASE_REBUILD_FAILED",
+                $"本地开发数据不符合当前 V1 结构，自动重建失败。请关闭占用数据库的程序后重试。数据目录：{_options.DataDirectory}；TraceId：{traceId}",
+                exception);
+        }
+    }
+
+    private void DeleteDatabaseFiles()
+    {
+        // SQLite 在 WAL 和 rollback-journal 模式下可能留下旁路文件；重建时必须一并删除，避免旧页再次被附着。
+        foreach (var path in new[]
+                 {
+                     _options.DatabasePath,
+                     _options.DatabasePath + "-wal",
+                     _options.DatabasePath + "-shm",
+                     _options.DatabasePath + "-journal",
+                 })
+        {
+            if (File.Exists(path))
+                File.Delete(path);
         }
     }
 
@@ -58,9 +83,9 @@ internal sealed class DatabaseInitializer
         await using var transaction = connection.BeginTransaction();
         try
         {
-            await ExecuteSqlAsync(connection, transaction, LoadDatabaseScript("InitialSchema.sql"), cancellationToken);
+            await ExecuteSqlAsync(connection, transaction, LoadInitialSchemaScript(), cancellationToken);
             if (!await HasCurrentSchemaAsync(connection, transaction, cancellationToken))
-                throw new InvalidOperationException("首次安装数据库结构校验失败。");
+                throw new InvalidOperationException("当前 V1 数据库结构校验失败。");
 
             await transaction.CommitAsync(cancellationToken);
         }
@@ -69,68 +94,12 @@ internal sealed class DatabaseInitializer
             await TryRollbackAsync(transaction);
             throw;
         }
-        catch (Exception ex) when (ex is not DataStoreException)
+        catch (Exception exception) when (exception is not DataStoreException)
         {
             await TryRollbackAsync(transaction);
-            throw new DataStoreException("DATABASE_INITIALIZATION_FAILED", "本地数据库初始化失败，请查看日志后重试。", ex);
+            throw new DataStoreException("DATABASE_INITIALIZATION_FAILED", "本地数据库初始化失败，请查看日志后重试。", exception);
         }
     }
-
-    private async Task MigrateVersion1ToVersion2Async(CancellationToken cancellationToken)
-    {
-        await using var connection = await _connections.OpenWriterAsync(cancellationToken);
-        await using var transaction = connection.BeginTransaction();
-        try
-        {
-            await ExecuteSqlAsync(connection, transaction, LoadDatabaseScript("MigrateV1ToV2.sql"), cancellationToken);
-            if (!await HasVersion2SchemaAsync(connection, transaction, cancellationToken))
-                throw new InvalidOperationException("v1 到 v2 迁移后的数据库结构校验失败。");
-
-            await EnsureDatabaseIntegrityAsync(connection, transaction, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            await TryRollbackAsync(transaction);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            await TryRollbackAsync(transaction);
-            throw new DataStoreException(
-                "DATABASE_MIGRATION_FAILED",
-                "本地数据库从 v1 升级到 v2 失败，迁移已完整回滚，原有数据未被部分修改。请查看日志后重试。",
-                ex);
-        }
-    }
-
-    private async Task MigrateVersion2ToVersion3Async(CancellationToken cancellationToken)
-    {
-        await using var connection = await _connections.OpenWriterAsync(cancellationToken);
-        await using var transaction = connection.BeginTransaction();
-        try
-        {
-            await ExecuteSqlAsync(connection, transaction, LoadDatabaseScript("MigrateV2ToV3.sql"), cancellationToken);
-            if (!await HasCurrentSchemaAsync(connection, transaction, cancellationToken))
-                throw new InvalidOperationException("v2 到 v3 迁移后的数据库结构校验失败。");
-            await EnsureDatabaseIntegrityAsync(connection, transaction, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            await TryRollbackAsync(transaction);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            await TryRollbackAsync(transaction);
-            throw new DataStoreException("DATABASE_MIGRATION_FAILED", "本地数据库从 v2 升级到 v3 失败，迁移已完整回滚，原有个人数据保持不变。请查看日志后重试。", ex);
-        }
-    }
-
-    private DataStoreException InvalidSchema(string version) => new(
-        "DATABASE_SCHEMA_INVALID",
-        $"本地数据库版本为 {version}，但结构不完整或已损坏。为避免误删数据，QuickPhrase 已停止启动，请先备份数据文件后再处理。\n数据目录：{_options.DataDirectory}");
 
     private async Task<int> ReadSchemaVersionAsync(CancellationToken cancellationToken)
     {
@@ -146,46 +115,71 @@ internal sealed class DatabaseInitializer
         return await HasCurrentSchemaAsync(connection, transaction: null, cancellationToken);
     }
 
-    private async Task<bool> HasVersion2SchemaAsync(CancellationToken cancellationToken)
+    private static async Task<bool> HasCurrentSchemaAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        CancellationToken cancellationToken)
     {
-        await using var connection = await _connections.OpenReadAsync(cancellationToken);
-        return await HasVersion2SchemaAsync(connection, transaction: null, cancellationToken);
-    }
+        if (await ReadSchemaVersionAsync(connection, transaction, cancellationToken) != CurrentSchemaVersion)
+            return false;
+        if (!await HasCurrentSchemaShapeAsync(connection, transaction, cancellationToken))
+            return false;
 
-    private static async Task<bool> HasCurrentSchemaAsync(SqliteConnection connection, SqliteTransaction? transaction, CancellationToken cancellationToken)
-    {
-        if (await ReadSchemaVersionAsync(connection, transaction, cancellationToken) != CurrentSchemaVersion) return false;
-        if (!await HasBaseSchemaShapeAsync(connection, transaction, cancellationToken)) return false;
         foreach (var table in new[] { "sync_accounts", "enterprise_categories_cache", "enterprise_phrases_cache", "enterprise_sync_state" })
-            if (!await TableExistsAsync(connection, transaction, table, cancellationToken)) return false;
+        {
+            if (!await TableExistsAsync(connection, transaction, table, cancellationToken))
+                return false;
+        }
+
         return true;
     }
 
-    private static async Task<bool> HasVersion2SchemaAsync(SqliteConnection connection, SqliteTransaction? transaction, CancellationToken cancellationToken)
+    private static async Task<bool> HasCurrentSchemaShapeAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        CancellationToken cancellationToken)
     {
-        if (await ReadSchemaVersionAsync(connection, transaction, cancellationToken) != Version2Schema) return false;
-        return await HasBaseSchemaShapeAsync(connection, transaction, cancellationToken);
-    }
+        // 完整比对当前 V1 的表列和显式索引，确保即使 user_version 被误标为 1，
+        // 也不会把残缺或历史开发库当成可继续使用的当前数据。
+        var expectedColumns = new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            ["categories"] = ["id", "parent_id", "name", "normalized_name", "sort_order", "version", "created_at_utc", "updated_at_utc"],
+            ["phrases"] = ["id", "title", "content", "category_id", "shortcut_mode", "shortcut_display", "shortcut_normalized", "usage_count", "last_used_at_utc", "version", "created_at_utc", "updated_at_utc", "color_key", "sort_order"],
+            ["settings"] = ["key", "value_json", "version", "updated_at_utc"],
+            ["search_history"] = ["id", "query", "normalized_query", "last_searched_at_utc"],
+            ["sync_accounts"] = ["id", "hub_address", "account", "display_name", "device_id", "token_reference", "status", "last_authenticated_at_utc", "created_at_utc", "updated_at_utc"],
+            ["enterprise_categories_cache"] = ["id", "generation", "parent_id", "name", "sort_order", "version"],
+            ["enterprise_phrases_cache"] = ["id", "generation", "category_id", "title", "content", "sort_order", "version"],
+            ["enterprise_sync_state"] = ["id", "active_generation", "cursor", "release_number", "last_synchronized_at_utc", "last_result", "last_error_code", "trace_id"],
+        };
+        foreach (var (table, columns) in expectedColumns)
+        {
+            if (!await TableExistsAsync(connection, transaction, table, cancellationToken)
+                || !await HasExactColumnsAsync(connection, transaction, table, columns, cancellationToken))
+            {
+                return false;
+            }
+        }
 
-    private static async Task<bool> HasBaseSchemaShapeAsync(SqliteConnection connection, SqliteTransaction? transaction, CancellationToken cancellationToken)
-    {
-        foreach (var table in new[] { "categories", "phrases", "settings", "search_history" })
-            if (!await TableExistsAsync(connection, transaction, table, cancellationToken)) return false;
-        var requiredColumns = new (string Table, string Column)[] { ("categories", "parent_id"), ("phrases", "shortcut_mode"), ("phrases", "color_key"), ("phrases", "sort_order"), ("settings", "value_json"), ("search_history", "normalized_query") };
-        foreach (var (table, column) in requiredColumns)
-            if (!await ColumnExistsAsync(connection, transaction, table, column, cancellationToken)) return false;
-        if (await ColumnExistsAsync(connection, transaction, "phrases", "favorite", cancellationToken)) return false;
-        if (await IndexExistsAsync(connection, transaction, "ix_phrases_favorite", cancellationToken)) return false;
+        foreach (var index in new[]
+                 {
+                     "ux_categories_root_normalized_name",
+                     "ux_categories_child_parent_normalized_name",
+                     "ix_categories_parent_id",
+                     "ux_phrases_shortcut_normalized",
+                     "ix_phrases_category_id",
+                     "ix_phrases_last_used_at",
+                     "ix_phrases_category_sort",
+                     "ix_search_history_last_searched_at",
+                     "ix_enterprise_categories_generation_sort",
+                     "ix_enterprise_phrases_generation_category_sort",
+                 })
+        {
+            if (!await IndexExistsAsync(connection, transaction, index, cancellationToken))
+                return false;
+        }
+
         return true;
-    }
-
-    private static async Task<bool> TableExistsAsync(SqliteConnection connection, SqliteTransaction? transaction, string table, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT 1 FROM sqlite_master WHERE type='table' AND name=$name LIMIT 1;";
-        command.Parameters.AddWithValue("$name", table);
-        return await command.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
     private static async Task<int> ReadSchemaVersionAsync(
@@ -199,22 +193,36 @@ internal sealed class DatabaseInitializer
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
-    private static async Task<bool> ColumnExistsAsync(
+    private static async Task<bool> TableExistsAsync(
         SqliteConnection connection,
         SqliteTransaction? transaction,
         string table,
-        string column,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $name LIMIT 1;";
+        command.Parameters.AddWithValue("$name", table);
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
+    private static async Task<bool> HasExactColumnsAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string table,
+        IReadOnlyCollection<string> expectedColumns,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = $"PRAGMA table_info([{table}]);";
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var actualColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         while (await reader.ReadAsync(cancellationToken))
-        {
-            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase)) return true;
-        }
-        return false;
+            actualColumns.Add(reader.GetString(1));
+
+        return actualColumns.Count == expectedColumns.Count
+            && expectedColumns.All(actualColumns.Contains);
     }
 
     private static async Task<bool> IndexExistsAsync(
@@ -228,28 +236,6 @@ internal sealed class DatabaseInitializer
         command.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = $name LIMIT 1;";
         command.Parameters.AddWithValue("$name", index);
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
-    }
-
-    private static async Task EnsureDatabaseIntegrityAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        CancellationToken cancellationToken)
-    {
-        await using (var foreignKeys = connection.CreateCommand())
-        {
-            foreignKeys.Transaction = transaction;
-            foreignKeys.CommandText = "PRAGMA foreign_key_check;";
-            await using var reader = await foreignKeys.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken))
-                throw new InvalidOperationException("迁移后的数据库外键检查失败。");
-        }
-
-        await using var integrity = connection.CreateCommand();
-        integrity.Transaction = transaction;
-        integrity.CommandText = "PRAGMA integrity_check;";
-        var result = Convert.ToString(await integrity.ExecuteScalarAsync(cancellationToken));
-        if (!string.Equals(result, "ok", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"迁移后的数据库完整性检查失败：{result}");
     }
 
     private static async Task ExecuteSqlAsync(
@@ -269,14 +255,16 @@ internal sealed class DatabaseInitializer
         try { await transaction.RollbackAsync(CancellationToken.None); } catch { }
     }
 
-    private static string LoadDatabaseScript(string fileName)
+    private static string LoadInitialSchemaScript()
     {
         var assembly = typeof(DatabaseInitializer).Assembly;
-        var suffix = $".Database.{fileName}";
-        var resourceName = assembly.GetManifestResourceNames().SingleOrDefault(x => x.EndsWith(suffix, StringComparison.Ordinal));
-        if (resourceName is null) throw new InvalidOperationException($"找不到数据库脚本资源：{fileName}");
+        const string suffix = ".Database.InitialSchema.sql";
+        var resourceName = assembly.GetManifestResourceNames().SingleOrDefault(name => name.EndsWith(suffix, StringComparison.Ordinal));
+        if (resourceName is null)
+            throw new InvalidOperationException("找不到当前 V1 数据库初始化脚本。");
+
         using var stream = assembly.GetManifestResourceStream(resourceName)
-            ?? throw new InvalidOperationException($"无法读取数据库脚本资源：{fileName}");
+            ?? throw new InvalidOperationException("无法读取当前 V1 数据库初始化脚本。");
         using var reader = new StreamReader(stream, Encoding.UTF8);
         return reader.ReadToEnd();
     }

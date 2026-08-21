@@ -148,7 +148,9 @@ public partial class OnboardingViewModel : ObservableObject
     {
         _manualOpen = manualOpen;
         await ReloadDataAsync(cancellationToken);
-        CurrentStep = GetFirstIncompleteStep(skipWelcome: manualOpen ? true : false);
+        // 从设置页重新打开时先展示欢迎页；已有数据会在用户点击“开始设置”后自然跳过，
+        // 因而既能完整重温引导，也不会重复创建分类或话术。
+        CurrentStep = manualOpen ? OnboardingStep.Welcome : GetFirstIncompleteStep(skipWelcome: false);
         OnPropertyChanged(nameof(StepTitle));
         OnPropertyChanged(nameof(CanFinish));
     }

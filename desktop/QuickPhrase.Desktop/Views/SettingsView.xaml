@@ -6,7 +6,7 @@
              xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
              xmlns:designSystem="clr-namespace:QuickPhrase.Desktop.DesignSystem.Components"
              mc:Ignorable="d">
-    <Grid Background="{DynamicResource Brush.Background.Default}">
+    <Grid Style="{StaticResource Style.Surface.Page}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="{StaticResource Size.Settings.Sidebar.GridLength}" />
             <ColumnDefinition Width="*" />
@@ -189,32 +189,27 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- 应用适配 -->
+                    <!-- 应用适配：所有前台应用都可呼出闪念；这里仅说明拥有专属投递优化的应用。 -->
                     <Border x:Name="AdaptersSection" Visibility="Collapsed">
                         <StackPanel>
                             <TextBlock Text="应用适配" Style="{StaticResource Style.Text.Title.Large}" />
-                            <TextBlock Text="选择哪些应用可以使用闪语。"
+                            <TextBlock Text="所有前台应用都可以使用全局快捷键打开闪念。已适配应用会使用专属的插入和发送安全校验。"
                                        Style="{StaticResource Style.Text.Body.Small}"
                                        Foreground="{DynamicResource Brush.Text.Secondary}"
                                        Margin="{StaticResource Thickness.Settings.HeaderDescription}" />
-                            <TextBlock Text="已识别的应用"
+                            <TextBlock Text="已适配的应用"
                                        Style="{StaticResource Style.Text.Title.Small}"
                                        Margin="{StaticResource Thickness.Settings.SectionTitle}" />
                             <Border Style="{StaticResource Style.Setting.Group}">
-                                <ItemsControl ItemsSource="{Binding Adapters}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate DataType="{x:Type vm:AdapterToggleItem}">
-                                            <designSystem:SettingItem Title="{Binding DisplayName}"
-                                                                      Description="允许在此应用中使用闪语">
-                                                <designSystem:SettingItem.ControlContent>
-                                                    <CheckBox Style="{StaticResource Style.Switch.Default}"
-                                                              IsChecked="{Binding Enabled}"
-                                                              VerticalAlignment="Center" />
-                                                </designSystem:SettingItem.ControlContent>
-                                            </designSystem:SettingItem>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                <designSystem:SettingItem Title="企业微信"
+                                                          Description="已进行专属插入与显式发送安全优化">
+                                    <designSystem:SettingItem.ControlContent>
+                                        <TextBlock Text="已适配"
+                                                   Style="{StaticResource Style.Text.Body.Small}"
+                                                   Foreground="{DynamicResource Brush.Accent.Primary}"
+                                                   VerticalAlignment="Center" />
+                                    </designSystem:SettingItem.ControlContent>
+                                </designSystem:SettingItem>
                             </Border>
                         </StackPanel>
                     </Border>
@@ -341,6 +336,32 @@
                                                Style="{StaticResource Style.Settings.DataFeedback}"
                                                TextWrapping="Wrap"
                                                Margin="{StaticResource Thickness.Settings.DataError}" />
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="批量导入（CSV）"
+                                       Style="{StaticResource Style.Text.Title.Small}"
+                                       Margin="{StaticResource Thickness.Settings.SectionTitle}" />
+                            <Border Style="{StaticResource Style.Setting.Group}">
+                                <StackPanel>
+                                    <designSystem:SettingItem Title="下载导入模板"
+                                                              Description="模板使用 UTF-8 CSV 格式，可直接用 Excel 编辑。"
+                                                              ShowDivider="True">
+                                        <designSystem:SettingItem.ControlContent>
+                                            <Button Style="{StaticResource Style.Button.Secondary}"
+                                                    Content="下载模板"
+                                                    Command="{Binding DataManagement.RequestBatchImportTemplateCommand}"
+                                                    MinWidth="{StaticResource Size.Button.Action.MinimumWidth}" />
+                                        </designSystem:SettingItem.ControlContent>
+                                    </designSystem:SettingItem>
+                                    <designSystem:SettingItem Title="导入 CSV 话术"
+                                                              Description="列顺序固定为一级分类、二级分类、标题、正文；固定示例行会自动忽略。">
+                                        <designSystem:SettingItem.ControlContent>
+                                            <Button Style="{StaticResource Style.Button.Secondary}"
+                                                    Content="批量导入"
+                                                    Command="{Binding DataManagement.RequestBatchImportCommand}"
+                                                    MinWidth="{StaticResource Size.Button.Action.MinimumWidth}" />
+                                        </designSystem:SettingItem.ControlContent>
+                                    </designSystem:SettingItem>
                                 </StackPanel>
                             </Border>
                         </StackPanel>

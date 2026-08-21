@@ -14,6 +14,7 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
     private readonly SqlitePhrasePackageImporter _packageImporter;
     private readonly QuickPhraseHubSyncProvider _hubSync;
     private readonly PhrasePackageFileStore _packageFiles = new();
+    private readonly PhraseBatchImportCsvFileStore _batchImportCsvFiles = new();
 
     private QuickPhraseDataRuntime(
         QuickPhraseDataOptions options,
@@ -96,6 +97,12 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
 
     public Task WriteAsync(string path, PhrasePackageDocument document, CancellationToken cancellationToken = default) =>
         _packageFiles.WriteAsync(path, document, cancellationToken);
+
+    public Task<PhrasePackageDocument> ReadBatchImportCsvAsync(string path, CancellationToken cancellationToken = default) =>
+        _batchImportCsvFiles.ReadAsync(path, cancellationToken);
+
+    public Task WriteBatchImportTemplateAsync(string path, CancellationToken cancellationToken = default) =>
+        _batchImportCsvFiles.WriteTemplateAsync(path, cancellationToken);
 
     public async Task<PhrasePackageLocalSnapshot> CaptureSnapshotAsync(CancellationToken cancellationToken = default) =>
         new(await Categories.ListAsync(cancellationToken), await Phrases.ListAsync(cancellationToken));

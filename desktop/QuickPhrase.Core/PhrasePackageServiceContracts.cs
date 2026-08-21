@@ -15,6 +15,8 @@ public interface IPhrasePackageService
 {
     Task<PhrasePackageDocument> ReadAsync(string path, CancellationToken cancellationToken = default);
     Task WriteAsync(string path, PhrasePackageDocument document, CancellationToken cancellationToken = default);
+    Task<PhrasePackageDocument> ReadBatchImportCsvAsync(string path, CancellationToken cancellationToken = default);
+    Task WriteBatchImportTemplateAsync(string path, CancellationToken cancellationToken = default);
     Task<PhrasePackageLocalSnapshot> CaptureSnapshotAsync(CancellationToken cancellationToken = default);
     Task<PhrasePackageImportResult> ImportAsync(PhrasePackageImportPlan plan, CancellationToken cancellationToken = default);
 }

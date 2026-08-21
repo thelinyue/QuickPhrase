@@ -1,5 +1,3 @@
-using System.Collections.ObjectModel;
-using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using QuickPhrase.Core;
@@ -30,7 +28,6 @@ public partial class SettingsViewModel : ObservableObject
     private Task _applyChain = Task.CompletedTask;
     private bool _isLoading;
     private AppSettings _base = new(0, false, false, true, RecommendedShortcut, false, false);
-    private Dictionary<string, bool> _baseAdapters = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>设置页末尾的数据管理入口，内部仍通过 ICommandService 访问话术包服务。</summary>
     public DataManagementViewModel DataManagement { get; }
@@ -42,7 +39,6 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private ShortcutChord _launcherShortcut = RecommendedShortcut;
     [ObservableProperty] private bool _quickSendWithoutConfirmation;
     [ObservableProperty] private bool _clipboardCompatibilityMode;
-    [ObservableProperty] private ObservableCollection<AdapterToggleItem> _adapters = new();
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private bool _isBusy;
 
@@ -69,14 +65,12 @@ public partial class SettingsViewModel : ObservableObject
         {
             var settings = await _commands.GetSettingsAsync();
             _base = settings;
-            _baseAdapters = new Dictionary<string, bool>(settings.LauncherEnabledAdapters, StringComparer.OrdinalIgnoreCase);
             LaunchOnStartup = settings.LaunchOnStartup;
             StartMinimized = settings.StartMinimized;
             StayInTrayOnClose = settings.StayInTrayOnClose;
             LauncherShortcut = settings.LauncherShortcut;
             QuickSendWithoutConfirmation = settings.QuickSendWithoutConfirmation;
             ClipboardCompatibilityMode = settings.ClipboardCompatibilityMode;
-            ReplaceAdapters(settings.LauncherEnabledAdapters);
             ErrorMessage = null;
             if (EnterpriseSync is not null) await EnterpriseSync.LoadAsync();
         }
@@ -94,7 +88,6 @@ public partial class SettingsViewModel : ObservableObject
     {
         var settings = await _commands.GetSettingsAsync();
         _base = settings;
-        _baseAdapters = new Dictionary<string, bool>(settings.LauncherEnabledAdapters, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>等待当前已排队的即时保存完成，供关闭流程和单元测试使用。</summary>
@@ -138,7 +131,6 @@ public partial class SettingsViewModel : ObservableObject
             }
 
             _base = result.Value;
-            _baseAdapters = new Dictionary<string, bool>(result.Value.LauncherEnabledAdapters, StringComparer.OrdinalIgnoreCase);
             LauncherShortcut = result.Value.LauncherShortcut;
             return result;
         }
@@ -165,23 +157,6 @@ public partial class SettingsViewModel : ObservableObject
                 ? LauncherShortcutPreset.Alternate
                 : LauncherShortcutPreset.Custom;
 
-    private void ReplaceAdapters(IReadOnlyDictionary<string, bool> adapters)
-    {
-        foreach (var adapter in Adapters)
-            adapter.PropertyChanged -= AdapterToggleItem_PropertyChanged;
-
-        Adapters = new ObservableCollection<AdapterToggleItem>(
-            adapters.Select(kv => new AdapterToggleItem(kv.Key, kv.Value)));
-
-        foreach (var adapter in Adapters)
-            adapter.PropertyChanged += AdapterToggleItem_PropertyChanged;
-    }
-
-    private void AdapterToggleItem_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(AdapterToggleItem.Enabled))
-            QueueApply();
-    }
 
     private void QueueApply()
     {
@@ -203,7 +178,6 @@ public partial class SettingsViewModel : ObservableObject
 
     private AppSettings BuildCandidate(ShortcutChord chord)
     {
-        var adapters = Adapters.ToDictionary(a => a.Id, a => a.Enabled, StringComparer.OrdinalIgnoreCase);
         return _base with
         {
             LaunchOnStartup = LaunchOnStartup,
@@ -212,7 +186,6 @@ public partial class SettingsViewModel : ObservableObject
             LauncherShortcut = chord,
             QuickSendWithoutConfirmation = QuickSendWithoutConfirmation,
             ClipboardCompatibilityMode = ClipboardCompatibilityMode,
-            LauncherEnabledAdapters = adapters,
         };
     }
 
@@ -226,7 +199,6 @@ public partial class SettingsViewModel : ObservableObject
             if (result.IsSuccess && result.Value is not null)
             {
                 _base = result.Value;
-                _baseAdapters = new Dictionary<string, bool>(result.Value.LauncherEnabledAdapters, StringComparer.OrdinalIgnoreCase);
             }
             else
             {

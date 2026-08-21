@@ -1,0 +1,100 @@
+# 从不可变正式标签手动发布未签名稳定版。发布资产必须公开提供 SHA-256 校验值。
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable SemVer
+        required: true
+        default: 0.0.1
+      confirmWeComAcceptance:
+        description: Confirm current WeCom manual matrix
+        required: true
+        type: boolean
+        default: false
+      confirmWin11Acceptance:
+        description: Confirm Windows 11 installation matrix
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  publish-release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout immutable release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate stable release gates
+        run: |
+          $version = '${{ inputs.version }}'
+          if ($version -ne '0.0.1') { throw "当前正式发布仅允许 0.0.1：$version" }
+          if ($env:GITHUB_REF -ne "refs/tags/v$version") { throw "必须从 refs/tags/v$version 手动运行，当前为 $env:GITHUB_REF。" }
+          if ('${{ inputs.confirmWeComAcceptance }}' -ne 'true') { throw '尚未确认企业微信人工矩阵。' }
+          if ('${{ inputs.confirmWin11Acceptance }}' -ne 'true') { throw '尚未确认 Windows 11 安装矩阵。' }
+          "QUICKPHRASE_WECOM_ACCEPTANCE=passed" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "QUICKPHRASE_WIN11_ACCEPTANCE=passed" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Setup .NET 10.0.400
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.400
+
+      - name: Restore
+        run: dotnet restore QuickPhrase.sln
+
+      - name: Install Inno Setup 6.7.3
+        run: |
+          $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            winget install --id JRSoftware.InnoSetup --version 6.7.3 --exact --silent --accept-package-agreements --accept-source-agreements
+            if ($LASTEXITCODE -ne 0) { throw "Inno Setup 6.7.3 安装失败，退出码 $LASTEXITCODE。" }
+          }
+          $listing = winget list --id JRSoftware.InnoSetup --exact --accept-source-agreements | Out-String
+          if ($listing -notmatch '6\.7\.3') { throw "未检测到 Inno Setup 6.7.3：$listing" }
+
+      - name: Build unsigned stable release
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Version '${{ inputs.version }}' -Stage All
+          if ($LASTEXITCODE -ne 0) { throw "正式发布构建失败，退出码 $LASTEXITCODE。" }
+
+      - name: Verify release assets
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-phase6.ps1 -Version '${{ inputs.version }}'
+          if ($LASTEXITCODE -ne 0) { throw "Phase 6 正式门禁失败，退出码 $LASTEXITCODE。" }
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickPhrase-${{ inputs.version }}-release
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            artifacts/release/${{ inputs.version }}/QuickPhrase-${{ inputs.version }}-win-x64.zip
+            artifacts/release/${{ inputs.version }}/installers/QuickPhrase-Setup-${{ inputs.version }}.exe
+            artifacts/release/${{ inputs.version }}/SHA256SUMS.txt
+            artifacts/release/${{ inputs.version }}/release-manifest.json
+
+      - name: Publish GitHub Release
+        run: |
+          $version = '${{ inputs.version }}'
+          $root = "artifacts/release/$version"
+          gh release create "v$version" `
+            "$root/QuickPhrase-$version-win-x64.zip" `
+            "$root/installers/QuickPhrase-Setup-$version.exe" `
+            "$root/SHA256SUMS.txt" `
+            "$root/release-manifest.json" `
+            --title "闪语 v$version" `
+            --generate-notes `
+            --notes-start "## 安全提示`n`n此正式版未附带 Authenticode 签名，Windows SmartScreen 可能显示未知发布者警告。安装前请从本 Release 下载 SHA256SUMS.txt 并校验 ZIP 或安装器哈希。"

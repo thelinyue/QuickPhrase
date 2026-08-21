@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private ManagementWindowLayout? _appliedLayout;
     private readonly ICommandService _commands = null!;
     private readonly SearchHistoryCoordinator _searchHistory;
+    private readonly Action<Guid?>? _openNewPhrase;
 
     private LibraryView? _libraryView;
     private INavigationGuard? _currentGuard;
@@ -24,11 +25,12 @@ public partial class MainWindow : Window
     /// <summary>涓荤晫闈㈡垨鎵樼洏璇锋眰鎵撳紑鐙珛璁剧疆绐楀彛锟?/summary>
     public event EventHandler? SettingsRequested;
 
-    public MainWindow(ICommandService commands, SearchHistoryCoordinator searchHistory, string initialScene)
+    public MainWindow(ICommandService commands, SearchHistoryCoordinator searchHistory, string initialScene, Action<Guid?>? openNewPhrase = null)
     {
         InitializeComponent();
         _commands = commands;
         _searchHistory = searchHistory;
+        _openNewPhrase = openNewPhrase;
         ApplyScene(initialScene);
         Loaded += OnLoaded;
         Closed += OnClosed;
@@ -70,9 +72,6 @@ public partial class MainWindow : Window
             case "settings":
                 SettingsRequested?.Invoke(this, EventArgs.Empty);
                 break;
-            case "editor":
-                ShowEditorModal(null);
-                break;
             default:
                 SetActiveTitle(key switch
                 {
@@ -92,11 +91,11 @@ public partial class MainWindow : Window
         {
             _libraryView = new LibraryView(_commands, _searchHistory);
             _libraryView.RequestEdit += (_, item) => ShowEditorModal(item);
-            _libraryView.RequestNew += (_, _) => _ = ShowNewPhraseAsync();
+            _libraryView.RequestNew += (_, _) => RequestNewPhrase(null);
             _libraryView.RequestMove += (_, item) => ShowMoveDialog(item);
             _libraryView.RequestNewCategory += (_, _) => ShowNewCategoryDialog();
             _libraryView.RequestNewSubCategory += (_, c) => ShowNewCategoryDialog(c.Id);
-            _libraryView.RequestNewPhraseInCategory += (_, c) => ShowEditorModal(null, c.Id);
+            _libraryView.RequestNewPhraseInCategory += (_, c) => RequestNewPhrase(c.Id);
             _libraryView.RequestRenameCategory += (_, c) => _ = ShowRenameCategoryDialogAsync(c);
             _libraryView.RequestDeleteCategory += (_, c) => _ = ShowDeleteCategoryDialogAsync(c);
             _libraryView.RequestOpenSettings += (_, _) => SettingsRequested?.Invoke(this, EventArgs.Empty);
@@ -116,31 +115,12 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 新建话术必须先拥有一级分类。没有分类时给出明确的分支选择；新建分类成功后直接把
-    /// 实际创建的分类传给编辑器，避免用户再次手动选择或误落到未分类状态。
+    /// 话术库只负责发起新建意图，不拥有新建窗口，也不承担分类前置流程。
+    /// 独立窗口由 ApplicationController 统一管理，确保托盘、Launcher 和库内入口行为一致。
     /// </summary>
-    private async Task ShowNewPhraseAsync()
+    private void RequestNewPhrase(Guid? defaultCategoryId)
     {
-        var categories = await _commands.ListCategoriesAsync();
-        var topCategory = categories.FirstOrDefault(c => c.ParentId is null);
-        if (topCategory is not null)
-        {
-            ShowEditorModal(null, topCategory.Id);
-            return;
-        }
-
-        var choice = System.Windows.MessageBox.Show(
-            this,
-            "还没有可用分类。\n\n创建话术前，请先创建一个一级分类。\n\n点击“确定”新建分类，点击“取消”返回。",
-            "还没有可用分类",
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Information);
-        if (choice != MessageBoxResult.OK) return;
-
-        var createdCategoryId = ShowNewCategoryDialog();
-        if (createdCategoryId is null) return;
-        await (_libraryView?.ReloadAsync() ?? Task.CompletedTask);
-        ShowEditorModal(null, createdCategoryId);
+        _openNewPhrase?.Invoke(defaultCategoryId);
     }
 
     private async Task ShowRenameCategoryDialogAsync(CategoryItem category)
@@ -219,9 +199,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>锟?520px 妯℃€佸脊绐楁墦寮€缂栬緫鍣紙瀵归綈 design-system.md 5.7锛夈€備繚锟?鍙栨秷鍚庡叧闂脊绐楋紝搴撹鍥句繚鎸佸師鏍凤拷?/summary>
-    private void ShowEditorModal(PhraseItemViewModel? existing, Guid? defaultCategoryId = null)
+    private void ShowEditorModal(PhraseItemViewModel existing)
     {
-        var editor = new EditorView(_commands, existing, defaultCategoryId);
+        var editor = new EditorView(_commands, existing);
         var ownerHandle = new WindowInteropHelper(this).Handle;
         var screen = ownerHandle == IntPtr.Zero
             ? System.Windows.Forms.Screen.PrimaryScreen
@@ -246,6 +226,9 @@ public partial class MainWindow : Window
         editor.CloseRequested += (_, _) => dialog.Close();
         dialog.ShowDialog();
     }
+
+    /// <summary>仅在话术库已创建时刷新保存结果，不会为了刷新而打开话术库。</summary>
+    internal void RefreshPhrase(Phrase phrase) => _libraryView?.RefreshPhrase(phrase);
 
     private void ShowMoveDialog(PhraseItemViewModel item)
     {
@@ -324,12 +307,3 @@ public partial class MainWindow : Window
         Top = topLeft.Y + Math.Max(16, (bottomRight.Y - topLeft.Y - Height) / 2);
     }
 }
-
-
-
-
-
-
-
-
-

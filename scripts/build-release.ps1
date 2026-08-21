@@ -70,6 +70,7 @@ function Write-ReleaseMetadata {
   } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $releaseRoot 'release-manifest.json') -Encoding utf8
 }
 
+Invoke-Step 'Installer script tests' { node --test tests/installer-shortcut.test.mjs }
 if ((dotnet --version).Trim() -ne '10.0.400') { throw '要求 .NET SDK 10.0.400。' }
 if ($UnsignedCandidate -and -not $Version.Contains('-rc.')) { throw '-UnsignedCandidate 仅用于 RC 候选版本。' }
 

@@ -6,7 +6,7 @@
              xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
              mc:Ignorable="d">
     <!-- 编辑器只编排表单和命令；颜色、排版、间距及控件状态均由全局 Design System 提供。 -->
-    <Grid Background="{DynamicResource Brush.Background.Default}">
+    <Grid Style="{StaticResource Style.Surface.Page}">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
@@ -27,6 +27,7 @@
                 <TextBox x:Name="TitleBox"
                          Style="{StaticResource Style.Input.Default}"
                          Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="话术标题"
                          Margin="{StaticResource Thickness.Gap.Stack.LG}" />
 
                 <TextBlock Text="正文"
@@ -34,6 +35,7 @@
                            Margin="{StaticResource Thickness.Gap.Stack.XS}" />
                 <TextBox Style="{StaticResource Style.Input.Default}"
                          Text="{Binding Content, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="话术正文"
                          AcceptsReturn="True"
                          Height="{StaticResource Size.Editor.Body.Height}"
                          TextWrapping="Wrap"
@@ -49,6 +51,8 @@
                           DisplayMemberPath="Name"
                           SelectedValuePath="Id"
                           SelectedValue="{Binding SelectedCategoryId}"
+                           AutomationProperties.Name="话术分类"
+                          Visibility="{Binding HasCategories, Converter={StaticResource BoolToVisibility}}"
                           Margin="{StaticResource Thickness.Gap.Stack.LG}">
                     <!-- 分组只表达一级/二级分类层级，不改变现有分类绑定与选择语义。 -->
                     <ComboBox.GroupStyle>
@@ -63,6 +67,18 @@
                         </GroupStyle>
                     </ComboBox.GroupStyle>
                 </ComboBox>
+                <!-- 独立新建窗口在没有分类时就地创建一级分类，不跳转到话术库。 -->
+                <StackPanel Visibility="{Binding HasCategories, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}"
+                            Margin="{StaticResource Thickness.Gap.Stack.LG}">
+                    <TextBlock Text="还没有可用分类，请先创建一个一级分类。"
+                               Style="{StaticResource Style.Text.Body.Small}"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               Margin="{StaticResource Thickness.Gap.Stack.SM}" />
+                    <Button Style="{StaticResource Style.Button.Secondary}"
+                            Content="新建一级分类"
+                            HorizontalAlignment="Left"
+                            Click="CreateRootCategory_Click" />
+                </StackPanel>
 
                 <TextBlock Text="颜色标记"
                            Style="{StaticResource Style.Text.Label}"

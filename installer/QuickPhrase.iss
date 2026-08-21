@@ -35,152 +35,135 @@ ChangesAssociations=no
 CloseApplications=yes
 RestartApplications=no
 
+[Tasks]
+; 使用 Inno Setup 原生任务创建快捷方式，确保勾选后由安装器可靠写入当前用户桌面。
+Name: "desktopicon"; Description: "创建桌面快捷方式(&D)"; GroupDescription: "附加任务："
+
 [Files]
 Source: "{#ReleaseRoot}\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\闪语"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+; 显式引用 EXE 的第一个图标组，让 Windows 按当前 DPI 从内嵌 ICO 中选择合适尺寸。
+Name: "{group}\闪语"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppExeName}"; IconIndex: 0
+Name: "{autodesktop}\闪语"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppExeName}"; IconIndex: 0; Tasks: desktopicon
 
-[UninstallDelete]
-Type: files; Name: "{autodesktop}\闪语.lnk"
+[Run]
+; 仅交互安装显示完成页启动项；静默安装绝不自动启动应用。
+Filename: "{app}\{#AppExeName}"; Description: "打开闪语(&L)"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 const
   RunKeyPath = 'Software\Microsoft\Windows\CurrentVersion\Run';
   RunValueName = 'QuickPhrase';
-  ShellLinkClassId = '{00021401-0000-0000-C000-000000000046}';
-
-type
-  { Shell Link COM 接口定义。安装器直接写入 .lnk，不依赖 PowerShell 或外部辅助程序。 }
-  IShellLinkW = interface(IUnknown)
-    '{000214F9-0000-0000-C000-000000000046}'
-    procedure Dummy;
-    procedure Dummy2;
-    procedure Dummy3;
-    function GetDescription(pszName: String; cchMaxName: Integer): HResult;
-    function SetDescription(pszName: String): HResult;
-    function GetWorkingDirectory(pszDir: String; cchMaxPath: Integer): HResult;
-    function SetWorkingDirectory(pszDir: String): HResult;
-    function GetArguments(pszArgs: String; cchMaxPath: Integer): HResult;
-    function SetArguments(pszArgs: String): HResult;
-    function GetHotkey(var pwHotkey: Word): HResult;
-    function SetHotkey(wHotkey: Word): HResult;
-    function GetShowCmd(out piShowCmd: Integer): HResult;
-    function SetShowCmd(iShowCmd: Integer): HResult;
-    function GetIconLocation(pszIconPath: String; cchIconPath: Integer;
-      out piIcon: Integer): HResult;
-    function SetIconLocation(pszIconPath: String; iIcon: Integer): HResult;
-    function SetRelativePath(pszPathRel: String; dwReserved: DWORD): HResult;
-    function Resolve(Wnd: HWND; fFlags: DWORD): HResult;
-    function SetPath(pszFile: String): HResult;
-  end;
-
-  IPersist = interface(IUnknown)
-    '{0000010C-0000-0000-C000-000000000046}'
-    function GetClassID(var classID: TGUID): HResult;
-  end;
-
-  IPersistFile = interface(IPersist)
-    '{0000010B-0000-0000-C000-000000000046}'
-    function IsDirty: HResult;
-    function Load(pszFileName: String; dwMode: Longint): HResult;
-    function Save(pszFileName: String; fRemember: BOOL): HResult;
-    function SaveCompleted(pszFileName: String): HResult;
-    function GetCurFile(out pszFileName: String): HResult;
-  end;
 
 var
-  DesktopShortcutCheckBox: TNewCheckBox;
-  DesktopShortcutHandled: Boolean;
+  DeleteLocalDataRequested: Boolean;
 
-procedure InitializeWizard;
-begin
-  { 完成页复选框默认勾选；桌面快捷方式只有在用户确认完成时才写入。 }
-  DesktopShortcutCheckBox := TNewCheckBox.Create(WizardForm);
-  DesktopShortcutCheckBox.Parent := WizardForm;
-  DesktopShortcutCheckBox.Caption := '创建桌面快捷方式(&D)';
-  DesktopShortcutCheckBox.Checked := True;
-  DesktopShortcutCheckBox.Left := WizardForm.FinishedLabel.Left;
-  DesktopShortcutCheckBox.Width := WizardForm.FinishedLabel.Width;
-  DesktopShortcutCheckBox.Height := ScaleY(17);
-  DesktopShortcutCheckBox.Top := WizardForm.FinishedLabel.Top +
-    WizardForm.FinishedLabel.Height + ScaleY(12);
-  DesktopShortcutCheckBox.TabOrder := 0;
-  DesktopShortcutCheckBox.Visible := False;
-  DesktopShortcutHandled := False;
-end;
-
-procedure CurPageChanged(CurPageID: Integer);
-begin
-  DesktopShortcutCheckBox.Visible := CurPageID = wpFinished;
-end;
-
-procedure CreateDesktopShortcut;
+function IsExpectedUserDataRoot(const Candidate: String): Boolean;
 var
-  ShellLinkObject: IUnknown;
-  ShellLink: IShellLinkW;
-  PersistFile: IPersistFile;
-  ShortcutPath: String;
-  TargetPath: String;
-  WorkingDirectory: String;
+  ExpectedRoot: String;
 begin
-  ShortcutPath := ExpandConstant('{autodesktop}\闪语.lnk');
-  TargetPath := ExpandConstant('{app}\{#AppExeName}');
-  WorkingDirectory := ExpandConstant('{app}');
+  { 仅允许删除固定的当前用户闪语数据根目录，避免任何变量异常扩大删除范围。 }
+  ExpectedRoot := RemoveBackslashUnlessRoot(ExpandConstant('{localappdata}\QuickPhrase'));
+  Result := RemoveBackslashUnlessRoot(Candidate) = ExpectedRoot;
+end;
 
-  if not FileExists(TargetPath) then
+function ConfirmUninstallAndGetDataCleanupChoice: Boolean;
+var
+  Form: TSetupForm;
+  Description: TNewStaticText;
+  CleanupDataCheckBox: TNewCheckBox;
+  UninstallButton: TNewButton;
+  CancelButton: TNewButton;
+begin
+  Form := CreateCustomForm(ScaleX(420), ScaleY(140), False, True);
+  try
+    Form.Caption := '卸载闪语';
+
+    Description := TNewStaticText.Create(Form);
+    Description.AutoSize := False;
+    Description.Left := ScaleX(12);
+    Description.Top := ScaleY(12);
+    Description.Width := Form.ClientWidth - ScaleX(24);
+    Description.WordWrap := True;
+    Description.Caption := '即将卸载闪语。默认保留本地话术、设置和日志，以便重新安装后继续使用。';
+    Description.Parent := Form;
+    Description.AdjustHeight;
+
+    CleanupDataCheckBox := TNewCheckBox.Create(Form);
+    CleanupDataCheckBox.Left := Description.Left;
+    CleanupDataCheckBox.Top := Description.Top + Description.Height + ScaleY(12);
+    CleanupDataCheckBox.Width := Description.Width;
+    CleanupDataCheckBox.Height := ScaleY(17);
+    CleanupDataCheckBox.Caption := '删除本地数据和日志（不可恢复）';
+    CleanupDataCheckBox.Checked := False;
+    CleanupDataCheckBox.Parent := Form;
+
+    UninstallButton := TNewButton.Create(Form);
+    UninstallButton.Caption := '卸载';
+    UninstallButton.Width := ScaleX(84);
+    UninstallButton.Height := ScaleY(23);
+    UninstallButton.Left := Form.ClientWidth - UninstallButton.Width - ScaleX(12);
+    UninstallButton.Top := Form.ClientHeight - UninstallButton.Height - ScaleY(12);
+    UninstallButton.ModalResult := mrOk;
+    UninstallButton.Default := True;
+    UninstallButton.Parent := Form;
+
+    CancelButton := TNewButton.Create(Form);
+    CancelButton.Caption := '取消';
+    CancelButton.Width := UninstallButton.Width;
+    CancelButton.Height := UninstallButton.Height;
+    CancelButton.Left := UninstallButton.Left - CancelButton.Width - ScaleX(8);
+    CancelButton.Top := UninstallButton.Top;
+    CancelButton.ModalResult := mrCancel;
+    CancelButton.Cancel := True;
+    CancelButton.Parent := Form;
+
+    Result := Form.ShowModal = mrOk;
+    if Result then
+      DeleteLocalDataRequested := CleanupDataCheckBox.Checked;
+  finally
+    Form.Free;
+  end;
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  { 静默卸载没有交互入口，始终保留数据，绝不因默认值触发不可逆删除。 }
+  DeleteLocalDataRequested := False;
+  if UninstallSilent then
   begin
-    MsgBox('桌面快捷方式创建失败：安装目录中未找到主程序，但安装已完成。',
-      mbError, MB_OK);
+    Result := True;
     Exit;
   end;
 
-  try
-    { 直接使用当前安装路径，并通过 Save(..., True) 覆盖旧快捷方式。 }
-    ShellLinkObject := CreateComObject(StringToGuid(ShellLinkClassId));
-    ShellLink := IShellLinkW(ShellLinkObject);
-    OleCheck(ShellLink.SetPath(TargetPath));
-    OleCheck(ShellLink.SetWorkingDirectory(WorkingDirectory));
-    OleCheck(ShellLink.SetDescription('闪语'));
-    OleCheck(ShellLink.SetIconLocation(TargetPath, 0));
-    OleCheck(ShellLink.SetShowCmd(SW_SHOWNORMAL));
-
-    PersistFile := IPersistFile(ShellLinkObject);
-    OleCheck(PersistFile.Save(ShortcutPath, True));
-  except
-    { 快捷方式是附加便利功能，任何失败都不能阻断安装主流程。 }
-    MsgBox('桌面快捷方式创建失败，但安装已完成。您仍可从安装目录启动闪语。',
-      mbError, MB_OK);
-  end;
+  Result := ConfirmUninstallAndGetDataCleanupChoice;
 end;
 
-function NextButtonClick(CurPageID: Integer): Boolean;
+procedure DeleteLocalDataIfRequested;
+var
+  DataRoot: String;
 begin
-  Result := True;
-  if (CurPageID = wpFinished) and (not WizardSilent) and
-    (not DesktopShortcutHandled) then
-  begin
-    DesktopShortcutHandled := True;
-    if DesktopShortcutCheckBox.Checked then
-      CreateDesktopShortcut;
-  end;
-end;
+  if not DeleteLocalDataRequested then
+    Exit;
 
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  { 静默安装没有完成页，按交互安装的默认勾选行为创建快捷方式。 }
-  if (CurStep = ssPostInstall) and WizardSilent and
-    (not DesktopShortcutHandled) then
+  DataRoot := ExpandConstant('{localappdata}\QuickPhrase');
+  if not IsExpectedUserDataRoot(DataRoot) then
   begin
-    DesktopShortcutHandled := True;
-    CreateDesktopShortcut;
+    MsgBox('本地数据目录校验失败，未执行清理。安装程序已继续卸载。', mbError, MB_OK);
+    Exit;
   end;
+
+  if DirExists(DataRoot) and not DelTree(DataRoot, True, True, True) then
+    MsgBox('本地数据和日志清理失败。请关闭占用文件的程序后，手动删除：' + DataRoot, mbError, MB_OK);
 end;
 
 procedure CurUninstallStepChanged(Step: TUninstallStep);
 begin
   if Step = usUninstall then
+  begin
     RegDeleteValue(HKCU, RunKeyPath, RunValueName);
+    DeleteLocalDataIfRequested;
+  end;
 end;
-
 

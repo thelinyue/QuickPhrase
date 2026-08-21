@@ -245,7 +245,7 @@ public sealed class GlobalDesignSystemTokenTests
                 "Size.Onboarding.TitleBar.GridLength", "Size.Onboarding.Header.GridLength", "Size.Onboarding.Footer.GridLength",
                 "Size.Onboarding.Progress.Height", "Size.Onboarding.PhraseBody.Height",
                 "Size.Onboarding.PracticeIndicator.Gutter.GridLength", "Size.Onboarding.PracticeIndicator.Diameter",
-                "Size.Onboarding.FooterStatus.Height", "Size.Onboarding.FooterStatus.GridLength", "Size.Library.BrandIcon", "Size.List.SelectionIndicator.Width",
+                "Size.Onboarding.FooterStatus.Height", "Size.Onboarding.FooterStatus.GridLength", "Size.Library.Footer.Height", "Size.Library.BrandIcon", "Size.Library.SettingsIcon", "Size.List.SelectionIndicator.Width",
                 "Size.Dialog.Category.Width", "Size.Dialog.Category.Height", "Size.Dialog.Category.MinimumHeight", "Size.Dialog.Status.MinimumHeight",
                 "Size.Dialog.Export.Width", "Size.Dialog.Export.Height", "Size.Dialog.Export.MinimumWidth", "Size.Dialog.Export.MinimumHeight",
                 "Size.Dialog.Import.Width", "Size.Dialog.Import.Height", "Size.Dialog.Import.MinimumWidth", "Size.Dialog.Import.MinimumHeight",
@@ -511,8 +511,8 @@ public sealed class GlobalDesignSystemTokenTests
             ("Thickness.Popup", new Thickness(12)),
             ("Thickness.Control.Button.Compact", new Thickness(12, 0, 12, 0)),
             ("Thickness.Control.Button.Default", new Thickness(16, 0, 16, 0)),
-            ("Thickness.Control.Input", new Thickness(12, 0, 12, 0)),
-            ("Thickness.Control.Input.Multiline", new Thickness(12, 10, 12, 10)),
+            ("Thickness.Control.Input", new Thickness(6, 0, 6, 0)),
+            ("Thickness.Control.Input.Multiline", new Thickness(6, 10, 6, 10)),
             ("Thickness.Window.ResizeBorder", new Thickness(6)),
             ("Thickness.Gap.Inline.XS", new Thickness(0, 0, 4, 0)),
             ("Thickness.Gap.Inline.SM", new Thickness(0, 0, 8, 0)),
@@ -535,7 +535,7 @@ public sealed class GlobalDesignSystemTokenTests
             ("Thickness.Onboarding.Content", new Thickness(0, 20, 0, 16)),
             ("Thickness.Onboarding.IntroDescription", new Thickness(0, 12, 0, 20)),
             ("Thickness.Onboarding.CopyBlock", new Thickness(0, 12, 0, 16)),
-            ("Thickness.Library.Header", new Thickness(20, 8, 20, 8)),
+            ("Thickness.Library.Header", new Thickness(16, 8, 20, 8)),
             ("Thickness.Library.Toolbar", new Thickness(16, 8, 16, 8)),
             ("Thickness.Library.Footer", new Thickness(20, 0, 20, 0)),
             ("Thickness.Dialog.Footer", new Thickness(0, 16, 0, 0)),
@@ -600,14 +600,16 @@ public sealed class GlobalDesignSystemTokenTests
             ("Size.Launcher.MinimumHeight", 260),
             ("Size.Launcher.MaximumHeight", 520),
             ("Size.Onboarding.Width", 640),
-            ("Size.Onboarding.Height", 520),
+            ("Size.Onboarding.Height", 640),
             ("Size.Onboarding.MinimumWidth", 560),
-            ("Size.Onboarding.MinimumHeight", 480),
+            ("Size.Onboarding.MinimumHeight", 640),
             ("Size.Onboarding.Progress.Height", 4),
             ("Size.Onboarding.PhraseBody.Height", 88),
             ("Size.Onboarding.PracticeIndicator.Diameter", 8),
             ("Size.Onboarding.FooterStatus.Height", 28),
+            ("Size.Library.Footer.Height", 48),
             ("Size.Library.BrandIcon", 24),
+            ("Size.Library.SettingsIcon", 18),
             ("Size.List.SelectionIndicator.Width", 3),
             ("Size.Dialog.Category.Width", 380),
             ("Size.Dialog.Category.Height", 240),
@@ -653,6 +655,39 @@ public sealed class GlobalDesignSystemTokenTests
         Assert.Equal(EasingMode.EaseInOut, emphasized.EasingMode);
     }
 
+    [Fact]
+    public void TextInputXaml_UsesUnifiedSixDipHorizontalPadding()
+    {
+        const string inputPadding = "{StaticResource Thickness.Control.Input}";
+        const string multilineInputPadding = "{StaticResource Thickness.Control.Input.Multiline}";
+        XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+
+        var inputStyles = ReadKeyedElements(DesignSystemPath("Styles", "Inputs.xaml"));
+        foreach (var styleKey in new[] { "Style.Input.Base", "Style.Input.Password" })
+        {
+            var paddingSetter = inputStyles[styleKey]
+                .Elements(presentation + "Setter")
+                .Single(element => element.Attribute("Property")?.Value == "Padding");
+            Assert.Equal(inputPadding, paddingSetter.Attribute("Value")?.Value);
+        }
+
+        var searchInput = LoadDocument(DesignSystemPath("Components", "SearchInput.xaml"));
+        foreach (var elementName in new[] { "InputBox", "PlaceholderText" })
+        {
+            var element = searchInput
+                .Descendants()
+                .Single(candidate =>
+                    candidate.Name.Namespace == presentation &&
+                    candidate.Attribute(XamlNamespace + "Name")?.Value == elementName);
+            Assert.Equal(inputPadding, element.Attribute("Padding")?.Value);
+        }
+
+        var onboarding = LoadDocument(Path.Combine(FindRepoRoot(), "desktop", "QuickPhrase.Desktop", "OnboardingWindow.xaml"));
+        var phraseContent = onboarding
+            .Descendants(presentation + "TextBox")
+            .Single(element => element.Attribute("Text")?.Value.Contains("PhraseContent", StringComparison.Ordinal) == true);
+        Assert.Equal(multilineInputPadding, phraseContent.Attribute("Padding")?.Value);
+    }
     [Theory]
     [InlineData("Theme.Light.xaml", "#F8FAFC", "#94A3B8")]
     [InlineData("Theme.Dark.xaml", "#0F172A", "#0B111A")]

@@ -6,7 +6,8 @@ using QuickPhrase.Desktop.Services;
 namespace QuickPhrase.Desktop.ViewModels;
 
 /// <summary>
-/// 设置页“数据管理”编排模型。文件选择器和 WPF 对话框仍由 View 处理，数据读写只通过 ICommandService 完成。
+/// 设置页“数据管理”编排模型。文件选择器和 WPF 对话框仍由 View 处理，
+/// 数据读写只通过 ICommandService 完成，CSV 批量导入最终复用既有话术包导入事务。
 /// </summary>
 public sealed partial class DataManagementViewModel : ObservableObject
 {
@@ -23,6 +24,8 @@ public sealed partial class DataManagementViewModel : ObservableObject
 
     public event EventHandler? ImportRequested;
     public event EventHandler? ExportRequested;
+    public event EventHandler? BatchImportRequested;
+    public event EventHandler? BatchImportTemplateRequested;
 
     public DataManagementViewModel(ICommandService commands) => _commands = commands;
 
@@ -32,15 +35,43 @@ public sealed partial class DataManagementViewModel : ObservableObject
     [RelayCommand]
     private void RequestExport() => ExportRequested?.Invoke(this, EventArgs.Empty);
 
-    public async Task<ImportPhrasePackageViewModel?> LoadImportAsync(string path, CancellationToken cancellationToken = default)
+    [RelayCommand]
+    private void RequestBatchImport() => BatchImportRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand]
+    private void RequestBatchImportTemplate() => BatchImportTemplateRequested?.Invoke(this, EventArgs.Empty);
+
+    public Task<ImportPhrasePackageViewModel?> LoadImportAsync(string path, CancellationToken cancellationToken = default) =>
+        LoadImportDocumentAsync(
+            () => _commands.ReadPhrasePackageAsync(path, cancellationToken),
+            "正在读取话术包…",
+            "话术包读取失败，请确认文件完整且格式正确。",
+            cancellationToken);
+
+    /// <summary>
+    /// 读取 CSV 并转换为既有导入预览模型。CSV 格式错误会保留包含行号的中文提示，
+    /// 不进入导入确认步骤，也不会触发数据库写入。
+    /// </summary>
+    public Task<ImportPhrasePackageViewModel?> LoadBatchImportAsync(string path, CancellationToken cancellationToken = default) =>
+        LoadImportDocumentAsync(
+            () => _commands.ReadBatchImportCsvAsync(path, cancellationToken),
+            "正在读取 CSV 批量导入文件…",
+            "CSV 批量导入文件读取失败，请确认格式正确。",
+            cancellationToken);
+
+    private async Task<ImportPhrasePackageViewModel?> LoadImportDocumentAsync(
+        Func<Task<PhrasePackageDocument>> readDocument,
+        string loadingMessage,
+        string fallbackError,
+        CancellationToken cancellationToken)
     {
         if (IsBusy) return null;
         IsBusy = true;
         ErrorMessage = null;
-        StatusMessage = "正在读取话术包…";
+        StatusMessage = loadingMessage;
         try
         {
-            var package = await _commands.ReadPhrasePackageAsync(path, cancellationToken);
+            var package = await readDocument();
             var errors = PhrasePackagePlanner.Validate(package);
             if (errors.Count > 0)
             {
@@ -57,11 +88,54 @@ public sealed partial class DataManagementViewModel : ObservableObject
             StatusMessage = null;
             return null;
         }
-        catch (Exception)
+        catch (PhraseBatchImportCsvException exception)
         {
-            ErrorMessage = "话术包读取失败，请确认文件完整且格式正确。";
+            ErrorMessage = exception.Message;
             StatusMessage = null;
             return null;
+        }
+
+        catch (Exception)
+        {
+            ErrorMessage = fallbackError;
+            StatusMessage = null;
+            return null;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>将固定表头和示例行写入用户选择的位置，模板写入不访问本地数据库。</summary>
+    public async Task<bool> WriteBatchImportTemplateAsync(string path, CancellationToken cancellationToken = default)
+    {
+        if (IsBusy) return false;
+        IsBusy = true;
+        ErrorMessage = null;
+        StatusMessage = "正在生成 CSV 批量导入模板…";
+        try
+        {
+            await _commands.WriteBatchImportTemplateAsync(path, cancellationToken);
+            StatusMessage = "CSV 批量导入模板已生成。";
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = null;
+            return false;
+        }
+        catch (PhraseBatchImportCsvException exception)
+        {
+            ErrorMessage = exception.Message;
+            StatusMessage = null;
+            return false;
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "CSV 批量导入模板生成失败，请检查保存位置和文件权限。";
+            StatusMessage = null;
+            return false;
         }
         finally
         {

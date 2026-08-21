@@ -179,15 +179,36 @@ public sealed class Phase2DataTests
     }
 
     [Fact]
-    public async Task DefaultSettingsEnableVerifiedWeComAdapter()
+    public async Task NewRootCategoriesAppendToEndAndPreserveExplicitSortOrder()
+    {
+        using var temp = new TemporaryDirectory();
+        await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
+
+        var first = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "第一分类"))).Value!;
+        var second = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "第二分类"))).Value!;
+        var manuallyOrdered = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "手动排序", SortOrder: 100))).Value!;
+        var appended = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "末尾分类"))).Value!;
+        var child = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "二级分类", first.Id))).Value!;
+
+        Assert.Equal(0, first.SortOrder);
+        Assert.Equal(10, second.SortOrder);
+        Assert.Equal(100, manuallyOrdered.SortOrder);
+        Assert.Equal(110, appended.SortOrder);
+        Assert.Equal(0, child.SortOrder);
+
+        var roots = (await runtime.Categories.ListAsync()).Where(category => category.ParentId is null).ToArray();
+        Assert.Equal([first.Id, second.Id, manuallyOrdered.Id, appended.Id], roots.Select(category => category.Id));
+    }
+    [Fact]
+    public async Task DefaultSettingsDoNotPersistLauncherAdapterGate()
     {
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
 
         var settings = await runtime.Settings.LoadAsync();
 
-        Assert.True(settings.LauncherEnabledAdapters.TryGetValue("WXWork", out var enabled));
-        Assert.True(enabled);
+        Assert.Null(typeof(AppSettings).GetProperty("LauncherEnabledAdapters"));
+        Assert.Equal(new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), settings.LauncherShortcut);
     }
 
     [Fact]

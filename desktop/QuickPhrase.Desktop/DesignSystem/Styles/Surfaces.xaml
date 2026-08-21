@@ -1,6 +1,35 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- 默认 Card 只使用 1px 边框，不使用阴影，避免内容区形成后台管理系统式卡片堆叠。 -->
+    <!--
+        Shell Window 仅收敛正式主窗口的基础表面与字体；窗口尺寸、标题栏和生命周期仍由具体 Window 声明，
+        避免公共 Style 改变已有的窗口交互。
+    -->
+    <Style x:Key="Style.Window.Shell" TargetType="Window">
+        <Setter Property="Background" Value="{DynamicResource Brush.Background.Default}" />
+        <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+    </Style>
+
+    <!-- 页面、标题栏与内容承载区只负责统一表面，具体页面仍自行定义布局。 -->
+    <Style x:Key="Style.Surface.Page" TargetType="Grid">
+        <Setter Property="Background" Value="{DynamicResource Brush.Background.Default}" />
+    </Style>
+
+    <!-- UserControl 根节点与页面 Grid 使用同一语义背景，避免页面各自声明主题 Brush。 -->
+    <Style x:Key="Style.View.Root" TargetType="UserControl">
+        <Setter Property="Background" Value="{DynamicResource Brush.Background.Default}" />
+    </Style>
+
+    <Style x:Key="Style.Surface.TitleBar" TargetType="Grid">
+        <Setter Property="Background" Value="{DynamicResource Brush.Background.Default}" />
+    </Style>
+
+    <Style x:Key="Style.Surface.ContentRegion" TargetType="ContentControl">
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Default}" />
+    </Style>
+
     <Style x:Key="Style.Card.Default" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource Brush.Surface.Default}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />

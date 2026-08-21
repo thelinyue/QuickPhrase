@@ -63,6 +63,9 @@ internal sealed class ClipboardTransaction : IClipboardTransaction, IDisposable
                 return ClipboardResult.Failed("TARGET_VALIDATION_FAILED");
             Thread.Sleep(30);
             cancellationToken.ThrowIfCancellationRequested();
+            // 粘贴前再次确认仍是已捕获的目标窗口，前台切换时宁可失败也不能向错误窗口发送 Ctrl+V。
+            if (WindowsNativeMethods.GetForegroundWindow() != target.Hwnd)
+                return ClipboardResult.Failed("TARGET_VALIDATION_FAILED");
             if (!WindowsNativeMethods.SendCtrlV()) return ClipboardResult.Failed("CLIPBOARD_PASTE_FAILED");
             Thread.Sleep(30);
             var currentSequence = WindowsNativeMethods.GetClipboardSequenceNumber();

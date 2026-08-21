@@ -52,6 +52,8 @@ public class XamlParseValidationTests
         Assert.Contains("Value=\"{Binding StepNumber, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ContentRegion\"", xaml, StringComparison.Ordinal);
         Assert.Contains("RowDefinition Height=\"{StaticResource Size.Onboarding.Footer.GridLength}\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<ScrollViewer", xaml, StringComparison.Ordinal);
+        Assert.Contains("VerticalScrollBarVisibility=\"Auto\" Height=\"{StaticResource Size.Onboarding.PhraseBody.Height}\"", xaml, StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(xaml, "Content=\"修改快捷键\""));
 
         var completeSectionStart = xaml.IndexOf("x:Name=\"CompleteStepPanel\"", StringComparison.Ordinal);
@@ -68,7 +70,7 @@ public class XamlParseValidationTests
 
         var onboardingBranchStart = controller.IndexOf("if (_onboarding?.ViewModel is { CurrentStep: OnboardingStep.Practice }", StringComparison.Ordinal);
         Assert.True(onboardingBranchStart >= 0);
-        var nextProductionBranch = controller.IndexOf("var target = _targetDetector.CaptureForeground();", onboardingBranchStart, StringComparison.Ordinal);
+        var nextProductionBranch = controller.IndexOf("OpenLauncher(target: _targetDetector.CaptureForeground(), captureTarget: false);", onboardingBranchStart, StringComparison.Ordinal);
         Assert.True(nextProductionBranch > onboardingBranchStart);
 
         var branch = controller[onboardingBranchStart..nextProductionBranch];
@@ -307,6 +309,7 @@ public class XamlParseValidationTests
             TryRender("SettingsView", () => new SettingsView(fake), errors);
             TryRender("SettingsWindow", () => new SettingsWindow(fake), errors);
             TryRender("EditorView", () => new EditorView(fake, pvm), errors);
+            TryRender("NewPhraseWindow", () => new NewPhraseWindow(fake), errors);
             TryRender("LauncherWindow", () => new LauncherWindow(null!, history), errors);
             TryRender("MainWindow", () => new MainWindow(fake, history, "library"), errors);
         });

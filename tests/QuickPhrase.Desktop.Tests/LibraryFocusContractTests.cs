@@ -36,7 +36,7 @@ public sealed class LibraryFocusContractTests
     public void SearchHistorySelection_StillRestoresSearchFocus()
     {
         var code = ReadLibraryCode();
-        var querySelected = ExtractMethod(code, "private void SearchHistoryPanel_QuerySelected", "private async void SearchHistoryPanel_ClearRequested");
+        var querySelected = ExtractMethod(code, "private async void SearchHistoryPanel_QuerySelected", "private async void SearchHistoryPanel_ClearRequested");
 
         Assert.Contains("SearchBox.Focus()", querySelected, StringComparison.Ordinal);
         Assert.Contains("Keyboard.Focus(SearchBox)", querySelected, StringComparison.Ordinal);

@@ -11,8 +11,7 @@
         MinWidth="{StaticResource Size.SettingsWindow.MinimumWidth}"
         MinHeight="{StaticResource Size.SettingsWindow.MinimumHeight}"
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource Brush.Background.Default}"
-        FontFamily="{StaticResource Typography.FontFamily.UI}"
+        Style="{StaticResource Style.Window.Shell}"
         Loaded="SettingsWindow_Loaded"
         Closing="SettingsWindow_Closing">
     <shell:WindowChrome.WindowChrome>
@@ -31,6 +30,6 @@
         <local:TitleBar Grid.Row="0" PageTitle="设置" />
         <ContentControl x:Name="ContentRegion"
                         Grid.Row="1"
-                        Background="{DynamicResource Brush.Surface.Default}" />
+                        Style="{StaticResource Style.Surface.ContentRegion}" />
     </Grid>
 </Window>

@@ -15,10 +15,7 @@ public sealed class FakeCommandService : ICommandService
 {
     private readonly List<Phrase> _phrases = new();
     private readonly List<Category> _categories = new();
-    private AppSettings _settings = new(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true)
-    {
-        LauncherEnabledAdapters = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["WXWork"] = true },
-    };
+    private AppSettings _settings = new(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true);
 
     public void Seed(IEnumerable<Phrase> phrases) => _phrases.AddRange(phrases);
     public int DeleteCategoryCalls { get; private set; }
@@ -32,6 +29,8 @@ public sealed class FakeCommandService : ICommandService
     public event Action<string>? SearchCompleted;
     public void Seed(IEnumerable<Category> categories) => _categories.AddRange(categories);
     public PhrasePackageDocument? NextPackageDocument { get; set; }
+    public PhrasePackageDocument? NextBatchImportCsvDocument { get; set; }
+    public string? LastBatchImportTemplatePath { get; private set; }
     public PhrasePackageDocument? LastWrittenPackage { get; private set; }
     public PhrasePackageImportPlan? LastImportedPlan { get; private set; }
     public PhrasePackageImportResult ImportResult { get; set; } = new(true, 0, 0, 0, "PACKAGE_IMPORT_OK", "话术包导入完成。", Guid.NewGuid());
@@ -105,7 +104,10 @@ public sealed class FakeCommandService : ICommandService
 
     public Task<RepositoryResult<Category>> CreateCategoryAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default)
     {
-        var category = new Category(command.Id, command.ParentId, command.Name, command.SortOrder, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var sortOrder = command.SortOrder ?? (command.ParentId is null
+            ? _categories.Where(category => category.ParentId is null).Select(category => category.SortOrder).DefaultIfEmpty(-10).Max() + 10
+            : 0);
+        var category = new Category(command.Id, command.ParentId, command.Name, sortOrder, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         _categories.Add(category);
         return Task.FromResult(RepositoryResult<Category>.Success(category));
     }
@@ -184,6 +186,17 @@ public sealed class FakeCommandService : ICommandService
     public Task WritePhrasePackageAsync(string path, PhrasePackageDocument document, CancellationToken cancellationToken = default)
     {
         LastWrittenPackage = document;
+        return Task.CompletedTask;
+    }
+
+    public Task<PhrasePackageDocument> ReadBatchImportCsvAsync(string path, CancellationToken cancellationToken = default) =>
+        NextBatchImportCsvDocument is null
+            ? Task.FromException<PhrasePackageDocument>(new NotSupportedException("测试替身未配置 CSV 批量导入数据。"))
+            : Task.FromResult(NextBatchImportCsvDocument);
+
+    public Task WriteBatchImportTemplateAsync(string path, CancellationToken cancellationToken = default)
+    {
+        LastBatchImportTemplatePath = path;
         return Task.CompletedTask;
     }
 

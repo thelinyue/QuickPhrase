@@ -35,7 +35,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         InitializeComponent();
         _blankAreaContextMenu = (System.Windows.Controls.ContextMenu)FindResource("BlankAreaContextMenu");
         _searchHistory = searchHistory;
-        _viewModel = new PhraseLibraryViewModel(commands, query => _searchHistory.RecordAsync(query));
+        _viewModel = new PhraseLibraryViewModel(commands);
         DataContext = _viewModel;
         SearchHistoryPanel.DataContext = _searchHistory.ViewModel;
 // 把库级事件转发出去，�?MainWindow / ApplicationController 接入编辑器与投递�?
@@ -401,17 +401,26 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
     private void SearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => OpenSearchHistory();
 
+    /// <summary>
+    /// 输入时保持历史记录可见，但不在逐字搜索阶段写库；历史只在用户明确确认搜索时保存，
+    /// 避免把输入过程中的半成品关键词写入本机 SQLite。
+    /// </summary>
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (SearchBox.IsKeyboardFocusWithin) OpenSearchHistory();
+    }
+
     private void SearchBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => ScheduleSearchHistoryClose();
 
     private void SearchHistoryPopup_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => ScheduleSearchHistoryClose();
 
-    private void SearchHistoryPanel_QuerySelected(object? sender, string query)
+    private async void SearchHistoryPanel_QuerySelected(object? sender, string query)
     {
         _viewModel.SearchQuery = query;
-        _viewModel.SearchCommand.Execute(null);
         CloseSearchHistory();
         SearchBox.Focus();
         Keyboard.Focus(SearchBox);
+        await RecordConfirmedSearchAsync(query);
     }
 
     private async void SearchHistoryPanel_ClearRequested(object? sender, EventArgs e)
@@ -450,7 +459,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         }));
     }
 
-    private void SearchBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private async void SearchBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
@@ -482,10 +491,21 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
         if (e.Key == Key.Enter)
         {
-            _viewModel.SearchCommand.Execute(null);
+            // 先消费按键，再异步写入历史，避免 SQLite 写入等待期间 Enter 继续冒泡。
             e.Handled = true;
+            await RecordConfirmedSearchAsync(_viewModel.SearchQuery);
         }
     }
+
+    /// <summary>
+    /// 话术库采用输入即搜；此处只补充“用户已确认”的历史保存语义，
+    /// 不重新触发搜索，避免与 ViewModel 的输入搜索并发重复执行。
+    /// </summary>
+    private Task RecordConfirmedSearchAsync(string? query) =>
+        string.IsNullOrWhiteSpace(query)
+            ? Task.CompletedTask
+            : _searchHistory.RecordAsync(query.Trim());
+
     // ============
     //  拖拽排序：一级分类 chips 与话术行（持久化 SortOrder）
     // ============================================================

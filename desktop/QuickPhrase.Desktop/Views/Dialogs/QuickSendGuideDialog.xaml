@@ -1,0 +1,50 @@
+<Window x:Class="QuickPhrase.Desktop.QuickSendGuideDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="{StaticResource Size.Dialog.Navigation.Width}"
+        MinHeight="{StaticResource Size.Dialog.Navigation.Height}"
+        SizeToContent="Height"
+        ResizeMode="No"
+        Style="{StaticResource Style.Dialog.Window}"
+        Title="确认快捷发送"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="{StaticResource Thickness.Dialog}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="快捷发送会发送当前目标输入框中的全部内容"
+                   Style="{StaticResource Style.Text.Title.Small}"
+                   TextWrapping="Wrap" />
+        <TextBlock Grid.Row="1"
+                   Margin="{StaticResource Thickness.Gap.Stack.Before.SM}"
+                   Text="已有草稿可能一并发送。闪语不会读取输入框正文，也无法确认目标应用最终是否完成发送。"
+                   Style="{StaticResource Style.Text.Body.Medium}"
+                   TextWrapping="Wrap" />
+        <TextBlock Grid.Row="2"
+                   Margin="{StaticResource Thickness.Gap.Stack.Before.SM}"
+                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                   Text="开启快捷发送模式后，之后按 Ctrl+Enter 将不再显示此确认。"
+                   Style="{StaticResource Style.Text.Body.Small}"
+                   TextWrapping="Wrap" />
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="{StaticResource Thickness.Gap.Stack.Before.MD}">
+            <Button Style="{StaticResource Style.Button.Ghost}"
+                    Content="取消"
+                    Click="Cancel_Click"
+                    Margin="{StaticResource Thickness.Gap.Inline.SM}" />
+            <Button Style="{StaticResource Style.Button.Secondary}"
+                    Content="仅本次继续"
+                    Click="ContinueOnce_Click"
+                    Margin="{StaticResource Thickness.Gap.Inline.SM}" />
+            <Button Style="{StaticResource Style.Button.Primary}"
+                    Content="开启快捷发送并继续"
+                    Click="EnableAndContinue_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

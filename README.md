@@ -29,7 +29,7 @@ QuickPhrase.Desktop
 
 管理数据位于 `%LOCALAPPDATA%\QuickPhrase`。卸载会移除程序，但保留 `Data`、`Backups` 与 `Logs`，重新安装后会继续使用原话术库。
 
-当前尚未发布 SignPath 签名正式版。未签名候选版会明确标记为 Pre-release，并可能触发 Windows SmartScreen；正式签名版发布后仍应从 GitHub Release 核对 Authenticode、`SHA256SUMS.txt` 和 `release-manifest.json`。
+0.0.1 正式版当前不附带 Authenticode 签名，Windows SmartScreen 可能显示未知发布者警告。请仅从 GitHub Release 下载，并在安装前使用 `SHA256SUMS.txt` 核对 ZIP 或安装器的 SHA-256；`release-manifest.json` 会明确声明 `signed: false`。
 
 ## 安全边界
 

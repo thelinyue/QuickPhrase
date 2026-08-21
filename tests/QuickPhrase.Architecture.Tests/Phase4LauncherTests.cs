@@ -6,14 +6,37 @@ namespace QuickPhrase.Architecture.Tests;
 
 public sealed class Phase4LauncherTests
 {
-    [Theory]
-    [InlineData("WXWork", true, true)]
-    [InlineData("WXWork", false, false)]
-    [InlineData("Unknown", true, false)]
-    public void LauncherEligibilityRequiresKnownEnabledAdapter(string adapterId, bool enabled, bool expected)
+    [Fact]
+    public void UnknownForegroundTargetUsesGenericTextInputWithoutSendCapability()
     {
-        var result = LauncherEligibilityPolicy.CanOpen(adapterId, new Dictionary<string, bool> { ["WXWork"] = enabled });
-        Assert.Equal(expected, result);
+        using var resolver = new WindowsAdapterResolver(
+            productVersionReader: _ => null,
+            targetValidator: _ => true);
+        var target = new DeliveryTarget(
+            "Notepad", "Desktop", "Unknown", "记事本", Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow);
+
+        var adapter = resolver.Resolve(target);
+        var capabilities = adapter.DetectCapabilities();
+
+        Assert.Equal("GenericTextInput", adapter.AdapterId);
+        Assert.Equal(CapabilityStatus.Verified, capabilities.InsertText);
+        Assert.Equal(CapabilityStatus.Verified, capabilities.VerifyInsert);
+        Assert.Equal(CapabilityStatus.Unsupported, capabilities.SendText);
+        Assert.Equal(CapabilityStatus.Unsupported, capabilities.VerifySend);
+    }
+
+    [Fact]
+    public void GenericTextInputFocusPolicyRejectsPasswordAndUnstableCandidates()
+    {
+        var target = new WindowsTargetIdentity((nint)10, 42, 1, DateTimeOffset.UtcNow, "notepad", DateTimeOffset.UtcNow);
+        var valid = new GenericTextInputFocusSnapshot(42, (nint)11, "editor", "Edit", [1, 2, 3], true, true, false, true);
+        var password = valid with { IsPassword = true };
+        var changed = new GenericTextInputFocusFingerprint(42, (nint)11, "editor", "Edit", [1, 2, 4]);
+        var before = new GenericTextInputFocusFingerprint(42, (nint)11, "editor", "Edit", [1, 2, 3]);
+
+        Assert.True(GenericTextInputFocusPolicy.IsEligibleEditableTextInput(target, valid));
+        Assert.False(GenericTextInputFocusPolicy.IsEligibleEditableTextInput(target, password));
+        Assert.False(GenericTextInputFocusPolicy.IsStableEditableTextInput(before, changed));
     }
 
     [Fact]
@@ -56,6 +79,44 @@ public sealed class Phase4LauncherTests
         Assert.Equal(expected, ApplicationController.RequiresSendConfirmation(mode, settings));
     }
 
+    [Theory]
+    [InlineData(QuickSendGuideDecision.Cancel, false, false)]
+    [InlineData(QuickSendGuideDecision.ContinueOnce, false, true)]
+    [InlineData(QuickSendGuideDecision.EnableAndContinue, false, false)]
+    [InlineData(QuickSendGuideDecision.EnableAndContinue, true, true)]
+    public void QuickSendGuideOnlyContinuesAfterExplicitChoiceAndSuccessfulSettingSave(
+        QuickSendGuideDecision decision,
+        bool quickSendEnabledSuccessfully,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            ApplicationController.CanProceedWithQuickSendGuide(decision, quickSendEnabledSuccessfully));
+    }
+
+    [Fact]
+    public void QuickSendGuideDialogKeepsExplicitSendSafetyCopyAndChoices()
+    {
+        var path = Path.Combine(
+            FindRepoRoot(), "desktop", "QuickPhrase.Desktop", "Views", "Dialogs", "QuickSendGuideDialog.xaml");
+        var xaml = File.ReadAllText(path);
+
+        Assert.Contains("已有草稿可能一并发送", xaml, StringComparison.Ordinal);
+        Assert.Contains("不会读取输入框正文", xaml, StringComparison.Ordinal);
+        Assert.Contains("无法确认目标应用最终是否完成发送", xaml, StringComparison.Ordinal);
+        Assert.Contains("开启快捷发送模式后，之后按 Ctrl+Enter 将不再显示此确认", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"开启快捷发送并继续\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"仅本次继续\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"取消\"", xaml, StringComparison.Ordinal);
+    }
+
+    private static string FindRepoRoot()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null && !File.Exists(Path.Combine(current.FullName, "QuickPhrase.sln")))
+            current = current.Parent;
+        return current?.FullName ?? throw new DirectoryNotFoundException("找不到 QuickPhrase 仓库根目录。");
+    }
     [Fact]
     public void LegacyStringAndVirtualKeyHotkeyApiIsRemoved()
     {

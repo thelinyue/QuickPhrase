@@ -1,10 +1,12 @@
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 namespace QuickPhrase.Architecture.Tests;
 
-/// <summary>锁定 SignPath 政策、0.0.1 版本和双阶段签名发布链的源码契约。</summary>
-public sealed class ReleaseSigningContractTests
+/// <summary>
+/// 锁定 0.0.1 未签名正式发布的公开政策、GitHub Actions 门禁和发布资产契约。
+/// 这些断言只验证源码声明，实际资产仍必须由 Phase 6 脚本在发布工作流中重新核验。
+/// </summary>
+public sealed class ReleasePublicationContractTests
 {
     [Fact]
     public void PrivacyPolicyMatchesLocalAndEnterpriseSyncBehavior()
@@ -32,19 +34,17 @@ public sealed class ReleaseSigningContractTests
     }
 
     [Fact]
-    public void RepositoryPublishesRequiredSignPathPolicies()
+    public void PublicationPolicyClearlyDeclaresUnsignedStableAssets()
     {
         foreach (var file in new[] { "PRIVACY.md", "SECURITY.md", "CODE_SIGNING.md" })
             Assert.True(File.Exists(Path.Combine(Root, file)), $"缺少 {file}。");
 
         var policy = File.ReadAllText(Path.Combine(Root, "CODE_SIGNING.md"));
         Assert.Contains("Code signing policy", policy, StringComparison.Ordinal);
-        Assert.Contains("thelinyue", policy, StringComparison.Ordinal);
-        Assert.Contains("Author / Committer", policy, StringComparison.Ordinal);
-        Assert.Contains("Reviewer", policy, StringComparison.Ordinal);
-        Assert.Contains("Approver", policy, StringComparison.Ordinal);
-        Assert.Contains("Free code signing provided by SignPath.io", policy, StringComparison.Ordinal);
-        Assert.Contains("certificate by SignPath Foundation", policy, StringComparison.Ordinal);
+        Assert.Contains("当前不使用第三方代码签名服务", policy, StringComparison.Ordinal);
+        Assert.Contains("signed: false", policy, StringComparison.Ordinal);
+        Assert.Contains("SHA-256", policy, StringComparison.Ordinal);
+        Assert.DoesNotContain("SignPath", policy, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -76,120 +76,92 @@ public sealed class ReleaseSigningContractTests
     }
 
     [Fact]
-    public void SigningWorkflowUsesTwoSignPathRequestsAndNoLiteralCredentials()
+    public void StableReleaseWorkflowBuildsAndPublishesUnsignedAssetsFromImmutableTag()
     {
-        var workflow = File.ReadAllText(Path.Combine(
-            Root, ".github", "workflows", "release-signed.yml"));
-        Assert.Equal(2, workflow.Split(
-            "signpath/github-action-submit-signing-request@v2",
-            StringSplitOptions.None).Length - 1);
+        var workflow = File.ReadAllText(Path.Combine(Root, ".github", "workflows", "release.yml"));
         foreach (var expected in new[]
         {
             "workflow_dispatch",
             "confirmWeComAcceptance",
             "confirmWin11Acceptance",
-            "environment: production-signing",
+            "refs/tags/v$version",
+            "contents: write",
+            "shell: pwsh",
+            "scripts/build-release.ps1",
+            "-Stage All",
+            "scripts/verify-phase6.ps1",
             "actions/upload-artifact@v4",
-            "output-artifact-directory",
-            "wait-for-completion: true",
-            "Get-AuthenticodeSignature",
-            "finalize-signed-release.ps1",
-            "secrets.SIGNPATH_API_TOKEN",
-            "vars.SIGNPATH_ORGANIZATION_ID",
-            "vars.SIGNPATH_PROJECT_SLUG",
-            "vars.SIGNPATH_SIGNING_POLICY_SLUG",
-            "vars.SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG",
-            "vars.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG",
+            "gh release create",
+            "--generate-notes",
+            "--notes-start",
+            "SHA256SUMS.txt",
+            "release-manifest.json",
         })
             Assert.Contains(expected, workflow, StringComparison.Ordinal);
 
-        var tokenValues = Regex.Matches(
-            workflow,
-            @"(?im)^\s*api-token:\s*(?<value>.+)$",
-            RegexOptions.CultureInvariant);
-        Assert.Equal(2, tokenValues.Count);
-        Assert.All(tokenValues.Cast<Match>(), match =>
-            Assert.StartsWith("${{ secrets.", match.Groups["value"].Value.Trim(), StringComparison.Ordinal));
-        Assert.DoesNotContain("pull_request", workflow, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("push:", workflow, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("automatic approval", workflow, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("gh release create", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SignPath", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Get-AuthenticodeSignature", workflow, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(Root, ".github", "workflows", "release-signed.yml")));
     }
 
     [Fact]
-    public void SignPathApplicationGuideContainsPublicEvidenceAndManualSetupBoundaries()
+    public void Phase6VerifierRequiresUnsignedStableAssetsHashesAndPureWpfArchive()
     {
-        var guide = File.ReadAllText(Path.Combine(Root, "docs", "signpath-application.md"));
+        var verifier = File.ReadAllText(Path.Combine(Root, "scripts", "verify-phase6.ps1"));
         foreach (var expected in new[]
         {
-            "https://github.com/thelinyue/QuickPhrase",
-            "thelinyue",
-            "Author / Committer",
-            "Reviewer",
-            "Approver",
-            "MFA",
-            "GitHub App",
-            "Open Source Project",
-            "SIGNPATH_API_TOKEN",
-            "SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG",
-            "SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG",
-            "v0.0.1-rc.1",
+            "QUICKPHRASE_WECOM_ACCEPTANCE",
+            "QUICKPHRASE_WIN11_ACCEPTANCE",
+            "signed -ne $false",
+            "releaseChannel -ne 'stable'",
+            "SHA256SUMS.txt",
+            "QuickPhrase.exe",
+            "QuickPhrase.dll",
+            "QuickPhrase.Core.dll",
+            "QuickPhrase.Platform.Windows.dll",
+            "wwwroot",
+            "node_modules",
+            "webview2",
+            "PHASE6_VERIFY_PASS_WIN11",
         })
-            Assert.Contains(expected, guide, StringComparison.Ordinal);
-        Assert.DoesNotContain("SIGNPATH_API_TOKEN=", guide, StringComparison.Ordinal);
+            Assert.Contains(expected, verifier, StringComparison.OrdinalIgnoreCase);
+
+        Assert.DoesNotContain("Get-AuthenticodeSignature", verifier, StringComparison.Ordinal);
+        Assert.DoesNotContain("TimeStamperCertificate", verifier, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(Root, "scripts", "finalize-signed-release.ps1")));
     }
 
     [Fact]
-    public void ContinuousIntegrationRunsWindowsBuildTestsAndLauncherSmokes()
+    public void ReleaseDocumentationContainsNoRemovedSigningProvider()
     {
-        var workflow = File.ReadAllText(Path.Combine(Root, ".github", "workflows", "ci.yml"));
-        foreach (var expected in new[]
+        foreach (var relativePath in new[]
         {
-            "runs-on: windows-latest",
-            "actions/checkout@v4",
-            "fetch-depth: 0",
-            "actions/setup-dotnet@v4",
-            "dotnet restore",
-            "dotnet build QuickPhrase.sln -c Release",
-            "dotnet test tests/QuickPhrase.Desktop.Tests/QuickPhrase.Desktop.Tests.csproj -c Release",
-            "dotnet test tests/QuickPhrase.Architecture.Tests/QuickPhrase.Architecture.Tests.csproj -c Release",
-            "invoke-launcher-smoke.ps1 -Mode Native",
-            "invoke-launcher-smoke.ps1 -Mode Performance",
-        })
-            Assert.Contains(expected, workflow, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void ReleaseQualityGatesRunWindowsTestProjectsSequentially()
-    {
-        foreach (var file in new[]
-        {
-            Path.Combine(Root, ".github", "workflows", "ci.yml"),
-            Path.Combine(Root, "scripts", "verify-phase51.ps1"),
-            Path.Combine(Root, "scripts", "build-release.ps1"),
+            "README.md",
+            "SECURITY.md",
+            "CODE_SIGNING.md",
+            Path.Combine("docs", "phase6-validation.md"),
+            Path.Combine("docs", "quickphrase-codex-execution.md"),
+            Path.Combine("docs", "codebase-analysis-report.md"),
         })
         {
-            var source = File.ReadAllText(file);
-            Assert.Contains("tests/QuickPhrase.Desktop.Tests/QuickPhrase.Desktop.Tests.csproj", source, StringComparison.Ordinal);
-            Assert.Contains("tests/QuickPhrase.Architecture.Tests/QuickPhrase.Architecture.Tests.csproj", source, StringComparison.Ordinal);
-            Assert.DoesNotContain("dotnet test QuickPhrase.sln", source, StringComparison.Ordinal);
+            var source = File.ReadAllText(Path.Combine(Root, relativePath));
+            Assert.DoesNotContain("SignPath", source, StringComparison.OrdinalIgnoreCase);
         }
+
+        Assert.False(File.Exists(Path.Combine(Root, "docs", "signpath-application.md")));
     }
+
     [Fact]
     public void ManualReleaseWorkflowsUsePowerShellSevenForUtf8Diagnostics()
     {
-        foreach (var fileName in new[] { "release-candidate.yml", "release-signed.yml" })
+        foreach (var fileName in new[] { "release-candidate.yml", "release.yml" })
         {
-            var workflow = File.ReadAllText(Path.Combine(
-                Root,
-                ".github",
-                "workflows",
-                fileName));
-
+            var workflow = File.ReadAllText(Path.Combine(Root, ".github", "workflows", fileName));
             Assert.Contains("shell: pwsh", workflow, StringComparison.Ordinal);
             Assert.DoesNotContain("shell: powershell", workflow, StringComparison.Ordinal);
         }
     }
+
     [Fact]
     public void CandidateWorkflowCannotPublishAStableRelease()
     {
@@ -229,6 +201,7 @@ public sealed class ReleaseSigningContractTests
             "[string]$Stage = 'All'",
             "'Publish'",
             "'Installer'",
+            "signed = $false",
             "IncludeSourceRevisionInInformationalVersion=false",
             "dotnet restore desktop/QuickPhrase.Desktop/QuickPhrase.Desktop.csproj -r win-x64 -p:PublishReadyToRun=true",
             "QuickPhrase-Setup-$Version",
@@ -247,16 +220,6 @@ public sealed class ReleaseSigningContractTests
         Assert.Contains("#ifndef OutputBase", installer, StringComparison.Ordinal);
         Assert.Contains("{#ReleaseRoot}\\publish\\*", installer, StringComparison.Ordinal);
         Assert.Contains("OutputDir={#ReleaseRoot}\\installers", installer, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void FinalizeScriptRequiresValidAuthenticodeAndTimestamp()
-    {
-        var finalize = File.ReadAllText(Path.Combine(Root, "scripts", "finalize-signed-release.ps1"));
-        Assert.Contains("Get-AuthenticodeSignature", finalize, StringComparison.Ordinal);
-        Assert.Contains("SignatureStatus]::Valid", finalize, StringComparison.Ordinal);
-        Assert.Contains("TimeStamperCertificate", finalize, StringComparison.Ordinal);
-        Assert.Contains("signed = $true", finalize, StringComparison.Ordinal);
     }
 
     private static string Root

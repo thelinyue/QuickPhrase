@@ -48,6 +48,22 @@ public class PhraseLibraryViewModelTests
     }
 
     [Fact]
+    public async Task LoadAsync_ShowsSubCategoryUnderExpandedTopCategory()
+    {
+        var topCategory = MakeCategory(out var topCategoryId, "客户", 0);
+        var subCategory = new Category(Guid.NewGuid(), topCategoryId, "跟进", 0, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var fake = new FakeCommandService();
+        fake.Seed(new[] { topCategory, subCategory });
+
+        var vm = new PhraseLibraryViewModel(fake);
+        await vm.LoadAsync();
+
+        var header = Assert.Single(vm.VisibleItems.OfType<SubHeaderItem>());
+        Assert.Equal(subCategory.Id, header.Category.Id);
+        Assert.Equal("跟进", header.Category.Name);
+    }
+
+    [Fact]
     public async Task Search_FiltersByTitleAndContent()
     {
         var category = MakeCategory(out var catId);

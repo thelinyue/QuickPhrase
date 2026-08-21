@@ -117,6 +117,7 @@ public sealed class OnboardingViewModelTests
         var vm = CreateViewModel(fake, _ => Task.FromResult(true));
 
         await vm.InitializeAsync(manualOpen: true);
+        vm.StartCommand.Execute(null);
         await vm.BeginPracticeCommand.ExecuteAsync(null);
 
         Assert.True(vm.PracticeOpened);
@@ -169,7 +170,17 @@ public sealed class OnboardingViewModelTests
         Assert.Equal(category.Id, vm.SelectedCategory!.Id);
     }
     [Fact]
-    public async Task ManualOpen_WithCategoryButNoPhrase_MovesToPhrase()
+    public async Task ManualOpen_WithEmptyData_StartsAtWelcome()
+    {
+        var vm = CreateViewModel(new FakeCommandService());
+
+        await vm.InitializeAsync(manualOpen: true);
+
+        Assert.Equal(OnboardingStep.Welcome, vm.CurrentStep);
+    }
+
+    [Fact]
+    public async Task ManualOpen_WithCategoryButNoPhrase_StartsAtWelcome()
     {
         var category = RootCategory("客户沟通");
         var fake = new FakeCommandService();
@@ -178,12 +189,12 @@ public sealed class OnboardingViewModelTests
 
         await vm.InitializeAsync(manualOpen: true);
 
-        Assert.Equal(OnboardingStep.Phrase, vm.CurrentStep);
+        Assert.Equal(OnboardingStep.Welcome, vm.CurrentStep);
         Assert.Equal(category.Id, vm.SelectedCategory!.Id);
     }
 
     [Fact]
-    public async Task ManualOpen_WithCategoryAndPhrase_MovesToPractice()
+    public async Task ManualOpen_WithCategoryAndPhrase_StartsAtWelcome_ThenMovesToPractice()
     {
         var category = RootCategory("客户沟通");
         var phrase = new Phrase(Guid.NewGuid(), "欢迎语", "您好", category.Id, ShortcutMode.None, null,
@@ -195,8 +206,12 @@ public sealed class OnboardingViewModelTests
 
         await vm.InitializeAsync(manualOpen: true);
 
-        Assert.Equal(OnboardingStep.Practice, vm.CurrentStep);
+        Assert.Equal(OnboardingStep.Welcome, vm.CurrentStep);
         Assert.Equal(category.Id, vm.SelectedCategory!.Id);
+
+        vm.StartCommand.Execute(null);
+
+        Assert.Equal(OnboardingStep.Practice, vm.CurrentStep);
     }
 
     [Fact]
@@ -249,6 +264,7 @@ public sealed class OnboardingViewModelTests
         fake.Seed(new[] { phrase });
         var vm = CreateViewModel(fake);
         await vm.InitializeAsync(manualOpen: true);
+        vm.StartCommand.Execute(null);
 
         Assert.True(vm.CanFinish);
 

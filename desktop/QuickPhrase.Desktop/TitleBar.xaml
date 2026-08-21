@@ -5,7 +5,7 @@
              xmlns:local="clr-namespace:QuickPhrase.Desktop"
              xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework">
 
-    <Grid Height="{StaticResource Size.TitleBar.Height}" Background="{DynamicResource Brush.Background.Default}">
+    <Grid Height="{StaticResource Size.TitleBar.Height}" Style="{StaticResource Style.Surface.TitleBar}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
@@ -22,11 +22,11 @@
         <StackPanel Grid.Column="1" Orientation="Horizontal"
                     shell:WindowChrome.IsHitTestVisibleInChrome="True">
             <Button x:Name="MinButton" Style="{StaticResource Style.Button.Ghost.Compact}"
-                    Width="{StaticResource Size.TitleBar.CaptionButton.Width}" Click="MinButton_Click" Content="—" />
+                    Width="{StaticResource Size.TitleBar.CaptionButton.Width}" Click="MinButton_Click" Content="—" AutomationProperties.Name="最小化窗口" ToolTip="最小化" />
             <Button x:Name="MaxButton" Style="{StaticResource Style.Button.Ghost.Compact}"
-                    Width="{StaticResource Size.TitleBar.CaptionButton.Width}" Click="MaxButton_Click" Content="▢" />
+                    Width="{StaticResource Size.TitleBar.CaptionButton.Width}" Click="MaxButton_Click" Content="▢" AutomationProperties.Name="最大化或还原窗口" ToolTip="最大化或还原" />
             <Button x:Name="CloseButton" Style="{StaticResource Style.Button.Ghost.Compact}"
-                    Width="{StaticResource Size.TitleBar.CaptionButton.Width}" Click="CloseButton_Click" Content="✕" />
+                    Width="{StaticResource Size.TitleBar.CaptionButton.Width}" Click="CloseButton_Click" Content="✕" AutomationProperties.Name="关闭窗口" ToolTip="关闭" />
         </StackPanel>
     </Grid>
 </UserControl>

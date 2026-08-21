@@ -26,9 +26,8 @@ public sealed class MainLibraryEditorDesignSystemTests
         Assert.Contains("MinHeight=\"{StaticResource Size.MainWindow.MinimumHeight}\"", markup);
         Assert.Contains("CaptionHeight=\"{StaticResource Size.TitleBar.Height}\"", markup);
         Assert.Contains("<RowDefinition Height=\"{StaticResource Size.TitleBar.GridLength}\" />", markup);
-        Assert.Contains("Background=\"{DynamicResource Brush.Background.Default}\"", markup);
-        Assert.Contains("Background=\"{DynamicResource Brush.Surface.Default}\"", markup);
-        Assert.Contains("FontFamily=\"{StaticResource Typography.FontFamily.UI}\"", markup);
+        Assert.Contains("Style=\"{StaticResource Style.Window.Shell}\"", markup);
+        Assert.Contains("Style=\"{StaticResource Style.Surface.ContentRegion}\"", markup);
 
         Assert.DoesNotContain("WindowBackgroundBrush", markup);
         Assert.DoesNotContain("SurfacePrimaryBrush", markup);
@@ -47,7 +46,7 @@ public sealed class MainLibraryEditorDesignSystemTests
         Assert.Contains("Style=\"{StaticResource Style.Button.Primary}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Button.Secondary}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Button.Danger}\"", markup);
-        Assert.Contains("Background=\"{DynamicResource Brush.Background.Default}\"", markup);
+        Assert.Contains("Style=\"{StaticResource Style.Surface.Page}\"", markup);
         Assert.Contains("Background=\"{DynamicResource Brush.Surface.Default}\"", markup);
         Assert.Contains("BorderBrush=\"{DynamicResource Brush.Border.Default}\"", markup);
         Assert.Contains("Value=\"{DynamicResource Brush.Border.Focus}\"", markup);
@@ -68,12 +67,12 @@ public sealed class MainLibraryEditorDesignSystemTests
     {
         var markup = ReadDesktopXaml("Views", "LibraryView.xaml");
 
-        Assert.Contains("Background=\"{DynamicResource Brush.Background.Default}\"", markup);
+        Assert.Contains("Style=\"{StaticResource Style.View.Root}\"", markup);
         Assert.Contains("Background=\"{DynamicResource Brush.Surface.Default}\"", markup);
         Assert.Contains("Foreground=\"{DynamicResource Brush.Text.Primary}\"", markup);
-        Assert.Contains("<Setter Property=\"Foreground\" Value=\"{DynamicResource Brush.Text.Secondary}\" />", markup);
-        Assert.Contains("<Setter TargetName=\"Root\" Property=\"Background\" Value=\"{DynamicResource Brush.Surface.Selected}\" />", markup);
-        Assert.Contains("<Setter Property=\"Foreground\" Value=\"{DynamicResource Brush.Accent.Primary}\" />", markup);
+        Assert.Contains("<Setter Property=\"Foreground\" Value=\"{DynamicResource Brush.Text.OnAccent}\" />", markup);
+        Assert.Contains("Background=\"{Binding Name, Converter={StaticResource CategoryBackgroundBrush}}\"", markup);
+        Assert.Contains("ConverterParameter=deep", markup);
         Assert.DoesNotContain("<Setter TargetName=\"Root\" Property=\"Background\" Value=\"{DynamicResource Brush.Accent.Primary.Pressed}\" />", markup);
         Assert.Contains("Style=\"{StaticResource Style.Input.Search}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Button.Icon}\"", markup);

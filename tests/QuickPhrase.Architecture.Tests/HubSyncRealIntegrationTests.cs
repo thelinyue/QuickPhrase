@@ -5,7 +5,7 @@ using QuickPhrase.Platform.Windows;
 
 namespace QuickPhrase.Architecture.Tests;
 
-[Collection(SettingsMigrationDiagnosticsCollection.Name)]
+[Collection(SettingsDocumentDiagnosticsCollection.Name)]
 public sealed class HubSyncRealIntegrationTests
 {
     [Fact]

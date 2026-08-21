@@ -237,4 +237,36 @@
             </ContentControl.Template>
         </ContentControl>
     </DataTemplate>
+    <!-- 历史搜索项作为共享控件的标准轻量列表项，页面不得复制该选择与焦点反馈模板。 -->
+    <Style x:Key="Style.ListItem.SearchHistory" TargetType="ListBoxItem">
+        <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
+        <Setter Property="Margin" Value="{StaticResource Thickness.Gap.Inline.SM}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Card"
+                            Padding="{StaticResource Thickness.XS}"
+                            Background="{DynamicResource Brush.Background.Default}"
+                            BorderBrush="{DynamicResource Brush.Border.Default}"
+                            BorderThickness="{StaticResource Thickness.Border.Default}"
+                            CornerRadius="{StaticResource Radius.XS}">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Card" Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
+                            <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource Brush.Accent.Primary}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Card" Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
+                            <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource Brush.Accent.Primary}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>
