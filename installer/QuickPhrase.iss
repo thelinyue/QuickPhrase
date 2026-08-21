@@ -26,6 +26,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#ReleaseRoot}\installers
 OutputBaseFilename={#OutputBase}
 SetupIconFile=..\assets\quickphrase.ico
+UninstallDisplayIcon={app}\{#AppExeName},0
 UninstallDisplayName=闪语
 Uninstallable=yes
 Compression=lzma2

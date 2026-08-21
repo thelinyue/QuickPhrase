@@ -10,6 +10,12 @@ function section(name) {
   return match[1];
 }
 
+test("installer keeps the Zeus icon for setup and the Windows uninstall entry", () => {
+  const setup = section("Setup");
+
+  assert.match(setup, /SetupIconFile\s*=\s*\.\.\\assets\\quickphrase\.ico/);
+  assert.match(setup, /UninstallDisplayIcon\s*=\s*\{app\}\\\{#AppExeName\},0/);
+});
 
 test("installer creates the desktop shortcut through native tasks and application icons", () => {
   const tasks = section("Tasks");
