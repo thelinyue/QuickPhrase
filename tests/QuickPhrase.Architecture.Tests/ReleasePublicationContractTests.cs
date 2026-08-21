@@ -93,7 +93,7 @@ public sealed class ReleasePublicationContractTests
             "actions/upload-artifact@v4",
             "gh release create",
             "--generate-notes",
-            "--notes-start",
+            "--notes",
             "SHA256SUMS.txt",
             "release-manifest.json",
         })

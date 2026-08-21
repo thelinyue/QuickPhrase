@@ -97,4 +97,4 @@ jobs:
             "$root/release-manifest.json" `
             --title "闪语 v$version" `
             --generate-notes `
-            --notes-start "## 安全提示`n`n此正式版未附带 Authenticode 签名，Windows SmartScreen 可能显示未知发布者警告。安装前请从本 Release 下载 SHA256SUMS.txt 并校验 ZIP 或安装器哈希。"
+            --notes "## 安全提示`n`n此正式版未附带 Authenticode 签名，Windows SmartScreen 可能显示未知发布者警告。安装前请从本 Release 下载 SHA256SUMS.txt 并校验 ZIP 或安装器哈希。"
