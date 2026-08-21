@@ -27,6 +27,37 @@ public sealed class PhraseBatchImportCsvPlatformTests
         Assert.Contains(runtime.Search.Search(new SearchRequest("欢迎", 8)).Items, item => item.Phrase.Title == "欢迎");
     }
 
+    [Fact]
+    public async Task ReadBatchImportCsvAsync_SupportsGb18030CsvWrittenByExcelOrWps()
+    {
+        using var temp = new TemporaryDirectory();
+        await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
+        var path = Path.Combine(temp.Path, "gb18030-template.csv");
+        var gb18030Csv = Convert.FromHexString("D2BBBCB6B7D6C0E02CB6FEBCB6B7D6C0E02CB1EACCE22CD5FDCEC40D0ABFCDBBA72C2CB1EACCE22CD5FDCEC40D0A");
+
+        await File.WriteAllBytesAsync(path, gb18030Csv);
+        var document = await runtime.ReadBatchImportCsvAsync(path);
+        var result = await runtime.ImportAsync(PhrasePackagePlanner.BuildImportPlan(document, await runtime.CaptureSnapshotAsync()));
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Equal(1, result.NewCategoryCount);
+        Assert.Equal(1, result.NewPhraseCount);
+        Assert.Contains(runtime.Search.Search(new SearchRequest("标题", 8)).Items, item => item.Phrase.Title == "标题");
+    }
+
+    [Fact]
+    public async Task ReadBatchImportCsvAsync_RejectsUnsupportedEncodingWithClearCode()
+    {
+        using var temp = new TemporaryDirectory();
+        await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
+        var path = Path.Combine(temp.Path, "unsupported-encoding.csv");
+
+        await File.WriteAllBytesAsync(path, [0xFF]);
+        var exception = await Assert.ThrowsAsync<PhraseBatchImportCsvException>(() => runtime.ReadBatchImportCsvAsync(path));
+
+        Assert.Equal("CSV_ENCODING_UNSUPPORTED", exception.Code);
+        Assert.Contains("UTF-8 或 GB18030/GBK", exception.Message, StringComparison.Ordinal);
+    }
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()
