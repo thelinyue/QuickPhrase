@@ -32,7 +32,7 @@ CREATE TABLE phrases (
     version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
     created_at_utc TEXT NOT NULL,
     updated_at_utc TEXT NOT NULL,
-    color_key TEXT NOT NULL DEFAULT 'default'
+    color_key TEXT NOT NULL DEFAULT 'orange'
         CHECK (color_key IN ('default', 'orange', 'blue', 'magenta', 'purple', 'green', 'pink', 'teal', 'tan', 'gray')),
     sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
     CHECK ((shortcut_mode = 'None' AND shortcut_display IS NULL AND shortcut_normalized IS NULL)

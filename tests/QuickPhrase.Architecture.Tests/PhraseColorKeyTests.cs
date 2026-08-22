@@ -6,7 +6,7 @@ namespace QuickPhrase.Architecture.Tests;
 public sealed class PhraseColorKeyTests
 {
     [Fact]
-    public async Task ExistingAndNewPhrasesUseDefaultColorKey()
+    public async Task NewPhraseWithoutExplicitColorUsesOrangeColorKey()
     {
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
@@ -16,7 +16,7 @@ public sealed class PhraseColorKeyTests
         var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(
             Guid.NewGuid(), "默认颜色", PhraseBody.FromText("正文"), category.Id, ShortcutMode.None, null));
 
-        Assert.Equal("default", created.Value!.ColorKey);
+        Assert.Equal("orange", created.Value!.ColorKey);
     }
 
     [Fact]
@@ -35,7 +35,7 @@ public sealed class PhraseColorKeyTests
         await using var reopened = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
         var phrase = await reopened.Phrases.GetAsync(phraseId);
         Assert.Equal("正文保持不变", phrase!.Body.TextProjection);
-        Assert.Equal("default", phrase.ColorKey);
+        Assert.Equal("orange", phrase.ColorKey);
     }
 
     [Fact]

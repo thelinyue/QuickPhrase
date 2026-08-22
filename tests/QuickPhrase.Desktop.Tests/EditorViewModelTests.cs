@@ -48,6 +48,7 @@ public class EditorViewModelTests
     {
         var vm = new EditorViewModel(new FakeCommandService(), null);
         Assert.True(vm.IsNew);
+        Assert.Equal("orange", vm.ColorKey);
         Assert.False(vm.HasUnsavedChanges);
     }
 
@@ -211,7 +212,6 @@ public class EditorViewModelTests
         vm.SelectedCategoryId = cat;
         vm.Title = "新话术";
         ApplySegments(vm, PhraseSegment.CreateText("内容"));
-        vm.ColorKey = "orange";
 
         Phrase? saved = null;
         vm.Saved += (_, p) => saved = p;
@@ -220,6 +220,7 @@ public class EditorViewModelTests
         Assert.NotNull(saved);
         Assert.Equal("新话术", saved!.Title);
         Assert.Equal("orange", saved.ColorKey);
+        Assert.Equal("orange", fake.LastCreatedPhraseCommand!.ColorKey);
         Assert.Equal(ShortcutMode.None, fake.LastCreatedPhraseCommand!.ShortcutMode);
         Assert.Null(fake.LastCreatedPhraseCommand.Shortcut);
         Assert.False(vm.HasUnsavedChanges);

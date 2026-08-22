@@ -171,7 +171,7 @@ public sealed record CreatePhraseCommand(
     Guid CategoryId,
     ShortcutMode ShortcutMode,
     string? Shortcut,
-    string ColorKey = "default",
+    string ColorKey = "orange",
     int SortOrder = 0);
 
 public sealed record UpdatePhraseCommand(
