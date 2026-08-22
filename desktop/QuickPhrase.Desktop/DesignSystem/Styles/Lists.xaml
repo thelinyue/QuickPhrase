@@ -230,7 +230,10 @@
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
-        <Setter Property="Focusable" Value="False" />
+        <!-- 鼠标点击依赖 ListBoxItem 的原生选择逻辑；保持可聚焦才能触发 SelectionChanged，
+             但不加入 Tab 导航，方向键与 Enter 仍由搜索框统一处理。 -->
+        <Setter Property="Focusable" Value="True" />
+        <Setter Property="KeyboardNavigation.IsTabStop" Value="False" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">

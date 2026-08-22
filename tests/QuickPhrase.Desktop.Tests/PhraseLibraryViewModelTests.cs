@@ -266,6 +266,29 @@ public class PhraseLibraryViewModelTests
         vm.SelectCategoryCommand.Execute(targetCategoryId);
         Assert.Equal(phrase.Id, Assert.Single(vm.VisibleItems.OfType<PhraseItemViewModel>()).Id);
     }
+
+    [Fact]
+    public async Task RefreshFromPhrase_NotifiesIsEmptyWhenNewPhraseBecomesVisible()
+    {
+        var category = MakeCategory(out var categoryId);
+        var fake = new FakeCommandService();
+        fake.Seed(new[] { category });
+
+        var vm = new PhraseLibraryViewModel(fake);
+        await vm.LoadAsync();
+        Assert.True(vm.IsEmpty);
+
+        var changedProperties = new List<string?>();
+        vm.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
+
+        var phrase = MakePhrase("新话术", "新内容", categoryId);
+        vm.RefreshFromPhrase(phrase);
+
+        Assert.Contains(vm.VisibleItems.OfType<PhraseItemViewModel>(), item => item.Id == phrase.Id);
+        Assert.Contains(nameof(vm.IsEmpty), changedProperties);
+        Assert.False(vm.IsEmpty);
+    }
+
     [Fact]
     public async Task RefreshMovedPhrase_PreservesSearchResultAndUpdatesCategoryName()
     {

@@ -197,6 +197,8 @@ public partial class PhraseLibraryViewModel : ObservableObject
             RefreshTopCategories();
         }
         RebuildVisibleItems();
+        // VisibleItems 变化后同步通知空状态面板；否则空分类保存首条话术时，旧的空状态会继续遮住列表。
+        OnPropertyChanged(nameof(IsEmpty));
     }
 
     /// <summary>移动成功后刷新列表并向用户明确反馈目标分类。</summary>

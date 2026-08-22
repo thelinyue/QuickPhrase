@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:onboarding="clr-namespace:QuickPhrase.Desktop.Onboarding"
+        xmlns:designSystem="clr-namespace:QuickPhrase.Desktop.DesignSystem.Components"
         Title="闪语 · 使用引导" Width="{StaticResource Size.Onboarding.Width}" Height="{StaticResource Size.Onboarding.Height}" MinWidth="{StaticResource Size.Onboarding.MinimumWidth}" MinHeight="{StaticResource Size.Onboarding.MinimumHeight}"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         Style="{StaticResource Style.Dialog.Window}"
@@ -318,7 +319,16 @@
                         <Border Style="{StaticResource Style.Card.Default}" Padding="{StaticResource Thickness.MD}">
                             <TextBlock Text="第一条话术已经准备好，随时可以开始使用。" Style="{StaticResource Style.Text.Body.Medium}" />
                         </Border>
-                        <CheckBox Content="开机时启动闪语" IsChecked="{Binding LaunchOnStartup}" AutomationProperties.Name="开机时启动闪语" Style="{StaticResource Style.Switch.Default}" Margin="{StaticResource Thickness.Gap.Stack.Before.XL}" />
+                        <designSystem:SettingItem Title="开机启动"
+                                                   Description="登录 Windows 后自动启动 QuickPhrase"
+                                                   Margin="{StaticResource Thickness.Gap.Stack.Before.XL}">
+                            <designSystem:SettingItem.ControlContent>
+                                <CheckBox IsChecked="{Binding LaunchOnStartup}"
+                                          AutomationProperties.Name="开机时启动闪语"
+                                          Style="{StaticResource Style.Switch.Default}"
+                                          VerticalAlignment="Center" />
+                            </designSystem:SettingItem.ControlContent>
+                        </designSystem:SettingItem>
                         <TextBlock Text="{Binding StartupWarning}" Foreground="{DynamicResource Brush.Status.Error}" TextWrapping="Wrap" Margin="{StaticResource Thickness.Gap.Stack.Before.MD}" />
                 </StackPanel>
             </Border>

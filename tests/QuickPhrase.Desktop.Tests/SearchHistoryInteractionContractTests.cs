@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using QuickPhrase.Core;
@@ -111,6 +112,43 @@ public sealed class SearchHistoryInteractionContractTests
     }
 
     [Fact]
+    public void LauncherHistoryPill_MouseClickSearchesWithSelectedQuery()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var search = new RecordingSearchService();
+            var history = new SearchHistoryCoordinator(new RecordingSearchHistoryRepository());
+            history.InitializeAsync().GetAwaiter().GetResult();
+            var window = new LauncherWindow(search, history, hideOnDeactivate: false);
+
+            try
+            {
+                window.Show();
+                window.QueryBox.Focus();
+                Keyboard.Focus(window.QueryBox);
+                window.UpdateLayout();
+
+                var historyList = Assert.IsType<ListBox>(window.SearchHistoryPanel.FindName("HistoryList"));
+                var pill = Assert.IsType<ListBoxItem>(historyList.ItemContainerGenerator.ContainerFromIndex(0));
+                var mouseDown = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                {
+                    RoutedEvent = ListBoxItem.MouseLeftButtonDownEvent,
+                };
+
+                pill.RaiseEvent(mouseDown);
+
+                Assert.Equal("回访", window.QueryBox.Text);
+                Assert.Contains(search.Requests, request => request.Query == "回访");
+                Assert.Equal(Visibility.Collapsed, window.SearchHistoryHost.Visibility);
+            }
+            finally
+            {
+                window.DisposeLauncher();
+            }
+        });
+    }
+
+    [Fact]
     public void LauncherHistory_PersistsOnlySuccessfulInsertedDeliveryQueries()
     {
         var controller = File.ReadAllText(Path.Combine(
@@ -145,6 +183,18 @@ public sealed class SearchHistoryInteractionContractTests
 
         public SearchResponse Search(SearchRequest request) =>
             new(ImmutableArray<SearchResult>.Empty, Status);
+    }
+
+    private sealed class RecordingSearchService : ISearchService
+    {
+        public List<SearchRequest> Requests { get; } = [];
+        public SearchIndexStatus Status { get; } = new(SearchIndexState.Ready, 1);
+
+        public SearchResponse Search(SearchRequest request)
+        {
+            Requests.Add(request);
+            return new SearchResponse(ImmutableArray<SearchResult>.Empty, Status);
+        }
     }
 
     private sealed class RecordingSearchHistoryRepository : ISearchHistoryRepository

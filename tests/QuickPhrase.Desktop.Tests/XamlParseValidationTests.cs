@@ -99,6 +99,10 @@ public class XamlParseValidationTests
         Assert.DoesNotContain("<ScrollViewer", xaml, StringComparison.Ordinal);
         Assert.Contains("VerticalScrollBarVisibility=\"Auto\" Height=\"{StaticResource Size.Onboarding.PhraseBody.Height}\"", xaml, StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(xaml, "Content=\"修改快捷键\""));
+        Assert.Contains("xmlns:designSystem=\"clr-namespace:QuickPhrase.Desktop.DesignSystem.Components\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("<designSystem:SettingItem Title=\"开机启动\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Description=\"登录 Windows 后自动启动 QuickPhrase\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsChecked=\"{Binding LaunchOnStartup}\"", xaml, StringComparison.Ordinal);
 
         var completeSectionStart = xaml.IndexOf("x:Name=\"CompleteStepPanel\"", StringComparison.Ordinal);
         var footerStart = xaml.IndexOf("<!-- Footer", completeSectionStart, StringComparison.Ordinal);
