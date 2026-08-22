@@ -59,6 +59,28 @@ public class XamlParseValidationTests
     }
 
     [Fact]
+    public void EditorView_UsesUnifiedPhraseFieldLabels()
+    {
+        var root = FindRepoRoot();
+        var editor = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "EditorView.xaml"));
+
+        Assert.Contains("Text=\"话术标题（可选，最多 80 字）\"", editor, StringComparison.Ordinal);
+        Assert.Contains("Text=\"话术内容（必填，文字最多 4000 字；最多 20 段、10 张图片）\"", editor, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"标题（必填，最多 80 字）\"", editor, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"正文（必填，文字最多 4000 字；最多 20 段、10 张图片）\"", editor, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SettingsView_UsesUnifiedCsvHeaders()
+    {
+        var root = FindRepoRoot();
+        var settings = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "SettingsView.xaml"));
+
+        Assert.Contains("列顺序固定为一级分类、二级分类、话术标题、话术内容；", settings, StringComparison.Ordinal);
+        Assert.DoesNotContain("列顺序固定为一级分类、二级分类、标题、正文；", settings, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void OnboardingWindow_UsesUnifiedWizardContract()
     {
         var root = FindRepoRoot();
@@ -359,6 +381,7 @@ public class XamlParseValidationTests
             TryRender("CategoryDialog", () => new CategoryDialog(fake), errors);
             TryRender("ImportPhrasePackageDialog", () => new ImportPhrasePackageDialog(importVm), errors);
             TryRender("ExportPhrasePackageDialog", () => new ExportPhrasePackageDialog(exportVm), errors);
+            TryRender("QuickSendGuideDialog", () => new QuickSendGuideDialog(), errors);
             TryRender("PhraseMoveDialog", () => new PhraseMoveDialog(fake, pvm), errors);
             TryRender("LibraryView", () => new LibraryView(fake, history), errors);
             TryRender("SettingsView", () => new SettingsView(fake), errors);

@@ -175,8 +175,8 @@ public static class PhrasePackagePlanner
         foreach (var phrase in phrases)
         {
             if (phrase.Id == Guid.Empty) errors.Add("话术标识无效。");
-            if (string.IsNullOrWhiteSpace(phrase.Title) || phrase.Title.Trim().Length > PhrasePackageFormat.MaxTitleLength)
-                errors.Add("话术标题不能为空且不能超过 80 个字。");
+            if (phrase.Title.Trim().Length > PhrasePackageFormat.MaxTitleLength)
+                errors.Add("话术标题不能超过 80 个字。");
             if (phrase.SortOrder < 0)
                 errors.Add("话术排序不能为负数。");
             if (!categoryById.ContainsKey(phrase.CategoryId))

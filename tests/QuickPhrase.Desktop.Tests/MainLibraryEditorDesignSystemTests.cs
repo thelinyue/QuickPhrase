@@ -84,8 +84,10 @@ public sealed class MainLibraryEditorDesignSystemTests
         Assert.Contains("ScrollViewer.CanContentScroll=\"True\"", markup);
         Assert.Contains("ItemsSource=\"{Binding VisibleItems}\"", markup);
         Assert.Contains("MouseDoubleClick=\"PhraseList_MouseDoubleClick\"", markup);
-        Assert.Contains("Command=\"{Binding OpenSettingsCommand}\"", markup);
-        Assert.Contains("Source=\"{StaticResource Image.Brand.AppIcon}\"", markup);
+        Assert.DoesNotContain("Command=\"{Binding OpenSettingsCommand}\"", markup);
+        Assert.DoesNotContain("Source=\"{StaticResource Image.Brand.AppIcon}\"", markup);
+        Assert.DoesNotContain("Style.Library.SettingsButton", markup);
+        Assert.DoesNotContain("Size.Library.Footer.Height", markup);
 
         AssertNoVisualLiterals(markup, "LibraryView.xaml");
         Assert.DoesNotContain("SearchBoxStyle", markup);

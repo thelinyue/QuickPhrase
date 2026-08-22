@@ -10,7 +10,7 @@ namespace QuickPhrase.Desktop.Tests;
 public sealed class LibraryPhraseRowAlignmentMarkupTests
 {
     [Fact]
-    public void PhraseRows_ReserveFourPixelsAndNeverIndentByCategoryDepth()
+    public void PhraseRows_AlignVisibleContentToFirstPrimaryCategory()
     {
         var markup = File.ReadAllText(Path.Combine(
             FindRepoRoot(),
@@ -21,7 +21,7 @@ public sealed class LibraryPhraseRowAlignmentMarkupTests
         var phraseList = Slice(markup, "<ListBox x:Name=\"PhraseList\"", "</ListBox>");
         var itemStyle = Slice(phraseList, "<ListBox.ItemContainerStyle>", "</ListBox.ItemContainerStyle>");
 
-        Assert.Contains("<Thickness x:Key=\"Thickness.Library.PhraseRow.Horizontal\">4,0</Thickness>", markup, StringComparison.Ordinal);
+        Assert.Contains("<Thickness x:Key=\"Thickness.Library.PhraseRow.Horizontal\">16,0</Thickness>", markup, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"Padding\" Value=\"{StaticResource Thickness.Library.PhraseRow.Horizontal}\" />", itemStyle, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"Margin\" Value=\"{StaticResource Thickness.None}\" />", itemStyle, StringComparison.Ordinal);
         Assert.DoesNotContain("IsSubCategory", itemStyle, StringComparison.Ordinal);

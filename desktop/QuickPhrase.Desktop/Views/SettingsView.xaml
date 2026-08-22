@@ -354,7 +354,7 @@
                                         </designSystem:SettingItem.ControlContent>
                                     </designSystem:SettingItem>
                                     <designSystem:SettingItem Title="导入 CSV 话术"
-                                                              Description="列顺序固定为一级分类、二级分类、标题、正文；固定示例行会自动忽略。">
+                                                              Description="列顺序固定为一级分类、二级分类、话术标题、话术内容；固定示例行会自动忽略。">
                                         <designSystem:SettingItem.ControlContent>
                                             <Button Style="{StaticResource Style.Button.Secondary}"
                                                     Content="批量导入"

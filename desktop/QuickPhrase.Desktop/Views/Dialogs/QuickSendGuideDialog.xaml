@@ -4,7 +4,7 @@
         Width="{StaticResource Size.Dialog.Navigation.Width}"
         MinHeight="{StaticResource Size.Dialog.Navigation.Height}"
         SizeToContent="Height"
-        ResizeMode="No"
+        ResizeMode="NoResize"
         Style="{StaticResource Style.Dialog.Window}"
         Title="确认插入并发送"
         WindowStartupLocation="CenterScreen">

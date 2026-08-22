@@ -18,6 +18,9 @@ public partial class SettingsView : System.Windows.Controls.UserControl
 
     public event EventHandler? CloseRequested;
 
+    /// <summary>话术包导入成功后通知设置窗口宿主，让已打开的话术库重新读取数据。</summary>
+    public event EventHandler? ImportCompleted;
+
     /// <summary>
     /// 将设置页模型的重新引导请求转发给宿主窗口，方便应用编排层订阅。
     /// 事件本身不执行导航，也不触碰业务数据。
@@ -35,6 +38,7 @@ public partial class SettingsView : System.Windows.Controls.UserControl
         ViewModel.DataManagement.ExportRequested += DataManagement_ExportRequested;
         ViewModel.DataManagement.BatchImportRequested += DataManagement_BatchImportRequested;
         ViewModel.DataManagement.BatchImportTemplateRequested += DataManagement_BatchImportTemplateRequested;
+        ViewModel.DataManagement.ImportCompleted += DataManagement_ImportCompleted;
 
         Loaded += async (_, _) => await ViewModel.LoadAsync();
         PreviewKeyDown += (_, e) =>
@@ -85,6 +89,9 @@ public partial class SettingsView : System.Windows.Controls.UserControl
 
     private void ViewModel_RestartOnboardingRequested(object? sender, EventArgs e) =>
         RestartOnboardingRequested?.Invoke(this, e);
+
+    private void DataManagement_ImportCompleted(object? sender, EventArgs e) =>
+        ImportCompleted?.Invoke(this, e);
 
     private async void DataManagement_ImportRequested(object? sender, EventArgs e)
     {

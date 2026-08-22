@@ -13,13 +13,17 @@ public sealed class LibrarySendButtonMarkupTests
     public void Library_DoesNotEnableOrBindSharedSendAction()
     {
         var library = ReadDesktopFile("Views", "LibraryView.xaml");
+        var sharedRows = ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml");
         var phraseList = Slice(library, "<ListBox x:Name=\"PhraseList\"", "</ListBox>");
+        var compactRow = Slice(sharedRows, "<DataTemplate x:Key=\"Template.Phrase.CompactRow\"", "</DataTemplate>");
 
         Assert.DoesNotContain("PhraseListActions.SendCommand", phraseList, StringComparison.Ordinal);
         Assert.DoesNotContain("PhraseListActions.ShowSendButton=\"True\"", phraseList, StringComparison.Ordinal);
         Assert.DoesNotContain("插入并发送", library, StringComparison.Ordinal);
         Assert.DoesNotContain("直接发送", library, StringComparison.Ordinal);
         Assert.DoesNotContain("发送到输入区", library, StringComparison.Ordinal);
+        Assert.DoesNotContain("SendBtn", compactRow, StringComparison.Ordinal);
+        Assert.DoesNotContain("PhraseListActions", compactRow, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -70,7 +70,6 @@ public partial class OnboardingViewModel : ObservableObject
     public bool CanCreateCategory => CurrentStep == OnboardingStep.Category && !IsBusy && !string.IsNullOrWhiteSpace(CategoryName);
     public bool CanSavePhrase => CurrentStep == OnboardingStep.Phrase
         && !IsBusy
-        && !string.IsNullOrWhiteSpace(PhraseTitle)
         && !string.IsNullOrWhiteSpace(PhraseContent)
         && SelectedCategory is not null;
     public string PracticeHint => PracticeInserted
@@ -218,7 +217,6 @@ public partial class OnboardingViewModel : ObservableObject
         ErrorMessage = null;
         try
         {
-            if (string.IsNullOrWhiteSpace(PhraseTitle)) { ErrorMessage = "请输入话术标题。"; return; }
             if (string.IsNullOrWhiteSpace(PhraseContent)) { ErrorMessage = "请输入话术正文。"; return; }
             if (SelectedCategory is null || SelectedCategory.Id == Guid.Empty) { ErrorMessage = "请选择一个分类。"; return; }
             var result = await _commands.CreatePhraseAsync(new CreatePhraseCommand(

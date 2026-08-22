@@ -26,7 +26,11 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <local:TitleBar x:Name="TitleBarControl" Grid.Row="0" />
+        <local:TitleBar x:Name="TitleBarControl"
+                        Grid.Row="0"
+                        PageTitle="话术库"
+                        ShowSettingsButton="True"
+                        SettingsRequested="TitleBar_SettingsRequested" />
         <ContentControl x:Name="ContentRegion"
                         Grid.Row="1"
                         Style="{StaticResource Style.Surface.ContentRegion}" />

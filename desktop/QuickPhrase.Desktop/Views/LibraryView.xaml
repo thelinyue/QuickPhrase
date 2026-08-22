@@ -322,16 +322,6 @@
                       ToolTip="在当前一级分类下新建二级分类"
                       Click="BlankAreaNewSubCategory_Click" />
         </ContextMenu>
-
-        <!-- 设置入口仅在话术库底部应用栏使用：基于 Secondary 保留全局焦点、悬停和按下反馈，
-             以 36px 圆角描边提升入口辨识度而不影响其他图标按钮。 -->
-        <Style x:Key="Style.Library.SettingsButton"
-               TargetType="Button"
-               BasedOn="{StaticResource Style.Button.Secondary}">
-            <Setter Property="Width" Value="36" />
-            <Setter Property="Height" Value="36" />
-            <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
-        </Style>
     </UserControl.Resources>
 
     <Grid x:Name="RootLayout"
@@ -344,7 +334,6 @@
             <RowDefinition Height="Auto" />   <!-- Category Chips -->
             <RowDefinition Height="*" />      <!-- Phrase List -->
             <RowDefinition Height="Auto" />   <!-- Search Footer -->
-            <RowDefinition Height="Auto" />   <!-- App Footer -->
         </Grid.RowDefinitions>
 
         <!-- 1. Category Filter Bar（一级 chips 横向，自动换行）。垂直内边距收窄，缩小标题区与列表内容区间距 -->
@@ -586,42 +575,5 @@
             </Grid>
         </Border>
 
-        <!-- 4. App Footer（品牌 + 设置） -->
-        <Border Grid.Row="3" Height="{StaticResource Size.Library.Footer.Height}"
-                Background="{DynamicResource Brush.Surface.Default}"
-                BorderBrush="{DynamicResource Brush.Border.Default}" BorderThickness="{StaticResource Thickness.Border.Top}"
-                Padding="{StaticResource Thickness.Library.Footer}"
-                UseLayoutRounding="True"
-                SnapsToDevicePixels="True">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <!-- 左下角品牌位与窗口、任务栏和托盘统一使用仓库内嵌的用户 ICO 资源。 -->
-                    <Image Source="{StaticResource Image.Brand.AppIcon}"
-                           Width="{StaticResource Size.Library.BrandIcon}" Height="{StaticResource Size.Library.BrandIcon}" Stretch="Uniform"
-                           UseLayoutRounding="True"
-                           SnapsToDevicePixels="True"
-                           VerticalAlignment="Center"
-                           AutomationProperties.Name="闪语应用图标" />
-                    <TextBlock Text="闪语" Style="{StaticResource Style.Text.Label}"
-                               Margin="{StaticResource Thickness.Gap.Inline.SM}" VerticalAlignment="Center" />
-                </StackPanel>
-                <Button Grid.Column="1"
-                        Style="{StaticResource Style.Library.SettingsButton}"
-                        VerticalAlignment="Center"
-                        ToolTip="设置"
-                        AutomationProperties.Name="设置"
-                        Command="{Binding OpenSettingsCommand}">
-                    <!-- 使用矢量齿轮，避免依赖系统字体的 Unicode 字形差异。 -->
-                    <Viewbox Width="{StaticResource Size.Library.SettingsIcon}" Height="{StaticResource Size.Library.SettingsIcon}" IsHitTestVisible="False">
-                        <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              Data="M19.43,12.98C19.47,12.66 19.5,12.34 19.5,12S19.47,11.34 19.43,11.02L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.53,5.05 19.28,4.96 19.05,5.05L16.56,6.05C16.05,5.65 15.48,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.52,5.32 7.95,5.65 7.44,6.05L4.95,5.05C4.72,4.96 4.47,5.05 4.34,5.27L2.34,8.73C2.22,8.95 2.27,9.22 2.46,9.37L4.57,11.02C4.53,11.34 4.5,11.66 4.5,12S4.53,12.66 4.57,12.98L2.46,14.63C2.27,14.78 2.22,15.05 2.34,15.27L4.34,18.73C4.47,18.95 4.72,19.04 4.95,18.95L7.44,17.95C7.95,18.35 8.52,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.48,18.68 16.05,18.35 16.56,17.95L19.05,18.95C19.28,19.04 19.53,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.98ZM12,15.5A3.5,3.5 0 1 1 12,8A3.5,3.5 0 0 1 12,15.5Z" />
-                    </Viewbox>
-                </Button>
-            </Grid>
-        </Border>
     </Grid>
 </UserControl>

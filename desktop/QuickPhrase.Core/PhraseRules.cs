@@ -2,6 +2,7 @@ namespace QuickPhrase.Core;
 
 /// <summary>
 /// 话术命令的纯领域校验。它不访问数据库，也不依赖 Windows；媒体文件是否真实存在由持久化层在事务内继续确认。
+/// 标题允许为空字符串，但仍受最大长度约束；CSV 和话术包导入复用相同的空标题规则。
 /// </summary>
 public static class PhraseRules
 {
@@ -19,9 +20,6 @@ public static class PhraseRules
 
     private static bool Validate(string title, PhraseBody? body, Guid categoryId, out DataError? error)
     {
-        if (string.IsNullOrWhiteSpace(title))
-            return Fail("话术标题不能为空。", out error);
-
         if (title.Trim().Length > MaxTitleLength)
             return Fail($"话术标题不能超过 {MaxTitleLength} 个字符。", out error);
 

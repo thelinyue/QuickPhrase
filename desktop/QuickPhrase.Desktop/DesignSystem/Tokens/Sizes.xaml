@@ -17,6 +17,9 @@
     <sys:Double x:Key="Size.TitleBar.Height">32</sys:Double>
     <GridLength x:Key="Size.TitleBar.GridLength">32</GridLength>
     <sys:Double x:Key="Size.TitleBar.CaptionButton.Width">48</sys:Double>
+    <!-- 标题栏内的品牌与操作图标统一为 16px，在 32px 高度内保留足够的上下留白。 -->
+    <sys:Double x:Key="Size.TitleBar.BrandIcon">16</sys:Double>
+    <sys:Double x:Key="Size.TitleBar.ActionIcon">16</sys:Double>
     <sys:Double x:Key="Size.Navigation.Item">40</sys:Double>
     <sys:Double x:Key="Size.Phrase.Row.Minimum">32</sys:Double>
     <!-- 话术库紧凑话术行：固定高度，避免正文显式换行撑开列表。 -->
@@ -95,10 +98,6 @@
     <sys:Double x:Key="Size.Onboarding.FooterStatus.Height">28</sys:Double>
     <GridLength x:Key="Size.Onboarding.FooterStatus.GridLength">28</GridLength>
 
-    <!-- 话术库底部应用栏固定为 48px，保证品牌图标与设置入口在常见 DPI 下完整可见。 -->
-    <sys:Double x:Key="Size.Library.Footer.Height">48</sys:Double>
-    <sys:Double x:Key="Size.Library.BrandIcon">24</sys:Double>
-    <sys:Double x:Key="Size.Library.SettingsIcon">18</sys:Double>
     <sys:Double x:Key="Size.Library.SearchResults.MaximumHeight">320</sys:Double>
     <sys:Double x:Key="Size.Library.SearchResult.MinimumHeight">28</sys:Double>
     <sys:Double x:Key="Size.List.SelectionIndicator.Width">3</sys:Double>

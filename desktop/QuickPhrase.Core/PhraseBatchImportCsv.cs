@@ -11,8 +11,8 @@ public static class PhraseBatchImportCsv
 {
     public const string PrimaryCategoryHeader = "一级分类";
     public const string SecondaryCategoryHeader = "二级分类";
-    public const string TitleHeader = "标题";
-    public const string ContentHeader = "正文";
+    public const string TitleHeader = "话术标题";
+    public const string ContentHeader = "话术内容";
 
     public const string SamplePrimaryCategory = "示例分类";
     public const string SampleSecondaryCategory = "示例子分类";
@@ -62,7 +62,7 @@ public static class PhraseBatchImportCsv
             !header.Values.Select((value, index) => index == 0 ? value.TrimStart('\uFEFF') : value)
                 .SequenceEqual(RequiredHeaders, StringComparer.Ordinal))
         {
-            throw Error("CSV_HEADER_INVALID", header.Line, "第 1 行表头必须依次为：一级分类、二级分类、标题、正文。");
+            throw Error("CSV_HEADER_INVALID", header.Line, "第 1 行表头必须依次为：一级分类、二级分类、话术标题、话术内容。");
         }
 
         var categories = new List<PhrasePackageCategory>();
@@ -91,8 +91,6 @@ public static class PhraseBatchImportCsv
                 throw Error("CSV_PRIMARY_CATEGORY_TOO_LONG", record.Line, $"第 {record.Line} 行的一级分类不能超过 {PhrasePackageFormat.MaxNameLength} 个字。");
             if (secondary.Length > PhrasePackageFormat.MaxNameLength)
                 throw Error("CSV_SECONDARY_CATEGORY_TOO_LONG", record.Line, $"第 {record.Line} 行的二级分类不能超过 {PhrasePackageFormat.MaxNameLength} 个字。");
-            if (title.Length == 0)
-                throw Error("CSV_TITLE_REQUIRED", record.Line, $"第 {record.Line} 行的标题不能为空。");
             if (title.Length > PhrasePackageFormat.MaxTitleLength)
                 throw Error("CSV_TITLE_TOO_LONG", record.Line, $"第 {record.Line} 行的标题不能超过 {PhrasePackageFormat.MaxTitleLength} 个字。");
             if (string.IsNullOrWhiteSpace(content))

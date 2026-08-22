@@ -69,7 +69,6 @@
     <Thickness x:Key="Thickness.Onboarding.CopyBlock">0,12,0,16</Thickness>
     <Thickness x:Key="Thickness.Library.Header">16,8,20,8</Thickness>
     <Thickness x:Key="Thickness.Library.Toolbar">16,8,16,8</Thickness>
-    <Thickness x:Key="Thickness.Library.Footer">20,0,20,0</Thickness>
 
     <!-- 对话框保持统一的 16px 分区节奏，列表选项按 4px 网格收敛。 -->
     <Thickness x:Key="Thickness.Dialog.Footer">0,16,0,0</Thickness>

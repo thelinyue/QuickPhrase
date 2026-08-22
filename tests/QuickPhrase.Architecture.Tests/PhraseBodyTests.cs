@@ -63,6 +63,22 @@ public sealed class PhraseBodyTests
     }
 
     [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PhraseRules_AllowsEmptyTitleButKeepsMaximumLength(string title)
+    {
+        var command = new CreatePhraseCommand(
+            Guid.NewGuid(), title, PhraseBody.FromText("正文"), Guid.NewGuid(), ShortcutMode.None, null);
+
+        Assert.True(PhraseRules.Validate(command, out var error));
+        Assert.Null(error);
+
+        var tooLong = command with { Title = new string('标', PhraseRules.MaxTitleLength + 1) };
+        Assert.False(PhraseRules.Validate(tooLong, out var tooLongError));
+        Assert.Contains("80", tooLongError!.Message);
+    }
+
+    [Theory]
     [InlineData("---\n正文")]
     [InlineData("正文\n---")]
     [InlineData("正文\n---\n---\n下一段")]

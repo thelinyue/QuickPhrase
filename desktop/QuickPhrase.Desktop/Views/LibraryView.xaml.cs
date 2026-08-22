@@ -50,7 +50,6 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         _viewModel.NewPhraseInCategoryRequested += (_, c) => RequestNewPhraseInCategory?.Invoke(this, c);
         _viewModel.RenameCategoryRequested += (_, c) => RequestRenameCategory?.Invoke(this, c);
         _viewModel.DeleteCategoryRequested += (_, c) => RequestDeleteCategory?.Invoke(this, c);
-        _viewModel.OpenSettingsRequested += (_, _) => RequestOpenSettings?.Invoke(this, EventArgs.Empty);
 
         PhraseList.PreviewKeyDown += OnListKeyDown;
         Loaded += OnLoaded;
@@ -343,7 +342,6 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     public event EventHandler<CategoryItem>? RequestNewPhraseInCategory;
     public event EventHandler<CategoryItem>? RequestRenameCategory;
     public event EventHandler<CategoryItem>? RequestDeleteCategory;
-    public event EventHandler? RequestOpenSettings;
 
     /// <summary>编辑器保存或移动分类后，就地刷新对应话术行（保持列表滚动/选中状态）�?/summary>
     public void RefreshPhrase(Phrase phrase) => _viewModel.RefreshFromPhrase(phrase);

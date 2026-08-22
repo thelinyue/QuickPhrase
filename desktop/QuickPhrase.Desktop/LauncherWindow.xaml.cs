@@ -2,7 +2,11 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Media3D;
 using System.Windows.Interop;
+using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
+using WpfPoint = System.Windows.Point;
 using CommunityToolkit.Mvvm.Input;
 using QuickPhrase.Core;
 using QuickPhrase.Desktop.Views.Shared;
@@ -30,6 +34,8 @@ public partial class LauncherWindow : Window
     private bool _canExplicitSend;
     private AdapterCapabilities _targetCapabilities = UnsupportedCapabilities;
     private readonly LauncherSubmissionGuard _submissionGuard = new();
+    private WpfPoint _launcherDragOrigin;
+    private bool _launcherDragCandidate;
     private const int PageSize = 5;
     private const double CompactLauncherHeight = 58;
     private const double HistoryLauncherHeight = 142;
@@ -59,6 +65,81 @@ public partial class LauncherWindow : Window
     public event Action<string>? CreatePhraseRequested;
     public event Action? Hidden;
     public string SearchErrorText { get; private set; } = "搜索索引初始化失败，请重试。";
+
+    /// <summary>
+    /// 记录空白区域的鼠标按下位置，只有移动超过系统拖动阈值后才移动无边框窗口，
+    /// 避免普通点击搜索框时误触发窗口拖动。
+    /// </summary>
+    private void LauncherSurface_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject source || IsInteractiveDragSource(source))
+        {
+            _launcherDragCandidate = false;
+            return;
+        }
+
+        SetLauncherDragCandidate(e.GetPosition(this));
+    }
+
+    private void QueryBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // 已有文字区域继续交给 TextBox 处理原生选区；只有没有命中文字的位置才进入窗口拖动候选。
+        var point = e.GetPosition(QueryBox);
+        _launcherDragCandidate = QueryBox.GetCharacterIndexFromPoint(point, snapToText: false) < 0;
+        if (_launcherDragCandidate)
+            _launcherDragOrigin = e.GetPosition(this);
+    }
+
+    private void LauncherSurface_PreviewMouseMove(object sender, WpfMouseEventArgs e)
+    {
+        if (!_launcherDragCandidate || e.LeftButton != MouseButtonState.Pressed)
+            return;
+
+        var current = e.GetPosition(this);
+        if (!PassedLauncherDragThreshold(_launcherDragOrigin, current))
+            return;
+
+        _launcherDragCandidate = false;
+        e.Handled = true;
+        Mouse.Capture(null);
+        DragMove();
+    }
+
+    private void LauncherSurface_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) =>
+        _launcherDragCandidate = false;
+
+    private void SetLauncherDragCandidate(WpfPoint origin)
+    {
+        _launcherDragOrigin = origin;
+        _launcherDragCandidate = true;
+    }
+
+    private static bool PassedLauncherDragThreshold(WpfPoint origin, WpfPoint current) =>
+        Math.Abs(current.X - origin.X) >= SystemParameters.MinimumHorizontalDragDistance ||
+        Math.Abs(current.Y - origin.Y) >= SystemParameters.MinimumVerticalDragDistance;
+
+    private bool IsInteractiveDragSource(DependencyObject source)
+    {
+        for (var current = source; current is not null; current = GetLauncherParent(current))
+        {
+            if (ReferenceEquals(current, LauncherSurface))
+                return false;
+
+            if (current is System.Windows.Controls.Control)
+                return true;
+        }
+
+        return false;
+    }
+
+    private static DependencyObject? GetLauncherParent(DependencyObject source) =>
+        source switch
+        {
+            Visual or Visual3D => VisualTreeHelper.GetParent(source),
+            FrameworkContentElement content => content.Parent,
+            ContentElement content => ContentOperations.GetParent(content),
+            _ => null,
+        };
 
     public bool IsLauncherVisible => IsVisible;
     internal LauncherLifecycleState LifecycleState { get; private set; } = LauncherLifecycleState.Created;

@@ -44,6 +44,22 @@ public sealed class PhrasePackagePlannerTests
         Assert.Contains(errors, error => error.Contains("话术数据"));
         Assert.Contains(errors, error => error.Contains("媒体数据"));
     }
+
+    [Fact]
+    public void Validate_AllowsEmptyPackageTitles()
+    {
+        var categoryId = Guid.NewGuid();
+        var document = new PhrasePackageDocument(
+            new PhrasePackageManifest(PhrasePackageFormat.Format, 1, Guid.NewGuid(), "包", DateTimeOffset.UtcNow, 2, 1, 0),
+            [new PhrasePackageCategory(categoryId, "分类", null, 0)],
+            [
+                new PhrasePackagePhrase(Guid.NewGuid(), "", PhraseBody.FromText("正文一"), categoryId, 0),
+                new PhrasePackagePhrase(Guid.NewGuid(), "  ", PhraseBody.FromText("正文二"), categoryId, 1),
+            ], []);
+
+        Assert.Empty(PhrasePackagePlanner.Validate(document));
+    }
+
     [Fact]
     public void ExportByPhraseAddsCategoryAncestorsButOnlySelectedPhrases()
     {

@@ -75,7 +75,7 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock Text="标题（必填，最多 80 字）" Style="{StaticResource Style.Text.Label}" Margin="{StaticResource Thickness.Gap.Stack.XS}" />
+                        <TextBlock Text="话术标题（可选，最多 80 字）" Style="{StaticResource Style.Text.Label}" Margin="{StaticResource Thickness.Gap.Stack.XS}" />
                         <TextBox x:Name="TitleBox"
                                  Style="{StaticResource Style.Input.Default}"
                                  Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
@@ -185,7 +185,7 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
-                    <TextBlock Text="正文（必填，文字最多 4000 字；最多 20 段、10 张图片）"
+                    <TextBlock Text="话术内容（必填，文字最多 4000 字；最多 20 段、10 张图片）"
                                Style="{StaticResource Style.Text.Label}"
                                Margin="{StaticResource Thickness.Gap.Stack.XS}" />
                     <components:PhraseRichTextEditor x:Name="RichEditor"

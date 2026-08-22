@@ -27,6 +27,12 @@ public sealed partial class DataManagementViewModel : ObservableObject
     public event EventHandler? BatchImportRequested;
     public event EventHandler? BatchImportTemplateRequested;
 
+    /// <summary>
+    /// 成功提交话术包后通知宿主刷新已经打开的话术库。
+    /// 数据管理位于独立设置窗口，不能依赖重新打开主窗口来获得最新列表。
+    /// </summary>
+    public event EventHandler? ImportCompleted;
+
     public DataManagementViewModel(ICommandService commands) => _commands = commands;
 
     [RelayCommand]
@@ -190,7 +196,11 @@ public sealed partial class DataManagementViewModel : ObservableObject
             await import.RebuildPlanAsync(cancellationToken);
             var result = await _commands.ImportPhrasePackageAsync(import.Plan, cancellationToken);
             if (!result.Succeeded) ErrorMessage = result.Message;
-            else StatusMessage = result.Message;
+            else
+            {
+                StatusMessage = result.Message;
+                ImportCompleted?.Invoke(this, EventArgs.Empty);
+            }
             return result;
         }
         catch (OperationCanceledException)

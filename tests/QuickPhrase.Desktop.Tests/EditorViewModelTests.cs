@@ -229,6 +229,38 @@ public class EditorViewModelTests
     }
 
     [Fact]
+    public async Task Save_New_AllowsEmptyTitleAndPersistsItAsEmpty()
+    {
+        var fake = new FakeCommandService();
+        var vm = new EditorViewModel(fake, null)
+        {
+            Title = "   ",
+            SelectedCategoryId = Guid.NewGuid(),
+        };
+        ApplySegments(vm, PhraseSegment.CreateText("内容"));
+
+        await vm.SaveAsync();
+
+        Assert.Equal(string.Empty, fake.LastCreatedPhraseCommand!.Title);
+    }
+
+    [Fact]
+    public async Task Save_Existing_AllowsEmptyTitleAndPersistsItAsEmpty()
+    {
+        var categoryId = Guid.NewGuid();
+        var existing = MakePhrase(Guid.NewGuid(), "原标题", "内容", categoryId);
+        var fake = new FakeCommandService();
+        var vm = new EditorViewModel(fake, new PhraseItemViewModel(existing, "分类"))
+        {
+            Title = "  ",
+        };
+
+        await vm.SaveAsync();
+
+        Assert.Equal(string.Empty, fake.LastUpdatedPhraseCommand!.Title);
+    }
+
+    [Fact]
     public async Task Save_Existing_AlwaysClearsPhraseShortcut()
     {
         var cat = Guid.NewGuid();

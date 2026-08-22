@@ -89,6 +89,23 @@ public sealed class OnboardingViewModelTests
     }
 
     [Fact]
+    public async Task PhraseForm_AllowsEmptyTitleWhenContentIsProvided()
+    {
+        var category = RootCategory("客户沟通");
+        var fake = new FakeCommandService();
+        fake.Seed(new[] { category });
+        var vm = CreateViewModel(fake);
+
+        await vm.InitializeAsync();
+        vm.PhraseContent = "您好，问题已经收到。";
+
+        Assert.True(vm.SavePhraseAndContinueCommand.CanExecute(null));
+        await vm.SavePhraseAndContinueCommand.ExecuteAsync(null);
+
+        Assert.Equal(string.Empty, fake.LastCreatedPhraseCommand!.Title);
+    }
+
+    [Fact]
     public async Task PhraseForm_WithMultipleRootCategories_ExposesSelectionMode()
     {
         var first = RootCategory("客户沟通");

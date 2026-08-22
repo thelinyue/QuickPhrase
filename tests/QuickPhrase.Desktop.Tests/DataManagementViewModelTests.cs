@@ -114,6 +114,27 @@ public sealed class DataManagementViewModelTests
         Assert.NotNull(fake.LastImportedPlan);
     }
 
+    [Fact]
+    public async Task ConfirmImport_RaisesCompletedEventAfterSuccessfulImport()
+    {
+        var fake = new FakeCommandService
+        {
+            ImportResult = new PhrasePackageImportResult(true, 0, 1, 0, "PACKAGE_IMPORT_OK", "话术包导入完成。", Guid.NewGuid()),
+        };
+        var category = new PhrasePackageCategory(Guid.NewGuid(), "客户", null, 0);
+        fake.NextPackageDocument = Package(
+            [category],
+            [new PhrasePackagePhrase(Guid.NewGuid(), "欢迎", PhraseBody.FromText("您好"), category.Id, 0)]);
+        var data = new DataManagementViewModel(fake);
+        var completedCount = 0;
+        data.ImportCompleted += (_, _) => completedCount++;
+        var import = await data.LoadImportAsync("sample.qphrase");
+
+        await data.ConfirmImportAsync(import!);
+
+        Assert.Equal(1, completedCount);
+    }
+
     private static PhrasePackageDocument Package(PhrasePackageCategory[] categories, PhrasePackagePhrase[] phrases) =>
         new(new PhrasePackageManifest(PhrasePackageFormat.Format, 1, Guid.NewGuid(), "包", DateTimeOffset.UtcNow, phrases.Length, categories.Length, 0), categories, phrases, []);
 

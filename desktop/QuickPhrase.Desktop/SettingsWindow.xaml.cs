@@ -25,17 +25,24 @@ public partial class SettingsWindow : Window
     /// <summary>设置页请求重新打开使用引导时，由应用编排层决定窗口切换与数据恢复。</summary>
     public event EventHandler? RestartOnboardingRequested;
 
+    /// <summary>设置页导入成功后转发通知，由应用编排层刷新已经打开的话术库。</summary>
+    public event EventHandler? ImportCompleted;
+
     public SettingsWindow(ICommandService commands, QuickPhrase.Core.ISyncAccountService? syncAccounts = null, QuickPhrase.Core.ISyncProvider? syncProvider = null)
     {
         InitializeComponent();
         _settingsView = new SettingsView(commands, syncAccounts, syncProvider);
         _settingsView.CloseRequested += SettingsView_CloseRequested;
         _settingsView.RestartOnboardingRequested += SettingsView_RestartOnboardingRequested;
+        _settingsView.ImportCompleted += SettingsView_ImportCompleted;
         ContentRegion.Content = _settingsView;
     }
 
     private void SettingsView_RestartOnboardingRequested(object? sender, EventArgs e) =>
         RestartOnboardingRequested?.Invoke(this, e);
+
+    private void SettingsView_ImportCompleted(object? sender, EventArgs e) =>
+        ImportCompleted?.Invoke(this, e);
 
     private void SettingsWindow_Loaded(object sender, RoutedEventArgs e)
     {

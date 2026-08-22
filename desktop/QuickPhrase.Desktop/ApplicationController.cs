@@ -1,4 +1,5 @@
 using System.Net.NetworkInformation;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Windows;
@@ -258,10 +259,14 @@ internal sealed class ApplicationController : IAsyncDisposable
         if (_commands is null) return;
         _settingsWindow = new SettingsWindow(_commands, _dataRuntime?.SyncAccounts, _dataRuntime?.SyncProvider);
         _settingsWindow.RestartOnboardingRequested += SettingsWindow_RestartOnboardingRequested;
+        _settingsWindow.ImportCompleted += SettingsWindow_ImportCompleted;
         _settingsWindow.Closed += (_, _) =>
         {
             if (_settingsWindow is not null)
+            {
                 _settingsWindow.RestartOnboardingRequested -= SettingsWindow_RestartOnboardingRequested;
+                _settingsWindow.ImportCompleted -= SettingsWindow_ImportCompleted;
+            }
             _settingsWindow = null;
             RequestShutdownIfNoProductWindows();
         };
@@ -272,6 +277,9 @@ internal sealed class ApplicationController : IAsyncDisposable
     {
         OpenOnboarding(manualOpen: true);
     }
+
+    private void SettingsWindow_ImportCompleted(object? sender, EventArgs e) =>
+        _ = _management?.ReloadLibraryAsync();
 
     /// <summary>
     /// 主窗口关闭后，只要设置或独立新建窗口仍可见，就保留进程。
@@ -475,8 +483,49 @@ internal sealed class ApplicationController : IAsyncDisposable
         await _singleInstance.DisposeAsync();
     }
 
-    private void OnDeliveryRequested(Phrase phrase, SendMode mode, DeliveryTarget? target, string? query, bool batchConfirmed) =>
-        _ = QueueOrDeliverPhraseAsync(phrase, target, mode, query, batchConfirmed);
+    /// <summary>
+    /// 观察由 Launcher 的同步 Action 事件触发的异步投递任务，避免丢弃 Task 后让异常进入
+    /// UnobservedTaskException。失败只记录并提示，不自动重试，也不会继续后续投递。
+    /// </summary>
+    internal static async Task<DeliveryResult?> ObserveDeliveryTaskAsync(
+        Func<Task<DeliveryResult?>> operation,
+        Action<Exception> onFailure)
+    {
+        try
+        {
+            return await operation().ConfigureAwait(true);
+        }
+        catch (Exception exception)
+        {
+            onFailure(exception);
+            return null;
+        }
+    }
+
+    private void OnDeliveryRequested(Phrase phrase, SendMode mode, DeliveryTarget? target, string? query, bool batchConfirmed)
+    {
+        var traceId = Guid.NewGuid();
+        var startedAt = Stopwatch.GetTimestamp();
+        _ = ObserveDeliveryTaskAsync(
+            () => QueueOrDeliverPhraseAsync(phrase, target, mode, query, batchConfirmed),
+            exception =>
+            {
+                var elapsed = Stopwatch.GetElapsedTime(startedAt);
+                Console.Error.WriteLine(
+                    $"话术投递任务失败。阶段：DELIVERY_EVENT；结果码：DELIVERY_EVENT_FAILED；TraceId：{traceId}；耗时：{elapsed.TotalMilliseconds:F0}ms；异常类型：{exception.GetType().Name}");
+                ShowDeliveryNotification(
+                    new DeliveryResult(
+                        DeliveryStatus.Failed,
+                        DeliveryEffect.None,
+                        DeliveryStage.NotStarted,
+                        DeliveryConfidence.Confirmed,
+                        "DELIVERY_EVENT_FAILED",
+                        $"本次话术投递失败，未自动重试。TraceId：{traceId}",
+                        false,
+                        traceId),
+                    Forms.ToolTipIcon.Warning);
+            });
+    }
     private void OnCreatePhraseRequested(string seed)
     {
         OpenNewPhrase();
@@ -641,6 +690,8 @@ internal sealed class ApplicationController : IAsyncDisposable
 
     private async Task<DeliveryResult?> DeliverSingleAsync(DeliveryRequest request, string? query)
     {
+        var traceId = Guid.NewGuid();
+        var startedAt = Stopwatch.GetTimestamp();
         try
         {
             // 单次投递的目标校验、运行时能力探测和剪贴板操作都属于平台工作，
@@ -655,8 +706,20 @@ internal sealed class ApplicationController : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"话术投递失败，未自动重试：{exception.Message}");
-            _tray?.ShowBalloonTip(2200, "闪语", "话术投递失败，未自动重试。", Forms.ToolTipIcon.Warning);
+            var elapsed = Stopwatch.GetElapsedTime(startedAt);
+            Console.Error.WriteLine(
+                $"话术投递失败，未自动重试。阶段：SINGLE_DELIVERY；结果码：DELIVERY_FAILED；TraceId：{traceId}；耗时：{elapsed.TotalMilliseconds:F0}ms；异常类型：{exception.GetType().Name}");
+            ShowDeliveryNotification(
+                new DeliveryResult(
+                    DeliveryStatus.Failed,
+                    DeliveryEffect.None,
+                    DeliveryStage.NotStarted,
+                    DeliveryConfidence.Confirmed,
+                    "DELIVERY_FAILED",
+                    $"话术投递失败，未自动重试。TraceId：{traceId}",
+                    false,
+                    traceId),
+                Forms.ToolTipIcon.Warning);
             return null;
         }
     }

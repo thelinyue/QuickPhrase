@@ -86,7 +86,6 @@ public partial class PhraseLibraryViewModel : ObservableObject
     public event EventHandler<CategoryItem>? DeleteCategoryRequested;
     public event EventHandler<CategoryItem>? NewSubCategoryRequested;
     public event EventHandler<CategoryItem>? NewPhraseInCategoryRequested;
-    public event EventHandler? OpenSettingsRequested;
 
     public async Task LoadAsync()
     {
@@ -274,10 +273,6 @@ public partial class PhraseLibraryViewModel : ObservableObject
         if (!category.CanManage) { StatusMessage = "企业分类由管理员维护。"; return; }
         NewPhraseInCategoryRequested?.Invoke(this, category);
     }
-
-    /// <summary>打开设置（由底部 App Footer 设置按钮触发）。</summary>
-    [RelayCommand]
-    private void OpenSettings() => OpenSettingsRequested?.Invoke(this, EventArgs.Empty);
 
     /// <summary>重命名分类（由右键菜单触发）。</summary>
     [RelayCommand]

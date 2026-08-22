@@ -95,7 +95,10 @@
     </Window.Resources>
 
     <!-- 仅保留一个外层浮层表面；搜索、历史、结果与预览均在其中互斥显示。 -->
-    <Border x:Name="LauncherSurface" Style="{StaticResource Style.Popup.Surface}" Padding="0">
+    <Border x:Name="LauncherSurface" Style="{StaticResource Style.Popup.Surface}" Padding="0"
+            PreviewMouseLeftButtonDown="LauncherSurface_PreviewMouseLeftButtonDown"
+            PreviewMouseMove="LauncherSurface_PreviewMouseMove"
+            PreviewMouseLeftButtonUp="LauncherSurface_PreviewMouseLeftButtonUp">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="{StaticResource Size.Launcher.SearchArea.GridLength}" />
@@ -107,6 +110,7 @@
             <TextBox x:Name="QueryBox" Grid.Row="0" Margin="{StaticResource Thickness.Launcher.Query.Horizontal}"
                      Style="{StaticResource Style.Launcher.Input}" AutomationProperties.Name="Launcher搜索框"
                      VerticalAlignment="Center" Panel.ZIndex="1"
+                     PreviewMouseLeftButtonDown="QueryBox_PreviewMouseLeftButtonDown"
                      GotKeyboardFocus="QueryBox_GotKeyboardFocus" LostKeyboardFocus="QueryBox_LostKeyboardFocus"
                      TextChanged="OnQueryChanged" />
             <TextBlock x:Name="QueryHintText" Grid.Row="0" Margin="{StaticResource Thickness.Launcher.Query.Horizontal}"

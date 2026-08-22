@@ -18,16 +18,17 @@ public sealed class ApplicationIconPresentationTests
     }
 
     [Fact]
-    public void BrandIcon_Uses48PixelSourceForIts24DipLibraryPresentation()
+    public void BrandIcon_Uses48PixelSourceForIts16DipTitleBarPresentation()
     {
         var components = ReadDesktopFile("DesignSystem", "Components", "Components.xaml");
-        var library = ReadDesktopFile("Views", "LibraryView.xaml");
+        var titleBar = ReadDesktopFile("TitleBar.xaml");
         var sizes = ReadDesktopFile("DesignSystem", "Tokens", "Sizes.xaml");
 
         Assert.Contains("DecodePixelWidth=\"48\"", components, StringComparison.Ordinal);
         Assert.Contains("DecodePixelHeight=\"48\"", components, StringComparison.Ordinal);
-        Assert.Contains("Size.Library.BrandIcon\">24<", sizes, StringComparison.Ordinal);
-        Assert.Contains("Width=\"{StaticResource Size.Library.BrandIcon}\" Height=\"{StaticResource Size.Library.BrandIcon}\"", library, StringComparison.Ordinal);
+        Assert.Contains("Size.TitleBar.BrandIcon\">16<", sizes, StringComparison.Ordinal);
+        Assert.Contains("Width=\"{StaticResource Size.TitleBar.BrandIcon}\"", titleBar, StringComparison.Ordinal);
+        Assert.Contains("Height=\"{StaticResource Size.TitleBar.BrandIcon}\"", titleBar, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -36,6 +36,10 @@ public partial class MainWindow : Window
         Closed += OnClosed;
     }
 
+    /// <summary>标题栏只发出设置意图，具体窗口仍由 ApplicationController 统一编排。</summary>
+    private void TitleBar_SettingsRequested(object sender, RoutedEventArgs e) =>
+        SettingsRequested?.Invoke(this, EventArgs.Empty);
+
     /// <summary>鎸夌鐞嗛〉鍦烘櫙璋冩暣瀹夸富灏哄骞堕噸鏂板眳涓紱闈炴硶鍦烘櫙涓嶄細鏀瑰彉褰撳墠绐楀彛锟?/summary>
     public void ApplyScene(string scene)
     {
@@ -98,7 +102,6 @@ public partial class MainWindow : Window
             _libraryView.RequestNewPhraseInCategory += (_, c) => RequestNewPhrase(c.Id);
             _libraryView.RequestRenameCategory += (_, c) => _ = ShowRenameCategoryDialogAsync(c);
             _libraryView.RequestDeleteCategory += (_, c) => _ = ShowDeleteCategoryDialogAsync(c);
-            _libraryView.RequestOpenSettings += (_, _) => SettingsRequested?.Invoke(this, EventArgs.Empty);
         }
         return _libraryView;
     }
@@ -231,6 +234,9 @@ public partial class MainWindow : Window
 
     /// <summary>仅在话术库已创建时刷新保存结果，不会为了刷新而打开话术库。</summary>
     internal void RefreshPhrase(Phrase phrase) => _libraryView?.RefreshPhrase(phrase);
+
+    /// <summary>设置窗口完成导入后重载已创建的话术库；话术库尚未打开时无需提前创建它。</summary>
+    internal Task ReloadLibraryAsync() => _libraryView?.ReloadAsync() ?? Task.CompletedTask;
 
     private void ShowMoveDialog(PhraseItemViewModel item)
     {

@@ -33,7 +33,7 @@ public sealed class PhraseBatchImportCsvPlatformTests
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
         var path = Path.Combine(temp.Path, "gb18030-template.csv");
-        var gb18030Csv = Convert.FromHexString("D2BBBCB6B7D6C0E02CB6FEBCB6B7D6C0E02CB1EACCE22CD5FDCEC40D0ABFCDBBA72C2CB1EACCE22CD5FDCEC40D0A");
+        var gb18030Csv = Convert.FromHexString("D2BBBCB6B7D6C0E02CB6FEBCB6B7D6C0E02CBBB0CAF5B1EACCE22CBBB0CAF5C4DAC8DD0D0ABFCDBBA72C2CB1EACCE22CD5FDCEC4");
 
         await File.WriteAllBytesAsync(path, gb18030Csv);
         var document = await runtime.ReadBatchImportCsvAsync(path);
