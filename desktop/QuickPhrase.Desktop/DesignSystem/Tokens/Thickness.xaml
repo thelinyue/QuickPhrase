@@ -52,10 +52,6 @@
     <Thickness x:Key="Thickness.Launcher.Section">0,12,0,8</Thickness>
     <Thickness x:Key="Thickness.Launcher.Preview">0,4,0,12</Thickness>
     <Thickness x:Key="Thickness.Launcher.FooterHint">0,0,16,0</Thickness>
-    <Thickness x:Key="Thickness.BatchPreview.Capability">0,14,0,10</Thickness>
-    <Thickness x:Key="Thickness.BatchPreview.Thumbnail">0,6,0,0</Thickness>
-    <Thickness x:Key="Thickness.BatchPreview.Footer">0,14,0,0</Thickness>
-    <Thickness x:Key="Thickness.BatchPreview.ConfirmButton">10,0,0,0</Thickness>
     <!-- 搜索框比结果区更靠近浮层边缘；提示文案在空光标后额外留出 4px。 -->
     <Thickness x:Key="Thickness.Launcher.Query.Horizontal">6,0</Thickness>
     <!-- TextBox 的真实输入光标还包含内部 TextBoxView 偏移；18px 可让提示位于光标右缘后 4px。 -->

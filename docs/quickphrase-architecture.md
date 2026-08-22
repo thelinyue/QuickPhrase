@@ -90,7 +90,6 @@ desktop/QuickPhrase.Desktop/MainWindow.xaml
     └── Views/SettingsView.xaml
 
 desktop/QuickPhrase.Desktop/LauncherWindow.xaml
-desktop/QuickPhrase.Desktop/BatchPreviewWindow.xaml
 ```
 
 MainWindow 当前为 `1200×760`，最小 `900×560`。话术库、图文段编辑器、设置、分类/移动/导航确认对话框和 Launcher 的真实布局与行为以现有 XAML、ViewModel 和代码为准。

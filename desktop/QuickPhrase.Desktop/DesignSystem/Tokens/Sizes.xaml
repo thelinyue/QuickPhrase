@@ -69,18 +69,6 @@
     <GridLength x:Key="Size.Launcher.CategoryColumn.GridLength">144</GridLength>
     <sys:Double x:Key="Size.Launcher.MaximumHeight">520</sys:Double>
 
-    <!-- 分批预览保持对话框级信息密度，内容区超高时只滚动段列表。 -->
-    <sys:Double x:Key="Size.BatchPreview.Width">640</sys:Double>
-    <sys:Double x:Key="Size.BatchPreview.Height">560</sys:Double>
-    <sys:Double x:Key="Size.BatchPreview.MinimumWidth">560</sys:Double>
-    <sys:Double x:Key="Size.BatchPreview.MaximumHeight">720</sys:Double>
-    <GridLength x:Key="Size.BatchPreview.IndexColumn">42</GridLength>
-    <sys:Double x:Key="Size.BatchPreview.Text.MaximumHeight">72</sys:Double>
-    <sys:Double x:Key="Size.BatchPreview.Thumbnail.Width">160</sys:Double>
-    <sys:Double x:Key="Size.BatchPreview.Thumbnail.Height">96</sys:Double>
-    <sys:Double x:Key="Size.BatchPreview.CloseButton.MinimumWidth">88</sys:Double>
-    <sys:Double x:Key="Size.BatchPreview.ConfirmButton.MinimumWidth">120</sys:Double>
-
     <!-- 首次引导的行高使用 GridLength，确保 RowDefinition 不接收错误的 Double 类型。 -->
     <sys:Double x:Key="Size.Onboarding.Width">640</sys:Double>
     <sys:Double x:Key="Size.Onboarding.Height">640</sys:Double>
