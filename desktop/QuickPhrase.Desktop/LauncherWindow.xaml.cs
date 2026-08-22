@@ -60,6 +60,7 @@ public partial class LauncherWindow : Window
 
     public event Action<Phrase, SendMode, DeliveryTarget?, string?, bool>? DeliveryRequested;
     public event Action<string>? CreatePhraseRequested;
+    public event Action<Phrase>? EditPhraseRequested;
     public event Action? Hidden;
     public string SearchErrorText { get; private set; } = "搜索索引初始化失败，请重试。";
 
@@ -429,6 +430,21 @@ public partial class LauncherWindow : Window
         items[0].InputGestureText = IsPracticeMode ? "Enter" : "双击";
         items[1].Header = IsPracticeMode ? "练习模式不使用剪贴板" : "复制内容到剪贴板";
         items[1].IsEnabled = !IsPracticeMode;
+        if (items.Length > 2)
+        {
+            var item = (menu.PlacementTarget as FrameworkElement)?.DataContext as LauncherPhraseListItem;
+            items[2].IsEnabled = !IsPracticeMode && item?.Phrase.Scope == PhraseScope.Personal;
+        }
+    }
+
+    private void OnEditContextMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (IsPracticeMode) return;
+        var item = GetContextMenuItem(sender);
+        if (item?.Phrase.Scope != PhraseScope.Personal) return;
+
+        HideLauncher();
+        EditPhraseRequested?.Invoke(item.Phrase);
     }
 
     private async void OnInsertContextMenuClick(object sender, RoutedEventArgs e)

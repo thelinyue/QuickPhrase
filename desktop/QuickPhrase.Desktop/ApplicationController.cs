@@ -323,6 +323,8 @@ internal sealed class ApplicationController : IAsyncDisposable
         _launcher.DeliveryRequested += OnDeliveryRequested;
         _launcher.CreatePhraseRequested -= OnCreatePhraseRequested;
         _launcher.CreatePhraseRequested += OnCreatePhraseRequested;
+        _launcher.EditPhraseRequested -= OnEditPhraseRequested;
+        _launcher.EditPhraseRequested += OnEditPhraseRequested;
         _launcher.Hidden -= OnLauncherHidden;
         _launcher.Hidden += OnLauncherHidden;
         _launcher.Closed -= OnLauncherClosed;
@@ -531,6 +533,13 @@ internal sealed class ApplicationController : IAsyncDisposable
         OpenNewPhrase();
         if (!string.IsNullOrWhiteSpace(seed))
             _tray?.ShowBalloonTip(1600, "闪语", $"已打开新话术编辑器，可继续填写“{seed}”。", Forms.ToolTipIcon.Info);
+    }
+
+    /// <summary>闪念只传递用户选中的原始话术；编辑器仍由主窗口统一创建和托管。</summary>
+    private void OnEditPhraseRequested(Phrase phrase)
+    {
+        OpenManagement();
+        _management?.OpenPhraseEditor(phrase);
     }
 
     private void OnLauncherClosed(object? sender, EventArgs e) => _hotkeys.SetLauncherVisible(false);

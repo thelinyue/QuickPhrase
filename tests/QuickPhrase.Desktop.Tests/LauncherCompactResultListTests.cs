@@ -1,6 +1,9 @@
 using System.Collections.Immutable;
 using System.IO;
+using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using QuickPhrase.Core;
 
 namespace QuickPhrase.Desktop.Tests;
@@ -79,8 +82,143 @@ public sealed class LauncherCompactResultListTests
         });
     }
 
+    [Fact]
+    public void LauncherContextMenu_EnablesEditForPersonalPhraseAndRaisesOriginalPhrase()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var phrase = CreatePhrase(PhraseScope.Personal);
+            var window = new LauncherWindow(
+                new SinglePhraseSearchService(phrase),
+                new SearchHistoryCoordinator(new EmptySearchHistoryRepository()),
+                hideOnDeactivate: false);
+            Phrase? editedPhrase = null;
+            var editEvent = typeof(LauncherWindow).GetEvent("EditPhraseRequested");
+            Assert.NotNull(editEvent);
+            editEvent!.AddEventHandler(window, (Action<Phrase>)(value => editedPhrase = value));
+
+            try
+            {
+                window.Open("报价");
+                var menu = OpenPhraseContextMenu(window);
+                var editItem = FindMenuItem(menu, "编辑话术");
+
+                Assert.True(editItem.IsEnabled);
+                editItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+
+                Assert.Same(phrase, editedPhrase);
+                Assert.False(window.IsLauncherVisible);
+            }
+            finally
+            {
+                window.DisposeLauncher();
+            }
+        });
+    }
+
+    [Fact]
+    public void LauncherContextMenu_DisablesEditForEnterprisePhrase()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var phrase = CreatePhrase(PhraseScope.Enterprise);
+            var window = new LauncherWindow(
+                new SinglePhraseSearchService(phrase),
+                new SearchHistoryCoordinator(new EmptySearchHistoryRepository()),
+                hideOnDeactivate: false);
+
+            try
+            {
+                window.Open("报价");
+                var editItem = FindMenuItem(OpenPhraseContextMenu(window), "编辑话术");
+
+                Assert.False(editItem.IsEnabled);
+            }
+            finally
+            {
+                window.DisposeLauncher();
+            }
+        });
+    }
+
+    [Fact]
+    public void LauncherContextMenu_DisablesEditInPracticeMode()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var phrase = CreatePhrase(PhraseScope.Personal);
+            var window = new LauncherWindow(
+                new SinglePhraseSearchService(phrase),
+                new SearchHistoryCoordinator(new EmptySearchHistoryRepository()),
+                hideOnDeactivate: false);
+
+            try
+            {
+                window.Open(
+                    "报价",
+                    invocationContext: new QuickPhrase.Desktop.Onboarding.LauncherInvocationContext(
+                        QuickPhrase.Desktop.Onboarding.LauncherInvocationMode.Practice,
+                        _ => Task.FromResult(true)));
+                var editItem = FindMenuItem(OpenPhraseContextMenu(window), "编辑话术");
+
+                Assert.False(editItem.IsEnabled);
+            }
+            finally
+            {
+                window.DisposeLauncher();
+            }
+        });
+    }
+
     private static string ReadDesktopFile(string root, params string[] segments) =>
         File.ReadAllText(Path.Combine(new[] { root, "desktop", "QuickPhrase.Desktop" }.Concat(segments).ToArray()));
+
+    private static ContextMenu OpenPhraseContextMenu(LauncherWindow window)
+    {
+        window.ResultsList.UpdateLayout();
+        var row = Assert.IsType<ListBoxItem>(window.ResultsList.ItemContainerGenerator.ContainerFromIndex(0));
+        var content = FindVisualChild<ContentControl>(row);
+        Assert.NotNull(content);
+        Assert.NotNull(content!.ContextMenu);
+        content.ContextMenu!.PlacementTarget = content;
+        content.ContextMenu!.IsOpen = true;
+        return content.ContextMenu;
+    }
+
+    private static MenuItem FindMenuItem(ContextMenu menu, string header) =>
+        Assert.Single(menu.Items.OfType<MenuItem>(), item => Equals(item.Header, header));
+
+    private static T? FindVisualChild<T>(DependencyObject parent)
+        where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T result) return result;
+            var descendant = FindVisualChild<T>(child);
+            if (descendant is not null) return descendant;
+        }
+
+        return null;
+    }
+
+    private static Phrase CreatePhrase(PhraseScope scope)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new Phrase(
+            Guid.NewGuid(),
+            "报价",
+            PhraseBody.FromText("报价正文"),
+            Guid.NewGuid(),
+            ShortcutMode.None,
+            null,
+            0,
+            null,
+            1,
+            now,
+            now,
+            Scope: scope);
+    }
 
     private static string FindRepositoryRoot()
     {
@@ -107,6 +245,19 @@ public sealed class LauncherCompactResultListTests
                 DateTimeOffset.UtcNow,
                 DateTimeOffset.UtcNow),
             SearchMatchKind.TitleContains);
+
+        public SearchIndexStatus Status { get; } = new(SearchIndexState.Ready, 1);
+
+        public SearchResponse Search(SearchRequest request) =>
+            new(ImmutableArray.Create(_result), Status);
+    }
+
+    private sealed class SinglePhraseSearchService : ISearchService
+    {
+        private readonly SearchResult _result;
+
+        public SinglePhraseSearchService(Phrase phrase) =>
+            _result = new(phrase, SearchMatchKind.TitleContains);
 
         public SearchIndexStatus Status { get; } = new(SearchIndexState.Ready, 1);
 

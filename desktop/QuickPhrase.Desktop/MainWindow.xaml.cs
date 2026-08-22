@@ -232,6 +232,15 @@ public partial class MainWindow : Window
         dialog.ShowDialog();
     }
 
+    /// <summary>
+    /// 闪念编辑入口复用话术库的同一编辑器和保存事件；Launcher 不直接依赖编辑器或主窗口实现。
+    /// </summary>
+    internal void OpenPhraseEditor(Phrase phrase)
+    {
+        ArgumentNullException.ThrowIfNull(phrase);
+        ShowEditorModal(new PhraseItemViewModel(phrase, null));
+    }
+
     /// <summary>仅在话术库已创建时刷新保存结果，不会为了刷新而打开话术库。</summary>
     internal void RefreshPhrase(Phrase phrase) => _libraryView?.RefreshPhrase(phrase);
 

@@ -135,15 +135,17 @@ public sealed class LauncherListLayoutTests
     }
 
     [Fact]
-    public void LauncherContextMenuContainsOnlySafeInsertAndCopyActions()
+    public void LauncherContextMenuContainsSafeInsertCopyAndEditActions()
     {
         var root = FindRepositoryRoot();
         var launcher = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
+        var codeBehind = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml.cs"));
 
         Assert.Contains("发送到输入区", launcher);
         Assert.Contains("复制内容到剪贴板", launcher);
+        Assert.Contains("编辑话术", launcher);
+        Assert.Contains("EditPhraseRequested", codeBehind);
         Assert.DoesNotContain("直接发送", launcher);
-        Assert.DoesNotContain("编辑", launcher);
         Assert.DoesNotContain("删除", launcher);
     }
 

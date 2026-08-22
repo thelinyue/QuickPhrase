@@ -88,6 +88,7 @@
                     <ContextMenu Opened="OnContextMenuOpened">
                         <MenuItem Header="发送到输入区" InputGestureText="双击" Click="OnInsertContextMenuClick" />
                         <MenuItem Header="复制内容到剪贴板" Click="OnCopyContextMenuClick" />
+                        <MenuItem Header="编辑话术" IsEnabled="False" Click="OnEditContextMenuClick" />
                     </ContextMenu>
                 </ContentControl.ContextMenu>
             </ContentControl>
