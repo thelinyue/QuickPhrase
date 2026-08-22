@@ -58,6 +58,8 @@ public sealed class LauncherCompactResultListTests
                 var row = Assert.IsType<System.Windows.Controls.ListBoxItem>(
                     window.ResultsList.ItemContainerGenerator.ContainerFromIndex(0));
                 Assert.Equal(28d, row.ActualHeight);
+                Assert.Equal(0d, row.Padding.Top);
+                Assert.Equal(0d, row.Padding.Bottom);
 
                 var command = Assert.IsAssignableFrom<ICommand>(PhraseListActions.GetSendCommand(window.ResultsList));
                 var item = Assert.IsType<LauncherPhraseListItem>(window.ResultsList.SelectedItem);

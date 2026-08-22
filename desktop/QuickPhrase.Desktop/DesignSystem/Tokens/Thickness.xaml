@@ -58,7 +58,10 @@
     <Thickness x:Key="Thickness.BatchPreview.ConfirmButton">10,0,0,0</Thickness>
     <!-- 搜索框比结果区更靠近浮层边缘；提示文案在空光标后额外留出 4px。 -->
     <Thickness x:Key="Thickness.Launcher.Query.Horizontal">6,0</Thickness>
-    <Thickness x:Key="Thickness.Launcher.QueryHint.Content">10,0,6,0</Thickness>
+    <!-- TextBox 的真实输入光标还包含内部 TextBoxView 偏移；18px 可让提示位于光标右缘后 4px。 -->
+    <Thickness x:Key="Thickness.Launcher.QueryHint.Content">18,0,6,0</Thickness>
+    <!-- Launcher 结果行只保留水平留白，避免固定 28px 行高再次被上下内边距压缩。 -->
+    <Thickness x:Key="Thickness.Launcher.ResultRow.Content">4,0</Thickness>
     <Thickness x:Key="Thickness.Launcher.Horizontal">12,0</Thickness>
     <Thickness x:Key="Thickness.Launcher.Hint">12,0,12,8</Thickness>
     <Thickness x:Key="Thickness.Onboarding.Content">0,20,0,16</Thickness>

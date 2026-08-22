@@ -55,6 +55,8 @@ public sealed class LauncherRuntimeStabilityTests
             try
             {
                 window.Open();
+                window.QueryBox.Focus();
+                Keyboard.Focus(window.QueryBox);
                 window.UpdateLayout();
 
                 var queryBoxOrigin = window.QueryBox.TransformToAncestor(window.LauncherSurface).Transform(new Point());
@@ -62,10 +64,13 @@ public sealed class LauncherRuntimeStabilityTests
                 var surfaceCenterY = window.LauncherSurface.ActualHeight / 2;
                 var queryContentStart = queryBoxOrigin.X + window.QueryBox.Padding.Left;
                 var hintContentStart = hintOrigin.X + window.QueryHintText.Padding.Left;
+                var caret = window.QueryBox.GetRectFromCharacterIndex(0, trailingEdge: false);
+                var caretRight = queryBoxOrigin.X + caret.Right;
 
                 Assert.InRange(Math.Abs(queryBoxOrigin.Y + window.QueryBox.ActualHeight / 2 - surfaceCenterY), 0, 1);
                 Assert.InRange(queryContentStart, 11.5, 13.5);
-                Assert.InRange(Math.Abs(hintContentStart - queryContentStart - 4), 0, 0.5);
+                Assert.False(caret.IsEmpty, "空白搜索框获得焦点后必须能测量输入光标位置。");
+                Assert.InRange(hintContentStart - caretRight, 3.5, 4.5);
                 Assert.Equal(HorizontalAlignment.Left, window.QueryHintText.HorizontalAlignment);
                 Assert.True(System.Windows.Controls.Panel.GetZIndex(window.QueryBox) > System.Windows.Controls.Panel.GetZIndex(window.QueryHintText));
             }
