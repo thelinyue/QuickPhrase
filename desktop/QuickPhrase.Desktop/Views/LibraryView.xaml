@@ -7,6 +7,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              xmlns:local="clr-namespace:QuickPhrase.Desktop"
+             xmlns:desktopControls="clr-namespace:QuickPhrase.Desktop.Controls"
              xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
              xmlns:shared="clr-namespace:QuickPhrase.Desktop.Views.Shared"
              Style="{StaticResource Style.View.Root}">
@@ -16,9 +17,9 @@
         <sys:Double x:Key="Size.Library.SubHeader.Height">24</sys:Double>
         <sys:Double x:Key="Size.Library.SubHeader.ArrowWidth">16</sys:Double>
         <GridLength x:Key="Size.Library.SubHeader.ArrowColumn">16</GridLength>
-        <GridLength x:Key="Size.Library.CompactList.GapColumn">4</GridLength>
-        <!-- 话术行（含发送按钮）的整体左侧统一预留 4px；分类标题继续沿用自身的层级布局。 -->
-        <Thickness x:Key="Thickness.Library.PhraseRow.Horizontal">4,0</Thickness>
+        <GridLength x:Key="Size.Library.CompactList.GapColumn">0</GridLength>
+        <!-- 话术行可见内容与第一个一级分类 chip 共用 16px 左侧基准线。 -->
+        <Thickness x:Key="Thickness.Library.PhraseRow.Horizontal">16,0</Thickness>
 
         <!-- 业务专属分类控件只保留 Toggle/展开语义；全部视觉状态消费全局 Token。 -->
         <Style x:Key="Style.Library.CategoryChip" TargetType="ToggleButton">
@@ -41,7 +42,7 @@
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="{StaticResource Radius.Control}">
-                            <Grid>
+                                 <Grid>
                                 <!-- 未选中时完整铺满浅色分类底色；颜色由分类名称稳定派生。 -->
                                 <Border x:Name="DefaultCategoryBackground"
                                         Background="{Binding Name, Converter={StaticResource CategoryBackgroundBrush}}"
@@ -92,7 +93,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderThickness="{StaticResource Thickness.Border.Bottom}"
                                 BorderBrush="{DynamicResource Brush.Border.Default}">
-                            <ContentPresenter Margin="{StaticResource Thickness.Library.PhraseRow.Horizontal}"
+                            <ContentPresenter Margin="{StaticResource Thickness.None}"
                                               VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -131,30 +132,98 @@
         <Style TargetType="Separator" BasedOn="{StaticResource Style.Menu.Separator}" />
 
 
+        <!--
+            话术库主列表与搜索结果共用这一份管理菜单。
+            ContextMenu 脱离宿主视觉树，因此所有命令都从 PlacementTarget 读取实际话术行，
+            保证两种结果入口的启用条件、删除参数和命令来源完全一致。
+        -->
+        <ContextMenu x:Key="PhraseRowContextMenu" x:Shared="False">
+            <MenuItem Header="复制内容到剪贴板"
+                      Command="{Binding PlacementTarget.DataContext.Owner.CopyCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <Separator />
+            <MenuItem Header="新增话术"
+                      Command="{Binding PlacementTarget.DataContext.Owner.NewCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="编辑"
+                      IsEnabled="{Binding PlacementTarget.DataContext.CanManage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      Command="{Binding PlacementTarget.DataContext.Owner.EditCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="排序" IsEnabled="False" />
+            <MenuItem Header="移动到其它分类"
+                      IsEnabled="{Binding PlacementTarget.DataContext.CanManage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      Command="{Binding PlacementTarget.DataContext.Owner.MoveCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="复制到其它分类" IsEnabled="False" />
+            <Separator />
+            <MenuItem Header="删除"
+                      IsEnabled="{Binding PlacementTarget.DataContext.CanManage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      Command="{Binding PlacementTarget.DataContext.Owner.DeleteCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <Separator />
+            <MenuItem Header="如何批量操作？" IsEnabled="False" />
+        </ContextMenu>
+
         <!-- 话术行复用共享显示结构，但不注入任何 Insert/Send 命令。 -->
-        <!-- 宿主只注入话术库完整管理菜单；序号·标题·正文显示结构来自共享资源。 -->
+        <!-- 宿主只注入话术库完整管理菜单；标题·正文显示结构来自共享资源。 -->
         <DataTemplate x:Key="PhraseRowTemplate" DataType="{x:Type vm:PhraseItemViewModel}">
-            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Template.Phrase.CompactRow}">
-                <ContentControl.ContextMenu>
-                    <ContextMenu>
-                        <MenuItem Header="复制内容到剪贴板"
-                                  Command="{Binding Owner.CopyCommand}" CommandParameter="{Binding}" />
-                        <Separator />
-                        <MenuItem Header="新增话术" Command="{Binding Owner.NewCommand}" />
-                        <MenuItem Header="编辑" IsEnabled="{Binding CanManage}" Command="{Binding Owner.EditCommand}" CommandParameter="{Binding}" />
-                        <MenuItem Header="排序" IsEnabled="False" />
-                        <MenuItem Header="移动到其它分类" IsEnabled="{Binding CanManage}" Command="{Binding Owner.MoveCommand}" CommandParameter="{Binding}" />
-                        <MenuItem Header="复制到其它分类" IsEnabled="False" />
-                        <Separator />
-                        <!-- ContextMenu 脱离话术行视觉树，删除命令必须通过 PlacementTarget 取回实际行数据，不能依赖继承 DataContext。 -->
-                        <MenuItem Header="删除"
-                                  IsEnabled="{Binding PlacementTarget.DataContext.CanManage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                  Command="{Binding PlacementTarget.DataContext.Owner.DeleteCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                        <Separator />
-                        <MenuItem Header="如何批量操作？" IsEnabled="False" />
-                    </ContextMenu>
-                </ContentControl.ContextMenu>
+            <ContentControl Content="{Binding}"
+                            ContentTemplate="{StaticResource Template.Phrase.CompactRow}"
+                            ContextMenu="{StaticResource PhraseRowContextMenu}" />
+        </DataTemplate>
+
+        <!-- 搜索结果独立于主列表，保留序号并提供弱化的所属分类信息。 -->
+        <DataTemplate x:Key="SearchResultRowTemplate" DataType="{x:Type vm:PhraseItemViewModel}">
+            <ContentControl ContextMenu="{StaticResource PhraseRowContextMenu}">
+                <Grid Height="{StaticResource Size.Phrase.Row.Compact}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="{StaticResource Size.Launcher.IndexColumn.GridLength}" />
+                        <ColumnDefinition Width="{StaticResource Size.Launcher.TitleColumn.GridLength}" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="{StaticResource Size.Launcher.CategoryColumn.GridLength}" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource Style.Text.Mono}"
+                               VerticalAlignment="Center"
+                               Text="{Binding SearchResultIndex}" />
+                    <Grid Grid.Column="1" Margin="{StaticResource Thickness.XS}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0"
+                                Background="{DynamicResource Brush.Accent.Soft}"
+                                CornerRadius="{StaticResource Radius.XS}"
+                                Padding="{StaticResource Thickness.Gap.Inline.XS}"
+                                Margin="{StaticResource Thickness.Gap.Inline.XS}"
+                                Visibility="{Binding IsEnterprise, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="企业"
+                                       Style="{StaticResource Style.Text.Caption}"
+                                       Foreground="{DynamicResource Brush.Accent.Primary.Pressed}" />
+                        </Border>
+                        <desktopControls:OverflowTextBlock Grid.Column="1"
+                                                           Style="{StaticResource Style.Text.Label}"
+                                                           VerticalAlignment="Center"
+                                                           TextWrapping="NoWrap"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{Binding ColorKey, Converter={StaticResource ColorKeyToBrush}}"
+                                                           Text="{Binding Title}" />
+                    </Grid>
+                    <desktopControls:OverflowTextBlock Grid.Column="2"
+                                                       Margin="{StaticResource Thickness.XS}"
+                                                       Style="{StaticResource Style.Text.Body.Medium}"
+                                                       VerticalAlignment="Center"
+                                                       TextWrapping="NoWrap"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Text="{Binding Content}" />
+                    <desktopControls:OverflowTextBlock Grid.Column="3"
+                                                       Margin="{StaticResource Thickness.XS}"
+                                                       Style="{StaticResource Style.Text.Caption}"
+                                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                       VerticalAlignment="Center"
+                                                       TextWrapping="NoWrap"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Text="{Binding CategoryName}" />
+                </Grid>
             </ContentControl>
         </DataTemplate>
 
@@ -398,6 +467,15 @@
                                    Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}" />
         </Grid>
 
+        <!-- 搜索时只遮住分类栏与主列表；搜索栏和结果 Popup 仍保持可操作。 -->
+        <Border x:Name="SearchBackdrop"
+                Grid.Row="0"
+                Grid.RowSpan="2"
+                Panel.ZIndex="20"
+                Background="{DynamicResource Brush.Overlay}"
+                Opacity="0.45"
+                Visibility="{Binding IsSearchResultVisible, Converter={StaticResource BoolToVisibility}}" />
+
         <!-- 3. Search Footer（左下角不再渲染计数信息；上下间距已压缩为紧凑布局） -->
         <Border Grid.Row="2" Background="{DynamicResource Brush.Surface.Default}"
                 BorderBrush="{DynamicResource Brush.Border.Default}" BorderThickness="{StaticResource Thickness.Border.Top}"
@@ -428,6 +506,81 @@
                          <shared:SearchHistoryView x:Name="SearchHistoryPanel"
                                                    QuerySelected="SearchHistoryPanel_QuerySelected"
                                                    ClearRequested="SearchHistoryPanel_ClearRequested" />
+                     </Popup>
+                     <Popup x:Name="SearchResultsPopup"
+                            PlacementTarget="{Binding ElementName=SearchBox}"
+                            Placement="Top"
+                            VerticalOffset="-4"
+                            StaysOpen="True"
+                            AllowsTransparency="True"
+                            Width="{Binding ActualWidth, ElementName=SearchBox}"
+                            PopupAnimation="Fade">
+                         <Border Style="{StaticResource Style.Popup.Surface}"
+                                 Padding="{StaticResource Thickness.None}"
+                                 MaxHeight="{StaticResource Size.Library.SearchResults.MaximumHeight}">
+                             <Grid>
+                                 <Grid.RowDefinitions>
+                                     <RowDefinition Height="Auto" />
+                                     <RowDefinition Height="*" />
+                                 </Grid.RowDefinitions>
+                                 <Border Grid.Row="0"
+                                         Padding="{StaticResource Thickness.Control.Input}"
+                                         BorderBrush="{DynamicResource Brush.Border.Default}"
+                                         BorderThickness="{StaticResource Thickness.Border.Bottom}">
+                                     <Grid>
+                                         <TextBlock Text="搜索结果"
+                                                    Style="{StaticResource Style.Text.Caption}"
+                                                    VerticalAlignment="Center" />
+                                         <Button HorizontalAlignment="Right"
+                                                 Style="{StaticResource Style.Button.Icon}"
+                                                 Foreground="{DynamicResource Brush.Status.Error}"
+                                                 Click="ClearSearch_Click"
+                                                 ToolTip="清空搜索"
+                                                 AutomationProperties.Name="清空搜索">
+                                             <TextBlock Text="&#xE74D;"
+                                                        FontFamily="Segoe MDL2 Assets"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center" />
+                                         </Button>
+                                     </Grid>
+                                 </Border>
+                                 <Grid Grid.Row="1" MinHeight="{StaticResource Size.Library.SearchResult.MinimumHeight}">
+                                     <ListBox x:Name="SearchResultsList"
+                                              BorderThickness="0"
+                                              Background="Transparent"
+                                              ItemsSource="{Binding SearchResults}"
+                                              ItemTemplate="{StaticResource SearchResultRowTemplate}"
+                                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                              ScrollViewer.CanContentScroll="True"
+                                              VirtualizingStackPanel.IsVirtualizing="True"
+                                              VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                              MouseDoubleClick="SearchResultsList_MouseDoubleClick"
+                                              PreviewKeyDown="SearchResultsList_PreviewKeyDown">
+                                         <ListBox.ItemContainerStyle>
+                                             <Style TargetType="ListBoxItem" BasedOn="{StaticResource Style.ListItem.Phrase.Compact}">
+                                                 <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
+                                                 <Setter Property="Margin" Value="{StaticResource Thickness.None}" />
+                                                 <Setter Property="Height" Value="{StaticResource Size.Phrase.Row.Compact}" />
+                                                 <Setter Property="MinHeight" Value="{StaticResource Size.Library.SearchResult.MinimumHeight}" />
+                                             </Style>
+                                         </ListBox.ItemContainerStyle>
+                                     </ListBox>
+                                     <shared:StatePresenter StateKind="{x:Static shared:StateKind.Loading}"
+                                                            Title="正在搜索"
+                                                            Description="正在查找匹配话术，请稍候。"
+                                                            Visibility="{Binding IsSearchBusy, Converter={StaticResource BoolToVisibility}}" />
+                                     <shared:StatePresenter StateKind="{x:Static shared:StateKind.Error}"
+                                                            Title="搜索失败"
+                                                            Description="{Binding StatusMessage}"
+                                                            Visibility="{Binding HasSearchError, Converter={StaticResource BoolToVisibility}}" />
+                                     <shared:StatePresenter StateKind="{x:Static shared:StateKind.Empty}"
+                                                            Title="没有找到匹配话术"
+                                                            Description="换个关键词试试。"
+                                                            Visibility="{Binding IsSearchResultEmpty, Converter={StaticResource BoolToVisibility}}" />
+                                 </Grid>
+                             </Grid>
+                         </Border>
                      </Popup>
                 </StackPanel>
             </Grid>

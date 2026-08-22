@@ -25,7 +25,7 @@ public sealed class EnterpriseSyncSettingsViewContractTests
     {
         var library = Read("Views", "LibraryView.xaml");
         var lists = Read("DesignSystem", "Styles", "Lists.xaml");
-        Assert.Contains("IsEnabled=\"{Binding CanManage}\"", library, StringComparison.Ordinal);
+        Assert.Contains("PlacementTarget.DataContext.CanManage", library, StringComparison.Ordinal);
         Assert.Contains("Visibility=\"{Binding IsEnterprise, Converter={StaticResource BoolToVisibility}}\"", lists, StringComparison.Ordinal);
         Assert.Contains("Text=\"企业\"", lists, StringComparison.Ordinal);
     }

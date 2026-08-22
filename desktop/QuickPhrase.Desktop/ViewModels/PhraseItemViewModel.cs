@@ -49,8 +49,16 @@ public partial class PhraseItemViewModel : ObservableObject
     public int ImageCount => _model.Body.ImageCount;
     public string CompositionSummary => $"{SegmentCount} 段 · {ImageCount} 图";
 
-    /// <summary>在当前一级分类视图内的序号（从 1 起），用于话术行模板的序号列。</summary>
+    /// <summary>
+    /// 当前分类计算出的兼容序号；正式话术库主列表已不再绑定此属性，闪念窗口继续使用自己的序号模型。
+    /// </summary>
     public int IndexInCategory { get; set; }
+
+    /// <summary>
+    /// 搜索结果浮层中的展示序号（从 1 起）。
+    /// 与主列表分类顺序解耦，避免搜索结果重排时污染话术库本身的显示状态。
+    /// </summary>
+    public int SearchResultIndex { get; set; }
 
     /// <summary>是否归属二级分类（用于触发额外左缩进 28px）。</summary>
     public bool IsSubCategory { get; set; }

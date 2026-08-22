@@ -81,15 +81,21 @@ public class PhraseLibraryViewModelTests
         vm.SearchQuery = "报价";
         await vm.SearchCommand.ExecuteAsync(null);
 
-        Assert.Single(vm.Phrases);
-        Assert.Equal("报价单", vm.Phrases[0].Title);
+        Assert.Equal(2, vm.Phrases.Count);
+        var results = GetSearchResults(vm);
+        Assert.Single(results);
+        Assert.Equal("报价单", results[0].Title);
+        Assert.Equal(1, GetSearchResultIndex(results[0]));
+        Assert.Equal("工作", results[0].CategoryName);
         Assert.Equal("“报价” 匹配 1 条", vm.StatusMessage);
 
         vm.SearchQuery = "您好";
         await vm.SearchCommand.ExecuteAsync(null);
 
-        Assert.Single(vm.Phrases);
-        Assert.Equal("欢迎语", vm.Phrases[0].Title);
+        Assert.Equal(2, vm.Phrases.Count);
+        results = GetSearchResults(vm);
+        Assert.Single(results);
+        Assert.Equal("欢迎语", results[0].Title);
         Assert.Equal("“您好” 匹配 1 条", vm.StatusMessage);
     }
 
@@ -106,6 +112,8 @@ public class PhraseLibraryViewModelTests
         vm.SearchQuery = "报价";
 
         await WaitForAsync(() => vm.StatusMessage == "“报价” 匹配 1 条");
+        Assert.Single(GetSearchResults(vm));
+        Assert.Single(vm.Phrases);
         Assert.Single(vm.VisibleItems.OfType<PhraseItemViewModel>());
         Assert.Equal("报价单", ((PhraseItemViewModel)vm.VisibleItems[0]).Title);
     }
@@ -128,11 +136,12 @@ public class PhraseLibraryViewModelTests
         vm.SearchQuery = "111";
 
         await WaitForAsync(() => vm.StatusMessage == "“111” 匹配 1 条");
-        var visible = vm.VisibleItems.OfType<PhraseItemViewModel>().ToArray();
-        Assert.Single(visible);
-        Assert.Equal("111", visible[0].Title);
-        Assert.Equal(secondId, visible[0].CategoryId);
-        Assert.DoesNotContain(vm.VisibleItems, item => item is SubHeaderItem);
+        var results = GetSearchResults(vm);
+        Assert.Single(results);
+        Assert.Equal("111", results[0].Title);
+        Assert.Equal(secondId, results[0].CategoryId);
+        Assert.Equal("PRO系统", results[0].CategoryName);
+        Assert.DoesNotContain(vm.VisibleItems.OfType<PhraseItemViewModel>(), item => item.Id == results[0].Id);
     }
 
     [Fact]
@@ -168,7 +177,8 @@ public class PhraseLibraryViewModelTests
         await firstCompleted.Task;
         await Task.Delay(50);
 
-        Assert.Equal("新结果", Assert.Single(vm.Phrases).Title);
+        Assert.Equal(2, vm.Phrases.Count);
+        Assert.Equal("新结果", Assert.Single(GetSearchResults(vm)).Title);
         Assert.Equal("“新” 匹配 1 条", vm.StatusMessage);
     }
 
@@ -188,9 +198,13 @@ public class PhraseLibraryViewModelTests
         vm.SearchQuery = "111";
         await WaitForAsync(() => vm.StatusMessage == "“111” 匹配 1 条");
 
+        Assert.Equal(2, vm.Phrases.Count);
+        Assert.Single(GetSearchResults(vm));
+
         vm.SearchQuery = string.Empty;
         await WaitForAsync(() => vm.StatusMessage == "共 2 条话术");
 
+        Assert.Empty(GetSearchResults(vm));
         var visible = vm.VisibleItems.OfType<PhraseItemViewModel>().ToArray();
         Assert.Single(visible);
         Assert.Equal(firstPhrase.Id, visible[0].Id);
@@ -248,7 +262,7 @@ public class PhraseLibraryViewModelTests
             UpdatedAtUtc = DateTimeOffset.UtcNow,
         });
 
-        var visible = Assert.Single(vm.VisibleItems.OfType<PhraseItemViewModel>());
+        var visible = Assert.Single(GetSearchResults(vm));
         Assert.Equal(targetCategoryId, visible.CategoryId);
         Assert.Equal("售后", visible.CategoryName);
         Assert.Equal("已移动到“售后”", vm.StatusMessage);
@@ -270,5 +284,19 @@ public class PhraseLibraryViewModelTests
         Assert.Empty(vm.Phrases);
         Assert.Equal("已删除", vm.StatusMessage);
         Assert.Null(await fake.GetPhraseAsync(p.Id));
+    }
+
+    private static IReadOnlyList<PhraseItemViewModel> GetSearchResults(PhraseLibraryViewModel vm)
+    {
+        var property = vm.GetType().GetProperty("SearchResults");
+        Assert.NotNull(property);
+        return Assert.IsAssignableFrom<IReadOnlyList<PhraseItemViewModel>>(property!.GetValue(vm));
+    }
+
+    private static int GetSearchResultIndex(PhraseItemViewModel item)
+    {
+        var property = item.GetType().GetProperty("SearchResultIndex");
+        Assert.NotNull(property);
+        return Assert.IsType<int>(property!.GetValue(item));
     }
 }

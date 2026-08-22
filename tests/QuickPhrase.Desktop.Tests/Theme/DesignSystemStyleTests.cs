@@ -422,7 +422,7 @@ public sealed class DesignSystemStyleTests
     }
 
     [Fact]
-    public void Runtime_CompactPhraseRowTemplate_UsesAutoWidthForIndexColumn()
+    public void Runtime_CompactPhraseRowTemplate_AlignsTitleAndContentColumns()
     {
         WpfTestApplicationHost.Invoke(application =>
         {
@@ -434,7 +434,6 @@ public sealed class DesignSystemStyleTests
                 {
                     new
                     {
-                        IndexInCategory = 1,
                         Title = "标题",
                         Content = "正文",
                     },
@@ -447,8 +446,9 @@ public sealed class DesignSystemStyleTests
                 var root = Assert.IsType<Grid>(FindVisualDescendant<Grid>(
                     listBox,
                     grid => grid.Name == "RowRoot"));
-                Assert.Equal(new GridLength(24), root.ColumnDefinitions[0].Width);
-                Assert.Equal(GridLength.Auto, root.ColumnDefinitions[2].Width);
+                Assert.Equal(GridLength.Auto, root.ColumnDefinitions[0].Width);
+                Assert.Equal(new GridLength(4), root.ColumnDefinitions[1].Width);
+                Assert.Equal(new GridLength(1, GridUnitType.Star), root.ColumnDefinitions[2].Width);
             }
             finally
             {

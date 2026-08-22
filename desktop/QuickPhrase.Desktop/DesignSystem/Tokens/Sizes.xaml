@@ -19,11 +19,8 @@
     <sys:Double x:Key="Size.TitleBar.CaptionButton.Width">48</sys:Double>
     <sys:Double x:Key="Size.Navigation.Item">40</sys:Double>
     <sys:Double x:Key="Size.Phrase.Row.Minimum">32</sys:Double>
-    <!-- 话术库与 Launcher 共用的紧凑搜索结果行：固定高度，避免正文显式换行撑开列表。 -->
+    <!-- 话术库紧凑话术行：固定高度，避免正文显式换行撑开列表。 -->
     <sys:Double x:Key="Size.Phrase.Row.Compact">28</sys:Double>
-    <sys:Double x:Key="Size.Phrase.Row.ActionSize">24</sys:Double>
-    <GridLength x:Key="Size.Phrase.Row.SendActionColumn">24</GridLength>
-    <GridLength x:Key="Size.Phrase.Row.IndexColumn">Auto</GridLength>
     <GridLength x:Key="Size.Phrase.Row.GapColumn">4</GridLength>
     <GridLength x:Key="Size.Phrase.IndexColumn.GridLength">32</GridLength>
     <!-- 闪念单行预览与结果列表使用相同的标题列宽，避免正文挤占标题识别空间。 -->
@@ -102,6 +99,8 @@
     <sys:Double x:Key="Size.Library.Footer.Height">48</sys:Double>
     <sys:Double x:Key="Size.Library.BrandIcon">24</sys:Double>
     <sys:Double x:Key="Size.Library.SettingsIcon">18</sys:Double>
+    <sys:Double x:Key="Size.Library.SearchResults.MaximumHeight">320</sys:Double>
+    <sys:Double x:Key="Size.Library.SearchResult.MinimumHeight">28</sys:Double>
     <sys:Double x:Key="Size.List.SelectionIndicator.Width">3</sys:Double>
     <GridLength x:Key="Size.SearchHistory.Gutter.GridLength">8</GridLength>
     <sys:Double x:Key="Size.SearchHistory.Pill.MaximumWidth">104</sys:Double>

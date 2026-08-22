@@ -16,19 +16,19 @@ public sealed class LibraryPhraseContextMenuTests
     public void PhraseDeleteMenuItem_UsesPlacementTargetForCommandAndParameter()
     {
         var markup = ReadDesktopFile("Views", "LibraryView.xaml");
-        var rowTemplate = Slice(markup, "<DataTemplate x:Key=\"PhraseRowTemplate\"", "</DataTemplate>");
+        var contextMenu = Slice(markup, "<ContextMenu x:Key=\"PhraseRowContextMenu\"", "</ContextMenu>");
 
         Assert.Contains(
             "Command=\"{Binding PlacementTarget.DataContext.Owner.DeleteCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}\"",
-            rowTemplate,
+            contextMenu,
             StringComparison.Ordinal);
         Assert.Contains(
             "CommandParameter=\"{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}\"",
-            rowTemplate,
+            contextMenu,
             StringComparison.Ordinal);
         Assert.Contains(
             "IsEnabled=\"{Binding PlacementTarget.DataContext.CanManage, RelativeSource={RelativeSource AncestorType=ContextMenu}}\"",
-            rowTemplate,
+            contextMenu,
             StringComparison.Ordinal);
     }
 
@@ -37,16 +37,16 @@ public sealed class LibraryPhraseContextMenuTests
     public void PhraseContextMenu_ContainsManagementActionsOnly()
     {
         var markup = ReadDesktopFile("Views", "LibraryView.xaml");
-        var rowTemplate = Slice(markup, "<DataTemplate x:Key=\"PhraseRowTemplate\"", "</DataTemplate>");
+        var contextMenu = Slice(markup, "<ContextMenu x:Key=\"PhraseRowContextMenu\"", "</ContextMenu>");
 
-        Assert.DoesNotContain("Owner.InsertCommand", rowTemplate, StringComparison.Ordinal);
-        Assert.DoesNotContain("Owner.InsertSendCommand", rowTemplate, StringComparison.Ordinal);
-        Assert.DoesNotContain("发送到输入区", rowTemplate, StringComparison.Ordinal);
-        Assert.DoesNotContain("直接发送", rowTemplate, StringComparison.Ordinal);
-        Assert.DoesNotContain("插入一条话术", rowTemplate, StringComparison.Ordinal);
-        Assert.Contains("Owner.EditCommand", rowTemplate, StringComparison.Ordinal);
-        Assert.Contains("Owner.MoveCommand", rowTemplate, StringComparison.Ordinal);
-        Assert.Contains("Owner.DeleteCommand", rowTemplate, StringComparison.Ordinal);
+        Assert.DoesNotContain("Owner.InsertCommand", contextMenu, StringComparison.Ordinal);
+        Assert.DoesNotContain("Owner.InsertSendCommand", contextMenu, StringComparison.Ordinal);
+        Assert.DoesNotContain("发送到输入区", contextMenu, StringComparison.Ordinal);
+        Assert.DoesNotContain("直接发送", contextMenu, StringComparison.Ordinal);
+        Assert.DoesNotContain("插入一条话术", contextMenu, StringComparison.Ordinal);
+        Assert.Contains("Owner.EditCommand", contextMenu, StringComparison.Ordinal);
+        Assert.Contains("Owner.MoveCommand", contextMenu, StringComparison.Ordinal);
+        Assert.Contains("Owner.DeleteCommand", contextMenu, StringComparison.Ordinal);
     }
 
     [Fact]

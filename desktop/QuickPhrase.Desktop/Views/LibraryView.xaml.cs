@@ -29,6 +29,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     private LibraryBlankAreaMenuContext? _blankAreaMenuContext;
     private Window? _ownerWindow;
     private bool _libraryEventsAttached;
+    private bool _suppressNextSearchHistoryOpen;
 
     public LibraryView(ICommandService commands, SearchHistoryCoordinator searchHistory)
     {
@@ -38,6 +39,8 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         _viewModel = new PhraseLibraryViewModel(commands);
         DataContext = _viewModel;
         SearchHistoryPanel.DataContext = _searchHistory.ViewModel;
+        // Popup 脱离 UserControl 的可视树，显式绑定到库 ViewModel，避免结果列表在弹出窗口中丢失数据上下文。
+        SearchResultsPopup.DataContext = _viewModel;
 // 把库级事件转发出去，�?MainWindow / ApplicationController 接入编辑器与投递�?
         _viewModel.EditRequested += (_, item) => RequestEdit?.Invoke(this, item);
         _viewModel.NewRequested += (_, _) => RequestNew?.Invoke(this, EventArgs.Empty);
@@ -82,6 +85,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     /// <summary>卸载时解除所有路由/窗口事件，避免视图被导航替换后继续持有窗口引用。</summary>
     private void DetachLibraryEvents()
     {
+        CloseSearchResults();
         if (!_libraryEventsAttached)
         {
             CloseBlankAreaMenu();
@@ -354,6 +358,12 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     {
         AttachLibraryEvents();
         await _viewModel.LoadAsync();
+        if (_viewModel.IsSearchResultVisible)
+        {
+            // 视图重新挂载时恢复仍在输入中的搜索状态，避免遮罩已显示但 Popup 尚未重新打开。
+            OpenSearchResults();
+            await _viewModel.SearchCommand.ExecuteAsync(null);
+        }
     }
 
     private void PhraseList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -400,7 +410,19 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         }
     }
 
-    private void SearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => OpenSearchHistory();
+    private void SearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_viewModel.SearchQuery))
+        {
+            CloseSearchResults();
+            OpenSearchHistory();
+        }
+        else
+        {
+            CloseSearchHistory();
+            OpenSearchResults();
+        }
+    }
 
     /// <summary>
     /// 输入时保持历史记录可见，但不在逐字搜索阶段写库；历史只在用户明确确认搜索时保存，
@@ -408,7 +430,24 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     /// </summary>
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (SearchBox.IsKeyboardFocusWithin) OpenSearchHistory();
+        if (_suppressNextSearchHistoryOpen)
+        {
+            _suppressNextSearchHistoryOpen = false;
+            CloseSearchResults();
+            return;
+        }
+
+        if (SearchBox.IsKeyboardFocusWithin && string.IsNullOrWhiteSpace(_viewModel.SearchQuery))
+        {
+            CloseSearchResults();
+            OpenSearchHistory();
+        }
+        else
+        {
+            CloseSearchHistory();
+            if (string.IsNullOrWhiteSpace(_viewModel.SearchQuery)) CloseSearchResults();
+            else OpenSearchResults();
+        }
     }
 
     private void SearchBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => ScheduleSearchHistoryClose();
@@ -441,7 +480,8 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
     private void OpenSearchHistory()
     {
-        if (!IsLoaded) return;
+        if (!IsLoaded || !string.IsNullOrWhiteSpace(_viewModel.SearchQuery)) return;
+        CloseSearchResults();
         SearchHistoryPopup.IsOpen = true;
     }
 
@@ -450,6 +490,19 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         SearchHistoryPanel.ClearSelection();
         SearchHistoryPopup.IsOpen = false;
     }
+
+    /// <summary>
+    /// 搜索结果 Popup 的 IsOpen 由代码后台显式管理。
+    /// WPF 在未加载的视图中处理 Popup.IsOpen 绑定时可能创建悬空弹出窗口，导致后续窗口测试等待 Dispatcher；
+    /// 显式开关既保留结果浮层行为，也让视图卸载时可以确定性关闭它。
+    /// </summary>
+    private void OpenSearchResults()
+    {
+        if (IsLoaded && !string.IsNullOrWhiteSpace(_viewModel.SearchQuery))
+            SearchResultsPopup.IsOpen = true;
+    }
+
+    private void CloseSearchResults() => SearchResultsPopup.IsOpen = false;
 
     private void ScheduleSearchHistoryClose()
     {
@@ -464,8 +517,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     {
         if (e.Key == Key.Escape)
         {
-            CloseSearchHistory();
-            PhraseList.Focus();
+            ClearSearch();
             e.Handled = true;
             return;
         }
@@ -495,6 +547,44 @@ public partial class LibraryView : System.Windows.Controls.UserControl
             // 先消费按键，再异步写入历史，避免 SQLite 写入等待期间 Enter 继续冒泡。
             e.Handled = true;
             await RecordConfirmedSearchAsync(_viewModel.SearchQuery);
+        }
+    }
+
+    /// <summary>关闭搜索结果浮层并恢复当前分类列表；关闭后焦点仍留在搜索框便于继续输入。</summary>
+    private void ClearSearch_Click(object sender, RoutedEventArgs e) => ClearSearch();
+
+    private void ClearSearch()
+    {
+        _suppressNextSearchHistoryOpen = true;
+        CloseSearchResults();
+        _viewModel.SearchQuery = string.Empty;
+        CloseSearchHistory();
+        SearchBox.Focus();
+        Keyboard.Focus(SearchBox);
+    }
+
+    private void SearchResultsList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject source) return;
+        if (FindAncestor<ListBoxItem>(source)?.DataContext is not PhraseItemViewModel item) return;
+
+        _viewModel.EditCommand.Execute(item);
+        e.Handled = true;
+    }
+
+    private void SearchResultsList_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            ClearSearch();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Enter && SearchResultsList.SelectedItem is PhraseItemViewModel item)
+        {
+            _viewModel.EditCommand.Execute(item);
+            e.Handled = true;
         }
     }
 

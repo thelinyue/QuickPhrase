@@ -77,7 +77,7 @@ public sealed class MainLibraryEditorDesignSystemTests
         Assert.Contains("ConverterParameter=deep", markup);
         Assert.DoesNotContain("<Setter TargetName=\"Root\" Property=\"Background\" Value=\"{DynamicResource Brush.Accent.Primary.Pressed}\" />", markup);
         Assert.Contains("Style=\"{StaticResource Style.Input.Search}\"", markup);
-        Assert.Contains("Style=\"{StaticResource Style.Button.Icon}\"", sharedRows);
+        Assert.DoesNotContain("Style=\"{StaticResource Style.Button.Icon}\"", sharedRows);
         Assert.Contains("Style=\"{StaticResource Style.Menu.Item.Danger}\"", markup);
         Assert.Contains("VirtualizingStackPanel.IsVirtualizing=\"True\"", markup);
         Assert.Contains("VirtualizingStackPanel.VirtualizationMode=\"Recycling\"", markup);
@@ -103,10 +103,9 @@ public sealed class MainLibraryEditorDesignSystemTests
         Assert.Contains("x:Key=\"Style.ListItem.Phrase.Library\"", markup);
         Assert.Contains("BasedOn=\"{StaticResource Style.ListItem.Phrase}\"", markup);
         Assert.Contains("x:Key=\"Template.Phrase.CompactRow\"", markup);
-        Assert.Contains("Style=\"{StaticResource Style.Text.Mono}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Text.Label}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Text.Body.Medium}\"", markup);
-        Assert.Contains("Style=\"{StaticResource Style.Button.Icon}\"", markup);
+        Assert.DoesNotContain("Style=\"{StaticResource Style.Button.Icon}\"", markup);
         Assert.Contains("Height=\"{StaticResource Size.Phrase.Row.Compact}\"", markup);
         Assert.Contains("Value=\"{DynamicResource Brush.Surface.Hover}\"", markup);
         Assert.Contains("Value=\"{DynamicResource Brush.Surface.Selected}\"", markup);

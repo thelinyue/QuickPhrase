@@ -40,6 +40,10 @@ public partial class PhraseLibraryViewModel : ObservableObject
         OnPropertyChanged(nameof(EmptyStateTitle));
         OnPropertyChanged(nameof(EmptyStateDescription));
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(IsSearchResultVisible));
+        OnPropertyChanged(nameof(IsSearchResultEmpty));
+        HasSearchError = false;
+        OnPropertyChanged(nameof(IsSearchResultEmpty));
         _ = SearchCommand.ExecuteAsync(null);
     }
     [ObservableProperty] private ObservableCollection<PhraseItemViewModel> _phrases = new();
@@ -48,10 +52,19 @@ public partial class PhraseLibraryViewModel : ObservableObject
     [ObservableProperty] private string? _statusMessage;
     [ObservableProperty] private bool _hasError;
 
+    /// <summary>
+    /// 搜索结果独立于话术库主列表保存，搜索时不会破坏当前分类浏览状态。
+    /// </summary>
+    [ObservableProperty] private ObservableCollection<PhraseItemViewModel> _searchResults = new();
+    [ObservableProperty] private bool _isSearchBusy;
+    [ObservableProperty] private bool _hasSearchError;
+
     /// <summary>共享状态呈现器使用的派生状态：没有加载中/错误且当前列表为空。</summary>
     public bool IsEmpty => !IsBusy && !HasError && VisibleItems.Count == 0;
     public string EmptyStateTitle => string.IsNullOrWhiteSpace(SearchQuery) ? "暂无话术" : "没有找到对应关键词";
     public string EmptyStateDescription => string.IsNullOrWhiteSpace(SearchQuery) ? "创建第一条话术，之后可在闪念中快速插入。" : "换个关键词试试，或清空搜索条件。";
+    public bool IsSearchResultVisible => !string.IsNullOrWhiteSpace(SearchQuery);
+    public bool IsSearchResultEmpty => IsSearchResultVisible && !IsSearchBusy && !HasSearchError && SearchResults.Count == 0;
 
     // 分类（一级 chips 横向 + 二级内联嵌套）
     [ObservableProperty] private ObservableCollection<CategoryItem> _categories = new();
@@ -116,6 +129,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
             var allPhrases = phrases.Select(p => new PhraseItemViewModel(p, CategoryNameOf(p.CategoryId)) { Owner = this }).ToList();
             AssignIndicesAndSub(allPhrases, topIds);
             Phrases = new ObservableCollection<PhraseItemViewModel>(allPhrases);
+            SetSearchResults([]);
             RebuildVisibleItems();
             StatusMessage = $"共 {Phrases.Count} 条话术";
             HasError = false;
@@ -173,6 +187,9 @@ public partial class PhraseLibraryViewModel : ObservableObject
         var previousCategoryId = existing?.CategoryId;
         if (existing is not null) existing.Apply(phrase, CategoryNameOf(phrase.CategoryId));
         else Phrases.Add(new PhraseItemViewModel(phrase, CategoryNameOf(phrase.CategoryId)) { Owner = this });
+
+        var searchResult = SearchResults.FirstOrDefault(p => p.Id == phrase.Id);
+        searchResult?.Apply(phrase, CategoryNameOf(phrase.CategoryId));
 
         if (previousCategoryId.HasValue && previousCategoryId.Value != phrase.CategoryId)
         {
@@ -289,8 +306,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
     {
         var roots = Categories.Where(c => c.ParentId is null).OrderBy(c => c.Scope).ThenBy(c => c.SortOrder).ToList();
         var items = new List<object>();
-        if (!string.IsNullOrWhiteSpace(SearchQuery)) items.AddRange(Phrases);
-        else if (SelectedCategoryId is null) foreach (var root in roots) AppendCategory(root, items, includeHeader: false);
+        if (SelectedCategoryId is null) foreach (var root in roots) AppendCategory(root, items, includeHeader: false);
         else
         {
             var root = roots.FirstOrDefault(c => c.Id == SelectedCategoryId);
@@ -386,13 +402,13 @@ public partial class PhraseLibraryViewModel : ObservableObject
     {
         // 输入即搜允许新查询覆盖旧查询，不能用 IsBusy 直接丢弃后续输入。
         var requestVersion = Interlocked.Increment(ref _searchRequestVersion);
-        HasError = false;
-        OnPropertyChanged(nameof(IsEmpty));
-        IsBusy = true;
-        OnPropertyChanged(nameof(IsEmpty));
+        HasSearchError = false;
+        var q = (SearchQuery ?? string.Empty).Trim();
+        IsSearchBusy = q.Length > 0;
+        if (q.Length > 0) SetSearchResults([]);
+        OnPropertyChanged(nameof(IsSearchResultEmpty));
         try
         {
-            var q = (SearchQuery ?? string.Empty).Trim();
             IReadOnlyList<Phrase> phrases = q.Length == 0
                 ? await _commands.ListPhrasesAsync()
                 : await _commands.SearchPhrasesAsync(q, 50);
@@ -400,10 +416,26 @@ public partial class PhraseLibraryViewModel : ObservableObject
             // 旧请求即使已经完成，也不得覆盖最后一次输入对应的列表和状态。
             if (requestVersion != Volatile.Read(ref _searchRequestVersion)) return;
 
-            Phrases = new ObservableCollection<PhraseItemViewModel>(
-                phrases.Select(p => new PhraseItemViewModel(p, CategoryNameOf(p.CategoryId)) { Owner = this }));
+            if (q.Length == 0)
+            {
+                Phrases = new ObservableCollection<PhraseItemViewModel>(
+                    phrases.Select(p => new PhraseItemViewModel(p, CategoryNameOf(p.CategoryId)) { Owner = this }));
+                SetSearchResults([]);
+            }
+            else
+            {
+                SetSearchResults(phrases.Select((p, index) =>
+                {
+                    var item = new PhraseItemViewModel(p, CategoryNameOf(p.CategoryId))
+                    {
+                        Owner = this,
+                        SearchResultIndex = index + 1,
+                    };
+                    return item;
+                }));
+            }
             RebuildVisibleItems();
-            StatusMessage = q.Length == 0 ? $"共 {Phrases.Count} 条话术" : $"“{q}” 匹配 {Phrases.Count} 条";
+            StatusMessage = q.Length == 0 ? $"共 {Phrases.Count} 条话术" : $"“{q}” 匹配 {SearchResults.Count} 条";
             HasError = false;
             OnPropertyChanged(nameof(IsEmpty));
         }
@@ -411,7 +443,8 @@ public partial class PhraseLibraryViewModel : ObservableObject
         {
             if (requestVersion == Volatile.Read(ref _searchRequestVersion))
             {
-                HasError = true;
+                HasSearchError = true;
+                SetSearchResults([]);
                 StatusMessage = $"搜索失败：{ex.Message}";
             }
         }
@@ -419,10 +452,21 @@ public partial class PhraseLibraryViewModel : ObservableObject
         {
             if (requestVersion == Volatile.Read(ref _searchRequestVersion))
             {
-                IsBusy = false;
-                OnPropertyChanged(nameof(IsEmpty));
+                IsSearchBusy = false;
+                OnPropertyChanged(nameof(IsSearchResultEmpty));
             }
         }
+    }
+
+    /// <summary>替换搜索结果并通知浮层空状态，主列表数据源不参与此操作。</summary>
+    private void SetSearchResults(IEnumerable<PhraseItemViewModel> items)
+    {
+        var resultItems = items.ToList();
+        for (var index = 0; index < resultItems.Count; index++)
+            resultItems[index].SearchResultIndex = index + 1;
+
+        SearchResults = new ObservableCollection<PhraseItemViewModel>(resultItems);
+        OnPropertyChanged(nameof(IsSearchResultEmpty));
     }
 
     [RelayCommand]
@@ -449,8 +493,11 @@ public partial class PhraseLibraryViewModel : ObservableObject
         var ok = await _commands.DeletePhraseAsync(item.Id, item.Version);
         if (ok)
         {
-            Phrases.Remove(item);
-            if (ReferenceEquals(SelectedPhrase, item)) SelectedPhrase = null;
+            var stored = Phrases.FirstOrDefault(p => p.Id == item.Id);
+            if (stored is not null) Phrases.Remove(stored);
+            SetSearchResults(SearchResults.Where(p => p.Id != item.Id));
+            if (SelectedPhrase?.Id == item.Id) SelectedPhrase = null;
+            RebuildVisibleItems();
             StatusMessage = "已删除";
         }
         else
