@@ -20,9 +20,9 @@ public sealed class LauncherListLayoutTests
         var launcher = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
         var app = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "App.xaml"));
 
-        Assert.Contains("Template.Phrase.Row", library);
+        Assert.Contains("Template.Phrase.CompactRow", library);
         Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", library);
-        Assert.Contains("Template.Phrase.Row", launcher);
+        Assert.Contains("Template.Phrase.CompactRow", launcher);
         Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", launcher);
         Assert.DoesNotContain("Themes/PhraseListResources.xaml", app);
         Assert.Contains("Themes/Controls.xaml", app);
@@ -37,22 +37,26 @@ public sealed class LauncherListLayoutTests
 
         var sharedResources = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "DesignSystem", "Styles", "Lists.xaml"));
 
-        Assert.Contains("Template.Phrase.Row", launcher);
+        Assert.Contains("Template.Phrase.CompactRow", launcher);
         Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", launcher);
         Assert.Contains("IndexInCategory", sharedResources);
         Assert.Contains("Title", sharedResources);
         Assert.Contains("Content", sharedResources);
         Assert.Contains("OverflowTextBlock", sharedResources);
-        Assert.Equal(2, sharedResources.Split("OverflowTextBlock", StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, sharedResources.Split("<desktopControls:OverflowTextBlock", StringSplitOptions.None).Length - 1);
         Assert.DoesNotContain("CategoryId", launcher);
         Assert.DoesNotContain("直接发送", launcher);
         Assert.DoesNotContain("sendRequested", codeBehind);
         Assert.Contains("ModifierKeys.Control", codeBehind);
         Assert.Contains("SendMode.InsertAndSend", codeBehind);
-        Assert.Contains("Ctrl+Enter 显式发送", codeBehind);
+        Assert.Contains("Ctrl+Enter 插入并发送", codeBehind);
+        Assert.Contains("Ctrl+Enter 当前目标不支持插入并发送", codeBehind);
+        Assert.DoesNotContain("Ctrl+Enter 显式发送", launcher);
         Assert.DoesNotContain("自动发送不支持", launcher);
         Assert.DoesNotContain("自动发送不支持", codeBehind);
-        Assert.True(codeBehind.Split("SelectPhraseAsync(item.Phrase, SendMode.InsertOnly)", StringSplitOptions.None).Length - 1 >= 2);
+        Assert.Contains("new AsyncRelayCommand<LauncherPhraseListItem>(SendPhraseAsync)", codeBehind);
+        Assert.Contains("_canExplicitSend = canExplicitSend && !IsPracticeMode && target is not null;", codeBehind);
+        Assert.Contains("await SubmitPhraseAsync(item, SendMode.InsertAndSend);", codeBehind);
     }
 
     [Fact]
@@ -90,14 +94,14 @@ public sealed class LauncherListLayoutTests
     public void LauncherPhraseListItemMapsOnlyTheApprovedDisplayFields()
     {
         var phrase = new Phrase(
-            Guid.NewGuid(), "标题", "正文", Guid.NewGuid(), ShortcutMode.None, null,
+            Guid.NewGuid(), "标题", PhraseBody.FromText("正文"), Guid.NewGuid(), ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default");
 
         var item = LauncherPhraseListItem.FromPhrase(phrase, 3);
 
         Assert.Equal(3, item.IndexInCategory);
         Assert.Equal(phrase.Title, item.Title);
-        Assert.Equal(phrase.Content, item.Content);
+        Assert.Equal("正文", item.Content);
         Assert.Equal(phrase.Id, item.PhraseId);
         Assert.DoesNotContain(phrase.CategoryId.ToString(), item.ToString());
     }
@@ -116,12 +120,35 @@ public sealed class LauncherListLayoutTests
 
     [Theory]
     [InlineData(0, 260)]
-    [InlineData(8, 384)]
+    [InlineData(8, 352)]
     [InlineData(20, 520)]
     public void LauncherHeightTracksActualPhraseRowHeightWithoutLargeUnusedViewport(int itemCount, double expectedHeight)
     {
         Assert.Equal(expectedHeight, LauncherWindow.CalculateListHeight(itemCount));
     }
+
+    [Fact]
+    public void LauncherPhraseListItem_UsesOnlyFirstTextSegmentForSummary()
+    {
+        var phrase = new Phrase(
+            Guid.NewGuid(),
+            "图文话术",
+            new PhraseBody(
+            [
+                PhraseSegment.CreateImage(new PhraseImageReference(Guid.NewGuid(), "image/png", 100, 10, 10)),
+                PhraseSegment.CreateText("第一段文字"),
+                PhraseSegment.CreateText("第二段文字"),
+            ],
+            "---"),
+            Guid.NewGuid(), ShortcutMode.None, null, 0, null, 1,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
+        var item = LauncherPhraseListItem.FromPhrase(phrase, 1);
+
+        Assert.Equal("第一段文字", item.Content);
+        Assert.Equal("3 段 · 1 图", item.CompositionSummary);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

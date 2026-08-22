@@ -45,7 +45,10 @@ public sealed class PhraseBatchImportCsvTests
 
         var phrase = Assert.Single(document.Phrases);
         Assert.Equal("报价,说明", phrase.Title);
-        Assert.Equal("第一行\r\n第二行含 \"引号\"", phrase.Content);
+        Assert.Equal("第一行\r\n第二行含 \"引号\"", phrase.Body.TextProjection);
+        var segment = Assert.Single(phrase.Body.Segments);
+        Assert.Equal(PhraseSegmentKind.Text, segment.Kind);
+        Assert.Null(segment.Image);
     }
 
     [Theory]

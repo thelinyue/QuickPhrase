@@ -22,6 +22,7 @@ internal sealed class ApplicationController : IAsyncDisposable
     private readonly WindowsTargetDetector _targetDetector;
     private readonly WindowsAdapterResolver _adapterResolver;
     private readonly ITextDeliveryStateMachine _delivery;
+    private readonly IBatchDeliveryStateMachine _batchDelivery;
     private readonly DeliveryQueueCoordinator _deliveryQueue;
     private readonly UsageUpdateQueue _usageUpdates;
     private readonly DeliveryTraceWriter _traceWriter;
@@ -62,6 +63,8 @@ internal sealed class ApplicationController : IAsyncDisposable
         _startupRegistration = new WindowsStartupRegistration();
         _usageUpdates = new UsageUpdateQueue(RecordUsageCoreAsync);
         _delivery = TextDeliveryFactory.Create(_targetDetector, _adapterResolver, RecordUsageAsync, _traceWriter.Write);
+        _batchDelivery = new BatchDeliveryStateMachine(
+            _delivery, _targetDetector, _adapterResolver, _adapterResolver, () => _dataRuntime?.MediaAssets, RecordUsageAsync);
         _deliveryQueue = new DeliveryQueueCoordinator(_delivery);
         _deliveryQueue.ItemFailed += result => DispatchToUi(() => ShowDeliveryNotification(result, Forms.ToolTipIcon.Warning));
         _deliveryQueue.ItemCompleted += OnDeliveryCompleted;
@@ -88,7 +91,8 @@ internal sealed class ApplicationController : IAsyncDisposable
             InsertPhraseFromManagementAsync,
             ApplySettingsAsync,
             _dataRuntime,
-            _dataRuntime.EnterpriseCatalog);
+            _dataRuntime.EnterpriseCatalog,
+            _dataRuntime.MediaAssets);
 
         _settings = await _dataRuntime.Settings.LoadAsync(cancellationToken);
         try
@@ -297,13 +301,16 @@ internal sealed class ApplicationController : IAsyncDisposable
         if (_launcher is { IsVisible: true })
         {
             if (invocationContext is not null)
-                _launcher.Open(initialQuery, target, phraseId, _adapterResolver.GetStatus(target).SendText == CapabilityStatus.Verified, invocationContext);
+                _launcher.Open(
+                    initialQuery, target, phraseId,
+                    _adapterResolver.GetStatus(target).TriggerSend == CapabilityStatus.Verified,
+                    invocationContext, GetTargetCapabilities(target));
             _launcher.Activate();
             return;
         }
 
         if (_searchHistory is null) return;
-        _launcher ??= new LauncherWindow(_dataRuntime.Search, _searchHistory);
+        _launcher ??= new LauncherWindow(_dataRuntime.Search, _searchHistory, mediaAssets: _dataRuntime.MediaAssets);
         _launcher.DeliveryRequested -= OnDeliveryRequested;
         _launcher.DeliveryRequested += OnDeliveryRequested;
         _launcher.CreatePhraseRequested -= OnCreatePhraseRequested;
@@ -315,10 +322,19 @@ internal sealed class ApplicationController : IAsyncDisposable
 
         var resolvedTarget = captureTarget ? target ?? _targetDetector.CaptureForeground() : target;
         if (resolvedTarget is not null) _lastExternalTarget = resolvedTarget;
-        var canExplicitSend = _adapterResolver.GetStatus(resolvedTarget).SendText == CapabilityStatus.Verified;
+        var capabilities = GetTargetCapabilities(resolvedTarget);
+        var canExplicitSend = capabilities.TriggerSend == CapabilityStatus.Verified;
         _hotkeys.SetLauncherVisible(true);
-        _launcher.Open(initialQuery, resolvedTarget, phraseId, canExplicitSend, invocationContext);
+        _launcher.Open(initialQuery, resolvedTarget, phraseId, canExplicitSend, invocationContext, capabilities);
     }
+
+    private AdapterCapabilities GetTargetCapabilities(DeliveryTarget? target) =>
+        target is null
+            ? new AdapterCapabilities(
+                CapabilityStatus.Unverified, CapabilityStatus.Unverified,
+                CapabilityStatus.Unsupported, CapabilityStatus.Unsupported,
+                CapabilityStatus.Unsupported, CapabilityStatus.Unsupported)
+            : _adapterResolver.Resolve(target).DetectCapabilities();
 
     public bool ShouldShowOnboarding => _settings is { HasCompletedOnboarding: false };
     public bool StartMinimized => _settings?.StartMinimized == true;
@@ -364,7 +380,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         var context = new LauncherInvocationContext(LauncherInvocationMode.Practice,
             phrase =>
             {
-                viewModel.MarkPracticeInserted(phrase.Content);
+                viewModel.MarkPracticeInserted(phrase.Body.TextProjection);
                 return Task.FromResult(true);
             },
             (query, status) => viewModel.MarkPracticeSearched(status));
@@ -459,8 +475,8 @@ internal sealed class ApplicationController : IAsyncDisposable
         await _singleInstance.DisposeAsync();
     }
 
-    private void OnDeliveryRequested(Phrase phrase, SendMode mode, DeliveryTarget? target, string? query) =>
-        _ = QueueOrDeliverPhraseAsync(phrase, target, mode, query);
+    private void OnDeliveryRequested(Phrase phrase, SendMode mode, DeliveryTarget? target, string? query, bool batchConfirmed) =>
+        _ = QueueOrDeliverPhraseAsync(phrase, target, mode, query, batchConfirmed);
     private void OnCreatePhraseRequested(string seed)
     {
         OpenNewPhrase();
@@ -510,7 +526,7 @@ internal sealed class ApplicationController : IAsyncDisposable
     private async Task<RepositoryResult<AppSettings>> EnableQuickSendWithoutConfirmationAsync(CancellationToken cancellationToken)
     {
         if (_commands is null || _settings is null)
-            return RepositoryResult<AppSettings>.Failure(new DataError("DATA_UNAVAILABLE", "本地设置尚未就绪，无法开启快捷发送模式。"));
+            return RepositoryResult<AppSettings>.Failure(new DataError("DATA_UNAVAILABLE", "本地设置尚未就绪，无法开启插入并发送免确认模式。"));
 
         try
         {
@@ -544,25 +560,25 @@ internal sealed class ApplicationController : IAsyncDisposable
                 $"开启快捷发送模式失败。阶段：ENABLE_QUICK_SEND；结果码：QUICK_SEND_ENABLE_FAILED；TraceId：{traceId}；异常类型：{exception.GetType().Name}");
             return RepositoryResult<AppSettings>.Failure(new DataError(
                 "QUICK_SEND_ENABLE_FAILED",
-                $"开启快捷发送模式失败，请重试。TraceId：{traceId}"));
+                $"开启插入并发送免确认模式失败，请重试。TraceId：{traceId}"));
         }
 
-        return RepositoryResult<AppSettings>.Failure(new DataError("QUICK_SEND_ENABLE_FAILED", "开启快捷发送模式失败，请重试。"));
+        return RepositoryResult<AppSettings>.Failure(new DataError("QUICK_SEND_ENABLE_FAILED", "开启插入并发送免确认模式失败，请重试。"));
     }
 
     private static void ShowQuickSendEnableFailure(DataError? error)
     {
         var details = error?.Message ?? "设置保存失败，请重试。";
         System.Windows.MessageBox.Show(
-            $"快捷发送模式未能开启，本次不会发送。\n\n{details}",
-            "开启快捷发送失败",
+            $"插入并发送免确认模式未能开启，本次不会发送。\n\n{details}",
+            "开启免确认失败",
             MessageBoxButton.OK,
             MessageBoxImage.Warning);
     }
-    private async Task<DeliveryResult?> QueueOrDeliverPhraseAsync(Phrase phrase, DeliveryTarget? target, SendMode mode, string? query)
+    private async Task<DeliveryResult?> QueueOrDeliverPhraseAsync(Phrase phrase, DeliveryTarget? target, SendMode mode, string? query, bool batchConfirmed = false)
     {
         var settings = _settings ?? new AppSettings(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true);
-        if (RequiresSendConfirmation(mode, settings))
+        if (!phrase.Body.RequiresBatchDelivery && RequiresSendConfirmation(mode, settings))
         {
             var decision = ShowQuickSendGuideDialog();
             var quickSendEnabledSuccessfully = false;
@@ -583,6 +599,25 @@ internal sealed class ApplicationController : IAsyncDisposable
             if (!CanProceedWithQuickSendGuide(decision, quickSendEnabledSuccessfully)) return null;
         }
 
+        if (phrase.Body.RequiresBatchDelivery)
+        {
+            if (!batchConfirmed || mode != SendMode.InsertAndSend)
+            {
+                return new DeliveryResult(DeliveryStatus.Cancelled, DeliveryEffect.None, DeliveryStage.NotStarted,
+                    DeliveryConfidence.Confirmed, "BATCH_CONFIRMATION_REQUIRED", "整批发送未获得本次明确确认。", false, Guid.NewGuid());
+            }
+            var batchRequest = new DeliveryRequest(phrase, target, mode, settings.ClipboardCompatibilityMode,
+                TargetChangeBehavior.Cancel, RecordUsageOnSuccess: false);
+            var batch = await Task.Run(() => _batchDelivery.DeliverAsync(batchRequest, CancellationToken.None)).ConfigureAwait(true);
+            var message = batch.IsSuccess
+                ? $"整批已触发发送：已完成 {batch.CompletedSegments}/{batch.TotalSegments} 段。"
+                : $"整批已停止：已完成 {batch.CompletedSegments}/{batch.TotalSegments} 段，第 {batch.FailedSegmentIndex ?? batch.CompletedSegments + 1} 段停止。";
+            _tray?.ShowBalloonTip(2600, "闪语", message, batch.IsSuccess ? Forms.ToolTipIcon.Info : Forms.ToolTipIcon.Warning);
+            if (batch.IsSuccess && _searchHistory is not null && !string.IsNullOrWhiteSpace(query)) await _searchHistory.RecordAsync(query);
+            return new DeliveryResult(batch.Status, batch.Effect, DeliveryStage.Completed,
+                batch.IsSuccess ? DeliveryConfidence.Probable : DeliveryConfidence.Confirmed,
+                batch.IsSuccess ? "BATCH_SEND_TRIGGERED" : "BATCH_STOPPED", message, false, batch.TraceId);
+        }
         // 适配器解析会读取目标进程元数据，必须离开 WPF UI 线程，避免闪念提交时窗口失去响应。
         var adapter = target is null
             ? null

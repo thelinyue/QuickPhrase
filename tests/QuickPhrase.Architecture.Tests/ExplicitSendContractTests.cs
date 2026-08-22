@@ -68,6 +68,8 @@ public sealed class ExplicitSendContractTests
             Capabilities = new AdapterCapabilities(
                 CapabilityStatus.Unsupported,
                 CapabilityStatus.Unsupported,
+                CapabilityStatus.Unsupported,
+                CapabilityStatus.Unsupported,
                 CapabilityStatus.Verified,
                 CapabilityStatus.Unsupported),
         };
@@ -110,6 +112,8 @@ public sealed class ExplicitSendContractTests
             Capabilities = new AdapterCapabilities(
                 CapabilityStatus.Verified,
                 CapabilityStatus.Verified,
+                CapabilityStatus.Unsupported,
+                CapabilityStatus.Unsupported,
                 CapabilityStatus.Verified,
                 CapabilityStatus.Unsupported),
         };
@@ -257,6 +261,8 @@ public sealed class ExplicitSendContractTests
             Capabilities = new AdapterCapabilities(
                 CapabilityStatus.Verified,
                 CapabilityStatus.Verified,
+                CapabilityStatus.Unsupported,
+                CapabilityStatus.Unsupported,
                 sendStatus,
                 verifySendStatus),
         };
@@ -272,7 +278,7 @@ public sealed class ExplicitSendContractTests
         new(CreatePhrase(), target, mode, ClipboardCompatibilityMode: true);
 
     private static Phrase CreatePhrase() => new(
-        Guid.NewGuid(), "测试话术", "测试正文", Guid.NewGuid(), ShortcutMode.None, null, 0, null, 1,
+        Guid.NewGuid(), "测试话术", PhraseBody.FromText("测试正文"), Guid.NewGuid(), ShortcutMode.None, null, 0, null, 1,
         DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
     private static DeliveryTarget CreateTarget() =>
@@ -313,14 +319,18 @@ public sealed class ExplicitSendContractTests
             "TestApp",
             "explicit-send-tests",
             Capabilities.InsertText,
-            Capabilities.VerifyInsert,
-            Capabilities.SendText,
+            Capabilities.VerifyTextInsert,
+            Capabilities.InsertImage,
+            Capabilities.VerifyImageInsert,
+            Capabilities.TriggerSend,
             Capabilities.VerifySend,
             "CopyOnly",
             null);
         public AdapterCapabilities Capabilities { get; set; } = new(
             CapabilityStatus.Verified,
             CapabilityStatus.Verified,
+            CapabilityStatus.Unsupported,
+            CapabilityStatus.Unsupported,
             CapabilityStatus.Verified,
             CapabilityStatus.Unsupported);
         public VerificationResult VerifyInsertResult { get; set; } = VerificationResult.Verified;

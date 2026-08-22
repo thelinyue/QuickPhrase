@@ -13,7 +13,7 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
     private readonly PhraseSearchRuntime _searchRuntime;
     private readonly SqlitePhrasePackageImporter _packageImporter;
     private readonly QuickPhraseHubSyncProvider _hubSync;
-    private readonly PhrasePackageFileStore _packageFiles = new();
+    private readonly PhrasePackageFileStore _packageFiles;
     private readonly PhraseBatchImportCsvFileStore _batchImportCsvFiles = new();
 
     private QuickPhraseDataRuntime(
@@ -25,7 +25,8 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
         ISettingsRepository settings,
         ISearchHistoryRepository searchHistory,
         SqliteEnterpriseSyncStore enterpriseSyncStore,
-        QuickPhraseHubSyncProvider hubSync)
+        QuickPhraseHubSyncProvider hubSync,
+        WindowsMediaAssetStore mediaAssets)
     {
         Options = options;
         _writeQueue = writeQueue;
@@ -41,6 +42,8 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
         _hubSync = hubSync;
         SyncProvider = hubSync;
         SyncAccounts = hubSync;
+        MediaAssets = mediaAssets;
+        _packageFiles = new PhrasePackageFileStore(mediaAssets);
     }
 
     public QuickPhraseDataOptions Options { get; }
@@ -54,6 +57,7 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
     internal SqliteEnterpriseSyncStore EnterpriseSyncStore { get; }
     public ISyncProvider SyncProvider { get; }
     public ISyncAccountService SyncAccounts { get; }
+    public IMediaAssetStore MediaAssets { get; }
 
     internal Task RefreshEnterpriseSearchAsync(CancellationToken cancellationToken = default) => _searchRuntime.RefreshEnterpriseAsync(cancellationToken);
 
@@ -68,22 +72,25 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
         {
             await queue.StartAsync(cancellationToken);
             var clock = options.TimeProvider;
-            var rawPhrases = new SqlitePhraseRepository(connections, queue, clock);
+            var mediaAssets = new WindowsMediaAssetStore(options, connections, queue, clock);
+            await mediaAssets.CleanupOrphansAsync(cancellationToken);
+            var rawPhrases = new SqlitePhraseRepository(connections, queue, clock, mediaAssets);
             var rawCategories = new SqliteCategoryRepository(connections, queue, clock);
             var searchHistory = new SqliteSearchHistoryRepository(connections, queue, clock);
             var enterpriseSyncStore = new SqliteEnterpriseSyncStore(connections, queue, clock);
-            var searchRuntime = await PhraseSearchRuntime.CreateAsync(rawPhrases, new PinyinMProvider(), enterpriseSyncStore, cancellationToken);
+            var searchRuntime = await PhraseSearchRuntime.CreateAsync(rawPhrases, new PinyinMProvider(), enterpriseSyncStore, cancellationToken, rawCategories);
             var hubSync = new QuickPhraseHubSyncProvider(enterpriseSyncStore, new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, new DpapiTokenStore(options.SecretsDirectory), searchRuntime.RefreshEnterpriseAsync, clock);
             return new QuickPhraseDataRuntime(
                 options,
                 queue,
                 searchRuntime,
-                new SqlitePhrasePackageImporter(queue, clock),
+                new SqlitePhrasePackageImporter(queue, clock, mediaAssets),
                 searchRuntime.WrapCategoryRepository(rawCategories),
                 new SqliteSettingsRepository(connections, queue, clock),
                 searchHistory,
                 enterpriseSyncStore,
-                hubSync);
+                hubSync,
+                mediaAssets);
         }
         catch
         {

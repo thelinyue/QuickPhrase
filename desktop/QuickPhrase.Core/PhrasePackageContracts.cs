@@ -12,6 +12,7 @@ public static class PhrasePackageFormat
     public const int MaxNameLength = 80;
     public const int MaxTitleLength = 80;
     public const int MaxContentLength = 4_000;
+    public const int MaxMediaCount = 10_000;
 }
 
 public sealed record PhrasePackageManifest(
@@ -21,16 +22,21 @@ public sealed record PhrasePackageManifest(
     string Name,
     DateTimeOffset CreatedAt,
     int PhraseCount,
-    int CategoryCount);
+    int CategoryCount,
+    int MediaCount);
 
 public sealed record PhrasePackageCategory(Guid Id, string Name, Guid? ParentId, int SortOrder);
 
-public sealed record PhrasePackagePhrase(Guid Id, string Title, string Content, Guid CategoryId, int SortOrder);
+public sealed record PhrasePackagePhrase(Guid Id, string Title, PhraseBody Body, Guid CategoryId, int SortOrder);
+
+/// <summary>包内媒体条目仅使用脱敏资产引用；Content 只在进程内承载经过平台层验证的图片字节，不写入 JSON。</summary>
+public sealed record PhrasePackageMedia(PhraseImageReference Image, byte[] Content);
 
 public sealed record PhrasePackageDocument(
     PhrasePackageManifest Manifest,
     IReadOnlyList<PhrasePackageCategory> Categories,
-    IReadOnlyList<PhrasePackagePhrase> Phrases);
+    IReadOnlyList<PhrasePackagePhrase> Phrases,
+    IReadOnlyList<PhrasePackageMedia> Media);
 
 public enum PhrasePackageExportScope
 {
@@ -98,8 +104,13 @@ public static class PhrasePackagePlanner
         var manifest = document.Manifest;
         if (document.Categories is null) errors.Add("话术包分类数据为空。");
         if (document.Phrases is null) errors.Add("话术包话术数据为空。");
-        var categories = document.Categories ?? Array.Empty<PhrasePackageCategory>();
-        var phrases = document.Phrases ?? Array.Empty<PhrasePackagePhrase>();
+        if (document.Media is null) errors.Add("话术包媒体数据为空。");
+        var categories = (document.Categories ?? Array.Empty<PhrasePackageCategory>()).OfType<PhrasePackageCategory>().ToArray();
+        var phrases = (document.Phrases ?? Array.Empty<PhrasePackagePhrase>()).OfType<PhrasePackagePhrase>().ToArray();
+        var media = (document.Media ?? Array.Empty<PhrasePackageMedia>()).OfType<PhrasePackageMedia>().ToArray();
+        if (document.Categories is not null && categories.Length != document.Categories.Count) errors.Add("话术包分类数据包含空条目。");
+        if (document.Phrases is not null && phrases.Length != document.Phrases.Count) errors.Add("话术包话术数据包含空条目。");
+        if (document.Media is not null && media.Length != document.Media.Count) errors.Add("话术包媒体数据包含空条目。");
 
         if (manifest is null)
         {
@@ -117,19 +128,23 @@ public static class PhrasePackagePlanner
                 errors.Add("话术包名称不能为空且不能超过 80 个字。");
             if (manifest.CreatedAt == default)
                 errors.Add("话术包创建时间无效。");
-            if (manifest.CategoryCount != categories.Count || manifest.PhraseCount != phrases.Count)
+            if (manifest.CategoryCount != categories.Length || manifest.PhraseCount != phrases.Length || manifest.MediaCount != media.Length)
                 errors.Add("话术包清单数量与数据不一致。");
         }
 
-        if (categories.Count > PhrasePackageFormat.MaxCategoryCount)
+        if (categories.Length > PhrasePackageFormat.MaxCategoryCount)
             errors.Add("话术包分类数量超过 1000 个上限。");
-        if (phrases.Count > PhrasePackageFormat.MaxPhraseCount)
+        if (phrases.Length > PhrasePackageFormat.MaxPhraseCount)
             errors.Add("话术包话术数量超过 10000 条上限。");
+        if (media.Length > PhrasePackageFormat.MaxMediaCount)
+            errors.Add("话术包媒体数量超过 10000 个上限。");
 
         var categoryIds = categories.Select(x => x.Id).ToArray();
         var phraseIds = phrases.Select(x => x.Id).ToArray();
+        var mediaIds = media.Select(x => x.Image?.AssetId ?? Guid.Empty).ToArray();
         AddDuplicateErrors(categoryIds, "分类", errors);
         AddDuplicateErrors(phraseIds, "话术", errors);
+        AddDuplicateErrors(mediaIds, "媒体", errors);
         if (categoryIds.Intersect(phraseIds).Any())
             errors.Add("分类和话术不能共用同一个包内标识。");
 
@@ -152,18 +167,43 @@ public static class PhrasePackagePlanner
             .Any(group => group.Count() > 1))
             errors.Add("话术包包含同一父分类下的重名分类。");
 
+        var mediaById = media
+            .Where(item => item.Image is not null && item.Image.AssetId != Guid.Empty)
+            .GroupBy(item => item.Image.AssetId)
+            .ToDictionary(group => group.Key, group => group.First());
+        var referencedMediaIds = new HashSet<Guid>();
         foreach (var phrase in phrases)
         {
             if (phrase.Id == Guid.Empty) errors.Add("话术标识无效。");
             if (string.IsNullOrWhiteSpace(phrase.Title) || phrase.Title.Trim().Length > PhrasePackageFormat.MaxTitleLength)
                 errors.Add("话术标题不能为空且不能超过 80 个字。");
-            if (string.IsNullOrEmpty(phrase.Content) || phrase.Content.Length > PhrasePackageFormat.MaxContentLength)
-                errors.Add("话术正文不能为空且不能超过 4000 个字。");
             if (phrase.SortOrder < 0)
                 errors.Add("话术排序不能为负数。");
             if (!categoryById.ContainsKey(phrase.CategoryId))
                 errors.Add("话术引用了不存在的分类。");
+            if (!PhraseRules.Validate(new CreatePhraseCommand(phrase.Id, phrase.Title, phrase.Body, phrase.CategoryId, ShortcutMode.None, null), out var bodyError))
+            {
+                errors.Add("话术正文无效：" + (bodyError?.Message ?? "内容段无效。"));
+                continue;
+            }
+
+            foreach (var segment in phrase.Body.Segments.Where(segment => segment.Kind == PhraseSegmentKind.Image))
+            {
+                var image = segment.Image!;
+                referencedMediaIds.Add(image.AssetId);
+                if (!mediaById.TryGetValue(image.AssetId, out var packageMedia) || packageMedia.Image != image)
+                    errors.Add("话术图片段引用了不存在或元数据不一致的媒体。");
+            }
         }
+
+        foreach (var item in media)
+        {
+            if (item.Image is null || item.Image.AssetId == Guid.Empty || item.Image.ByteLength <= 0 ||
+                item.Image.PixelWidth <= 0 || item.Image.PixelHeight <= 0 || string.IsNullOrWhiteSpace(item.Image.MimeType))
+                errors.Add("话术包媒体元数据无效。");
+        }
+        if (mediaById.Keys.Any(id => !referencedMediaIds.Contains(id)))
+            errors.Add("话术包包含未被话术引用的媒体。");
 
         foreach (var category in categories)
         {
@@ -192,9 +232,13 @@ public static class PhrasePackagePlanner
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(selection);
 
-        var localCategories = snapshot.Categories ?? Array.Empty<Category>();
-        var localPhrases = snapshot.Phrases ?? Array.Empty<Phrase>();
-        var categories = localCategories.ToDictionary(x => x.Id);
+        var localCategories = (snapshot.Categories ?? Array.Empty<Category>())
+            .Where(category => category.Scope == PhraseScope.Personal)
+            .ToArray();
+        var categories = localCategories.ToDictionary(category => category.Id);
+        var localPhrases = (snapshot.Phrases ?? Array.Empty<Phrase>())
+            .Where(phrase => phrase.Scope == PhraseScope.Personal && categories.ContainsKey(phrase.CategoryId))
+            .ToArray();
         var phrases = localPhrases.ToDictionary(x => x.Id);
         IEnumerable<Guid> requestedCategoryIds = selection.CategoryIds ?? new HashSet<Guid>();
         IEnumerable<Guid> requestedPhraseIds = selection.PhraseIds ?? new HashSet<Guid>();
@@ -244,9 +288,17 @@ public static class PhrasePackagePlanner
             .Select(phrase => new PhrasePackagePhrase(
                 Guid.NewGuid(),
                 phrase.Title.Trim(),
-                phrase.Content,
+                phrase.Body,
                 categoryMap[phrase.CategoryId],
                 phrase.SortOrder))
+            .ToArray();
+
+        var packageMedia = packagePhrases
+            .SelectMany(phrase => phrase.Body.Segments)
+            .Where(segment => segment.Kind == PhraseSegmentKind.Image && segment.Image is not null)
+            .Select(segment => segment.Image!)
+            .DistinctBy(image => image.AssetId)
+            .Select(image => new PhrasePackageMedia(image, []))
             .ToArray();
 
         var manifest = new PhrasePackageManifest(
@@ -256,8 +308,9 @@ public static class PhrasePackagePlanner
             string.IsNullOrWhiteSpace(selection.Name) ? "话术包" : selection.Name.Trim(),
             createdAtUtc,
             packagePhrases.Length,
-            packageCategories.Length);
-        var document = new PhrasePackageDocument(manifest, packageCategories, packagePhrases);
+            packageCategories.Length,
+            packageMedia.Length);
+        var document = new PhrasePackageDocument(manifest, packageCategories, packagePhrases, packageMedia);
         var errors = Validate(document);
         if (errors.Count > 0) throw new ArgumentException(string.Join("；", errors), nameof(selection));
         return document;
@@ -313,13 +366,13 @@ public static class PhrasePackagePlanner
         }
 
         var localDuplicates = local.Phrases
-            .GroupBy(phrase => (Title: phrase.Title.Trim(), phrase.Content), StringTupleComparer.Instance)
-            .ToDictionary(group => group.Key, group => group.First(), StringTupleComparer.Instance);
-        var seenPackagePhrases = new HashSet<(string Title, string Content)>(StringTupleComparer.Instance);
+            .GroupBy(phrase => (Title: phrase.Title.Trim(), phrase.Body), PhraseBodyTupleComparer.Instance)
+            .ToDictionary(group => group.Key, group => group.First(), PhraseBodyTupleComparer.Instance);
+        var seenPackagePhrases = new HashSet<(string Title, PhraseBody Body)>(PhraseBodyTupleComparer.Instance);
         var decisions = new List<PhrasePackagePhraseDecision>();
         foreach (var phrase in package.Phrases.Where(phrase => selected.Contains(phrase.CategoryId)))
         {
-            var key = (phrase.Title.Trim(), phrase.Content);
+            var key = (phrase.Title.Trim(), phrase.Body);
             var duplicate = localDuplicates.TryGetValue(key, out var existing) || !seenPackagePhrases.Add(key);
             decisions.Add(new PhrasePackagePhraseDecision(
                 phrase.Id,
@@ -421,11 +474,39 @@ public static class PhrasePackagePlanner
     private static string NormalizeName(string value) =>
         string.Join(' ', value.Normalize(NormalizationForm.FormKC).Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
 
-    private sealed class StringTupleComparer : IEqualityComparer<(string Title, string Content)>
+    private sealed class PhraseBodyTupleComparer : IEqualityComparer<(string Title, PhraseBody Body)>
     {
-        public static StringTupleComparer Instance { get; } = new();
-        public bool Equals((string Title, string Content) x, (string Title, string Content) y) =>
-            string.Equals(x.Title, y.Title, StringComparison.Ordinal) && string.Equals(x.Content, y.Content, StringComparison.Ordinal);
-        public int GetHashCode((string Title, string Content) value) => HashCode.Combine(value.Title, value.Content);
+        public static PhraseBodyTupleComparer Instance { get; } = new();
+
+        public bool Equals((string Title, PhraseBody Body) x, (string Title, PhraseBody Body) y) =>
+            string.Equals(x.Title, y.Title, StringComparison.Ordinal) && BodiesEqual(x.Body, y.Body);
+
+        public int GetHashCode((string Title, PhraseBody Body) value)
+        {
+            var hash = new HashCode();
+            hash.Add(value.Title, StringComparer.Ordinal);
+            hash.Add(value.Body.BatchSeparator, StringComparer.Ordinal);
+            foreach (var segment in value.Body.Segments)
+            {
+                hash.Add(segment.Kind);
+                hash.Add(segment.Text, StringComparer.Ordinal);
+                hash.Add(segment.Image);
+            }
+            return hash.ToHashCode();
+        }
+
+        private static bool BodiesEqual(PhraseBody left, PhraseBody right)
+        {
+            if (!string.Equals(left.BatchSeparator, right.BatchSeparator, StringComparison.Ordinal) || left.Segments.Length != right.Segments.Length)
+                return false;
+            for (var index = 0; index < left.Segments.Length; index++)
+            {
+                var x = left.Segments[index];
+                var y = right.Segments[index];
+                if (x.Kind != y.Kind || !string.Equals(x.Text, y.Text, StringComparison.Ordinal) || x.Image != y.Image)
+                    return false;
+            }
+            return true;
+        }
     }
 }

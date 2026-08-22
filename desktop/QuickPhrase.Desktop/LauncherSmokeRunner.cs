@@ -521,7 +521,7 @@ internal sealed class LauncherSmokeRunner : IAsyncDisposable
         new(
             id,
             title,
-            content,
+            PhraseBody.FromText(content),
             SmokeCategoryId,
             ShortcutMode.None,
             null,

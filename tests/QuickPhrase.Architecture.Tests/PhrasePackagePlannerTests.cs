@@ -9,13 +9,13 @@ public sealed class PhrasePackagePlannerTests
     {
         var categoryId = Guid.NewGuid();
         var document = new PhrasePackageDocument(
-            new PhrasePackageManifest("other", 2, Guid.NewGuid(), "包", default, 2, 1),
+            new PhrasePackageManifest("other", 2, Guid.NewGuid(), "包", default, 2, 1, 0),
             [
                 new PhrasePackageCategory(categoryId, "根", categoryId, -1),
                 new PhrasePackageCategory(categoryId, "重复", null, 0),
             ],
-            [new PhrasePackagePhrase(Guid.NewGuid(), new string('标', 81), "正文", Guid.NewGuid(), -1),
-             new PhrasePackagePhrase(Guid.NewGuid(), "标题", "", categoryId, 0)]);
+            [new PhrasePackagePhrase(Guid.NewGuid(), new string('标', 81), PhraseBody.FromText("正文"), Guid.NewGuid(), -1),
+             new PhrasePackagePhrase(Guid.NewGuid(), "标题", PhraseBody.FromText(""), categoryId, 0)], []);
 
         var errors = PhrasePackagePlanner.Validate(document);
 
@@ -33,7 +33,8 @@ public sealed class PhrasePackagePlannerTests
     public void ValidateRejectsNullDataCollections()
     {
         var document = new PhrasePackageDocument(
-            new PhrasePackageManifest(PhrasePackageFormat.Format, 1, Guid.NewGuid(), "包", DateTimeOffset.UtcNow, 0, 0),
+            new PhrasePackageManifest(PhrasePackageFormat.Format, 1, Guid.NewGuid(), "包", DateTimeOffset.UtcNow, 0, 0, 0),
+            null!,
             null!,
             null!);
 
@@ -41,6 +42,7 @@ public sealed class PhrasePackagePlannerTests
 
         Assert.Contains(errors, error => error.Contains("分类数据"));
         Assert.Contains(errors, error => error.Contains("话术数据"));
+        Assert.Contains(errors, error => error.Contains("媒体数据"));
     }
     [Fact]
     public void ExportByPhraseAddsCategoryAncestorsButOnlySelectedPhrases()
@@ -81,6 +83,27 @@ public sealed class PhrasePackagePlannerTests
         Assert.Equal(document.Categories.Single(x => x.Name == "设备").Id, document.Phrases[0].CategoryId);
     }
 
+
+    [Fact]
+    public void ExportAllExcludesEnterprisePhrasesAndEnterpriseCategoriesIncludingEmptyOnes()
+    {
+        var personalCategory = Category("personal", "个人分类", null, 0);
+        var enterpriseCategory = Category("enterprise", "敏感企业分类", null, 1) with { Scope = PhraseScope.Enterprise };
+        var personalPhrase = Phrase("personal-phrase", "个人话术", "正文", personalCategory.Id, 0);
+        var enterprisePhrase = Phrase("enterprise-phrase", "企业话术", "企业正文", enterpriseCategory.Id, 0) with { Scope = PhraseScope.Enterprise };
+
+        var document = PhrasePackagePlanner.BuildExportDocument(
+            new PhrasePackageLocalSnapshot([personalCategory, enterpriseCategory], [personalPhrase, enterprisePhrase]),
+            new PhrasePackageExportSelection(PhrasePackageExportScope.All, "个人导出", [], []),
+            DateTimeOffset.UtcNow);
+
+        Assert.Single(document.Categories);
+        Assert.Equal("个人分类", document.Categories[0].Name);
+        Assert.DoesNotContain(document.Categories, category => category.Name == "敏感企业分类");
+        Assert.Single(document.Phrases);
+        Assert.Equal("个人话术", document.Phrases[0].Title);
+    }
+
     [Fact]
     public void ImportPlanReusesNormalizedCategoriesSeparatesAncestorsAndDeduplicatesPackagePhrases()
     {
@@ -91,9 +114,9 @@ public sealed class PhrasePackagePlannerTests
         var firstId = Guid.NewGuid();
         var secondId = Guid.NewGuid();
         var package = new PhrasePackageDocument(
-            new PhrasePackageManifest(PhrasePackageFormat.Format, 1, Guid.NewGuid(), "包", DateTimeOffset.UtcNow, 2, 2),
+            new PhrasePackageManifest(PhrasePackageFormat.Format, 1, Guid.NewGuid(), "包", DateTimeOffset.UtcNow, 2, 2, 0),
             [new PhrasePackageCategory(packageRootId, " 客户 ", null, 1), new PhrasePackageCategory(packageChildId, "设备", packageRootId, 2)],
-            [new PhrasePackagePhrase(firstId, "新话术", "正文", packageChildId, 0), new PhrasePackagePhrase(secondId, "新话术", "正文", packageChildId, 1)]);
+            [new PhrasePackagePhrase(firstId, "新话术", PhraseBody.FromText("正文"), packageChildId, 0), new PhrasePackagePhrase(secondId, "新话术", PhraseBody.FromText("正文"), packageChildId, 1)], []);
 
         var plan = PhrasePackagePlanner.BuildImportPlan(package, local, new HashSet<Guid> { packageChildId });
 
@@ -114,9 +137,9 @@ public sealed class PhrasePackagePlannerTests
         var category = Category("local", "客户", null, 0);
         var packageCategory = new PhrasePackageCategory(Guid.NewGuid(), "客户", null, 0);
         var package = new PhrasePackageDocument(
-            new PhrasePackageManifest(PhrasePackageFormat.Format, 1, Guid.NewGuid(), "包", DateTimeOffset.UtcNow, 2, 1),
+            new PhrasePackageManifest(PhrasePackageFormat.Format, 1, Guid.NewGuid(), "包", DateTimeOffset.UtcNow, 2, 1, 0),
             [packageCategory],
-            [new PhrasePackagePhrase(Guid.NewGuid(), "同标题", "正文一", packageCategory.Id, 0), new PhrasePackagePhrase(Guid.NewGuid(), "同标题", "正文二", packageCategory.Id, 1)]);
+            [new PhrasePackagePhrase(Guid.NewGuid(), "同标题", PhraseBody.FromText("正文一"), packageCategory.Id, 0), new PhrasePackagePhrase(Guid.NewGuid(), "同标题", PhraseBody.FromText("正文二"), packageCategory.Id, 1)], []);
 
         var plan = PhrasePackagePlanner.BuildImportPlan(package, new PhrasePackageLocalSnapshot([category], []));
 
@@ -128,7 +151,7 @@ public sealed class PhrasePackagePlannerTests
         new(StableId(key), parentId, name, sortOrder, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
     private static Phrase Phrase(string key, string title, string content, Guid categoryId, int sortOrder) =>
-        new(StableId(key), title, content, categoryId, ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default", sortOrder);
+        new(StableId(key), title, PhraseBody.FromText(content), categoryId, ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default", sortOrder);
 
     private static Guid StableId(string key) => GuidUtility.Create(Guid.Empty, key);
 

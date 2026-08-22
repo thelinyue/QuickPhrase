@@ -67,7 +67,6 @@ public partial class PhraseLibraryViewModel : ObservableObject
 
     public event EventHandler<PhraseItemViewModel>? EditRequested;
     public event EventHandler? NewRequested;
-    public event EventHandler<PhraseItemViewModel>? InsertSendRequested;
     public event EventHandler<PhraseItemViewModel>? MoveRequested;
     public event EventHandler? NewCategoryRequested;
     public event EventHandler<CategoryItem>? RenameCategoryRequested;
@@ -165,12 +164,41 @@ public partial class PhraseLibraryViewModel : ObservableObject
     /// <summary>供 LibraryView 在编辑器保存/移动后就地刷新对应话术行，保持列表状态。</summary>
     public string ResolveCategoryName(Guid id) => CategoryNameOf(id) ?? "未分类";
 
+    /// <summary>
+    /// 将持久化层返回的最新话术合并到内存列表；跨分类移动时同步维护源分类和目标分类计数。
+    /// </summary>
     public void RefreshFromPhrase(Phrase phrase)
     {
         var existing = Phrases.FirstOrDefault(p => p.Id == phrase.Id);
+        var previousCategoryId = existing?.CategoryId;
         if (existing is not null) existing.Apply(phrase, CategoryNameOf(phrase.CategoryId));
         else Phrases.Add(new PhraseItemViewModel(phrase, CategoryNameOf(phrase.CategoryId)) { Owner = this });
+
+        if (previousCategoryId.HasValue && previousCategoryId.Value != phrase.CategoryId)
+        {
+            UpdateCategoryCount(previousCategoryId.Value, -1);
+            UpdateCategoryCount(phrase.CategoryId, 1);
+            RefreshTopCategories();
+        }
         RebuildVisibleItems();
+    }
+
+    /// <summary>移动成功后刷新列表并向用户明确反馈目标分类。</summary>
+    public void RefreshMovedPhrase(Phrase phrase)
+    {
+        var targetCategoryName = ResolveCategoryName(phrase.CategoryId);
+        RefreshFromPhrase(phrase);
+        StatusMessage = $"已移动到“{targetCategoryName}”";
+    }
+
+    /// <summary>安全调整单个分类的计数，防止失败或并发状态导致负数显示。</summary>
+    private void UpdateCategoryCount(Guid categoryId, int delta)
+    {
+        var category = Categories.FirstOrDefault(item => item.Id == categoryId);
+        if (category is null) return;
+        var index = Categories.IndexOf(category);
+        Categories[index] = category with { Count = Math.Max(0, category.Count + delta) };
+        OnPropertyChanged(nameof(IsEmpty));
     }
 
     /// <summary>顶部一级 chips 点击：选中一级分类并重建列表。</summary>
@@ -302,7 +330,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
             item.SortOrder = newSort;
             var model = item.ToPhrase();
             var result = await _commands.UpdatePhraseAsync(new UpdatePhraseCommand(
-                item.Id, item.Version, model.Title, model.Content, model.CategoryId,
+                item.Id, item.Version, model.Title, model.Body, model.CategoryId,
                 model.ShortcutMode, model.Shortcut?.Display, model.ColorKey, newSort));
             if (!result.IsSuccess)
             {
@@ -398,33 +426,11 @@ public partial class PhraseLibraryViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task Insert(PhraseItemViewModel? item)
-    {
-        if (item is null) return;
-        var ok = await _commands.InsertPhraseAsync(item.ToPhrase());
-        if (!ok)
-        {
-            StatusMessage = "插入未执行（当前目标窗口不可用）";
-            return;
-        }
-
-        StatusMessage = "已请求插入到当前窗口";
-    }
-
-    [RelayCommand]
     private void Copy(PhraseItemViewModel? item)
     {
         if (item is null) return;
         System.Windows.Clipboard.SetText(item.Content);
         StatusMessage = "已复制到剪贴板";
-    }
-
-    [RelayCommand]
-    private void InsertSend(PhraseItemViewModel? item)
-    {
-        if (item is null) return;
-        InsertSendRequested?.Invoke(this, item);
-        StatusMessage = "已请求插入并发送";
     }
 
     [RelayCommand]
@@ -457,7 +463,7 @@ public partial class PhraseLibraryViewModel : ObservableObject
     private void Edit(PhraseItemViewModel? item)
     {
         if (item is null) return;
-        if (!item.CanManage) { StatusMessage = "企业话术由管理员维护。"; return; }
+        // 企业话术进入同一详情页，由 EditorViewModel 根据 Scope 切换只读状态。
         EditRequested?.Invoke(this, item);
     }
 

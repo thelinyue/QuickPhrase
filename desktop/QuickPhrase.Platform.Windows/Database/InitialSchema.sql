@@ -23,7 +23,7 @@ CREATE INDEX ix_categories_parent_id ON categories(parent_id);
 CREATE TABLE phrases (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 80),
-    content TEXT NOT NULL CHECK (length(content) BETWEEN 1 AND 4000),
+    batch_separator TEXT NOT NULL DEFAULT '---' CHECK (length(batch_separator) BETWEEN 1 AND 32 AND length(trim(batch_separator)) > 0),
     category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
     shortcut_mode TEXT NOT NULL CHECK (shortcut_mode IN ('None', 'Quick', 'Custom')),
     shortcut_display TEXT NULL,
@@ -46,6 +46,30 @@ CREATE UNIQUE INDEX ux_phrases_shortcut_normalized
 CREATE INDEX ix_phrases_category_id ON phrases(category_id);
 CREATE INDEX ix_phrases_last_used_at ON phrases(last_used_at_utc);
 CREATE INDEX ix_phrases_category_sort ON phrases(category_id, sort_order);
+
+-- 媒体资产只保存应用内部标识和脱敏元数据；原文件名、绝对路径和二进制均不进入数据库。
+CREATE TABLE media_assets (
+    asset_id TEXT PRIMARY KEY,
+    storage_key TEXT NOT NULL UNIQUE,
+    mime_type TEXT NOT NULL CHECK (mime_type IN ('image/png', 'image/jpeg')),
+    byte_length INTEGER NOT NULL CHECK (byte_length BETWEEN 1 AND 10485760),
+    pixel_width INTEGER NOT NULL CHECK (pixel_width > 0),
+    pixel_height INTEGER NOT NULL CHECK (pixel_height > 0),
+    created_at_utc TEXT NOT NULL
+);
+
+CREATE TABLE phrase_segments (
+    segment_id TEXT PRIMARY KEY,
+    phrase_id TEXT NOT NULL REFERENCES phrases(id) ON DELETE CASCADE,
+    segment_kind TEXT NOT NULL CHECK (segment_kind IN ('Text', 'Image')),
+    text_content TEXT NULL,
+    media_asset_id TEXT NULL REFERENCES media_assets(asset_id) ON DELETE RESTRICT,
+    sort_order INTEGER NOT NULL CHECK (sort_order >= 0),
+    CHECK ((segment_kind = 'Text' AND text_content IS NOT NULL AND length(trim(text_content)) > 0 AND media_asset_id IS NULL)
+        OR (segment_kind = 'Image' AND text_content IS NULL AND media_asset_id IS NOT NULL))
+);
+CREATE UNIQUE INDEX ux_phrase_segments_phrase_sort ON phrase_segments(phrase_id, sort_order);
+CREATE INDEX ix_phrase_segments_media_asset ON phrase_segments(media_asset_id) WHERE media_asset_id IS NOT NULL;
 
 CREATE TABLE settings (
     key TEXT PRIMARY KEY,

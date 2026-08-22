@@ -186,7 +186,9 @@ public sealed class Phase5DeliveryTests
     public void ContinuousQueueAcceptsOnlyVerifiedInsertOnlyRequests()
     {
         var verified = new AdapterProfile("AnyAdapter", "AnyApp", "runtime-capability-test",
-            CapabilityStatus.Verified, CapabilityStatus.Verified, CapabilityStatus.Verified, CapabilityStatus.Unsupported, "CopyOnly", null);
+            CapabilityStatus.Verified, CapabilityStatus.Verified,
+            CapabilityStatus.Unsupported, CapabilityStatus.Unsupported,
+            CapabilityStatus.Verified, CapabilityStatus.Unsupported, "CopyOnly", null);
         var unverified = verified with { InsertTextStatus = CapabilityStatus.Unverified };
 
         Assert.True(DeliveryQueuePolicy.CanQueue(verified, SendMode.InsertOnly));
@@ -227,7 +229,7 @@ public sealed class Phase5DeliveryTests
         Assert.Equal(DeliveryStatus.Unsupported, result.Status);
         Assert.Equal("TARGET_VALIDATION_FAILED", result.ErrorCode);
         Assert.Equal(0, adapter.InsertCalls);
-        Assert.Equal(phrase.Content, clipboard.LastCopiedText);
+        Assert.Equal(phrase.Body.TextProjection, clipboard.LastCopiedText);
     }
 
     [Fact]
@@ -239,6 +241,8 @@ public sealed class Phase5DeliveryTests
             Capabilities = new AdapterCapabilities(
                 CapabilityStatus.Verified,
                 CapabilityStatus.Verified,
+                CapabilityStatus.Unsupported,
+                CapabilityStatus.Unsupported,
                 CapabilityStatus.Verified,
                 CapabilityStatus.Unsupported),
             VerifyInsertResult = VerificationResult.Inconclusive("INSERT_VERIFICATION_INCONCLUSIVE")
@@ -331,7 +335,13 @@ public sealed class Phase5DeliveryTests
         var adapter = new FakeAdapter("WXWork", CapabilityStatus.Verified)
         {
             VerifyInsertResult = VerificationResult.Verified,
-            Capabilities = new AdapterCapabilities(CapabilityStatus.Verified, CapabilityStatus.Verified, CapabilityStatus.Verified, CapabilityStatus.Verified)
+            Capabilities = new AdapterCapabilities(
+                CapabilityStatus.Verified,
+                CapabilityStatus.Verified,
+                CapabilityStatus.Unsupported,
+                CapabilityStatus.Unsupported,
+                CapabilityStatus.Verified,
+                CapabilityStatus.Verified)
         };
         var detector = new FakeTargetDetector
         {
@@ -368,8 +378,8 @@ public sealed class Phase5DeliveryTests
         var adapter = resolver.Resolve(CreateTarget());
 
         Assert.Equal(CapabilityStatus.Verified, adapter.Profile.InsertTextStatus);
-        Assert.Equal(CapabilityStatus.Verified, adapter.Profile.VerifyInsertStatus);
-        Assert.Equal(CapabilityStatus.Verified, adapter.Profile.SendTextStatus);
+        Assert.Equal(CapabilityStatus.Verified, adapter.Profile.VerifyTextInsertStatus);
+        Assert.Equal(CapabilityStatus.Verified, adapter.Profile.TriggerSendStatus);
         Assert.Equal(CapabilityStatus.Unsupported, adapter.Profile.VerifySendStatus);
         Assert.Equal(version, adapter.DetectedProductVersion);
     }
@@ -382,7 +392,7 @@ public sealed class Phase5DeliveryTests
         var adapter = resolver.Resolve(CreateTarget());
 
         Assert.Equal(CapabilityStatus.Verified, adapter.DetectCapabilities().InsertText);
-        Assert.Equal(CapabilityStatus.Verified, adapter.DetectCapabilities().SendText);
+        Assert.Equal(CapabilityStatus.Verified, adapter.DetectCapabilities().TriggerSend);
         Assert.Null(adapter.DetectedProductVersion);
     }
 
@@ -461,7 +471,7 @@ public sealed class Phase5DeliveryTests
     }
 
     private static Phrase CreatePhrase() => new(
-        Guid.NewGuid(), "请求设备序列号", "请提供设备序列号（SN），方便我们进一步确认设备信息。", Guid.NewGuid(),
+        Guid.NewGuid(), "请求设备序列号", PhraseBody.FromText("请提供设备序列号（SN），方便我们进一步确认设备信息。"), Guid.NewGuid(),
         ShortcutMode.None, null, 0, null, 1,
         DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
@@ -557,8 +567,22 @@ public sealed class Phase5DeliveryTests
     {
         public string AdapterId { get; } = id;
         public string? DetectedProductVersion => "5.0.9.6065";
-        public AdapterProfile Profile => new(AdapterId, "WXWork", "phase5-test", Capabilities.InsertText, Capabilities.VerifyInsert, Capabilities.SendText, Capabilities.VerifySend, "CopyOnly", null);
-        public AdapterCapabilities Capabilities { get; set; } = new(insertStatus, insertStatus, CapabilityStatus.Unsupported, CapabilityStatus.Unsupported);
+        public AdapterProfile Profile => new(
+            AdapterId, "WXWork", "phase5-test",
+            Capabilities.InsertText,
+            Capabilities.VerifyTextInsert,
+            Capabilities.InsertImage,
+            Capabilities.VerifyImageInsert,
+            Capabilities.TriggerSend,
+            Capabilities.VerifySend,
+            "CopyOnly", null);
+        public AdapterCapabilities Capabilities { get; set; } = new(
+            insertStatus,
+            insertStatus,
+            CapabilityStatus.Unsupported,
+            CapabilityStatus.Unsupported,
+            CapabilityStatus.Unsupported,
+            CapabilityStatus.Unsupported);
         public VerificationResult VerifyInsertResult { get; set; } = VerificationResult.Verified;
         public int InsertCalls { get; private set; }
         public int SendCalls { get; private set; }

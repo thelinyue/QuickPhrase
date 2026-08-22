@@ -108,7 +108,7 @@ public static class PhraseBatchImportCsv
             if (phrases.Count >= PhrasePackageFormat.MaxPhraseCount)
                 throw Error("CSV_PHRASE_LIMIT_EXCEEDED", record.Line, $"话术数量不能超过 {PhrasePackageFormat.MaxPhraseCount} 条。");
 
-            phrases.Add(new PhrasePackagePhrase(Guid.NewGuid(), title, content, targetCategoryId, phrases.Count));
+            phrases.Add(new PhrasePackagePhrase(Guid.NewGuid(), title, PhraseBody.FromText(content), targetCategoryId, phrases.Count));
         }
 
         if (phrases.Count == 0)
@@ -122,9 +122,11 @@ public static class PhraseBatchImportCsv
                 "CSV 批量导入",
                 createdAtUtc ?? DateTimeOffset.UtcNow,
                 phrases.Count,
-                categories.Count),
+                categories.Count,
+                0),
             categories,
-            phrases);
+            phrases,
+            []);
         var errors = PhrasePackagePlanner.Validate(document);
         if (errors.Count > 0) throw Error("CSV_DOCUMENT_INVALID", 0, errors[0]);
         return document;

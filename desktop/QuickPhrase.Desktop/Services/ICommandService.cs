@@ -15,6 +15,11 @@ public interface ICommandService
     Task<RepositoryResult<Phrase>> UpdatePhraseAsync(UpdatePhraseCommand command, CancellationToken cancellationToken = default);
     Task<bool> DeletePhraseAsync(Guid id, long? expectedVersion, CancellationToken cancellationToken = default);
     Task<bool> InsertPhraseAsync(Phrase phrase, CancellationToken cancellationToken = default);
+    Task<MediaImportResult> ImportImageAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.FromResult(MediaImportResult.Failure("MEDIA_NOT_AVAILABLE", "当前媒体库未初始化。"));
+    Task<MediaAssetContent?> ReadMediaAsync(Guid assetId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<MediaAssetContent?>(null);
+    Task DeleteMediaIfUnreferencedAsync(Guid assetId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     Task<IReadOnlyList<Category>> ListCategoriesAsync(CancellationToken cancellationToken = default);
     Task<RepositoryResult<Category>> CreateCategoryAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default);
     Task<RepositoryResult<Category>> RenameCategoryAsync(RenameCategoryCommand command, CancellationToken cancellationToken = default);

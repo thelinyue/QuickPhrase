@@ -11,7 +11,7 @@ namespace QuickPhrase.Desktop.Tests;
 public class PhraseLibraryViewModelTests
 {
     private static Phrase MakePhrase(string title, string content, Guid categoryId, string colorKey = "default")
-        => new(Guid.NewGuid(), title, content, categoryId, ShortcutMode.None, null,
+        => new(Guid.NewGuid(), title, PhraseBody.FromText(content), categoryId, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, colorKey);
 
     private static Category MakeCategory(out Guid id, string name = "工作", int sortOrder = 0)
@@ -196,6 +196,64 @@ public class PhraseLibraryViewModelTests
         Assert.Equal(firstPhrase.Id, visible[0].Id);
     }
     [Fact]
+    public async Task RefreshFromPhrase_WhenMovedToAnotherTopCategory_UpdatesVisibleItemsAndCategoryCounts()
+    {
+        var sourceCategory = MakeCategory(out var sourceCategoryId, "售前", 0);
+        var targetCategory = MakeCategory(out var targetCategoryId, "售后", 1);
+        var phrase = MakePhrase("欢迎语", "您好", sourceCategoryId);
+        var fake = new FakeCommandService();
+        fake.Seed(new[] { phrase });
+        fake.Seed(new[] { sourceCategory, targetCategory });
+
+        var vm = new PhraseLibraryViewModel(fake);
+        await vm.LoadAsync();
+
+        var movedPhrase = phrase with
+        {
+            CategoryId = targetCategoryId,
+            Version = phrase.Version + 1,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+        vm.RefreshMovedPhrase(movedPhrase);
+
+        Assert.DoesNotContain(vm.VisibleItems.OfType<PhraseItemViewModel>(), item => item.Id == phrase.Id);
+        Assert.Equal(targetCategoryId, Assert.Single(vm.Phrases).CategoryId);
+        Assert.True(vm.IsEmpty);
+        Assert.Equal(0, Assert.Single(vm.Categories, category => category.Id == sourceCategoryId).Count);
+        Assert.Equal(1, Assert.Single(vm.Categories, category => category.Id == targetCategoryId).Count);
+        Assert.Equal("已移动到“售后”", vm.StatusMessage);
+
+        vm.SelectCategoryCommand.Execute(targetCategoryId);
+        Assert.Equal(phrase.Id, Assert.Single(vm.VisibleItems.OfType<PhraseItemViewModel>()).Id);
+    }
+    [Fact]
+    public async Task RefreshMovedPhrase_PreservesSearchResultAndUpdatesCategoryName()
+    {
+        var sourceCategory = MakeCategory(out var sourceCategoryId, "售前", 0);
+        var targetCategory = MakeCategory(out var targetCategoryId, "售后", 1);
+        var phrase = MakePhrase("报价说明", "报价详情", sourceCategoryId);
+        var fake = new FakeCommandService();
+        fake.Seed(new[] { phrase });
+        fake.Seed(new[] { sourceCategory, targetCategory });
+
+        var vm = new PhraseLibraryViewModel(fake);
+        await vm.LoadAsync();
+        vm.SearchQuery = "报价";
+        await WaitForAsync(() => vm.StatusMessage == "“报价” 匹配 1 条");
+
+        vm.RefreshMovedPhrase(phrase with
+        {
+            CategoryId = targetCategoryId,
+            Version = phrase.Version + 1,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        });
+
+        var visible = Assert.Single(vm.VisibleItems.OfType<PhraseItemViewModel>());
+        Assert.Equal(targetCategoryId, visible.CategoryId);
+        Assert.Equal("售后", visible.CategoryName);
+        Assert.Equal("已移动到“售后”", vm.StatusMessage);
+    }
+    [Fact]
     public async Task Delete_RemovesFromList_AndService()
     {
         var category = MakeCategory(out var catId);
@@ -214,4 +272,3 @@ public class PhraseLibraryViewModelTests
         Assert.Null(await fake.GetPhraseAsync(p.Id));
     }
 }
-

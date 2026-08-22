@@ -47,8 +47,10 @@ public class SettingsViewContractTests
         Assert.Contains("ApplyRecommendedShortcut_Click", xaml, StringComparison.Ordinal);
         Assert.Contains("ApplyAlternateShortcut_Click", xaml, StringComparison.Ordinal);
         Assert.Contains("EditCustomShortcut_Click", xaml, StringComparison.Ordinal);
-        Assert.Contains("Title=\"快捷发送模式\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Title=\"插入并发送免确认\"", xaml, StringComparison.Ordinal);
         Assert.Contains("风险选项", xaml, StringComparison.Ordinal);
+        Assert.Contains("Ctrl+Enter 插入并发送时跳过每次确认", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("显式发送", xaml, StringComparison.Ordinal);
         Assert.Contains("IsChecked=\"{Binding QuickSendWithoutConfirmation}\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Title=\"自动发送\"", xaml, StringComparison.Ordinal);
     }

@@ -54,7 +54,7 @@ public sealed class Phase2DataTests
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
         var category = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "测试分类"))).Value!;
         var id = Guid.NewGuid();
-        var command = new CreatePhraseCommand(id, "请求设备序列号", "请提供设备序列号（SN），方便我们进一步确认设备信息。", category.Id, ShortcutMode.None, null);
+        var command = new CreatePhraseCommand(id, "请求设备序列号", PhraseBody.FromText("请提供设备序列号（SN），方便我们进一步确认设备信息。"), category.Id, ShortcutMode.None, null);
 
         var created = await runtime.Phrases.CreateAsync(command);
         var repeated = await runtime.Phrases.CreateAsync(command);
@@ -63,9 +63,9 @@ public sealed class Phase2DataTests
         Assert.Equal(created.Value!.Id, repeated.Value!.Id);
         Assert.Single(await runtime.Phrases.ListAsync());
 
-        var updated = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(id, created.Value.Version, "请求设备 SN", command.Content, category.Id, ShortcutMode.None, null));
+        var updated = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(id, created.Value.Version, "请求设备 SN", command.Body, category.Id, ShortcutMode.None, null));
         Assert.True(updated.IsSuccess);
-        var stale = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(id, created.Value.Version, "过期修改", command.Content, category.Id, ShortcutMode.None, null));
+        var stale = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(id, created.Value.Version, "过期修改", command.Body, category.Id, ShortcutMode.None, null));
         Assert.Equal("VERSION_CONFLICT", stale.Error?.Code);
     }
 
@@ -75,7 +75,7 @@ public sealed class Phase2DataTests
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
         var category = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "测试分类"))).Value!;
-        var phrase = (await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "测试话术", "测试正文", category.Id, ShortcutMode.None, null))).Value!;
+        var phrase = (await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "测试话术", PhraseBody.FromText("测试正文"), category.Id, ShortcutMode.None, null))).Value!;
 
         var categoryDelete = await runtime.Categories.DeleteAsync(category.Id, category.Version);
         Assert.True(categoryDelete.IsSuccess);
@@ -109,8 +109,8 @@ public sealed class Phase2DataTests
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
         var category = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "测试分类"))).Value!;
-        var first = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "高频一", "固定回复一", category.Id, ShortcutMode.Quick, "Alt + 3"));
-        var second = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "高频二", "固定回复二", category.Id, ShortcutMode.Quick, "3 + Alt"));
+        var first = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "高频一", PhraseBody.FromText("固定回复一"), category.Id, ShortcutMode.Quick, "Alt + 3"));
+        var second = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "高频二", PhraseBody.FromText("固定回复二"), category.Id, ShortcutMode.Quick, "3 + Alt"));
 
         Assert.True(first.IsSuccess);
         Assert.Equal("SHORTCUT_CONFLICT", second.Error?.Code);
@@ -156,7 +156,7 @@ public sealed class Phase2DataTests
         Assert.True(deletedCategory.Value!.Deleted);
 
         var usedCategory = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "使用分类"))).Value!;
-        var phrase = (await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "使用话术", "使用正文", usedCategory.Id, ShortcutMode.None, null))).Value!;
+        var phrase = (await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "使用话术", PhraseBody.FromText("使用正文"), usedCategory.Id, ShortcutMode.None, null))).Value!;
         var used = await runtime.Phrases.IncrementUsageAsync(phrase.Id, DateTimeOffset.UtcNow);
         Assert.True(used.IsSuccess);
         Assert.Equal(phrase.UsageCount + 1, used.Value!.UsageCount);
@@ -233,7 +233,7 @@ public sealed class Phase2DataTests
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
         var category = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "并发分类"))).Value!;
         var tasks = Enumerable.Range(0, 24).Select(index => runtime.Phrases.CreateAsync(
-            new CreatePhraseCommand(Guid.NewGuid(), $"并发话术 {index}", $"并发正文 {index}", category.Id, ShortcutMode.None, null))).ToArray();
+            new CreatePhraseCommand(Guid.NewGuid(), $"并发话术 {index}", PhraseBody.FromText($"并发正文 {index}"), category.Id, ShortcutMode.None, null))).ToArray();
         var results = await Task.WhenAll(tasks);
 
         Assert.All(results, result => Assert.True(result.IsSuccess));
@@ -253,10 +253,10 @@ public sealed class Phase2DataTests
         var childResult = await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "级联子分类", root.Id));
         Assert.True(childResult.IsSuccess);
         var child = childResult.Value!;
-        var rootPhraseResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "级联根话术", "根分类正文", root.Id, ShortcutMode.None, null));
+        var rootPhraseResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "级联根话术", PhraseBody.FromText("根分类正文"), root.Id, ShortcutMode.None, null));
         Assert.True(rootPhraseResult.IsSuccess);
         var rootPhrase = rootPhraseResult.Value!;
-        var childPhraseResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "级联子话术", "子分类正文", child.Id, ShortcutMode.None, null));
+        var childPhraseResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "级联子话术", PhraseBody.FromText("子分类正文"), child.Id, ShortcutMode.None, null));
         Assert.True(childPhraseResult.IsSuccess);
         var childPhrase = childPhraseResult.Value!;
 
@@ -280,10 +280,10 @@ public sealed class Phase2DataTests
         var categoryResult = await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "回滚分类"));
         Assert.True(categoryResult.IsSuccess);
         var category = categoryResult.Value!;
-        var keepResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "保留话术", "回滚正文一", category.Id, ShortcutMode.None, null));
+        var keepResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "保留话术", PhraseBody.FromText("回滚正文一"), category.Id, ShortcutMode.None, null));
         Assert.True(keepResult.IsSuccess);
         var keep = keepResult.Value!;
-        var failResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "触发回滚", "回滚正文二", category.Id, ShortcutMode.None, null));
+        var failResult = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "触发回滚", PhraseBody.FromText("回滚正文二"), category.Id, ShortcutMode.None, null));
         Assert.True(failResult.IsSuccess);
         var fail = failResult.Value!;
         await ExecuteSqlAsync(runtime.DatabasePath, "CREATE TRIGGER fail_category_delete BEFORE DELETE ON phrases WHEN OLD.title = '触发回滚' BEGIN SELECT RAISE(ABORT, '测试删除失败'); END;");
@@ -305,7 +305,7 @@ public sealed class Phase2DataTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runtime.Phrases.CreateAsync(
-            new CreatePhraseCommand(Guid.NewGuid(), "取消写入", "正文", category.Id, ShortcutMode.None, null), cancellation.Token));
+            new CreatePhraseCommand(Guid.NewGuid(), "取消写入", PhraseBody.FromText("正文"), category.Id, ShortcutMode.None, null), cancellation.Token));
         Assert.DoesNotContain((await runtime.Phrases.ListAsync()), phrase => phrase.Title == "取消写入");
     }
 
@@ -324,7 +324,7 @@ public sealed class Phase2DataTests
         }
         try
         {
-            var result = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "锁定测试", "正文", category.Id, ShortcutMode.None, null));
+            var result = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "锁定测试", PhraseBody.FromText("正文"), category.Id, ShortcutMode.None, null));
             Assert.Equal("DATABASE_BUSY", result.Error?.Code);
         }
         finally
@@ -335,6 +335,44 @@ public sealed class Phase2DataTests
         }
     }
 
+    [Fact]
+    public async Task CurrentVersionDatabaseMissingSegmentConstraintsIsBackedUpAndRebuilt()
+    {
+        using var temp = new TemporaryDirectory();
+        var options = new QuickPhraseDataOptions(temp.Path);
+        await using (var runtime = await QuickPhraseDataRuntime.OpenAsync(options)) { }
+
+        await ExecuteSqlAsync(options.DatabasePath, """
+            PRAGMA foreign_keys=OFF;
+            DROP INDEX ux_phrase_segments_phrase_sort;
+            DROP INDEX ix_phrase_segments_media_asset;
+            DROP TABLE phrase_segments;
+            CREATE TABLE phrase_segments (
+                segment_id TEXT PRIMARY KEY,
+                phrase_id TEXT NOT NULL,
+                segment_kind TEXT NOT NULL,
+                text_content TEXT NULL,
+                media_asset_id TEXT NULL,
+                sort_order INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX ux_phrase_segments_phrase_sort ON phrase_segments(phrase_id, sort_order);
+            CREATE INDEX ix_phrase_segments_media_asset ON phrase_segments(media_asset_id) WHERE media_asset_id IS NOT NULL;
+            """);
+
+        await using (var rebuilt = await QuickPhraseDataRuntime.OpenAsync(options))
+        {
+            await using var connection = new SqliteConnection($"Data Source={rebuilt.DatabasePath};Mode=ReadOnly;Pooling=False");
+            await connection.OpenAsync();
+            Assert.Equal(2L, await ScalarAsync(connection, "SELECT COUNT(*) FROM pragma_foreign_key_list('phrase_segments');"));
+            var sql = Convert.ToString(await ScalarAsync(connection, "SELECT sql FROM sqlite_master WHERE type='table' AND name='phrase_segments';"));
+            Assert.Contains("CHECK (segment_kind IN ('Text', 'Image'))", sql, StringComparison.Ordinal);
+        }
+
+        Assert.True(Directory.Exists(options.DevelopmentBackupDirectory));
+        Assert.Contains(
+            Directory.EnumerateFiles(options.DevelopmentBackupDirectory, "quickphrase.db", SearchOption.AllDirectories),
+            file => new FileInfo(file).Length > 0);
+    }
     private static async Task ExecuteSqlAsync(SqliteConnection connection, string sql)
     {
         await using var command = connection.CreateCommand();
@@ -364,6 +402,3 @@ public sealed class Phase2DataTests
         public void Dispose() => Directory.Delete(Path, recursive: true);
     }
 }
-
-
-

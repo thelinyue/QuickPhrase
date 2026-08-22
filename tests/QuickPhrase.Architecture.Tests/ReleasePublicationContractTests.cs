@@ -213,6 +213,14 @@ public sealed class ReleasePublicationContractTests
     }
 
     [Fact]
+    public void RepositoryBuildKeepsOnlySimplifiedChineseSatelliteResources()
+    {
+        var buildProps = File.ReadAllText(Path.Combine(Root, "Directory.Build.props"));
+
+        Assert.Contains("<SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>", buildProps, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void InstallerUsesCommandLineVersionAndReleaseMacros()
     {
         var installer = File.ReadAllText(Path.Combine(Root, "installer", "QuickPhrase.iss"));

@@ -20,8 +20,10 @@ public sealed class Phase4LauncherTests
 
         Assert.Equal("GenericTextInput", adapter.AdapterId);
         Assert.Equal(CapabilityStatus.Verified, capabilities.InsertText);
-        Assert.Equal(CapabilityStatus.Verified, capabilities.VerifyInsert);
-        Assert.Equal(CapabilityStatus.Unsupported, capabilities.SendText);
+        Assert.Equal(CapabilityStatus.Verified, capabilities.VerifyTextInsert);
+        Assert.Equal(CapabilityStatus.Unsupported, capabilities.InsertImage);
+        Assert.Equal(CapabilityStatus.Unsupported, capabilities.VerifyImageInsert);
+        Assert.Equal(CapabilityStatus.Unsupported, capabilities.TriggerSend);
         Assert.Equal(CapabilityStatus.Unsupported, capabilities.VerifySend);
     }
 
@@ -104,8 +106,11 @@ public sealed class Phase4LauncherTests
         Assert.Contains("已有草稿可能一并发送", xaml, StringComparison.Ordinal);
         Assert.Contains("不会读取输入框正文", xaml, StringComparison.Ordinal);
         Assert.Contains("无法确认目标应用最终是否完成发送", xaml, StringComparison.Ordinal);
-        Assert.Contains("开启快捷发送模式后，之后按 Ctrl+Enter 将不再显示此确认", xaml, StringComparison.Ordinal);
-        Assert.Contains("Content=\"开启快捷发送并继续\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Title=\"确认插入并发送\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("插入并发送会发送当前目标输入框中的全部内容", xaml, StringComparison.Ordinal);
+        Assert.Contains("开启免确认模式后，按 Ctrl+Enter 插入并发送将不再显示此确认", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"开启免确认并继续\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("快捷发送", xaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"仅本次继续\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"取消\"", xaml, StringComparison.Ordinal);
     }

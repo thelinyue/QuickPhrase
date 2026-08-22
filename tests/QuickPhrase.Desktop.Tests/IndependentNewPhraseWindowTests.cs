@@ -32,7 +32,14 @@ public sealed class IndependentNewPhraseWindowTests
         Assert.Contains("_newPhraseWindow is { IsVisible: true }", controller, StringComparison.Ordinal);
 
         Assert.Contains("WindowStartupLocation=\"CenterScreen\"", window, StringComparison.Ordinal);
-        Assert.Contains("Width=\"{StaticResource Size.NewPhraseWindow.Width}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Width=\"{StaticResource Size.PhraseEditorWindow.Width}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Height=\"{StaticResource Size.PhraseEditorWindow.Height}\"", window, StringComparison.Ordinal);
+        Assert.Contains("MinWidth=\"{StaticResource Size.PhraseEditorWindow.MinimumWidth}\"", window, StringComparison.Ordinal);
+        Assert.Contains("MinHeight=\"{StaticResource Size.PhraseEditorWindow.MinimumHeight}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Width = (double)FindResource(\"Size.PhraseEditorWindow.Width\")", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("MinWidth = (double)FindResource(\"Size.PhraseEditorWindow.MinimumWidth\")", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("SizeToContent = SizeToContent.Manual", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("WindowStartupLocation = WindowStartupLocation.CenterOwner", mainWindow, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource Style.Window.Shell}\"", window, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource Style.Surface.ContentRegion}\"", window, StringComparison.Ordinal);
         Assert.Contains("_management?.RefreshPhrase(phrase);", controller, StringComparison.Ordinal);
@@ -74,6 +81,8 @@ public sealed class IndependentNewPhraseWindowTests
         await viewModel.LoadCategoriesAsync(createdId);
 
         Assert.Equal(createdId, viewModel.SelectedCategoryId);
+        Assert.Equal(createdId, viewModel.SelectedPrimaryCategory!.Id);
+        Assert.Null(viewModel.SelectedSecondaryCategory!.CategoryId);
     }
 
     private static string Read(string root, params string[] segments) =>

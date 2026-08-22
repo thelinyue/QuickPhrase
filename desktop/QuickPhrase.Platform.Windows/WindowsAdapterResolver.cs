@@ -9,7 +9,7 @@ namespace QuickPhrase.Platform.Windows;
 /// 仍由运行时目标与焦点验证决定是否允许插入。Windows 目标上下文由本程序集管理，
 /// 不把 HWND、PID 等类型传入 Core。
 /// </summary>
-public sealed class WindowsAdapterResolver : IAdapterResolver, IDisposable
+public sealed class WindowsAdapterResolver : IAdapterResolver, IAdapterBatchStabilityWaiter, IDisposable
 {
     private readonly Func<DeliveryTarget, string?> _productVersionReader;
     private readonly Func<DeliveryTarget, bool> _targetValidator;
@@ -45,12 +45,74 @@ public sealed class WindowsAdapterResolver : IAdapterResolver, IDisposable
     public AdapterStatusSnapshot GetStatus(DeliveryTarget? target)
     {
         if (target is null)
-            return new("Unknown", null, null, null, CapabilityStatus.Unverified, CapabilityStatus.Unverified, CapabilityStatus.Unsupported, CapabilityStatus.Unsupported, "CopyOnly");
+            return new(
+                "Unknown", null, null, null,
+                CapabilityStatus.Unverified,
+                CapabilityStatus.Unverified,
+                CapabilityStatus.Unsupported,
+                CapabilityStatus.Unsupported,
+                CapabilityStatus.Unsupported,
+                CapabilityStatus.Unsupported,
+                "CopyOnly");
 
         var adapter = Resolve(target);
         var profile = adapter.Profile;
         return new(adapter.AdapterId, target.ApplicationId, _productVersionReader(target), profile.ProfileVersion,
-            profile.InsertTextStatus, profile.VerifyInsertStatus, profile.SendTextStatus, profile.VerifySendStatus, profile.FallbackMode);
+            profile.InsertTextStatus,
+            profile.VerifyTextInsertStatus,
+            profile.InsertImageStatus,
+            profile.VerifyImageInsertStatus,
+            profile.TriggerSendStatus,
+            profile.VerifySendStatus,
+            profile.FallbackMode);
+    }
+
+    /// <summary>
+    /// 段间等待只针对当前已声明 TriggerSend 的企业微信 Adapter。通过连续脱敏焦点/Caret 指纹确认输入区恢复稳定，
+    /// 客户端版本仅用于诊断，绝不参与等待或图片能力准入。
+    /// </summary>
+    public async Task<VerificationResult> WaitForStabilityAsync(DeliveryTarget target, CancellationToken cancellationToken)
+    {
+        if (!_targetValidator(target))
+            return VerificationResult.Failed("TARGET_CHANGED");
+        if (!_contexts.TryGet(target.RuntimeKey, out var windowsTarget))
+            return VerificationResult.Failed("TARGET_CONTEXT_MISSING");
+        if (!string.Equals(target.ApplicationId, "WXWork", StringComparison.OrdinalIgnoreCase))
+            return VerificationResult.Failed("BATCH_STABILITY_UNSUPPORTED");
+
+        var timeout = TimeSpan.FromMilliseconds(800);
+        var pollInterval = TimeSpan.FromMilliseconds(25);
+        var started = Stopwatch.GetTimestamp();
+        WeComFocusFingerprint? previous = null;
+        var stableSamples = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_targetValidator(target) || WindowsNativeMethods.GetForegroundWindow() != windowsTarget.Hwnd)
+                return VerificationResult.Failed("TARGET_CHANGED");
+
+            if (WindowsNativeMethods.TryCaptureFocusFingerprint(windowsTarget.WindowThreadId, out var current)
+                && WeComFocusPolicy.IsChatComposer(windowsTarget, current))
+            {
+                stableSamples = previous is { } before
+                    && WeComFocusPolicy.IsStableChatComposer(windowsTarget, before, current)
+                    ? stableSamples + 1
+                    : 1;
+                previous = current;
+                if (stableSamples >= 2)
+                    return VerificationResult.Verified;
+            }
+            else
+            {
+                previous = null;
+                stableSamples = 0;
+            }
+
+            var remaining = timeout - Stopwatch.GetElapsedTime(started);
+            if (remaining <= TimeSpan.Zero)
+                return VerificationResult.Inconclusive("ADAPTER_STABILITY_TIMEOUT");
+            await Task.Delay(remaining < pollInterval ? remaining : pollInterval, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public void Dispose()
@@ -81,8 +143,10 @@ public sealed record AdapterStatusSnapshot(
     string? ProductVersion,
     string? ProfileVersion,
     CapabilityStatus InsertText,
-    CapabilityStatus VerifyInsert,
-    CapabilityStatus SendText,
+    CapabilityStatus VerifyTextInsert,
+    CapabilityStatus InsertImage,
+    CapabilityStatus VerifyImageInsert,
+    CapabilityStatus TriggerSend,
     CapabilityStatus VerifySend,
     string FallbackMode);
 
@@ -90,7 +154,7 @@ public sealed record AdapterStatusSnapshot(
 /// 企业微信运行时能力 Adapter。客户端版本只保留为诊断元数据；所有插入和发送准入均由
 /// 当前窗口身份、前台状态以及输入区焦点/Caret 指纹在动作前后实时决定。
 /// </summary>
-internal sealed class WeComAdapter : IApplicationAdapter
+internal sealed class WeComAdapter : IApplicationAdapter, IImageApplicationAdapter
 {
     private readonly string? _productVersion;
     private readonly ClipboardTransaction _clipboard;
@@ -113,12 +177,19 @@ internal sealed class WeComAdapter : IApplicationAdapter
         "WXWork", "WXWork", "phase5-wecom-runtime-1",
         CapabilityStatus.Verified,
         CapabilityStatus.Verified,
+        CapabilityStatus.Unsupported,
+        CapabilityStatus.Unsupported,
         CapabilityStatus.Verified,
         CapabilityStatus.Unsupported,
         "CopyOnly", null);
 
-    public AdapterCapabilities DetectCapabilities() => new(Profile.InsertTextStatus, Profile.VerifyInsertStatus,
-        Profile.SendTextStatus, Profile.VerifySendStatus);
+    public AdapterCapabilities DetectCapabilities() => new(
+        Profile.InsertTextStatus,
+        Profile.VerifyTextInsertStatus,
+        Profile.InsertImageStatus,
+        Profile.VerifyImageInsertStatus,
+        Profile.TriggerSendStatus,
+        Profile.VerifySendStatus);
 
     public async Task<InsertResult> InsertAsync(DeliveryRequest request, CancellationToken cancellationToken)
     {
@@ -143,12 +214,48 @@ internal sealed class WeComAdapter : IApplicationAdapter
 
         // 运行时检查通过后固定使用受保护剪贴板事务；不读取或比对目标输入框正文。
         started = Stopwatch.GetTimestamp();
-        var clipboard = await _clipboard.PasteAsync(request.Phrase.Content, request.Target, cancellationToken).ConfigureAwait(false);
+        var clipboard = await _clipboard.PasteAsync(request.Phrase.Body.TextProjection, request.Target, cancellationToken).ConfigureAwait(false);
         stages.Add(new DeliverySubstage("clipboard-paste", clipboard.Code, Stopwatch.GetElapsedTime(started).TotalMilliseconds));
         return clipboard.Succeeded
             ? new InsertResult(true, false, "INSERTED", stages.ToImmutable())
             : new InsertResult(false, false, clipboard.Code, stages.ToImmutable());
     }
+
+    /// <summary>
+    /// 企业微信图片执行链已具备，但能力快照在 Windows 11 人工矩阵通过前始终保持 Unsupported，
+    /// 因此生产状态机不会调用此方法。未来启用时仍复用同一目标、焦点和剪贴板安全边界。
+    /// </summary>
+    public async Task<InsertResult> InsertImageAsync(DeliveryRequest request, MediaAssetContent image, CancellationToken cancellationToken)
+    {
+        var stages = ImmutableArray.CreateBuilder<DeliverySubstage>();
+        if (request.Target is null)
+            return new InsertResult(false, false, "TARGET_CONTEXT_MISSING", stages.ToImmutable());
+        if (!_targetValidator(request.Target))
+            return new InsertResult(false, false, "TARGET_CHANGED", stages.ToImmutable());
+        if (!_contexts.TryGet(request.Target.RuntimeKey, out var windowsTarget))
+            return new InsertResult(false, false, "TARGET_CONTEXT_MISSING", stages.ToImmutable());
+
+        var started = Stopwatch.GetTimestamp();
+        var activated = ActivateTarget(windowsTarget);
+        stages.Add(new DeliverySubstage("target-activation", activated ? "ACTIVATED" : "TARGET_ACTIVATION_FAILED", Stopwatch.GetElapsedTime(started).TotalMilliseconds));
+        if (!activated) return new InsertResult(false, false, "TARGET_ACTIVATION_FAILED", stages.ToImmutable());
+
+        cancellationToken.ThrowIfCancellationRequested();
+        started = Stopwatch.GetTimestamp();
+        _insertFingerprint = await WaitForComposerFingerprintAsync(windowsTarget, TimeSpan.FromMilliseconds(500), cancellationToken).ConfigureAwait(false);
+        stages.Add(new DeliverySubstage("control-fingerprint", _insertFingerprint.HasValue ? "FINGERPRINT_READY" : "TARGET_CONTROL_PROFILE_MISMATCH", Stopwatch.GetElapsedTime(started).TotalMilliseconds));
+        if (!_insertFingerprint.HasValue) return new InsertResult(false, false, "TARGET_CONTROL_PROFILE_MISMATCH", stages.ToImmutable());
+
+        started = Stopwatch.GetTimestamp();
+        var clipboard = await _clipboard.PasteImageAsync(image.Bytes, request.Target, cancellationToken).ConfigureAwait(false);
+        stages.Add(new DeliverySubstage("clipboard-paste", clipboard.Code, Stopwatch.GetElapsedTime(started).TotalMilliseconds));
+        return clipboard.Succeeded
+            ? new InsertResult(true, false, "IMAGE_INSERTED", stages.ToImmutable())
+            : new InsertResult(false, false, clipboard.Code, stages.ToImmutable());
+    }
+
+    public Task<VerificationResult> VerifyImageInsertAsync(DeliveryRequest request, CancellationToken cancellationToken) =>
+        VerifyInsertAsync(request, cancellationToken);
 
     public async Task<VerificationResult> VerifyInsertAsync(DeliveryRequest request, CancellationToken cancellationToken)
     {

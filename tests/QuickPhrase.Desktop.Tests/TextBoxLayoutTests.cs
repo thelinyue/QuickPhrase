@@ -47,15 +47,32 @@ public sealed class TextBoxLayoutTests
     }
 
     [Fact]
-    public void EditorBodyUsesSemanticMultilineInputTokens()
+    public void EditorUsesOneSemanticPhraseRichTextInput()
     {
         var root = FindRepositoryRoot();
         var editor = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "EditorView.xaml"));
+        var component = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "DesignSystem", "Components", "PhraseRichTextEditor.xaml"));
 
-        Assert.Contains("AcceptsReturn=\"True\"", editor, StringComparison.Ordinal);
-        Assert.Contains("Height=\"{StaticResource Size.Editor.Body.Height}\"", editor, StringComparison.Ordinal);
-        Assert.Contains("Padding=\"{StaticResource Thickness.Control.Input.Multiline}\"", editor, StringComparison.Ordinal);
-        Assert.Contains("Style=\"{StaticResource Style.Input.Default}\"", editor, StringComparison.Ordinal);
+        Assert.Contains("<components:PhraseRichTextEditor x:Name=\"RichEditor\"", editor, StringComparison.Ordinal);
+        Assert.DoesNotContain("SegmentList", editor, StringComparison.Ordinal);
+        Assert.DoesNotContain("ItemsSource=\"{Binding Segments}\"", editor, StringComparison.Ordinal);
+        Assert.Contains("<RichTextBox x:Name=\"EditorBox\"", component, StringComparison.Ordinal);
+        Assert.Contains("Padding=\"{StaticResource Thickness.Control.Input.Multiline}\"", component, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"话术图文内容编辑区\"", component, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PhraseRichEditorPastePrefersImageAndOnlyAcceptsUnicodePlainText()
+    {
+        var root = FindRepositoryRoot();
+        var code = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "DesignSystem", "Components", "PhraseRichTextEditor.xaml.cs"));
+
+        Assert.Contains("DataObject.AddPastingHandler", code, StringComparison.Ordinal);
+        Assert.True(code.IndexOf("DataFormats.Bitmap", StringComparison.Ordinal) < code.IndexOf("DataFormats.UnicodeText", StringComparison.Ordinal));
+        Assert.DoesNotContain("DataFormats.Rtf", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("DataFormats.Html", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("DataFormats.Xaml", code, StringComparison.Ordinal);
+        Assert.Contains("EditorBox.Selection.Text = text", code, StringComparison.Ordinal);
     }
 
     private static string ReadInputs()

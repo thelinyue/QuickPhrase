@@ -38,7 +38,7 @@ Page
 - React、Vue、WebView2、HTML/CSS 或 Web 原型迁移。
 - WPF Gallery、主题切换 UI、新正式 Project。
 - 业务流程重写、搜索算法重写、SQLite 表结构重建。
-- 插件、AI、团队、文件/图片话术、浏览器扩展、跨平台、后台发送、自动更新。
+- 插件、AI、团队图片同步、普通文件附件、浏览器扩展、跨平台、后台发送、自动更新；个人图文话术已属于正式产品基线。
 - 为 Design System 新增 Hash、Baseline、冻结 Contract 或发布 Gate。
 
 ## 2. 冻结目录

@@ -135,6 +135,7 @@
                             <ContentPresenter Margin="{TemplateBinding Padding}" />
                         </Grid>
                     </Border>
+                    <!-- Root 覆盖整条话术行；悬停和选中直接切换整行颜色，不使用淡入淡出动画。 -->
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Root" Property="Background" Value="{DynamicResource Brush.Surface.Hover}" />
@@ -157,64 +158,97 @@
         </Setter>
     </Style>
 
+    <!-- 共享紧凑容器固定几何与行状态，话术库仅在此基础上追加拖拽事件。 -->
+    <Style x:Key="Style.ListItem.Phrase.Compact"
+           TargetType="ListBoxItem"
+           BasedOn="{StaticResource Style.ListItem.Phrase.Library}">
+        <Setter Property="Height" Value="{StaticResource Size.Phrase.Row.Compact}" />
+        <Setter Property="MinHeight" Value="{StaticResource Size.Phrase.Row.Compact}" />
+        <Setter Property="Padding" Value="{StaticResource Thickness.Phrase.Row.CompactHorizontal}" />
+        <Setter Property="Margin" Value="{StaticResource Thickness.None}" />
+    </Style>
+
     <!--
-      共享行模板固定为序号、标题、正文三列，不新增 ItemsControl，继续复用宿主 ListBox 的回收虚拟化。
-      Launcher 适配模型沿用 IndexInCategory/Title/Content；可选发送动作仍由附加属性注入。
+      话术库与 Launcher 共用的紧凑话术行：固定 28px 高度，正文中的显式换行
+      不得撑开搜索结果。完整多行内容仍由 OverflowTextBlock 的悬停/键盘提示查看。
+      宿主通过 PhraseListActions 决定发送入口是否可见及其命令实现。
     -->
-    <DataTemplate x:Key="Template.Phrase.Row">
+    <DataTemplate x:Key="Template.Phrase.CompactRow">
         <ContentControl>
             <ContentControl.Template>
                 <ControlTemplate TargetType="ContentControl">
-                    <Grid x:Name="RowRoot" MinHeight="{StaticResource Size.Phrase.Row.Minimum}">
+                    <Grid x:Name="RowRoot"
+                          Height="{StaticResource Size.Phrase.Row.Compact}"
+                          Background="Transparent">
                         <Grid.ColumnDefinitions>
-                            <!-- 序号/发送槽与 32px 紧凑行保持一致；标题列宽仍由宿主拖拽策略提供。 -->
-                            <ColumnDefinition Width="{StaticResource Size.Phrase.IndexColumn.GridLength}" />
-                            <ColumnDefinition Width="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBox}}, Path=(local:PhraseListActions.TitleColumnWidth)}" />
+                            <ColumnDefinition Width="{StaticResource Size.Phrase.Row.SendActionColumn}" />
+                            <ColumnDefinition Width="{StaticResource Size.Phrase.Row.GapColumn}" />
+                            <ColumnDefinition Width="{StaticResource Size.Phrase.Row.IndexColumn}" />
+                            <ColumnDefinition Width="{StaticResource Size.Phrase.Row.GapColumn}" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="{StaticResource Size.Phrase.Row.GapColumn}" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
-                        <Grid Grid.Column="0">
-                            <TextBlock x:Name="IndexText"
-                                       Style="{StaticResource Style.Text.Mono}"
-                                       HorizontalAlignment="Right"
-                                       VerticalAlignment="Center"
-                                       Margin="{StaticResource Thickness.Gap.Inline.SM}"
-                                       Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}, Path=Foreground}"
-                                       Text="{Binding IndexInCategory}" />
-                            <Button x:Name="SendBtn"
-                                    Style="{StaticResource Style.Button.Icon}"
-                                    Content="➤"
-                                    Opacity="0"
-                                    IsHitTestVisible="False"
-                                    VerticalAlignment="Center"
-                                    HorizontalAlignment="Center"
-                                    ToolTip="直接发送"
-                                    AutomationProperties.Name="直接发送"
-                                    Command="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBox}}, Path=(local:PhraseListActions.SendCommand)}"
-                                    CommandParameter="{Binding}" />
-                        </Grid>
-                        <Grid Grid.Column="1" Margin="{StaticResource Thickness.Gap.Inline.MD}">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <!-- 发送图标仅表示用户显式的插入并发送意图；平台层仍负责重校验目标。 -->
+                        <Button x:Name="SendBtn"
+                                Grid.Column="0"
+                                Style="{StaticResource Style.Button.Icon}"
+                                Width="{StaticResource Size.Phrase.Row.ActionSize}"
+                                Height="{StaticResource Size.Phrase.Row.ActionSize}"
+                                Opacity="0"
+                                IsHitTestVisible="False"
+                                VerticalAlignment="Center"
+                                VerticalContentAlignment="Center"
+                                HorizontalAlignment="Center"
+                                ToolTip="插入并发送"
+                                AutomationProperties.Name="插入并发送"
+                                Command="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBox}}, Path=(local:PhraseListActions.SendCommand)}"
+                                CommandParameter="{Binding}">
+                            <TextBlock Text="&#xE724;"
+                                       Style="{StaticResource Style.Text.Title.Small}"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center">
+                                <TextBlock.LayoutTransform>
+                                    <ScaleTransform ScaleX="-1" />
+                                </TextBlock.LayoutTransform>
+                            </TextBlock>
+                        </Button>
+                        <TextBlock x:Name="IndexText"
+                                   Grid.Column="2"
+                                   Style="{StaticResource Style.Text.Mono}"
+                                   HorizontalAlignment="Left"
+                                   VerticalAlignment="Center"
+                                   Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}, Path=Foreground}"
+                                   Text="{Binding IndexInCategory}" />
+                        <!-- 企业话术继续保留来源标识；紧凑几何与普通话术一致。 -->
+                        <Grid Grid.Column="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
                             <Border Grid.Column="0"
                                     Background="{DynamicResource Brush.Accent.Soft}"
                                     CornerRadius="{StaticResource Radius.XS}"
                                     Padding="{StaticResource Thickness.Gap.Inline.XS}"
                                     Margin="{StaticResource Thickness.Gap.Inline.XS}"
                                     Visibility="{Binding IsEnterprise, Converter={StaticResource BoolToVisibility}}">
-                                <TextBlock Text="企业" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Accent.Primary.Pressed}" />
+                                <TextBlock Text="企业"
+                                           Style="{StaticResource Style.Text.Caption}"
+                                           Foreground="{DynamicResource Brush.Accent.Primary.Pressed}" />
                             </Border>
                             <desktopControls:OverflowTextBlock Grid.Column="1"
                                                                Style="{StaticResource Style.Text.Label}"
                                                                VerticalAlignment="Center"
                                                                TextWrapping="NoWrap"
                                                                TextTrimming="CharacterEllipsis"
-                                                               Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}, Path=Foreground}"
+                                                               Foreground="{Binding ColorKey, Converter={StaticResource ColorKeyToBrush}}"
                                                                Text="{Binding Title}" />
                         </Grid>
-                        <desktopControls:OverflowTextBlock Grid.Column="2"
+                        <desktopControls:OverflowTextBlock Grid.Column="6"
                                                            Style="{StaticResource Style.Text.Body.Medium}"
                                                            VerticalAlignment="Center"
-                                                           Margin="{StaticResource Thickness.Gap.Inline.XS}"
                                                            TextWrapping="NoWrap"
                                                            TextTrimming="CharacterEllipsis"
                                                            Text="{Binding Content}" />
@@ -228,7 +262,6 @@
                                 <Condition Binding="{Binding IsMouseOver, ElementName=RowRoot}" Value="True" />
                                 <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBox}}, Path=(local:PhraseListActions.ShowSendButton)}" Value="True" />
                             </MultiDataTrigger.Conditions>
-                            <Setter TargetName="IndexText" Property="Visibility" Value="Collapsed" />
                             <Setter TargetName="SendBtn" Property="Opacity" Value="1" />
                             <Setter TargetName="SendBtn" Property="IsHitTestVisible" Value="True" />
                         </MultiDataTrigger>

@@ -6,7 +6,7 @@
 - 任何正式产品 UI、交互、尺寸和行为判断，必须以 `desktop/QuickPhrase.Desktop` 当前实际 WPF XAML、ViewModel 和代码为准。
 - 不要把原型中的 Web、React、WebView、假桌面外壳或调试控件带入生产项目。
 
-## Architecture v1.1 — FROZEN
+## QuickPhrase 首发图文话术与分批发送架构基线
 
 QuickPhrase 正式技术路线固定为：`.NET 10 LTS + Pure WPF + Win32/UIA + SQLite + Core 内存搜索`。
 
@@ -20,14 +20,15 @@ QuickPhrase 正式技术路线固定为：`.NET 10 LTS + Pure WPF + Win32/UIA + 
 4. 搜索只访问 Core 内存索引，不查询 SQLite。
 5. UI Automation 不运行在 WPF UI Thread。
 6. 显式发送默认不可信；无用户授权的自动发送禁止。
-7. Target 必须在动作执行前重新验证。
+7. Target 必须在动作执行前以及批次每一段执行前重新验证。
 8. 第三方应用能力必须通过运行时能力检测验证，不依赖客户端版本号准入。
 9. 降级失败不允许演变成误发送。
 10. 原型文件与生产 WPF 项目物理、依赖和验收边界分离。
+11. 闪念是唯一投递入口；话术库只负责内容管理。
 
 最高安全原则：宁可不能发送，也不能发错窗口、发错内容或重复发送。
 
-### Frozen Project Boundary
+### Project Boundary
 
 只保留三个正式桌面 Project：
 
@@ -54,7 +55,7 @@ Core → Platform.Windows
 Platform.Windows → Desktop
 ```
 
-Core 禁止引用 WPF、WebView2、Win32、UI Automation、SQLite 和 PinyinM.NET。Platform.Windows 承载 UIA Worker、Clipboard Transaction、SQLite Write Queue、Hotkeys、Target Detection 和 Adapter；Desktop 承载 WPF 生命周期、单实例、托盘、Launcher、Views、ViewModels、Commands 和 Composition Root。
+Core 禁止引用 WPF、WebView2、Win32、UI Automation、SQLite 和 PinyinM.NET。Platform.Windows 承载 UIA Worker、Clipboard Transaction、SQLite Write Queue、Hotkeys、Target Detection、Adapter 和媒体存储；Desktop 承载 WPF 生命周期、单实例、托盘、Launcher、Views、ViewModels、Commands 和 Composition Root。
 
 ### In-process Call Chain
 
@@ -70,40 +71,100 @@ Platform.Windows Implementation
 
 Desktop 只有 `App.xaml.cs`、Bootstrap/Composition、必要的 Shell 编排和 Native Launcher 编排可以引用 Platform.Windows 具体类型。Views、ViewModels 和 Commands 依赖 Core 接口或 Desktop 自身抽象，不把 `WindowsClipboardService`、`WindowsTargetIdentity` 等平台类型注入 UI。
 
+### Core Phrase Boundary
+
+Core 直接以 `Phrase.Body: PhraseBody` 表达首发正文，不保留旧 `Phrase.Content` 事实源或纯文本兼容层：
+
+```text
+PhraseBody
+├── Segments: ImmutableArray<PhraseSegment>
+└── BatchSeparator: string
+
+PhraseSegment
+├── Id
+├── Kind: Text | Image
+├── Text: string?
+└── Image: PhraseImageReference?
+```
+
+`ImmutableArray` 顺序就是编辑、预览和发送顺序。每段只能是一段非空文字或一张有效图片；Core 不保存文件路径、WPF 图片类型、图片文件名、EXIF、OCR 或图片二进制。
+
+首发约束为：每条话术至少一个有效段，最多 20 段、10 张图片，全部文字合计最多 4000 字，标题 1–80 字。每条话术独立保存 `BatchSeparator`，默认 `---`；分隔符长度 1–32 字且不能仅为空白，只有独占一行、去除行首尾空格后完全匹配时才拆分。连续、开头或结尾分隔符产生空段时必须报错。
+
+搜索索引使用标题、分类名称和所有文字段按顺序拼接的文本；首发模型不包含标签系统。不索引图片文件名、路径、二进制、EXIF、尺寸，也不做 OCR、图片识别或 AI 描述。图片-only 话术依靠标题和分类名称搜索。搜索过程只访问 Core 内存索引。
+
 ### Core Target Boundary
 
 Core 只保存平台无关的 `DeliveryTarget`：`ApplicationId`、`ApplicationKind`、`AdapterId`、`DisplayName`、`RuntimeKey` 和 `CapturedAtUtc`。
 
 HWND、PID、WindowThreadId、ProcessStartTimeUtc、ProcessName、AutomationElement 和 FocusElementIdentity 只存在于 Platform.Windows 的 `WindowsTargetIdentity` / `WindowsTargetContext`。两者通过 `RuntimeKey` 关联，Core 不泄漏 Win32 或 UIA 类型。
 
-### Delivery Safety
+### Product and Delivery Boundary
 
-投递固定经过：
+- 话术库只负责图文话术创建、编辑、排序、删除和企业只读详情，不提供插入、发送或投递快捷键。
+- 闪念始终只允许明确选择一条话术。
+- 空查询最多展示 5 条常用/最近话术，默认不选择；关键词搜索可默认选择第一项。
+- 单段纯文字：`Enter`/双击安全插入，目标不可验证时安全复制；`Ctrl+Enter` 进入现有显式发送流程。
+- 多段或含图片：`Enter`/双击只打开整批预览；`Ctrl+Enter` 打开整批发送确认。
+- 多段或含图片每次都必须确认整批发送，快捷发送设置不得跳过本次确认。
+
+用户确认后隐藏闪念并恢复目标焦点，随后按段顺序执行：
 
 ```text
-CaptureTarget → ValidateTarget → ResolveAdapter → DetectCapabilities
-→ Insert → VerifyInsert → RevalidateBeforeSend
-→ OptionalSend → VerifySend
+RevalidateTarget
+→ DetectSegmentCapabilities
+→ PrepareClipboardPayload
+→ InsertSegment
+→ VerifySegmentInsert
+→ RevalidateBeforeSend
+→ TriggerSendOnce
+→ RecordSegmentResult
+→ AdapterStabilityWait
+→ NextSegment
 ```
 
-`DeliveryResult` 使用正交字段表达 `Status`、`Effect`、`Stage`、`Confidence`、`ErrorCode`、`Message`、`Retryable` 和 `TraceId`。`SendTriggered` 只表示发送快捷操作已完整执行；仅能确认目标应用最终发送结果时才使用 `Sent`。插入或发送已经开始但结果不确定时返回 `Unknown + Unknown`，禁止自动重试。
+每段执行前都重新验证目标。Adapter 根据粘贴完成、目标、前台窗口、焦点/Caret 指纹稳定性决定何时进入下一段，不提供用户可配置的固定间隔。任一段失败、`Unknown` 或能力不支持时立即停止，不自动重试，不执行后续段，也不提供“继续剩余段”。
 
-当前企业微信兼容目标是当前主流版本，不设置版本门禁。客户端版本号仅进入脱敏诊断 Trace，不参与启动、插入、发送、排队或降级判断：
+`BatchDeliveryResult` 记录总段数、已完成段数、失败段索引、逐段结果和 TraceId。部分成功必须明确显示“已完成 X/N 段，第 Y 段停止”。整批完成只声明 `SendTriggered`，不得声称目标应用最终已发送；UsageCount 和搜索历史只在整批完成后更新一次。
 
-- `InsertText = Verified`
-- `VerifyInsert = Verified`：只验证粘贴动作完整执行且目标、前台窗口、输入焦点/Caret 指纹保持稳定，不读取正文
-- `SendText = Verified`：用户在 Launcher 中以 `Ctrl+Enter` 明确触发；该组合键只表达通用 `InsertAndSend` 意图，企业微信 Adapter 在发送前重校验后按当前目标协议注入一次 `Enter`
-- `VerifySend = Unsupported`：无法确认目标应用最终发送结果，完整注入返回 `SendTriggered`，不得声称 `Sent`
-- 固定使用受保护 Clipboard + `Ctrl+V` 插入
-- 不开放 Unicode 直输、后台目标投递、无用户授权自动发送或失败自动重试
+### Adapter Capabilities
 
-### Persistence and Search
+首发能力字段固定为：
 
-SQLite 是事实源，由 Platform.Windows 单写者、事务 migration、外键、busy timeout 和 WAL 管理。只有 DB Commit 成功后才更新 Core 内存搜索索引；搜索过程不访问 SQLite。
+```text
+InsertText
+VerifyTextInsert
+InsertImage
+VerifyImageInsert
+TriggerSend
+VerifySend
+```
+
+能力状态为 `Verified`、`Unverified`、`Unsupported`。客户端版本号只进入脱敏诊断 Trace，不参与准入或降级。
+
+- Generic Adapter：文字能力按运行时规则检测；`InsertImage`、`VerifyImageInsert`、`TriggerSend`、`VerifySend` 默认为 `Unsupported`。
+- 企业微信 Adapter：`InsertText = Verified`、`VerifyTextInsert = Verified`、`TriggerSend = Verified`、`VerifySend = Unsupported`。
+- 企业微信图片人工矩阵通过前，`InsertImage = Unsupported`、`VerifyImageInsert = Unsupported`；不得使用企业微信版本号作为图片准入门槛。
+- `VerifyTextInsert` 和未来的 `VerifyImageInsert` 只验证投递动作完整执行以及目标、前台窗口、焦点/Caret 指纹稳定，不读取聊天正文、不截图、不识别聊天区内容。
+- `SendTriggered` 仅表示发送快捷操作已完整执行；只有 Adapter 能确认目标应用最终发送结果时才可使用 `Sent`。
+
+文字和图片剪贴板事务都必须复用独立 STA Worker、保存原剪贴板、写入规范化 Payload、投递前重校验、一次 `Ctrl+V`、剪贴板序列检查和尽力恢复。日志和 Trace 禁止记录正文、图片二进制、路径、文件名或缩略图。
+
+### Persistence, Media and Package
+
+SQLite 是事实源，由 Platform.Windows 单写者、外键、busy timeout 和 WAL 管理。正式 schema v1 使用 `phrases`、`phrase_segments` 和 `media_assets` 表保存话术头、有序段和媒体元数据；只有 DB Commit 成功后才更新 Core 内存搜索索引。
+
+产品尚未正式发布，不实现旧数据库、旧 `Phrase.Content` 或旧 `.qphrase` 包兼容。检测到现有开发库 schema 不一致时，必须关闭连接，备份数据库及 WAL/SHM/journal 到带时间戳的开发备份目录，然后重建新 schema v1；旧开发话术不迁移。重建失败时停止启动且不删除备份。首发基线后结构变化改用事务 migration。
+
+图片导入后复制到 `%LOCALAPPDATA%\QuickPhrase\Media\`，以 AssetId 命名。SQLite 只保存内部媒体标识、MIME、字节数、宽高和创建时间，不保存原始绝对路径。支持 PNG、JPEG，以及导入时转为 PNG 的 BMP；单图最大 10 MB、20 MP。导入必须完整解码并重新编码，移除 EXIF 和其他非必要元数据。
+
+`.qphrase` 首发包直接使用图文格式，包含 manifest、话术与有序段 JSON、`media/` 图片；不兼容旧开发期纯文字包。导入必须验证路径穿越、条目和引用完整性、扩展名与实际格式、单文件大小、总解压大小和媒体数量。CSV 每行只创建一个纯文字段，不支持图片或多段。
+
+首阶段图文能力只支持个人话术。企业同步继续使用纯文字契约，收到的企业正文映射为单文字段；企业话术只读，个人图文话术不得上传到 QuickPhrase Hub。
 
 ### Logging and Comments
 
-关键类补充中文设计注释；用户可见错误和日志使用清晰中文，并包含 TraceId、阶段、结果码和耗时。日志禁止记录话术正文、剪贴板、输入框文字、聊天内容、联系人和客户资料。
+关键类补充中文设计注释；用户可见错误和日志使用清晰中文，并包含 TraceId、阶段、结果码和耗时。日志禁止记录话术标题和正文、剪贴板、图片内容、图片路径或文件名、输入框文字、聊天内容、联系人和客户资料。
 
 ### Current WPF UI Baseline
 
@@ -118,9 +179,10 @@ desktop/QuickPhrase.Desktop/MainWindow.xaml
     └── Views/SettingsView.xaml
 
 desktop/QuickPhrase.Desktop/LauncherWindow.xaml
+desktop/QuickPhrase.Desktop/BatchPreviewWindow.xaml
 ```
 
-MainWindow 当前为 `1200×760`，最小 `900×560`；话术库、编辑器、设置、分类/移动/导航确认对话框和 Launcher 的布局以现有 XAML 和实际行为为准。不要基于 Floating Workspace、演示壁纸、假 Windows 桌面、任务栏或原型调试控件进行重构。
+MainWindow 当前为 `1200×760`，最小 `900×560`；话术库、图文段编辑器、设置、分类/移动/导航确认对话框、Launcher 和整批预览的布局以现有 XAML 和实际行为为准。不要基于 Floating Workspace、演示壁纸、假 Windows 桌面、任务栏或原型调试控件进行重构。
 
 ### Release Boundary
 
@@ -128,6 +190,7 @@ MainWindow 当前为 `1200×760`，最小 `900×560`；话术库、编辑器、�
 - `dotnet build QuickPhrase.sln` 不得触发 npm/node。
 - 发布目录不得包含 React bundle、HTML/JS/CSS 网页资源或 WebView2 Runtime 安装器。
 - `src/` 等原型链路可以保留，但不得被三个正式桌面 Project 引用。
-- 安装器保持当前用户、纯 WPF、自包含安装方式；数据、备份和日志在卸载后保留。
+- 安装器保持当前用户、纯 WPF、自包含安装方式；数据库、媒体、备份和日志在卸载后保留。
+- 企业微信图片投递在 Windows 11 人工矩阵通过前必须保持 `Unsupported`，不得把代码存在或模拟测试通过写成真实图片能力已验收。
 
-Phase 1–4 已完成，Phase 5 企业微信安全插入与通用显式发送代码路径、Phase 5.1 连续投递/启动性能基础设施已完成。Phase 6 Windows 11 发布基础设施状态为 `PHASE6_INFRA_PASS`；企业微信人工矩阵和 Windows 11 安装矩阵通过后才写入 `PHASE6_VERIFY_PASS_WIN11`。插件、AI、团队、文件/图片话术、浏览器扩展、跨平台、后台发送和自动更新进入 V2 Backlog，不修改 Architecture v1.1。
+插件、AI、团队图片同步、普通文件附件、视频、动画图片、OCR、图片编辑、截图、云媒体、浏览器扩展、跨平台、后台发送、失败续传和自动更新不属于本首发基线；个人图文话术与安全分批发送已经属于首发正式架构。

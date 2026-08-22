@@ -23,6 +23,27 @@ namespace QuickPhrase.Desktop.Tests;
 /// </summary>
 public class XamlParseValidationTests
 {
+
+    [Fact]
+    public void NewPhraseWindow_ShowsWithoutDeferredTemplateResourceErrors()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var window = new NewPhraseWindow(new FakeCommandService());
+            try
+            {
+                window.Show();
+                window.UpdateLayout();
+
+                Assert.True(window.IsVisible);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     [Fact]
     public void EditorAndLibraryViewsDoNotExposePhraseShortcutControls()
     {
@@ -271,7 +292,7 @@ public class XamlParseValidationTests
         {
             var fake = new FakeCommandService();
             var phrase = new Phrase(
-                Guid.NewGuid(), "示例标题", "示例正文", Guid.NewGuid(), ShortcutMode.None, null,
+                Guid.NewGuid(), "示例标题", PhraseBody.FromText("示例正文"), Guid.NewGuid(), ShortcutMode.None, null,
                 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "default");
             var pvm = new PhraseItemViewModel(phrase, "示例分类");
 
@@ -284,9 +305,11 @@ public class XamlParseValidationTests
                     "示例话术包",
                     DateTimeOffset.UtcNow,
                     0,
+                    0,
                     0),
                 Array.Empty<PhrasePackageCategory>(),
-                Array.Empty<PhrasePackagePhrase>());
+                Array.Empty<PhrasePackagePhrase>(),
+                Array.Empty<PhrasePackageMedia>());
             var packageSnapshot = new PhrasePackageLocalSnapshot(
                 Array.Empty<Category>(),
                 Array.Empty<Phrase>());

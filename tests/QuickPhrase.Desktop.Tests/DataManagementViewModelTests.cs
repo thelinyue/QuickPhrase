@@ -17,7 +17,7 @@ public sealed class DataManagementViewModelTests
         var child = Category("child", "设备", root.Id, 0);
         fake.Seed([root, child]);
         var packageCategory = new PhrasePackageCategory(Guid.NewGuid(), "设备", null, 0);
-        var package = Package([packageCategory], [new PhrasePackagePhrase(Guid.NewGuid(), "恢复", "正文", packageCategory.Id, 0)]);
+        var package = Package([packageCategory], [new PhrasePackagePhrase(Guid.NewGuid(), "恢复", PhraseBody.FromText("正文"), packageCategory.Id, 0)]);
         fake.NextPackageDocument = package;
         var vm = new DataManagementViewModel(fake);
 
@@ -37,7 +37,7 @@ public sealed class DataManagementViewModelTests
         var second = new PhrasePackageCategory(Guid.NewGuid(), "第二类", null, 1);
         fake.NextPackageDocument = Package(
             [first, second],
-            [new PhrasePackagePhrase(Guid.NewGuid(), "一", "正文一", first.Id, 0), new PhrasePackagePhrase(Guid.NewGuid(), "二", "正文二", second.Id, 0)]);
+            [new PhrasePackagePhrase(Guid.NewGuid(), "一", PhraseBody.FromText("正文一"), first.Id, 0), new PhrasePackagePhrase(Guid.NewGuid(), "二", PhraseBody.FromText("正文二"), second.Id, 0)]);
         var import = await new DataManagementViewModel(fake).LoadImportAsync("sample.qphrase");
 
         import!.Categories.Single(item => item.Category.Id == second.Id).IsSelected = false;
@@ -53,7 +53,7 @@ public sealed class DataManagementViewModelTests
     {
         var fake = new FakeCommandService();
         var category = new PhrasePackageCategory(Guid.NewGuid(), "客户", null, 0);
-        fake.NextBatchImportCsvDocument = Package([category], [new PhrasePackagePhrase(Guid.NewGuid(), "欢迎", "您好", category.Id, 0)]);
+        fake.NextBatchImportCsvDocument = Package([category], [new PhrasePackagePhrase(Guid.NewGuid(), "欢迎", PhraseBody.FromText("您好"), category.Id, 0)]);
         var data = new DataManagementViewModel(fake);
 
         var import = await data.LoadBatchImportAsync("sample.csv");
@@ -115,7 +115,7 @@ public sealed class DataManagementViewModelTests
     }
 
     private static PhrasePackageDocument Package(PhrasePackageCategory[] categories, PhrasePackagePhrase[] phrases) =>
-        new(new PhrasePackageManifest(PhrasePackageFormat.Format, 1, Guid.NewGuid(), "包", DateTimeOffset.UtcNow, phrases.Length, categories.Length), categories, phrases);
+        new(new PhrasePackageManifest(PhrasePackageFormat.Format, 1, Guid.NewGuid(), "包", DateTimeOffset.UtcNow, phrases.Length, categories.Length, 0), categories, phrases, []);
 
     private static Category Category(string key, string name, Guid? parentId, int sortOrder) =>
         new(GuidUtility(key), parentId, name, sortOrder, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);

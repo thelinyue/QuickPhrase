@@ -56,7 +56,7 @@ public sealed class UnifiedWpfUiStandardTests
     {
         var expectations = new Dictionary<string, string[]>
         {
-            [Path.Combine("Views", "EditorView.xaml")] = ["话术标题", "话术正文", "话术分类"],
+            [Path.Combine("Views", "EditorView.xaml")] = ["话术标题", "文字分隔符", "话术图文内容编辑区", "一级分类", "二级分类"],
             [Path.Combine("Views", "LibraryView.xaml")] = ["话术搜索"],
             ["OnboardingWindow.xaml"] = ["引导分类名称", "引导话术分类", "引导话术标题", "引导话术内容", "开机时启动闪语"],
             ["TitleBar.xaml"] = ["最小化窗口", "最大化或还原窗口", "关闭窗口"],
@@ -71,6 +71,15 @@ public sealed class UnifiedWpfUiStandardTests
             foreach (var name in names)
                 Assert.Contains($"AutomationProperties.Name=\"{name}\"", markup, StringComparison.Ordinal);
         }
+
+        var richEditor = File.ReadAllText(DesktopPath("DesignSystem", "Components", "PhraseRichTextEditor.xaml.cs"));
+        var editorViewModel = File.ReadAllText(DesktopPath("ViewModels", "EditorViewModel.cs"));
+        Assert.Contains("图片，第 {Index} 段", editorViewModel, StringComparison.Ordinal);
+        Assert.Contains("{DimensionText}", editorViewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("FileName", richEditor, StringComparison.Ordinal);
+
+        var batchPreview = ReadDesktopXaml("BatchPreviewWindow.xaml");
+        Assert.Contains("AutomationProperties.Name=\"{Binding AutomationName}\"", batchPreview, StringComparison.Ordinal);
     }
 
     [Fact]

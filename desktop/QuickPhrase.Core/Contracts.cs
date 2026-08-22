@@ -43,10 +43,101 @@ public sealed record Category(
     DateTimeOffset UpdatedAtUtc,
     PhraseScope Scope = PhraseScope.Personal);
 
+public enum PhraseSegmentKind
+{
+    Text,
+    Image,
+}
+
+/// <summary>
+/// 图片段在 Core 中只保存媒体资产标识和投递所需的脱敏元数据，不保存原文件名、绝对路径或 WPF 图片类型。
+/// </summary>
+public sealed record PhraseImageReference(
+    Guid AssetId,
+    string MimeType,
+    long ByteLength,
+    int PixelWidth,
+    int PixelHeight);
+
+/// <summary>话术的一个原子内容段；段数组顺序即预览和分批投递顺序。</summary>
+public sealed record PhraseSegment(
+    Guid Id,
+    PhraseSegmentKind Kind,
+    string? Text,
+    PhraseImageReference? Image)
+{
+    public static PhraseSegment CreateText(string text) =>
+        new(Guid.NewGuid(), PhraseSegmentKind.Text, text, null);
+
+    public static PhraseSegment CreateImage(PhraseImageReference image) =>
+        new(Guid.NewGuid(), PhraseSegmentKind.Image, null, image);
+}
+
+/// <summary>
+/// 首发图文话术正文。该类型刻意不包含文件系统信息；所有派生值均由不可变有序段计算，避免出现第二份正文事实源。
+/// </summary>
+public sealed record PhraseBody
+{
+    public const string DefaultBatchSeparator = "---";
+
+    public PhraseBody(ImmutableArray<PhraseSegment> segments, string batchSeparator)
+    {
+        Segments = segments;
+        BatchSeparator = NormalizeBatchSeparator(batchSeparator);
+    }
+
+    public ImmutableArray<PhraseSegment> Segments { get; }
+    public string BatchSeparator { get; }
+    public int SegmentCount => Segments.IsDefault ? 0 : Segments.Length;
+    public int ImageCount => Segments.IsDefault ? 0 : Segments.Count(segment => segment.Kind == PhraseSegmentKind.Image);
+    public bool RequiresBatchDelivery => SegmentCount > 1 || ImageCount > 0;
+    public bool IsSingleText => SegmentCount == 1 && ImageCount == 0;
+
+    /// <summary>列表摘要只取顺序中的第一段文字；完整搜索文本继续使用 TextProjection。</summary>
+    public string FirstText => Segments.IsDefault
+        ? string.Empty
+        : Segments.FirstOrDefault(segment => segment.Kind == PhraseSegmentKind.Text)?.Text ?? string.Empty;
+
+    public string TextProjection => Segments.IsDefault
+        ? string.Empty
+        : string.Join('\n', Segments
+            .Where(segment => segment.Kind == PhraseSegmentKind.Text && segment.Text is not null)
+            .Select(segment => segment.Text));
+
+    public static string NormalizeBatchSeparator(string? separator) => (separator ?? string.Empty).Trim();
+
+    public static PhraseBody FromText(string text, string batchSeparator = DefaultBatchSeparator) =>
+        new([PhraseSegment.CreateText(text)], batchSeparator);
+}
+
+/// <summary>媒体导入结果只返回脱敏资产引用；错误信息不得包含原文件名或绝对路径。</summary>
+public sealed record MediaImportResult(
+    bool IsSuccess,
+    PhraseImageReference? Image,
+    string? ErrorCode,
+    string? ErrorMessage)
+{
+    public static MediaImportResult Success(PhraseImageReference image) => new(true, image, null, null);
+    public static MediaImportResult Failure(string code, string message) => new(false, null, code, message);
+}
+
+public sealed record MediaAssetContent(PhraseImageReference Image, byte[] Bytes);
+
+/// <summary>平台无关媒体库契约；Desktop 只接触资产引用和规范化字节，不接触内部存储路径。</summary>
+public interface IMediaAssetStore
+{
+    Task<MediaImportResult> ImportAsync(string sourcePath, CancellationToken cancellationToken = default);
+    Task<MediaAssetContent?> ReadAsync(Guid assetId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 仅当持久化事实源能证明资产未被任何话术段引用时删除媒体；文件删除失败必须保留元数据，以便启动时重试。
+    /// </summary>
+    Task DeleteIfUnreferencedAsync(Guid assetId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+}
 public sealed record Phrase(
     Guid Id,
     string Title,
-    string Content,
+    PhraseBody Body,
     Guid CategoryId,
     ShortcutMode ShortcutMode,
     ShortcutValue? Shortcut,
@@ -79,7 +170,7 @@ public sealed record AppSettings(
 public sealed record CreatePhraseCommand(
     Guid Id,
     string Title,
-    string Content,
+    PhraseBody Body,
     Guid CategoryId,
     ShortcutMode ShortcutMode,
     string? Shortcut,
@@ -90,7 +181,7 @@ public sealed record UpdatePhraseCommand(
     Guid Id,
     long ExpectedVersion,
     string Title,
-    string Content,
+    PhraseBody Body,
     Guid CategoryId,
     ShortcutMode ShortcutMode,
     string? Shortcut,
@@ -181,6 +272,7 @@ public enum SearchMatchKind
     PinyinInitialsContains,
     PinyinFullPrefix,
     PinyinFullContains,
+    CategoryContains,
     ContentContains,
     FuzzyTitle,
 }
@@ -250,10 +342,16 @@ public sealed record TargetValidationResult(
     public static TargetValidationResult Invalid(string code, string message, DeliveryTarget? expected = null) => new(false, code, message, expected);
 }
 
+/// <summary>
+/// Adapter 的首发能力快照。文字、图片、发送及各自验证能力必须独立表达，
+/// 禁止用客户端版本号推导图片准入，也禁止把“已触发发送”误写成最终已发送。
+/// </summary>
 public sealed record AdapterCapabilities(
     CapabilityStatus InsertText,
-    CapabilityStatus VerifyInsert,
-    CapabilityStatus SendText,
+    CapabilityStatus VerifyTextInsert,
+    CapabilityStatus InsertImage,
+    CapabilityStatus VerifyImageInsert,
+    CapabilityStatus TriggerSend,
     CapabilityStatus VerifySend);
 
 public sealed record AdapterProfile(
@@ -261,8 +359,10 @@ public sealed record AdapterProfile(
     string ApplicationId,
     string ProfileVersion,
     CapabilityStatus InsertTextStatus,
-    CapabilityStatus VerifyInsertStatus,
-    CapabilityStatus SendTextStatus,
+    CapabilityStatus VerifyTextInsertStatus,
+    CapabilityStatus InsertImageStatus,
+    CapabilityStatus VerifyImageInsertStatus,
+    CapabilityStatus TriggerSendStatus,
     CapabilityStatus VerifySendStatus,
     string FallbackMode,
     DateTimeOffset? VerifiedAtUtc);
@@ -272,7 +372,8 @@ public sealed record DeliveryRequest(
     DeliveryTarget? Target,
     SendMode Mode,
     bool ClipboardCompatibilityMode,
-    TargetChangeBehavior TargetChangeBehavior = TargetChangeBehavior.CopyOnly);
+    TargetChangeBehavior TargetChangeBehavior = TargetChangeBehavior.CopyOnly,
+    bool RecordUsageOnSuccess = true);
 
 /// <summary>
 /// 用户本次投递的明确意图。该枚举不描述快捷键，也不规定 Adapter 采用何种发送协议。
@@ -328,6 +429,7 @@ public enum DeliveryStage
     UsageEnqueue,
     Insert,
     VerifyInsert,
+    AdapterStabilityWait,
     RevalidateBeforeSend,
     OptionalSend,
     VerifySend,
@@ -375,6 +477,23 @@ public sealed record DeliveryResult(
     public bool IsSuccess => Status == DeliveryStatus.Success;
 }
 
+/// <summary>整批投递结果；FailedSegmentIndex 使用从 1 开始的用户可见序号，空值表示没有失败段。</summary>
+public sealed record BatchDeliveryResult(
+    DeliveryStatus Status,
+    DeliveryEffect Effect,
+    int TotalSegments,
+    int CompletedSegments,
+    int? FailedSegmentIndex,
+    ImmutableArray<DeliveryResult> SegmentResults,
+    Guid TraceId)
+{
+    public bool IsSuccess => Status == DeliveryStatus.Success && CompletedSegments == TotalSegments;
+}
+
+public interface IBatchDeliveryStateMachine
+{
+    Task<BatchDeliveryResult> DeliverAsync(DeliveryRequest request, CancellationToken cancellationToken = default);
+}
 /// <summary>脱敏投递诊断记录，禁止写入话术正文、剪贴板和 UIA 文本。</summary>
 public sealed record DeliveryTrace(
     Guid TraceId,
@@ -405,9 +524,28 @@ public interface IApplicationAdapter
     Task<VerificationResult> VerifySendAsync(DeliveryRequest request, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// 图片段的 Adapter 执行契约。规范化图片字节仍是平台无关数据；具体剪贴板、窗口与焦点操作只由 Platform.Windows 实现。
+/// 能力字段保持独立门控：只有 InsertImage 与 VerifyImageInsert 均为 Verified 时，批次状态机才会调用本接口。
+/// </summary>
+public interface IImageApplicationAdapter
+{
+    Task<InsertResult> InsertImageAsync(DeliveryRequest request, MediaAssetContent image, CancellationToken cancellationToken);
+    Task<VerificationResult> VerifyImageInsertAsync(DeliveryRequest request, CancellationToken cancellationToken);
+}
+
 public interface IAdapterResolver
 {
     IApplicationAdapter Resolve(DeliveryTarget target, string? productVersion = null);
+}
+
+/// <summary>
+/// Adapter 的不可配置段间稳定等待。实现只能依据运行时目标、前台窗口和脱敏焦点指纹判断，
+/// 不读取聊天正文，也不以客户端版本号作为准入条件。
+/// </summary>
+public interface IAdapterBatchStabilityWaiter
+{
+    Task<VerificationResult> WaitForStabilityAsync(DeliveryTarget target, CancellationToken cancellationToken);
 }
 
 public interface ITextDeliveryStateMachine

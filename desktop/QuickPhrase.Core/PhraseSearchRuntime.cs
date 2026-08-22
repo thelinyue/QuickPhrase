@@ -8,17 +8,19 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
     private readonly IPhraseRepository _source;
     private readonly SearchService _search;
     private readonly IEnterpriseCatalog? _enterprise;
+    private ICategoryRepository? _categories;
     private readonly SemaphoreSlim _mutationGate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly object _rebuildLock = new();
     private Task? _rebuildTask;
     private bool _rebuildRequested;
 
-    private PhraseSearchRuntime(IPhraseRepository source, SearchService search, IEnterpriseCatalog? enterprise)
+    private PhraseSearchRuntime(IPhraseRepository source, SearchService search, IEnterpriseCatalog? enterprise, ICategoryRepository? categories)
     {
         _source = source;
         _search = search;
         _enterprise = enterprise;
+        _categories = categories;
         Phrases = new IndexedPhraseRepository(this);
         Search = search;
     }
@@ -44,7 +46,8 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
             try
             {
                 var phrases = await LoadAllPhrasesAsync(linked.Token);
-                _search.Replace(phrases, allowPinyinFallback: false, out var degraded);
+                var categoryNames = await LoadCategoryNamesAsync(linked.Token);
+                _search.Replace(phrases, categoryNames, allowPinyinFallback: false, out var degraded);
                 if (degraded) ScheduleRebuild();
             }
             catch (Exception)
@@ -63,6 +66,7 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
     public ICategoryRepository WrapCategoryRepository(ICategoryRepository source)
     {
         ArgumentNullException.ThrowIfNull(source);
+        _categories ??= source;
         return new IndexedCategoryRepository(this, source);
     }
 
@@ -70,14 +74,16 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
         IPhraseRepository repository,
         IPinyinProvider pinyinProvider,
         IEnterpriseCatalog? enterpriseCatalog = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ICategoryRepository? categoryRepository = null)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(pinyinProvider);
         var search = new SearchService(pinyinProvider);
-        var runtime = new PhraseSearchRuntime(repository, search, enterpriseCatalog);
+        var runtime = new PhraseSearchRuntime(repository, search, enterpriseCatalog, categoryRepository);
         var phrases = await runtime.LoadAllPhrasesAsync(cancellationToken);
-        search.Replace(phrases, allowPinyinFallback: true, out var degraded);
+        var categoryNames = await runtime.LoadCategoryNamesAsync(cancellationToken);
+        search.Replace(phrases, categoryNames, allowPinyinFallback: true, out var degraded);
         if (degraded) runtime.ScheduleRebuild();
         return runtime;
     }
@@ -90,7 +96,8 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
         try
         {
             var phrases = await LoadAllPhrasesAsync(linked.Token);
-            _search.Replace(phrases, allowPinyinFallback: false, out var degraded);
+            var categoryNames = await LoadCategoryNamesAsync(linked.Token);
+            _search.Replace(phrases, categoryNames, allowPinyinFallback: false, out var degraded);
             if (degraded) ScheduleRebuild();
         }
         catch
@@ -108,6 +115,13 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
         if (_enterprise is null) return personal;
         var enterprise = await _enterprise.ListPhrasesAsync(cancellationToken);
         return personal.Concat(enterprise).ToArray();
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, string>> LoadCategoryNamesAsync(CancellationToken cancellationToken)
+    {
+        if (_categories is null) return new Dictionary<Guid, string>();
+        var categories = await _categories.ListAsync(cancellationToken);
+        return categories.ToDictionary(category => category.Id, category => category.Name);
     }
 
     public async ValueTask DisposeAsync()
@@ -146,7 +160,9 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
     {
         if (phrase is null || change is null) return;
         var wasDirty = _search.Status.State != SearchIndexState.Ready;
-        if (!_search.TryBuildEntry(phrase, out var entry))
+        var categoryNames = await LoadCategoryNamesAsync(cancellationToken);
+        categoryNames.TryGetValue(phrase.CategoryId, out var categoryName);
+        if (!_search.TryBuildEntry(phrase, categoryName, out var entry))
         {
             _search.MarkDirty("话术已保存，但拼音索引更新失败；正在保留旧索引并后台恢复。");
             ScheduleRebuild();
@@ -173,6 +189,15 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
         foreach (var phraseId in deletion.DeletedPhraseIds) _searchInternalRemove(phraseId);
         if (wasDirty) ScheduleRebuild();
         await Task.CompletedTask;
+    }
+
+    private async Task PublishCategoryRenameAsync(Category? category, CancellationToken cancellationToken)
+    {
+        if (category is null) return;
+        var phrases = await LoadAllPhrasesAsync(cancellationToken);
+        var categoryNames = await LoadCategoryNamesAsync(cancellationToken);
+        _search.Replace(phrases, categoryNames, allowPinyinFallback: false, out var degraded);
+        if (degraded) ScheduleRebuild();
     }
 
     private void _searchInternalUpsert(SearchService.SearchEntry entry, bool markReady = true) => _search.Upsert(entry, markReady);
@@ -220,7 +245,8 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
             try
             {
                 var phrases = await LoadAllPhrasesAsync(_shutdown.Token);
-                _search.Replace(phrases, allowPinyinFallback: false, out _);
+                var categoryNames = await LoadCategoryNamesAsync(_shutdown.Token);
+                _search.Replace(phrases, categoryNames, allowPinyinFallback: false, out _);
             }
             finally
             {
@@ -247,7 +273,11 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
 
         public Task<IReadOnlyList<Category>> ListAsync(CancellationToken cancellationToken = default) => _source.ListAsync(cancellationToken);
         public Task<RepositoryResult<Category>> CreateAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default) => _source.CreateAsync(command, cancellationToken);
-        public Task<RepositoryResult<Category>> RenameAsync(RenameCategoryCommand command, CancellationToken cancellationToken = default) => _source.RenameAsync(command, cancellationToken);
+        public Task<RepositoryResult<Category>> RenameAsync(RenameCategoryCommand command, CancellationToken cancellationToken = default) =>
+            _owner.MutateAsync(
+                ct => _source.RenameAsync(command, ct),
+                (result, ct) => _owner.PublishCategoryRenameAsync(result.Value, ct),
+                cancellationToken);
         public Task<RepositoryResult<Category>> MoveAsync(MoveCategoryCommand command, CancellationToken cancellationToken = default) => _source.MoveAsync(command, cancellationToken);
 
         public Task<RepositoryResult<DeleteResult>> DeleteAsync(Guid id, long? expectedVersion, CancellationToken cancellationToken = default) =>

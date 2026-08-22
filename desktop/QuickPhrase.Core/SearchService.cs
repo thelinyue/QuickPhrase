@@ -70,11 +70,11 @@ internal sealed class SearchService : ISearchService
         return new SearchResponse(results, status);
     }
 
-    internal bool TryBuildEntry(Phrase phrase, out SearchEntry entry)
+    internal bool TryBuildEntry(Phrase phrase, string? categoryName, out SearchEntry entry)
     {
         try
         {
-            entry = BuildEntry(phrase, includePinyin: true);
+            entry = BuildEntry(phrase, categoryName, includePinyin: true);
             return true;
         }
         catch
@@ -84,22 +84,23 @@ internal sealed class SearchService : ISearchService
         }
     }
 
-    internal SearchEntry BuildFallbackEntry(Phrase phrase) => BuildEntry(phrase, includePinyin: false);
+    internal SearchEntry BuildFallbackEntry(Phrase phrase, string? categoryName) => BuildEntry(phrase, categoryName, includePinyin: false);
 
-    internal void Replace(IReadOnlyList<Phrase> phrases, bool allowPinyinFallback, out bool degraded)
+    internal void Replace(IReadOnlyList<Phrase> phrases, IReadOnlyDictionary<Guid, string> categoryNames, bool allowPinyinFallback, out bool degraded)
     {
         degraded = false;
         var builder = ImmutableDictionary.CreateBuilder<SearchKey, SearchEntry>();
         foreach (var phrase in phrases)
         {
-            if (TryBuildEntry(phrase, out var entry))
+            categoryNames.TryGetValue(phrase.CategoryId, out var categoryName);
+            if (TryBuildEntry(phrase, categoryName, out var entry))
             {
                 builder[new SearchKey(phrase.Scope, phrase.Id)] = entry;
                 continue;
             }
 
             if (!allowPinyinFallback) throw new InvalidOperationException("拼音索引构建失败。");
-            builder[new SearchKey(phrase.Scope, phrase.Id)] = BuildFallbackEntry(phrase);
+            builder[new SearchKey(phrase.Scope, phrase.Id)] = BuildFallbackEntry(phrase, categoryName);
             degraded = true;
         }
 
@@ -133,7 +134,7 @@ internal sealed class SearchService : ISearchService
     internal void MarkRebuilding() =>
         Interlocked.Exchange(ref _status, new SearchIndexStatus(SearchIndexState.Rebuilding, Status.SnapshotVersion, "SEARCH_INDEX_DIRTY", "正在从本地数据恢复搜索索引。"));
 
-    private SearchEntry BuildEntry(Phrase phrase, bool includePinyin)
+    private SearchEntry BuildEntry(Phrase phrase, string? categoryName, bool includePinyin)
     {
         var title = Normalize(phrase.Title);
         var full = ImmutableArray.CreateBuilder<string>();
@@ -142,10 +143,10 @@ internal sealed class SearchService : ISearchService
         {
             AddTerms(_pinyin.BuildTerms(phrase.Title), full, initials);
             // 正文拼音：使搜索同时支持"正文内容的拼音"（标题/正文 + 标题/正文拼音 多维度匹配）。
-            AddTerms(_pinyin.BuildTerms(phrase.Content), full, initials);
+            AddTerms(_pinyin.BuildTerms(phrase.Body.TextProjection), full, initials);
         }
 
-        return new SearchEntry(phrase, title, Normalize(phrase.Content), full.ToImmutable(), initials.ToImmutable());
+        return new SearchEntry(phrase, title, Normalize(categoryName), Normalize(phrase.Body.TextProjection), full.ToImmutable(), initials.ToImmutable());
     }
 
     private static void AddTerms(PinyinSearchTerms terms, ImmutableArray<string>.Builder full, ImmutableArray<string>.Builder initials)
@@ -171,6 +172,7 @@ internal sealed class SearchService : ISearchService
         if (entry.Initials.Any(value => value.Contains(query, StringComparison.Ordinal))) return SearchMatchKind.PinyinInitialsContains;
         if (entry.FullSpellings.Any(value => value.StartsWith(query, StringComparison.Ordinal))) return SearchMatchKind.PinyinFullPrefix;
         if (entry.FullSpellings.Any(value => value.Contains(query, StringComparison.Ordinal))) return SearchMatchKind.PinyinFullContains;
+        if (entry.Category.Contains(query, StringComparison.Ordinal)) return SearchMatchKind.CategoryContains;
         if (entry.Content.Contains(query, StringComparison.Ordinal)) return SearchMatchKind.ContentContains;
         return null;
     }
@@ -246,6 +248,7 @@ internal sealed class SearchService : ISearchService
     internal sealed record SearchEntry(
         Phrase Phrase,
         string Title,
+        string Category,
         string Content,
         ImmutableArray<string> FullSpellings,
         ImmutableArray<string> Initials);

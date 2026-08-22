@@ -422,11 +422,11 @@ public sealed class DesignSystemStyleTests
     }
 
     [Fact]
-    public void Runtime_PhraseRowTemplate_UsesGridLengthForIndexColumn()
+    public void Runtime_CompactPhraseRowTemplate_UsesAutoWidthForIndexColumn()
     {
         WpfTestApplicationHost.Invoke(application =>
         {
-            var template = Assert.IsType<DataTemplate>(application.FindResource("Template.Phrase.Row"));
+            var template = Assert.IsType<DataTemplate>(application.FindResource("Template.Phrase.CompactRow"));
             var listBox = new ListBox
             {
                 ItemTemplate = template,
@@ -447,7 +447,8 @@ public sealed class DesignSystemStyleTests
                 var root = Assert.IsType<Grid>(FindVisualDescendant<Grid>(
                     listBox,
                     grid => grid.Name == "RowRoot"));
-                Assert.Equal(new GridLength(32), root.ColumnDefinitions[0].Width);
+                Assert.Equal(new GridLength(24), root.ColumnDefinitions[0].Width);
+                Assert.Equal(GridLength.Auto, root.ColumnDefinitions[2].Width);
             }
             finally
             {

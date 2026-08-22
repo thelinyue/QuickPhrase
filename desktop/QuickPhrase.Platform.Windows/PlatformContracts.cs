@@ -18,6 +18,25 @@ internal interface IClipboardTransaction
 {
     Task<ClipboardResult> CopyOnlyAsync(string text, CancellationToken cancellationToken);
     Task<ClipboardResult> PasteAsync(string text, DeliveryTarget target, CancellationToken cancellationToken);
+    Task<ClipboardResult> PasteImageAsync(byte[] normalizedImage, DeliveryTarget target, CancellationToken cancellationToken) =>
+        Task.FromResult(ClipboardResult.Failed("IMAGE_INSERT_UNSUPPORTED"));
+}
+
+/// <summary>
+/// 剪贴板事务的可测试 Windows seam。该接口只存在于 Platform.Windows，Core 不接触 HWND、IDataObject 或图片类型。
+/// </summary>
+internal interface IClipboardPlatform
+{
+    System.Windows.Forms.IDataObject? CaptureDataObject();
+    bool TrySetText(string text);
+    bool TrySetImage(System.Drawing.Image image);
+    uint GetSequenceNumber();
+    bool IsIdentityCurrent(WindowsTargetIdentity target);
+    bool SetForegroundWindow(nint hwnd);
+    nint GetForegroundWindow();
+    bool SendCtrlV();
+    void RestoreDataObject(System.Windows.Forms.IDataObject dataObject);
+    void Delay(int milliseconds);
 }
 internal interface IDatabaseWriteQueue
 {

@@ -208,13 +208,14 @@ public sealed class GlobalDesignSystemTokenTests
             },
             ["Thickness.xaml"] = new[]
             {
+                "Thickness.Phrase.Row.CompactHorizontal",
                 "Thickness.None", "Thickness.XS", "Thickness.SM", "Thickness.MD", "Thickness.LG",
                 "Thickness.XL", "Thickness.XXL", "Thickness.XXXL", "Thickness.4XL", "Thickness.5XL",
                 "Thickness.Border.Default", "Thickness.Page", "Thickness.Section", "Thickness.Card",
                 "Thickness.Dialog", "Thickness.Popup", "Thickness.Control.Button.Compact",
                 "Thickness.Control.Button.Default", "Thickness.Control.Input", "Thickness.Control.Input.Multiline", "Thickness.Window.ResizeBorder",
                 "Thickness.Gap.Inline.XS", "Thickness.Gap.Inline.SM", "Thickness.Gap.Inline.MD", "Thickness.Gap.Inline.LG",
-                "Thickness.Gap.Inline.Before.MD", "Thickness.Gap.Inline.Before.LG",
+                "Thickness.Gap.Inline.Before.XS", "Thickness.Gap.Inline.Before.MD", "Thickness.Gap.Inline.Before.LG",
                 "Thickness.Gap.Stack.XS", "Thickness.Gap.Stack.SM", "Thickness.Gap.Stack.MD", "Thickness.Gap.Stack.LG",
                 "Thickness.Gap.Stack.Before.XS", "Thickness.Gap.Stack.Before.SM", "Thickness.Gap.Stack.Before.MD",
                 "Thickness.Gap.Stack.Before.LG", "Thickness.Gap.Stack.Before.XL",
@@ -236,7 +237,9 @@ public sealed class GlobalDesignSystemTokenTests
                 "Size.Control.Compact", "Size.Control.Default", "Size.Button.Icon.Width", "Size.Button.Icon.Height",
                 "Size.Input.Search", "Size.Switch.Width", "Size.Switch.Height", "Size.Switch.Thumb",
                 "Size.TitleBar.Height", "Size.TitleBar.GridLength", "Size.TitleBar.CaptionButton.Width",
-                "Size.Navigation.Item", "Size.Phrase.Row.Minimum", "Size.Phrase.IndexColumn.GridLength", "Size.Editor.Body.Height", "Size.Editor.Content.Maximum",
+                "Size.Navigation.Item", "Size.Phrase.Row.Minimum", "Size.Phrase.Row.Compact", "Size.Phrase.Row.ActionSize", "Size.Phrase.Row.SendActionColumn", "Size.Phrase.Row.IndexColumn", "Size.Phrase.Row.GapColumn", "Size.Phrase.IndexColumn.GridLength",
+                "Size.PhraseEditorWindow.Width", "Size.PhraseEditorWindow.Height", "Size.PhraseEditorWindow.MinimumWidth", "Size.PhraseEditorWindow.MinimumHeight",
+                "Size.PhraseEditor.Field.GapColumn", "Size.PhraseEditor.Toolbar.GapColumn", "Size.PhraseEditor.Separator.Width", "Size.PhraseEditor.ColorTile", "Size.PhraseRichEditor.MinimumHeight", "Size.PhraseRichEditor.Image.MaximumHeight",
                 "Size.Settings.Sidebar.Width", "Size.Settings.Sidebar.GridLength", "Size.Settings.Content.Maximum",
                 "Size.MainWindow.Width", "Size.MainWindow.Height", "Size.MainWindow.MinimumWidth", "Size.MainWindow.MinimumHeight",
                 "Size.SettingsWindow.Width", "Size.SettingsWindow.Height", "Size.SettingsWindow.MinimumWidth", "Size.SettingsWindow.MinimumHeight",
@@ -518,6 +521,7 @@ public sealed class GlobalDesignSystemTokenTests
             ("Thickness.Gap.Inline.SM", new Thickness(0, 0, 8, 0)),
             ("Thickness.Gap.Inline.MD", new Thickness(0, 0, 12, 0)),
             ("Thickness.Gap.Inline.LG", new Thickness(0, 0, 16, 0)),
+            ("Thickness.Gap.Inline.Before.XS", new Thickness(4, 0, 0, 0)),
             ("Thickness.Gap.Inline.Before.MD", new Thickness(12, 0, 0, 0)),
             ("Thickness.Gap.Inline.Before.LG", new Thickness(16, 0, 0, 0)),
             ("Thickness.Gap.Stack.XS", new Thickness(0, 0, 0, 4)),
@@ -580,10 +584,17 @@ public sealed class GlobalDesignSystemTokenTests
             ("Size.Switch.Thumb", 18),
             ("Size.TitleBar.Height", 32),
             ("Size.TitleBar.CaptionButton.Width", 48),
-            ("Size.Editor.Body.Height", 140),
-            ("Size.Editor.Content.Maximum", 480),
+            ("Size.PhraseEditorWindow.Width", 720),
+            ("Size.PhraseEditorWindow.Height", 680),
+            ("Size.PhraseEditorWindow.MinimumWidth", 600),
+            ("Size.PhraseEditorWindow.MinimumHeight", 520),
+            ("Size.PhraseEditor.ColorTile", 24),
+            ("Size.PhraseRichEditor.MinimumHeight", 240),
+            ("Size.PhraseRichEditor.Image.MaximumHeight", 180),
             ("Size.Navigation.Item", 40),
             ("Size.Phrase.Row.Minimum", 32),
+            ("Size.Phrase.Row.Compact", 28),
+            ("Size.Phrase.Row.ActionSize", 24),
             ("Size.Settings.Sidebar.Width", 176),
             ("Size.Settings.Content.Maximum", 640),
             ("Size.MainWindow.Width", 1200),
@@ -597,7 +608,7 @@ public sealed class GlobalDesignSystemTokenTests
             ("Size.Launcher.Width", 760),
             ("Size.Launcher.Height", 300),
             ("Size.Launcher.MinimumWidth", 680),
-            ("Size.Launcher.MinimumHeight", 260),
+            ("Size.Launcher.MinimumHeight", 36),
             ("Size.Launcher.MaximumHeight", 520),
             ("Size.Onboarding.Width", 640),
             ("Size.Onboarding.Height", 640),
@@ -643,6 +654,9 @@ public sealed class GlobalDesignSystemTokenTests
         Assert.Equal(new GridLength(20), Assert.IsType<GridLength>(sizes["Size.Onboarding.PracticeIndicator.Gutter.GridLength"]));
         Assert.Equal(new GridLength(28), Assert.IsType<GridLength>(sizes["Size.Onboarding.FooterStatus.GridLength"]));
         Assert.Equal(new GridLength(8), Assert.IsType<GridLength>(sizes["Size.SearchHistory.Gutter.GridLength"]));
+        Assert.Equal(new GridLength(16), Assert.IsType<GridLength>(sizes["Size.PhraseEditor.Field.GapColumn"]));
+        Assert.Equal(new GridLength(8), Assert.IsType<GridLength>(sizes["Size.PhraseEditor.Toolbar.GapColumn"]));
+        Assert.Equal(new GridLength(80), Assert.IsType<GridLength>(sizes["Size.PhraseEditor.Separator.Width"]));
 
         var motion = LoadDictionary(DesignSystemPath("Tokens", "Motion.xaml"));
         Assert.Equal(TimeSpan.FromMilliseconds(80), Assert.IsType<Duration>(motion["Motion.Duration.Fast"]).TimeSpan);

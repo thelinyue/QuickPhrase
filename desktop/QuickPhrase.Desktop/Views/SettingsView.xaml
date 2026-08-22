@@ -167,8 +167,8 @@
                                        Margin="{StaticResource Thickness.Settings.SectionTitle}" />
                             <Border Style="{StaticResource Style.Setting.Group}">
                                 <StackPanel>
-                                    <designSystem:SettingItem Title="快捷发送模式"
-                                                              Description="风险选项：Ctrl+Enter 显式发送时跳过每次确认；目标中已有草稿可能一并发送"
+                                    <designSystem:SettingItem Title="插入并发送免确认"
+                                                              Description="风险选项：Ctrl+Enter 插入并发送时跳过每次确认；目标中已有草稿可能一并发送"
                                                               ShowDivider="True">
                                         <designSystem:SettingItem.ControlContent>
                                             <CheckBox Style="{StaticResource Style.Switch.Default}"
@@ -202,7 +202,7 @@
                                        Margin="{StaticResource Thickness.Settings.SectionTitle}" />
                             <Border Style="{StaticResource Style.Setting.Group}">
                                 <designSystem:SettingItem Title="企业微信"
-                                                          Description="已进行专属插入与显式发送安全优化">
+                                                          Description="已进行专属插入与插入并发送安全优化">
                                     <designSystem:SettingItem.ControlContent>
                                         <TextBlock Text="已适配"
                                                    Style="{StaticResource Style.Text.Body.Small}"

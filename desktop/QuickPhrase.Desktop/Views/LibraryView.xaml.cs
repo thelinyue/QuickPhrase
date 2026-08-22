@@ -17,7 +17,7 @@ namespace QuickPhrase.Desktop;
 /// <summary>
 /// 话术库视图（闪语原型·第七版）：单栏纵向�?
 /// Content Header �?一级分�?chips �?内联嵌套树（二级 SubHeader + 话术行）�?底部搜索 �?品牌区�?
-/// 交互：单击选中、双击编辑、Enter 插入、Ctrl+Enter 插入并发送、Delete 删除�?
+/// 交互：单击选中，双击或 Enter 打开编辑/只读详情，Delete 删除个人话术。
 /// </summary>
 public partial class LibraryView : System.Windows.Controls.UserControl
 {
@@ -41,7 +41,6 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 // 把库级事件转发出去，�?MainWindow / ApplicationController 接入编辑器与投递�?
         _viewModel.EditRequested += (_, item) => RequestEdit?.Invoke(this, item);
         _viewModel.NewRequested += (_, _) => RequestNew?.Invoke(this, EventArgs.Empty);
-        _viewModel.InsertSendRequested += (_, item) => RequestInsertSend?.Invoke(this, item);
         _viewModel.MoveRequested += (_, item) => RequestMove?.Invoke(this, item);
         _viewModel.NewCategoryRequested += (_, _) => RequestNewCategory?.Invoke(this, EventArgs.Empty);
         _viewModel.NewSubCategoryRequested += (_, c) => RequestNewSubCategory?.Invoke(this, c);
@@ -334,7 +333,6 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
     public event EventHandler<PhraseItemViewModel>? RequestEdit;
     public event EventHandler? RequestNew;
-    public event EventHandler<PhraseItemViewModel>? RequestInsertSend;
     public event EventHandler<PhraseItemViewModel>? RequestMove;
     public event EventHandler? RequestNewCategory;
     public event EventHandler<CategoryItem>? RequestNewSubCategory;
@@ -345,6 +343,9 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
     /// <summary>编辑器保存或移动分类后，就地刷新对应话术行（保持列表滚动/选中状态）�?/summary>
     public void RefreshPhrase(Phrase phrase) => _viewModel.RefreshFromPhrase(phrase);
+
+    /// <summary>话术移动成功后用最新持久化结果刷新列表，并显示明确的成功反馈。</summary>
+    public void RefreshMovedPhrase(Phrase phrase) => _viewModel.RefreshMovedPhrase(phrase);
 
     /// <summary>整体重载（新�?删除分类后调用）�?/summary>
     public Task ReloadAsync() => _viewModel.LoadAsync();
@@ -361,7 +362,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         if (FindAncestor<ListBoxItem>(source)?.DataContext is not PhraseItemViewModel item) return;
 
         // 双击必须以实际命中的话术行为准，避免空白区域复用旧的 SelectedItem。
-        _viewModel.InsertCommand.Execute(item);
+        _viewModel.EditCommand.Execute(item);
     }
 
     private void OnListKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -385,11 +386,11 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         switch (e.Key)
         {
             case Key.Enter when (Keyboard.Modifiers & ModifierKeys.Control) == 0:
-                _viewModel.InsertCommand.Execute(_viewModel.SelectedPhrase);
+                _viewModel.EditCommand.Execute(_viewModel.SelectedPhrase);
                 e.Handled = true;
                 break;
             case Key.Enter when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
-                _viewModel.InsertSendCommand.Execute(_viewModel.SelectedPhrase);
+                _viewModel.EditCommand.Execute(_viewModel.SelectedPhrase);
                 e.Handled = true;
                 break;
             case Key.Delete:
@@ -634,7 +635,3 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         return false;
     }
 }
-
-
-
-

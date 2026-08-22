@@ -13,6 +13,8 @@ public sealed class QuickPhraseDataOptions
     public string DataDirectory => Path.Combine(RootPath, "Data");
     public string DatabasePath => Path.Combine(DataDirectory, "quickphrase.db");
     public string SecretsDirectory => Path.Combine(DataDirectory, "Secrets");
+    public string MediaDirectory => Path.Combine(RootPath, "Media");
+    public string DevelopmentBackupDirectory => Path.Combine(RootPath, "Backups", "Development");
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
     public int WriteQueueCapacity { get; init; } = 128;
     public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(15);

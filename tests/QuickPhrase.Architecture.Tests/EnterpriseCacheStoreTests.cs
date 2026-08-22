@@ -13,7 +13,7 @@ public sealed class EnterpriseCacheStoreTests
         var sharedCategoryId = Guid.NewGuid();
         var sharedPhraseId = Guid.NewGuid();
         Assert.True((await runtime.Categories.CreateAsync(new CreateCategoryCommand(sharedCategoryId, "个人分类"))).IsSuccess);
-        Assert.True((await runtime.Phrases.CreateAsync(new CreatePhraseCommand(sharedPhraseId, "个人话术", "个人正文", sharedCategoryId, ShortcutMode.None, null))).IsSuccess);
+        Assert.True((await runtime.Phrases.CreateAsync(new CreatePhraseCommand(sharedPhraseId, "个人话术", PhraseBody.FromText("个人正文"), sharedCategoryId, ShortcutMode.None, null))).IsSuccess);
 
         const string generation = "generation-a";
         await runtime.EnterpriseSyncStore.ApplyFullPageAsync(generation, new[]

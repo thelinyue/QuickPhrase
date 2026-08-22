@@ -44,13 +44,17 @@ internal sealed class GenericTextInputAdapter : IApplicationAdapter
         CapabilityStatus.Verified,
         CapabilityStatus.Unsupported,
         CapabilityStatus.Unsupported,
+        CapabilityStatus.Unsupported,
+        CapabilityStatus.Unsupported,
         "CopyOnly",
         null);
 
     public AdapterCapabilities DetectCapabilities() => new(
         Profile.InsertTextStatus,
-        Profile.VerifyInsertStatus,
-        Profile.SendTextStatus,
+        Profile.VerifyTextInsertStatus,
+        Profile.InsertImageStatus,
+        Profile.VerifyImageInsertStatus,
+        Profile.TriggerSendStatus,
         Profile.VerifySendStatus);
 
     public async Task<InsertResult> InsertAsync(DeliveryRequest request, CancellationToken cancellationToken)
@@ -85,7 +89,7 @@ internal sealed class GenericTextInputAdapter : IApplicationAdapter
 
         // 焦点验证通过后只使用受保护剪贴板；不读取输入框正文、选区或剪贴板原内容。
         started = Stopwatch.GetTimestamp();
-        var clipboard = await _clipboard.PasteAsync(request.Phrase.Content, request.Target, cancellationToken).ConfigureAwait(false);
+        var clipboard = await _clipboard.PasteAsync(request.Phrase.Body.TextProjection, request.Target, cancellationToken).ConfigureAwait(false);
         stages.Add(new DeliverySubstage("clipboard-paste", clipboard.Code, Stopwatch.GetElapsedTime(started).TotalMilliseconds));
         return clipboard.Succeeded
             ? new InsertResult(true, false, "INSERTED", stages.ToImmutable())

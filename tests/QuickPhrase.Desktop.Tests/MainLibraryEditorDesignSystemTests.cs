@@ -39,7 +39,6 @@ public sealed class MainLibraryEditorDesignSystemTests
     {
         var markup = ReadDesktopXaml("Views", "EditorView.xaml");
 
-        Assert.Contains("Style=\"{StaticResource Style.Text.Title.Medium}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Text.Label}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Input.Default}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Select.Default}\"", markup);
@@ -51,6 +50,8 @@ public sealed class MainLibraryEditorDesignSystemTests
         Assert.Contains("BorderBrush=\"{DynamicResource Brush.Border.Default}\"", markup);
         Assert.Contains("Value=\"{DynamicResource Brush.Border.Focus}\"", markup);
         Assert.Contains("Foreground=\"{DynamicResource Brush.Status.Error}\"", markup);
+        Assert.Contains("MinHeight=\"{StaticResource Size.PhraseRichEditor.MinimumHeight}\"", markup);
+        Assert.Contains("CornerRadius=\"{StaticResource Radius.Control}\"", markup);
 
         AssertNoVisualLiterals(markup, "EditorView.xaml");
         Assert.DoesNotContain("BaseTextBox", markup);
@@ -66,6 +67,7 @@ public sealed class MainLibraryEditorDesignSystemTests
     public void LibraryView_UsesSemanticThemeResourcesAndPreservesVirtualization()
     {
         var markup = ReadDesktopXaml("Views", "LibraryView.xaml");
+        var sharedRows = ReadDesktopXaml("DesignSystem", "Styles", "Lists.xaml");
 
         Assert.Contains("Style=\"{StaticResource Style.View.Root}\"", markup);
         Assert.Contains("Background=\"{DynamicResource Brush.Surface.Default}\"", markup);
@@ -75,7 +77,7 @@ public sealed class MainLibraryEditorDesignSystemTests
         Assert.Contains("ConverterParameter=deep", markup);
         Assert.DoesNotContain("<Setter TargetName=\"Root\" Property=\"Background\" Value=\"{DynamicResource Brush.Accent.Primary.Pressed}\" />", markup);
         Assert.Contains("Style=\"{StaticResource Style.Input.Search}\"", markup);
-        Assert.Contains("Style=\"{StaticResource Style.Button.Icon}\"", markup);
+        Assert.Contains("Style=\"{StaticResource Style.Button.Icon}\"", sharedRows);
         Assert.Contains("Style=\"{StaticResource Style.Menu.Item.Danger}\"", markup);
         Assert.Contains("VirtualizingStackPanel.IsVirtualizing=\"True\"", markup);
         Assert.Contains("VirtualizingStackPanel.VirtualizationMode=\"Recycling\"", markup);
@@ -100,12 +102,12 @@ public sealed class MainLibraryEditorDesignSystemTests
 
         Assert.Contains("x:Key=\"Style.ListItem.Phrase.Library\"", markup);
         Assert.Contains("BasedOn=\"{StaticResource Style.ListItem.Phrase}\"", markup);
-        Assert.Contains("x:Key=\"Template.Phrase.Row\"", markup);
+        Assert.Contains("x:Key=\"Template.Phrase.CompactRow\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Text.Mono}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Text.Label}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Text.Body.Medium}\"", markup);
         Assert.Contains("Style=\"{StaticResource Style.Button.Icon}\"", markup);
-        Assert.Contains("MinHeight=\"{StaticResource Size.Phrase.Row.Minimum}\"", markup);
+        Assert.Contains("Height=\"{StaticResource Size.Phrase.Row.Compact}\"", markup);
         Assert.Contains("Value=\"{DynamicResource Brush.Surface.Hover}\"", markup);
         Assert.Contains("Value=\"{DynamicResource Brush.Surface.Selected}\"", markup);
         Assert.Contains("Value=\"{DynamicResource Brush.Border.Focus}\"", markup);

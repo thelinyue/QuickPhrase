@@ -8,7 +8,6 @@
              xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              xmlns:local="clr-namespace:QuickPhrase.Desktop"
              xmlns:vm="clr-namespace:QuickPhrase.Desktop.ViewModels"
-             xmlns:desktopControls="clr-namespace:QuickPhrase.Desktop.Controls"
              xmlns:shared="clr-namespace:QuickPhrase.Desktop.Views.Shared"
              Style="{StaticResource Style.View.Root}">
 
@@ -16,14 +15,10 @@
         <!-- 紧凑列表参数仅服务于话术库页面，使用语义资源集中表达，避免视觉字面量散落在模板中。 -->
         <sys:Double x:Key="Size.Library.SubHeader.Height">24</sys:Double>
         <sys:Double x:Key="Size.Library.SubHeader.ArrowWidth">16</sys:Double>
-        <sys:Double x:Key="Size.Library.CompactPhrase.Height">28</sys:Double>
-        <sys:Double x:Key="Size.Library.CompactPhrase.ActionSize">24</sys:Double>
-        <!-- 发送按钮独立占位，确保悬停出现操作时序号、标题和正文不会横向跳动。 -->
-        <GridLength x:Key="Size.Library.CompactPhrase.SendActionColumn">24</GridLength>
         <GridLength x:Key="Size.Library.SubHeader.ArrowColumn">16</GridLength>
-        <GridLength x:Key="Size.Library.CompactPhrase.IndexColumn">24</GridLength>
         <GridLength x:Key="Size.Library.CompactList.GapColumn">4</GridLength>
-        <Thickness x:Key="Thickness.Library.CompactHorizontal">8,0</Thickness>
+        <!-- 话术行（含发送按钮）的整体左侧统一预留 4px；分类标题继续沿用自身的层级布局。 -->
+        <Thickness x:Key="Thickness.Library.PhraseRow.Horizontal">4,0</Thickness>
 
         <!-- 业务专属分类控件只保留 Toggle/展开语义；全部视觉状态消费全局 Token。 -->
         <Style x:Key="Style.Library.CategoryChip" TargetType="ToggleButton">
@@ -131,103 +126,31 @@
             <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
         </Style>
 
-        <!-- ContextMenu 保持既有命令和层级，仅统一菜单与危险操作视觉。 -->
+        <!-- ContextMenu 只保留内容管理动作；投递入口唯一存在于闪念。 -->
         <Style TargetType="MenuItem" BasedOn="{StaticResource Style.Menu.Item}" />
         <Style TargetType="Separator" BasedOn="{StaticResource Style.Menu.Separator}" />
-        <!-- 话术库专属紧凑行：发送按钮与编号各固定 24px，标题按内容自适应，正文只占用剩余空间。
-             该模板不替换 Launcher 使用的共享 Template.Phrase.Row，避免页面级密度调整扩散到启动器。 -->
-        <DataTemplate x:Key="Template.Library.CompactPhraseRow">
-            <ContentControl>
-                <ContentControl.Template>
-                    <ControlTemplate TargetType="ContentControl">
-                        <Grid x:Name="RowRoot" Height="{StaticResource Size.Library.CompactPhrase.Height}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="{StaticResource Size.Library.CompactPhrase.SendActionColumn}" />
-                                <ColumnDefinition Width="{StaticResource Size.Library.CompactList.GapColumn}" />
-                                <ColumnDefinition Width="{StaticResource Size.Library.CompactPhrase.IndexColumn}" />
-                                <ColumnDefinition Width="{StaticResource Size.Library.CompactList.GapColumn}" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="{StaticResource Size.Library.CompactList.GapColumn}" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
 
-                            <!-- 发送按钮与序号各占固定列；悬停显示操作时，后续文字列不发生横向跳动。 -->
-                            <Button x:Name="SendBtn"
-                                    Grid.Column="0"
-                                    Style="{StaticResource Style.Button.Icon}"
-                                    Width="{StaticResource Size.Library.CompactPhrase.ActionSize}"
-                                    Height="{StaticResource Size.Library.CompactPhrase.ActionSize}"
-                                    Content="←"
-                                    Opacity="0"
-                                    IsHitTestVisible="False"
-                                    VerticalAlignment="Center"
-                                    HorizontalAlignment="Center"
-                                    ToolTip="直接发送"
-                                    AutomationProperties.Name="直接发送"
-                                    Command="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBox}}, Path=(local:PhraseListActions.SendCommand)}"
-                                    CommandParameter="{Binding}" />
-                            <TextBlock x:Name="IndexText"
-                                       Grid.Column="2"
-                                       Style="{StaticResource Style.Text.Mono}"
-                                       HorizontalAlignment="Right"
-                                       VerticalAlignment="Center"
-                                       Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}, Path=Foreground}"
-                                       Text="{Binding IndexInCategory}" />
-                            <desktopControls:OverflowTextBlock Grid.Column="4"
-                                                               Style="{StaticResource Style.Text.Label}"
-                                                               VerticalAlignment="Center"
-                                                               TextWrapping="NoWrap"
-                                                               TextTrimming="CharacterEllipsis"
-                                                               Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}, Path=Foreground}"
-                                                               Text="{Binding Title}" />
-                            <desktopControls:OverflowTextBlock Grid.Column="6"
-                                                               Style="{StaticResource Style.Text.Body.Medium}"
-                                                               VerticalAlignment="Center"
-                                                               TextWrapping="NoWrap"
-                                                               TextTrimming="CharacterEllipsis"
-                                                               Text="{Binding Content}" />
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBox}}, Path=(local:PhraseListActions.ShowSendButton)}" Value="False">
-                                <Setter TargetName="SendBtn" Property="Visibility" Value="Collapsed" />
-                            </DataTrigger>
-                            <MultiDataTrigger>
-                                <MultiDataTrigger.Conditions>
-                                    <Condition Binding="{Binding IsMouseOver, ElementName=RowRoot}" Value="True" />
-                                    <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType={x:Type ListBox}}, Path=(local:PhraseListActions.ShowSendButton)}" Value="True" />
-                                </MultiDataTrigger.Conditions>
-                                <Setter TargetName="SendBtn" Property="Opacity" Value="1" />
-                                <Setter TargetName="SendBtn" Property="IsHitTestVisible" Value="True" />
-                            </MultiDataTrigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </ContentControl.Template>
-            </ContentControl>
-        </DataTemplate>
 
-        <!-- 话术行模板（三列：序号·发送共享 / 标题 / 内容）。
-             页面专属模板只收紧几何规格，完整管理菜单与现有命令保持不变。 -->
+        <!-- 话术行复用共享显示结构，但不注入任何 Insert/Send 命令。 -->
         <!-- 宿主只注入话术库完整管理菜单；序号·标题·正文显示结构来自共享资源。 -->
         <DataTemplate x:Key="PhraseRowTemplate" DataType="{x:Type vm:PhraseItemViewModel}">
-            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Template.Library.CompactPhraseRow}">
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Template.Phrase.CompactRow}">
                 <ContentControl.ContextMenu>
                     <ContextMenu>
-                        <MenuItem Header="发送到输入区" InputGestureText="双击"
-                                  Command="{Binding Owner.InsertCommand}" CommandParameter="{Binding}" />
-                        <MenuItem Header="直接发送"
-                                  Command="{Binding Owner.InsertSendCommand}" CommandParameter="{Binding}" />
                         <MenuItem Header="复制内容到剪贴板"
                                   Command="{Binding Owner.CopyCommand}" CommandParameter="{Binding}" />
                         <Separator />
                         <MenuItem Header="新增话术" Command="{Binding Owner.NewCommand}" />
-                        <MenuItem Header="插入一条话术"
-                                  Command="{Binding Owner.InsertCommand}" CommandParameter="{Binding}" />
                         <MenuItem Header="编辑" IsEnabled="{Binding CanManage}" Command="{Binding Owner.EditCommand}" CommandParameter="{Binding}" />
                         <MenuItem Header="排序" IsEnabled="False" />
                         <MenuItem Header="移动到其它分类" IsEnabled="{Binding CanManage}" Command="{Binding Owner.MoveCommand}" CommandParameter="{Binding}" />
                         <MenuItem Header="复制到其它分类" IsEnabled="False" />
                         <Separator />
-                        <MenuItem Header="删除" IsEnabled="{Binding CanManage}" Command="{Binding Owner.DeleteCommand}" CommandParameter="{Binding}" />
+                        <!-- ContextMenu 脱离话术行视觉树，删除命令必须通过 PlacementTarget 取回实际行数据，不能依赖继承 DataContext。 -->
+                        <MenuItem Header="删除"
+                                  IsEnabled="{Binding PlacementTarget.DataContext.CanManage, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  Command="{Binding PlacementTarget.DataContext.Owner.DeleteCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                         <Separator />
                         <MenuItem Header="如何批量操作？" IsEnabled="False" />
                     </ContextMenu>
@@ -420,22 +343,17 @@
                      ItemsSource="{Binding VisibleItems}"
                      SelectedItem="{Binding SelectedPhrase, Mode=TwoWay}"
                      Foreground="{DynamicResource Brush.Text.Primary}"
-                     BorderThickness="0" Background="Transparent"
+                     BorderThickness="0" Background="{DynamicResource Brush.Surface.Default}"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.CanContentScroll="True"
                      VirtualizingStackPanel.IsVirtualizing="True"
                      VirtualizingStackPanel.VirtualizationMode="Recycling"
                      SelectionMode="Single"
                      ItemTemplateSelector="{StaticResource PhraseRowSelector}"
-                     local:PhraseListActions.ShowSendButton="True"
-                     local:PhraseListActions.SendCommand="{Binding DataContext.InsertSendCommand, RelativeSource={RelativeSource Self}}"
                      MouseDoubleClick="PhraseList_MouseDoubleClick">
                 <ListBox.ItemContainerStyle>
-                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource Style.ListItem.Phrase.Library}">
-                        <Setter Property="Height" Value="{StaticResource Size.Library.CompactPhrase.Height}" />
-                        <Setter Property="MinHeight" Value="{StaticResource Size.Library.CompactPhrase.Height}" />
-                        <Setter Property="Padding" Value="{StaticResource Thickness.Library.CompactHorizontal}" />
-                        <Setter Property="Margin" Value="{StaticResource Thickness.None}" />
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource Style.ListItem.Phrase.Compact}">
+                        <Setter Property="Padding" Value="{StaticResource Thickness.Library.PhraseRow.Horizontal}" />
                         <!-- 拖拽排序仍由话术库宿主处理；共享样式只负责行的视觉状态。 -->
                         <EventSetter Event="PreviewMouseLeftButtonDown" Handler="PhraseItem_PreviewMouseLeftButtonDown" />
                         <EventSetter Event="PreviewMouseMove" Handler="PhraseItem_PreviewMouseMove" />
@@ -443,14 +361,6 @@
                         <EventSetter Event="DragOver" Handler="PhraseItem_DragOver" />
                         <EventSetter Event="Drop" Handler="PhraseItem_Drop" />
                         <Style.Triggers>
-                            <!-- 只有正常分类树中的二级话术缩进；搜索结果保持无标题的平铺列表。 -->
-                            <MultiDataTrigger>
-                                <MultiDataTrigger.Conditions>
-                                    <Condition Binding="{Binding IsSubCategory}" Value="True" />
-                                    <Condition Binding="{Binding DataContext.SearchQuery, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}" Value="" />
-                                </MultiDataTrigger.Conditions>
-                                <Setter Property="Margin" Value="{StaticResource Thickness.Gap.Inline.Before.LG}" />
-                            </MultiDataTrigger>
                             <DataTrigger Binding="{Binding IsSubHeader}" Value="True">
                                 <Setter Property="Height" Value="{StaticResource Size.Library.SubHeader.Height}" />
                                 <Setter Property="MinHeight" Value="{StaticResource Size.Library.SubHeader.Height}" />

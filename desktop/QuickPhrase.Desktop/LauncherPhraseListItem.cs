@@ -13,7 +13,9 @@ public sealed class LauncherPhraseListItem
         Phrase = phrase;
         IndexInCategory = index;
         Title = phrase.Title;
-        Content = phrase.Content;
+        Content = phrase.Body.FirstText;
+        CompositionSummary = $"{phrase.Body.SegmentCount} 段 · {phrase.Body.ImageCount} 图";
+        ScopeLabel = phrase.Scope == PhraseScope.Enterprise ? "企业" : "个人";
     }
 
     public Phrase Phrase { get; }
@@ -21,6 +23,8 @@ public sealed class LauncherPhraseListItem
     public int IndexInCategory { get; }
     public string Title { get; }
     public string Content { get; }
+    public string CompositionSummary { get; }
+    public string ScopeLabel { get; }
 
     public static LauncherPhraseListItem FromPhrase(Phrase phrase, int index) => new(phrase, index);
 

@@ -222,7 +222,7 @@ public partial class OnboardingViewModel : ObservableObject
             if (string.IsNullOrWhiteSpace(PhraseContent)) { ErrorMessage = "请输入话术正文。"; return; }
             if (SelectedCategory is null || SelectedCategory.Id == Guid.Empty) { ErrorMessage = "请选择一个分类。"; return; }
             var result = await _commands.CreatePhraseAsync(new CreatePhraseCommand(
-                Guid.NewGuid(), PhraseTitle.Trim(), PhraseContent, SelectedCategory.Id, ShortcutMode.None, null));
+                Guid.NewGuid(), PhraseTitle.Trim(), PhraseBody.FromText(PhraseContent), SelectedCategory.Id, ShortcutMode.None, null));
             if (!result.IsSuccess || result.Value is null)
             {
                 ErrorMessage = result.Error?.Message ?? "话术保存失败，请重试。";

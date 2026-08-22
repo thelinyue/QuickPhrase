@@ -109,7 +109,7 @@ public sealed class OnboardingViewModelTests
     public async Task BeginPracticeCommand_MarksLauncherOpenedWhenPracticeStarts()
     {
         var category = RootCategory("客户沟通");
-        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", "您好", category.Id, ShortcutMode.None, null,
+        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", PhraseBody.FromText("您好"), category.Id, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var fake = new FakeCommandService();
         fake.Seed(new[] { category });
@@ -157,7 +157,7 @@ public sealed class OnboardingViewModelTests
     public async Task AutomaticRestore_WithCategoryAndPhrase_StartsPractice()
     {
         var category = RootCategory("客户沟通");
-        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", "您好", category.Id, ShortcutMode.None, null,
+        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", PhraseBody.FromText("您好"), category.Id, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var fake = new FakeCommandService();
         fake.Seed(new[] { category });
@@ -197,7 +197,7 @@ public sealed class OnboardingViewModelTests
     public async Task ManualOpen_WithCategoryAndPhrase_StartsAtWelcome_ThenMovesToPractice()
     {
         var category = RootCategory("客户沟通");
-        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", "您好", category.Id, ShortcutMode.None, null,
+        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", PhraseBody.FromText("您好"), category.Id, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var fake = new FakeCommandService();
         fake.Seed(new[] { category });
@@ -234,7 +234,7 @@ public sealed class OnboardingViewModelTests
     public async Task CompletePage_PersistsStartupChoiceBeforeClosing()
     {
         var category = RootCategory("客户沟通");
-        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", "您好", category.Id, ShortcutMode.None, null,
+        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", PhraseBody.FromText("您好"), category.Id, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var fake = new FakeCommandService();
         fake.Seed(new[] { category });
@@ -257,7 +257,7 @@ public sealed class OnboardingViewModelTests
     public async Task Finish_AllowsContinuingWithoutPractice_ThenPersistsVersionOne()
     {
         var category = RootCategory("客户沟通");
-        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", "您好", category.Id, ShortcutMode.None, null,
+        var phrase = new Phrase(Guid.NewGuid(), "欢迎语", PhraseBody.FromText("您好"), category.Id, ShortcutMode.None, null,
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var fake = new FakeCommandService();
         fake.Seed(new[] { category });

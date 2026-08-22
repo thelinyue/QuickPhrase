@@ -15,8 +15,8 @@ public partial class PhraseItemViewModel : ObservableObject
     {
         _model = model;
         Title = model.Title;
-        Content = model.Content;
-        Snippet = MakeSnippet(model.Content);
+        Content = model.Body.FirstText;
+        Snippet = MakeSnippet(model.Body.FirstText);
         CategoryName = categoryName;
         Shortcut = model.Shortcut?.Display;
         ColorKey = model.ColorKey;
@@ -45,6 +45,9 @@ public partial class PhraseItemViewModel : ObservableObject
     public int SortOrder { get; set; }
 
     public bool HasShortcut => !string.IsNullOrEmpty(Shortcut);
+    public int SegmentCount => _model.Body.SegmentCount;
+    public int ImageCount => _model.Body.ImageCount;
+    public string CompositionSummary => $"{SegmentCount} 段 · {ImageCount} 图";
 
     /// <summary>在当前一级分类视图内的序号（从 1 起），用于话术行模板的序号列。</summary>
     public int IndexInCategory { get; set; }
@@ -57,8 +60,8 @@ public partial class PhraseItemViewModel : ObservableObject
     {
         _model = model;
         Title = model.Title;
-        Content = model.Content;
-        Snippet = MakeSnippet(model.Content);
+        Content = model.Body.FirstText;
+        Snippet = MakeSnippet(model.Body.FirstText);
         CategoryName = categoryName;
         Shortcut = model.Shortcut?.Display;
         ColorKey = model.ColorKey;
@@ -67,6 +70,9 @@ public partial class PhraseItemViewModel : ObservableObject
         OnPropertyChanged(nameof(IsEnterprise));
         OnPropertyChanged(nameof(CanManage));
         OnPropertyChanged(nameof(ScopeLabel));
+        OnPropertyChanged(nameof(SegmentCount));
+        OnPropertyChanged(nameof(ImageCount));
+        OnPropertyChanged(nameof(CompositionSummary));
     }
 
     /// <summary>回放底层领域记录，用于构造 UpdatePhraseCommand 等写操作。</summary>

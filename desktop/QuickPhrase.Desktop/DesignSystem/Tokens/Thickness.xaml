@@ -2,6 +2,8 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- 4px 基础网格。标准视觉间距使用 Thickness，避免页面散落裸 Double。 -->
     <Thickness x:Key="Thickness.None">0</Thickness>
+    <!-- 话术库与 Launcher 的共享紧凑话术行使用相同的左右留白。 -->
+    <Thickness x:Key="Thickness.Phrase.Row.CompactHorizontal">4,0</Thickness>
     <Thickness x:Key="Thickness.XS">4</Thickness>
     <Thickness x:Key="Thickness.SM">8</Thickness>
     <Thickness x:Key="Thickness.MD">12</Thickness>
@@ -33,6 +35,7 @@
     <Thickness x:Key="Thickness.Gap.Inline.SM">0,0,8,0</Thickness>
     <Thickness x:Key="Thickness.Gap.Inline.MD">0,0,12,0</Thickness>
     <Thickness x:Key="Thickness.Gap.Inline.LG">0,0,16,0</Thickness>
+    <Thickness x:Key="Thickness.Gap.Inline.Before.XS">4,0,0,0</Thickness>
     <Thickness x:Key="Thickness.Gap.Inline.Before.MD">12,0,0,0</Thickness>
     <Thickness x:Key="Thickness.Gap.Inline.Before.LG">16,0,0,0</Thickness>
     <Thickness x:Key="Thickness.Gap.Stack.XS">0,0,0,4</Thickness>
@@ -49,6 +52,10 @@
     <Thickness x:Key="Thickness.Launcher.Section">0,12,0,8</Thickness>
     <Thickness x:Key="Thickness.Launcher.Preview">0,4,0,12</Thickness>
     <Thickness x:Key="Thickness.Launcher.FooterHint">0,0,16,0</Thickness>
+    <Thickness x:Key="Thickness.BatchPreview.Capability">0,14,0,10</Thickness>
+    <Thickness x:Key="Thickness.BatchPreview.Thumbnail">0,6,0,0</Thickness>
+    <Thickness x:Key="Thickness.BatchPreview.Footer">0,14,0,0</Thickness>
+    <Thickness x:Key="Thickness.BatchPreview.ConfirmButton">10,0,0,0</Thickness>
     <Thickness x:Key="Thickness.Onboarding.Content">0,20,0,16</Thickness>
     <Thickness x:Key="Thickness.Onboarding.IntroDescription">0,12,0,20</Thickness>
     <Thickness x:Key="Thickness.Onboarding.CopyBlock">0,12,0,16</Thickness>

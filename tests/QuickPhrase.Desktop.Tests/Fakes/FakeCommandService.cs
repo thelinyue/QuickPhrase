@@ -24,6 +24,11 @@ public sealed class FakeCommandService : ICommandService
     public int SettingsUpdateCalls { get; private set; }
     public CreatePhraseCommand? LastCreatedPhraseCommand { get; private set; }
     public UpdatePhraseCommand? LastUpdatedPhraseCommand { get; private set; }
+    public MediaImportResult? NextMediaImportResult { get; set; }
+    public Exception? ReadMediaException { get; set; }
+    public MediaAssetContent? NextMediaContent { get; set; }
+    public DataError? NextPhraseSaveError { get; set; }
+    public List<Guid> ReleasedMediaAssetIds { get; } = [];
     // 测试钩子：允许模拟搜索请求乱序完成，验证 ViewModel 只接受最新查询结果。
     public Func<string, CancellationToken, Task>? BeforeSearchAsync { get; set; }
     public event Action<string>? SearchCompleted;
@@ -45,7 +50,7 @@ public sealed class FakeCommandService : ICommandService
 
         var result = _phrases
             .Where(p => p.Title.Contains(q, StringComparison.OrdinalIgnoreCase)
-                     || p.Content.Contains(q, StringComparison.OrdinalIgnoreCase))
+                     || p.Body.TextProjection.Contains(q, StringComparison.OrdinalIgnoreCase))
             .Take(limit)
             .ToArray();
         SearchCompleted?.Invoke(q);
@@ -58,8 +63,9 @@ public sealed class FakeCommandService : ICommandService
     public Task<RepositoryResult<Phrase>> CreatePhraseAsync(CreatePhraseCommand command, CancellationToken cancellationToken = default)
     {
         LastCreatedPhraseCommand = command;
+        if (NextPhraseSaveError is { } createError) return Task.FromResult(RepositoryResult<Phrase>.Failure(createError));
         var phrase = new Phrase(
-            command.Id, command.Title, command.Content, command.CategoryId, command.ShortcutMode,
+            command.Id, command.Title, command.Body, command.CategoryId, command.ShortcutMode,
             command.Shortcut is null ? null : new ShortcutValue(command.Shortcut, command.Shortcut),
             0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, command.ColorKey,
             command.SortOrder != 0 ? command.SortOrder : _phrases.Count(p => p.CategoryId == command.CategoryId) + 1);
@@ -70,12 +76,13 @@ public sealed class FakeCommandService : ICommandService
     public Task<RepositoryResult<Phrase>> UpdatePhraseAsync(UpdatePhraseCommand command, CancellationToken cancellationToken = default)
     {
         LastUpdatedPhraseCommand = command;
+        if (NextPhraseSaveError is { } updateError) return Task.FromResult(RepositoryResult<Phrase>.Failure(updateError));
         var index = _phrases.FindIndex(p => p.Id == command.Id);
         if (index < 0) return Task.FromResult(RepositoryResult<Phrase>.Failure(new DataError("NOT_FOUND", "话术不存在")));
         var updated = _phrases[index] with
         {
             Title = command.Title,
-            Content = command.Content,
+            Body = command.Body,
             CategoryId = command.CategoryId,
             ShortcutMode = command.ShortcutMode,
             Shortcut = command.Shortcut is null ? null : new ShortcutValue(command.Shortcut, command.Shortcut),
@@ -152,6 +159,20 @@ public sealed class FakeCommandService : ICommandService
         return Task.FromResult(RepositoryResult<Category>.Success(updated));
     }
 
+    public Task<MediaImportResult> ImportImageAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.FromResult(NextMediaImportResult ?? MediaImportResult.Failure("MEDIA_NOT_CONFIGURED", "测试未配置图片导入结果。"));
+
+    public Task<MediaAssetContent?> ReadMediaAsync(Guid assetId, CancellationToken cancellationToken = default)
+    {
+        if (ReadMediaException is not null) return Task.FromException<MediaAssetContent?>(ReadMediaException);
+        return Task.FromResult<MediaAssetContent?>(NextMediaContent);
+    }
+
+    public Task DeleteMediaIfUnreferencedAsync(Guid assetId, CancellationToken cancellationToken = default)
+    {
+        ReleasedMediaAssetIds.Add(assetId);
+        return Task.CompletedTask;
+    }
     public Task<AppSettings> GetSettingsAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(_settings);
 

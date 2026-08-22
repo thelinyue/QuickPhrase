@@ -25,7 +25,8 @@ public sealed class SearchHistoryViewLayoutTests
         Assert.Contains("ToolTip=\"清除全部历史搜索\"", markup, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"清除全部历史搜索\"", markup, StringComparison.Ordinal);
         Assert.Contains("<UniformGrid Rows=\"1\"", markup, StringComparison.Ordinal);
-        Assert.Contains("Columns=\"{Binding Tag, RelativeSource={RelativeSource AncestorType=ListBox}}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Columns=\"5\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Columns=\"{Binding Tag, RelativeSource={RelativeSource AncestorType=ListBox}}\"", markup, StringComparison.Ordinal);
         Assert.Contains("ScrollViewer.HorizontalScrollBarVisibility=\"Disabled\"", markup, StringComparison.Ordinal);
         Assert.Contains("ScrollViewer.VerticalScrollBarVisibility=\"Disabled\"", markup, StringComparison.Ordinal);
     }
@@ -42,15 +43,14 @@ public sealed class SearchHistoryViewLayoutTests
     }
 
     [Theory]
-    [InlineData(0, 5)]
-    [InlineData(479, 5)]
-    [InlineData(576, 6)]
-    [InlineData(672, 7)]
-    [InlineData(768, 8)]
-    [InlineData(1200, 8)]
-    public void VisibleHistoryCountStaysBetweenFiveAndEight(double availableWidth, int expected)
+    [InlineData(0)]
+    [InlineData(479)]
+    [InlineData(576)]
+    [InlineData(768)]
+    [InlineData(1200)]
+    public void VisibleHistoryCountIsFixedAtFive(double availableWidth)
     {
-        Assert.Equal(expected, SearchHistoryView.CalculateVisibleEntryLimit(availableWidth));
+        Assert.Equal(5, SearchHistoryView.CalculateVisibleEntryLimit(availableWidth));
     }
 
     private static string FindRepositoryRoot()

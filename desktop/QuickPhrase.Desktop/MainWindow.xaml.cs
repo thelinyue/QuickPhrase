@@ -212,10 +212,12 @@ public partial class MainWindow : Window
         var dialog = new Window
         {
             Style = (Style)FindResource("Style.Dialog.Window"),
-            Width = 520,
-            MinHeight = 360,
-            MaxHeight = Math.Max(400, workingArea.Height * 0.85),
-            SizeToContent = SizeToContent.Height,
+            Width = (double)FindResource("Size.PhraseEditorWindow.Width"),
+            Height = Math.Min((double)FindResource("Size.PhraseEditorWindow.Height"), Math.Max(520, workingArea.Height * 0.85)),
+            MinWidth = (double)FindResource("Size.PhraseEditorWindow.MinimumWidth"),
+            MinHeight = (double)FindResource("Size.PhraseEditorWindow.MinimumHeight"),
+            MaxHeight = Math.Max(520, workingArea.Height * 0.85),
+            SizeToContent = SizeToContent.Manual,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Owner = this,
             Content = editor,
@@ -233,8 +235,8 @@ public partial class MainWindow : Window
     private void ShowMoveDialog(PhraseItemViewModel item)
     {
         var dlg = new PhraseMoveDialog(_commands, item) { Owner = this };
-        if (dlg.ShowDialog() == true)
-            _libraryView?.RefreshPhrase(item.ToPhrase());
+        if (dlg.ShowDialog() == true && dlg.MovedPhrase is { } movedPhrase)
+            _libraryView?.RefreshMovedPhrase(movedPhrase);
     }
 
     private async Task SwitchToAsync(FrameworkElement next, INavigationGuard? nextGuard)

@@ -34,7 +34,7 @@ public sealed class Phase3SearchTests
         var titles = new[] { "恢复出厂设置", "恢复网络", "恢复账户", "恢复设备", "恢复服务", "恢复订单", "恢复通用" };
         foreach (var title in titles)
         {
-            var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), title, $"请处理：{title}", category.Id, ShortcutMode.None, null));
+            var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), title, PhraseBody.FromText($"请处理：{title}"), category.Id, ShortcutMode.None, null));
             Assert.True(created.IsSuccess, created.Error?.Message);
         }
 
@@ -43,6 +43,29 @@ public sealed class Phase3SearchTests
 
         Assert.Contains(initials.Items, result => result.Phrase.Title == "恢复出厂设置");
         Assert.Equal(7, multiple.Items.Length);
+    }
+
+
+    [Fact]
+    public async Task SearchMatchesCategoryNameFromInMemoryIndex()
+    {
+        var category = new Category(
+            Guid.NewGuid(), null, "售后设备", 0, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var phrase = Phrase("category-search", "普通标题", "普通正文", usage: 0, DateTimeOffset.UtcNow) with
+        {
+            CategoryId = category.Id,
+        };
+        var categories = new FakeCategoryRepository([category]);
+        await using var runtime = await PhraseSearchRuntime.CreateAsync(
+            new FakePhraseRepository([phrase]),
+            new MappingPinyinProvider(),
+            categoryRepository: categories);
+
+        var result = runtime.Search.Search(new SearchRequest("售后设备"));
+
+        Assert.Equal(phrase.Id, Assert.Single(result.Items).Phrase.Id);
+        Assert.Equal(SearchMatchKind.CategoryContains, result.Items[0].MatchKind);
+        Assert.Equal(1, categories.ListCalls);
     }
 
     [Fact]
@@ -165,11 +188,11 @@ public sealed class Phase3SearchTests
         var repository = new FakePhraseRepository([original]);
         await using var runtime = await PhraseSearchRuntime.CreateAsync(repository, new MappingPinyinProvider());
 
-        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新增话术", "新增正文", category, ShortcutMode.None, null));
+        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新增话术", PhraseBody.FromText("新增正文"), category, ShortcutMode.None, null));
         Assert.True(created.IsSuccess);
         Assert.Equal(created.Value!.Id, runtime.Search.Search(new SearchRequest("新增话术")).Items.Single().Phrase.Id);
 
-        var updated = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(original.Id, original.Version, "更新话术", "更新正文", category, ShortcutMode.None, null));
+        var updated = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(original.Id, original.Version, "更新话术", PhraseBody.FromText("更新正文"), category, ShortcutMode.None, null));
         Assert.True(updated.IsSuccess);
         Assert.Empty(runtime.Search.Search(new SearchRequest("原始话术")).Items);
         Assert.Equal(original.Id, runtime.Search.Search(new SearchRequest("更新话术")).Items.Single().Phrase.Id);
@@ -200,14 +223,14 @@ public sealed class Phase3SearchTests
         var repository = new FakePhraseRepository([Phrase("one", "设备说明", "正文", 1, DateTimeOffset.UtcNow)]);
         var provider = new MappingPinyinProvider { AlwaysFail = true };
         await using var runtime = await PhraseSearchRuntime.CreateAsync(repository, provider);
-        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新话术", "新正文", Guid.NewGuid(), ShortcutMode.None, null));
+        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "新话术", PhraseBody.FromText("新正文"), Guid.NewGuid(), ShortcutMode.None, null));
 
         Assert.True(created.IsSuccess);
         Assert.True(runtime.Search.Status.State is SearchIndexState.Dirty or SearchIndexState.Rebuilding);
         Assert.Empty(runtime.Search.Search(new SearchRequest("新话术")).Items);
 
         provider.AlwaysFail = false;
-        var retry = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "恢复索引", "恢复正文", Guid.NewGuid(), ShortcutMode.None, null));
+        var retry = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "恢复索引", PhraseBody.FromText("恢复正文"), Guid.NewGuid(), ShortcutMode.None, null));
         Assert.True(retry.IsSuccess);
         await WaitForAsync(() => runtime.Search.Status.State == SearchIndexState.Ready);
 
@@ -226,7 +249,7 @@ public sealed class Phase3SearchTests
     }
 
     private static Phrase Phrase(string id, string title, string content, int usage, DateTimeOffset updated, Guid? categoryId = null) =>
-        new(StableId(id), title, content, categoryId ?? StableId($"category-{id}"), ShortcutMode.None, null, usage, updated, 1, updated.AddMinutes(-1), updated);
+        new(StableId(id), title, PhraseBody.FromText(content), categoryId ?? StableId($"category-{id}"), ShortcutMode.None, null, usage, updated, 1, updated.AddMinutes(-1), updated);
 
 
     private static Guid StableId(string value) => new(SHA256.HashData(Encoding.UTF8.GetBytes(value)).AsSpan(0, 16));
@@ -239,6 +262,22 @@ public sealed class Phase3SearchTests
     {
         for (var i = 0; i < 100 && !condition(); i++) await Task.Delay(20);
         Assert.True(condition());
+    }
+
+    private sealed class FakeCategoryRepository : ICategoryRepository
+    {
+        private readonly IReadOnlyList<Category> _categories;
+        public FakeCategoryRepository(IReadOnlyList<Category> categories) => _categories = categories;
+        public int ListCalls { get; private set; }
+        public Task<IReadOnlyList<Category>> ListAsync(CancellationToken cancellationToken = default)
+        {
+            ListCalls++;
+            return Task.FromResult(_categories);
+        }
+        public Task<RepositoryResult<Category>> CreateAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<RepositoryResult<Category>> RenameAsync(RenameCategoryCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<RepositoryResult<Category>> MoveAsync(MoveCategoryCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<RepositoryResult<DeleteResult>> DeleteAsync(Guid id, long? expectedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class MappingPinyinProvider : IPinyinProvider
@@ -264,7 +303,7 @@ public sealed class Phase3SearchTests
         public Task<RepositoryResult<Phrase>> CreateAsync(CreatePhraseCommand command, CancellationToken cancellationToken = default)
         {
             var now = DateTimeOffset.UtcNow;
-            var phrase = new Phrase(command.Id, command.Title, command.Content, command.CategoryId, command.ShortcutMode, null, 0, null, 1, now, now);
+            var phrase = new Phrase(command.Id, command.Title, command.Body, command.CategoryId, command.ShortcutMode, null, 0, null, 1, now, now);
             _phrases[phrase.Id] = phrase;
             return Task.FromResult(RepositoryResult<Phrase>.Success(phrase, new CommittedDataChange("phrase", phrase.Id, "create", now)));
         }
@@ -273,7 +312,7 @@ public sealed class Phase3SearchTests
             if (!_phrases.TryGetValue(command.Id, out var current) || current.Version != command.ExpectedVersion)
                 return Task.FromResult(RepositoryResult<Phrase>.Failure(new DataError("VERSION_CONFLICT", "版本冲突。")));
             var now = DateTimeOffset.UtcNow;
-            var updated = current with { Title = command.Title, Content = command.Content, Version = current.Version + 1, UpdatedAtUtc = now };
+            var updated = current with { Title = command.Title, Body = command.Body, Version = current.Version + 1, UpdatedAtUtc = now };
             _phrases[updated.Id] = updated;
             return Task.FromResult(RepositoryResult<Phrase>.Success(updated, new CommittedDataChange("phrase", updated.Id, "update", now)));
         }

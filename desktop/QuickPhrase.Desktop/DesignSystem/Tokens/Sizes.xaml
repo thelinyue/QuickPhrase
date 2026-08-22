@@ -19,9 +19,26 @@
     <sys:Double x:Key="Size.TitleBar.CaptionButton.Width">48</sys:Double>
     <sys:Double x:Key="Size.Navigation.Item">40</sys:Double>
     <sys:Double x:Key="Size.Phrase.Row.Minimum">32</sys:Double>
+    <!-- 话术库与 Launcher 共用的紧凑搜索结果行：固定高度，避免正文显式换行撑开列表。 -->
+    <sys:Double x:Key="Size.Phrase.Row.Compact">28</sys:Double>
+    <sys:Double x:Key="Size.Phrase.Row.ActionSize">24</sys:Double>
+    <GridLength x:Key="Size.Phrase.Row.SendActionColumn">24</GridLength>
+    <GridLength x:Key="Size.Phrase.Row.IndexColumn">Auto</GridLength>
+    <GridLength x:Key="Size.Phrase.Row.GapColumn">4</GridLength>
     <GridLength x:Key="Size.Phrase.IndexColumn.GridLength">32</GridLength>
-    <sys:Double x:Key="Size.Editor.Body.Height">140</sys:Double>
-    <sys:Double x:Key="Size.Editor.Content.Maximum">480</sys:Double>
+    <!-- 闪念单行预览与结果列表使用相同的标题列宽，避免正文挤占标题识别空间。 -->
+    <GridLength x:Key="Size.Launcher.Phrase.TitleColumn.GridLength">100</GridLength>
+    <!-- 新建与编辑共用同一窗口和富文本表单几何；图片保持比例且只限制显示高度。 -->
+    <sys:Double x:Key="Size.PhraseEditorWindow.Width">720</sys:Double>
+    <sys:Double x:Key="Size.PhraseEditorWindow.Height">680</sys:Double>
+    <sys:Double x:Key="Size.PhraseEditorWindow.MinimumWidth">600</sys:Double>
+    <sys:Double x:Key="Size.PhraseEditorWindow.MinimumHeight">520</sys:Double>
+    <GridLength x:Key="Size.PhraseEditor.Field.GapColumn">16</GridLength>
+    <GridLength x:Key="Size.PhraseEditor.Toolbar.GapColumn">8</GridLength>
+    <GridLength x:Key="Size.PhraseEditor.Separator.Width">80</GridLength>
+    <sys:Double x:Key="Size.PhraseEditor.ColorTile">24</sys:Double>
+    <sys:Double x:Key="Size.PhraseRichEditor.MinimumHeight">240</sys:Double>
+    <sys:Double x:Key="Size.PhraseRichEditor.Image.MaximumHeight">180</sys:Double>
 
     <!-- 同时提供 Double 与 GridLength：前者供数值比较，后者可直接绑定 ColumnDefinition.Width。 -->
     <sys:Double x:Key="Size.Settings.Sidebar.Width">176</sys:Double>
@@ -38,17 +55,23 @@
     <sys:Double x:Key="Size.SettingsWindow.MinimumWidth">560</sys:Double>
     <sys:Double x:Key="Size.SettingsWindow.MinimumHeight">480</sys:Double>
 
-    <!-- 独立新建窗口与编辑器内容宽度对齐，避免从话术库启动时依赖主窗口尺寸。 -->
-    <sys:Double x:Key="Size.NewPhraseWindow.Width">520</sys:Double>
-    <sys:Double x:Key="Size.NewPhraseWindow.Height">600</sys:Double>
-    <sys:Double x:Key="Size.NewPhraseWindow.MinimumWidth">460</sys:Double>
-    <sys:Double x:Key="Size.NewPhraseWindow.MinimumHeight">360</sys:Double>
-
     <sys:Double x:Key="Size.Launcher.Width">760</sys:Double>
     <sys:Double x:Key="Size.Launcher.Height">300</sys:Double>
     <sys:Double x:Key="Size.Launcher.MinimumWidth">680</sys:Double>
-    <sys:Double x:Key="Size.Launcher.MinimumHeight">260</sys:Double>
+    <sys:Double x:Key="Size.Launcher.MinimumHeight">36</sys:Double>
     <sys:Double x:Key="Size.Launcher.MaximumHeight">520</sys:Double>
+
+    <!-- 整批预览保持对话框级信息密度，内容区超高时只滚动段列表。 -->
+    <sys:Double x:Key="Size.BatchPreview.Width">640</sys:Double>
+    <sys:Double x:Key="Size.BatchPreview.Height">560</sys:Double>
+    <sys:Double x:Key="Size.BatchPreview.MinimumWidth">560</sys:Double>
+    <sys:Double x:Key="Size.BatchPreview.MaximumHeight">720</sys:Double>
+    <GridLength x:Key="Size.BatchPreview.IndexColumn">42</GridLength>
+    <sys:Double x:Key="Size.BatchPreview.Text.MaximumHeight">72</sys:Double>
+    <sys:Double x:Key="Size.BatchPreview.Thumbnail.Width">160</sys:Double>
+    <sys:Double x:Key="Size.BatchPreview.Thumbnail.Height">96</sys:Double>
+    <sys:Double x:Key="Size.BatchPreview.CloseButton.MinimumWidth">88</sys:Double>
+    <sys:Double x:Key="Size.BatchPreview.ConfirmButton.MinimumWidth">120</sys:Double>
 
     <!-- 首次引导的行高使用 GridLength，确保 RowDefinition 不接收错误的 Double 类型。 -->
     <sys:Double x:Key="Size.Onboarding.Width">640</sys:Double>

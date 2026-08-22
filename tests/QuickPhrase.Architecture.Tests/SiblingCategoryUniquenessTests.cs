@@ -90,8 +90,8 @@ public sealed class SiblingCategoryUniquenessTests
         var package = Package(
             [packageRootA, packageRootB, packageChildA, packageChildB],
             [
-                new PhrasePackagePhrase(Guid.NewGuid(), "父级 A 话术", "内容 A", packageChildA.Id, 0),
-                new PhrasePackagePhrase(Guid.NewGuid(), "父级 B 话术", "内容 B", packageChildB.Id, 0),
+                new PhrasePackagePhrase(Guid.NewGuid(), "父级 A 话术", PhraseBody.FromText("内容 A"), packageChildA.Id, 0),
+                new PhrasePackagePhrase(Guid.NewGuid(), "父级 B 话术", PhraseBody.FromText("内容 B"), packageChildB.Id, 0),
             ]);
 
         var plan = PhrasePackagePlanner.BuildImportPlan(package, await runtime.CaptureSnapshotAsync());
@@ -130,9 +130,11 @@ public sealed class SiblingCategoryUniquenessTests
                 "同级唯一测试包",
                 DateTimeOffset.UtcNow,
                 phrases.Count,
-                categories.Count),
+                categories.Count,
+                0),
             categories,
-            phrases);
+            phrases,
+            []);
 
     private sealed class TemporaryDirectory : IDisposable
     {

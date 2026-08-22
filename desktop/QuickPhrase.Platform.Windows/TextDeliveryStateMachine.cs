@@ -83,7 +83,7 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
             var capabilities = adapter.DetectCapabilities();
             TraceStage(traceId, currentStage, adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, capabilities.InsertText.ToString(), adapter.DetectedProductVersion);
             // InsertAndSend 是不可拆分的显式意图。先检查发送能力，确保不支持发送时不会先插入或复制。
-            if (request.Mode == SendMode.InsertAndSend && capabilities.SendText != CapabilityStatus.Verified)
+            if (request.Mode == SendMode.InsertAndSend && capabilities.TriggerSend != CapabilityStatus.Verified)
                 return Result(traceId, DeliveryStatus.Unsupported, DeliveryEffect.None, currentStage, DeliveryConfidence.Confirmed,
                     "UNSUPPORTED_SEND", "当前应用仅支持插入，不支持快捷发送；请使用普通 Enter 插入话术。", false,
                     adapter.AdapterId, adapter.Profile.ProfileVersion, request.Target, adapter.DetectedProductVersion);
@@ -241,7 +241,7 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
 
     private async Task<DeliveryResult> CopyOnlyAsync(DeliveryRequest request, Guid traceId, string code, CancellationToken cancellationToken, IApplicationAdapter? adapter = null)
     {
-        var copied = await _clipboard.CopyOnlyAsync(request.Phrase.Content, cancellationToken).ConfigureAwait(false);
+        var copied = await _clipboard.CopyOnlyAsync(request.Phrase.Body.TextProjection, cancellationToken).ConfigureAwait(false);
         if (!copied.Succeeded)
             return Result(traceId, DeliveryStatus.Failed, DeliveryEffect.None, DeliveryStage.Fallback, DeliveryConfidence.Confirmed,
                 copied.Code, "无法复制话术到剪贴板。", false, adapter?.AdapterId ?? "Unknown", adapter?.Profile.ProfileVersion ?? "unknown", request.Target, adapter?.DetectedProductVersion);
@@ -253,6 +253,8 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
 
     private async Task RecordUsageAsync(DeliveryRequest request, CancellationToken cancellationToken)
     {
+        // 批次状态机逐段复用本状态机时显式关闭段级计数；只有整批完整成功后才由批次统一记录一次。
+        if (!request.RecordUsageOnSuccess) return;
         try { await _usageRecorder(request.Phrase, cancellationToken).ConfigureAwait(false); }
         catch (Exception exception) { Console.Error.WriteLine($"使用次数保存失败：{exception.Message}"); }
     }

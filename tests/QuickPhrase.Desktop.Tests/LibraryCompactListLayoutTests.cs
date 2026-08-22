@@ -4,7 +4,7 @@ using Xunit;
 namespace QuickPhrase.Desktop.Tests;
 
 /// <summary>
-/// 约束话术库的紧凑列表几何，防止后续改动重新引入固定标题列、分类留白或影响 Launcher 的共享行模板。
+/// 约束话术库与 Launcher 复用的紧凑话术行几何，防止多行正文重新撑开搜索结果。
 /// </summary>
 public sealed class LibraryCompactListLayoutTests
 {
@@ -33,41 +33,63 @@ public sealed class LibraryCompactListLayoutTests
     public void PhraseRow_UsesSeparateLeftSendActionAndKeepsIndexVisibleOnHover()
     {
         var markup = ReadDesktopFile("Views", "LibraryView.xaml");
-        var template = Slice(markup, "<DataTemplate x:Key=\"Template.Library.CompactPhraseRow\"", "</DataTemplate>");
+        var sharedRows = ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml");
+        var sizes = ReadDesktopFile("DesignSystem", "Tokens", "Sizes.xaml");
+        var thickness = ReadDesktopFile("DesignSystem", "Tokens", "Thickness.xaml");
+        var template = Slice(sharedRows, "<DataTemplate x:Key=\"Template.Phrase.CompactRow\"", "</DataTemplate>");
         var phraseList = Slice(markup, "<ListBox x:Name=\"PhraseList\"", "</ListBox>");
         var itemStyle = Slice(phraseList, "<ListBox.ItemContainerStyle>", "</ListBox.ItemContainerStyle>");
-
-        Assert.Contains("<sys:Double x:Key=\"Size.Library.CompactPhrase.Height\">28</sys:Double>", markup);
-        Assert.Contains("<GridLength x:Key=\"Size.Library.CompactPhrase.SendActionColumn\">24</GridLength>", markup);
-        Assert.Contains("<GridLength x:Key=\"Size.Library.CompactPhrase.IndexColumn\">24</GridLength>", markup);
-        Assert.Contains("<Thickness x:Key=\"Thickness.Library.CompactHorizontal\">8,0</Thickness>", markup);
-        Assert.Contains("Height=\"{StaticResource Size.Library.CompactPhrase.Height}\"", template);
-        Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Library.CompactPhrase.SendActionColumn}\" />", template);
-        Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Library.CompactPhrase.IndexColumn}\" />", template);
-        Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Library.CompactList.GapColumn}\" />", template);
-        Assert.Contains("<ColumnDefinition Width=\"Auto\" />", template);
-        Assert.Contains("<ColumnDefinition Width=\"*\" />", template);
-        Assert.Equal(3, template.Split("<ColumnDefinition Width=\"{StaticResource Size.Library.CompactList.GapColumn}\" />", StringSplitOptions.None).Length - 1);
-        var sendButton = Slice(template, "<Button x:Name=\"SendBtn\"", "/>");
+        var sendButton = Slice(template, "<Button x:Name=\"SendBtn\"", "</Button>");
         var indexText = Slice(template, "<TextBlock x:Name=\"IndexText\"", "/>");
 
+        Assert.Contains("<sys:Double x:Key=\"Size.Phrase.Row.Compact\">28</sys:Double>", sizes);
+        Assert.Contains("<GridLength x:Key=\"Size.Phrase.Row.SendActionColumn\">24</GridLength>", sizes);
+        Assert.Contains("<GridLength x:Key=\"Size.Phrase.Row.IndexColumn\">Auto</GridLength>", sizes);
+        Assert.Contains("<Thickness x:Key=\"Thickness.Phrase.Row.CompactHorizontal\">4,0</Thickness>", thickness);
+        Assert.Contains("Height=\"{StaticResource Size.Phrase.Row.Compact}\"", template);
+        Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Phrase.Row.SendActionColumn}\" />", template);
+        Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Phrase.Row.IndexColumn}\" />", template);
+        Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Phrase.Row.GapColumn}\" />", template);
+        Assert.Contains("<ColumnDefinition Width=\"Auto\" />", template);
+        Assert.Contains("<ColumnDefinition Width=\"*\" />", template);
+        Assert.Equal(3, template.Split("<ColumnDefinition Width=\"{StaticResource Size.Phrase.Row.GapColumn}\" />", StringSplitOptions.None).Length - 1);
         Assert.Contains("Grid.Column=\"0\"", sendButton);
-        Assert.Contains("Content=\"←\"", sendButton);
+        Assert.Contains("Text=\"&#xE724;\"", sendButton);
+        Assert.Contains("FontFamily=\"Segoe MDL2 Assets\"", sendButton);
+        Assert.Contains("ScaleX=\"-1\"", sendButton);
+        Assert.Contains("ToolTip=\"插入并发送\"", sendButton);
+        Assert.Contains("AutomationProperties.Name=\"插入并发送\"", sendButton);
         Assert.Contains("Path=(local:PhraseListActions.SendCommand)", sendButton);
         Assert.Contains("Grid.Column=\"2\"", indexText);
+        Assert.Contains("HorizontalAlignment=\"Left\"", indexText);
+        Assert.Contains("Background=\"Transparent\"", template);
         Assert.True(template.IndexOf("<Button x:Name=\"SendBtn\"", StringComparison.Ordinal) < template.IndexOf("<TextBlock x:Name=\"IndexText\"", StringComparison.Ordinal));
         Assert.DoesNotContain("<Setter TargetName=\"IndexText\" Property=\"Visibility\" Value=\"Collapsed\" />", template);
         Assert.Contains("<Condition Binding=\"{Binding IsMouseOver, ElementName=RowRoot}\" Value=\"True\" />", template);
         Assert.Contains("<Setter TargetName=\"SendBtn\" Property=\"Opacity\" Value=\"1\" />", template);
         Assert.Contains("<Setter TargetName=\"SendBtn\" Property=\"IsHitTestVisible\" Value=\"True\" />", template);
-
-        Assert.Contains("<Setter Property=\"Height\" Value=\"{StaticResource Size.Library.CompactPhrase.Height}\" />", itemStyle);
-        Assert.Contains("<Setter Property=\"MinHeight\" Value=\"{StaticResource Size.Library.CompactPhrase.Height}\" />", itemStyle);
-        Assert.Contains("<Setter Property=\"Padding\" Value=\"{StaticResource Thickness.Library.CompactHorizontal}\" />", itemStyle);
+        Assert.Contains("BasedOn=\"{StaticResource Style.ListItem.Phrase.Compact}\"", itemStyle);
+        Assert.Contains("x:Key=\"Style.ListItem.Phrase.Compact\"", sharedRows);
+        Assert.Contains("<Setter Property=\"Padding\" Value=\"{StaticResource Thickness.Phrase.Row.CompactHorizontal}\" />", sharedRows);
         Assert.Contains("<Setter Property=\"Margin\" Value=\"{StaticResource Thickness.None}\" />", itemStyle);
-        Assert.Contains("<Condition Binding=\"{Binding IsSubCategory}\" Value=\"True\" />", itemStyle);
-        Assert.Contains("Binding DataContext.SearchQuery", itemStyle);
-        Assert.Contains("<Setter Property=\"Margin\" Value=\"{StaticResource Thickness.Gap.Inline.Before.LG}\" />", itemStyle);
+        Assert.DoesNotContain("IsSubCategory", itemStyle);
+        Assert.DoesNotContain("DataContext.SearchQuery", itemStyle);
+        Assert.DoesNotContain("Thickness.Gap.Inline.Before.LG", itemStyle);
+    }
+
+    [Fact]
+    public void PhraseLibraryRows_UseImmediateFullRowHoverAndSelectionColors()
+    {
+        var markup = ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml");
+        var style = Slice(markup, "<Style x:Key=\"Style.ListItem.Phrase.Library\"", "</Style>");
+
+        Assert.Contains("<Border x:Name=\"Root\"", style);
+        Assert.Contains("Background=\"{TemplateBinding Background}\"", style);
+        Assert.Contains("<Setter TargetName=\"Root\" Property=\"Background\" Value=\"{DynamicResource Brush.Surface.Hover}\" />", style);
+        Assert.Contains("<Setter TargetName=\"Root\" Property=\"Background\" Value=\"{DynamicResource Brush.Surface.Selected}\" />", style);
+        Assert.DoesNotContain("<Storyboard", style);
+        Assert.DoesNotContain("ColorAnimation", style);
+        Assert.DoesNotContain("DoubleAnimation", style);
     }
 
     [Fact]
@@ -85,30 +107,31 @@ public sealed class LibraryCompactListLayoutTests
         Assert.Contains("<Setter TargetName=\"SelectedCategoryBackground\" Property=\"Visibility\" Value=\"Visible\" />", topCategoryStyle);
         Assert.DoesNotContain("<Trigger Property=\"IsMouseOver\" Value=\"True\">", topCategoryStyle);
         Assert.DoesNotContain("Brush.Accent.Primary", topCategoryStyle);
-
         Assert.Contains("Foreground=\"{DynamicResource Brush.Text.Primary}\"", subCategoryTemplate);
         Assert.Contains("FontWeight=\"Bold\"", subCategoryTemplate);
     }
 
     [Fact]
-    public void Library_RemovesResponsiveTitleWidthWhileLauncherKeepsSharedLayout()
+    public void LibraryAndLauncher_UseSharedCompactRowWithoutTitleWidthProperty()
     {
         var library = ReadDesktopFile("Views", "LibraryView.xaml");
         var libraryCode = ReadDesktopFile("Views", "LibraryView.xaml.cs");
         var viewModel = ReadDesktopFile("ViewModels", "PhraseLibraryViewModel.cs");
         var launcher = ReadDesktopFile("LauncherWindow.xaml");
+        var launcherCode = ReadDesktopFile("LauncherWindow.xaml.cs");
         var sharedRows = ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml");
 
-        Assert.Contains("Template.Library.CompactPhraseRow", library);
+        Assert.Contains("Template.Phrase.CompactRow", library);
+        Assert.Contains("Template.Phrase.CompactRow", launcher);
+        Assert.DoesNotContain("Template.Library.CompactPhraseRow", library);
         Assert.DoesNotContain("local:PhraseListActions.TitleColumnWidth", library);
+        Assert.DoesNotContain("local:PhraseListActions.TitleColumnWidth", launcher);
+        Assert.DoesNotContain("TitleColumnWidth", launcherCode);
         Assert.DoesNotContain("_viewModel.TitleColumnWidth", libraryCode);
         Assert.DoesNotContain("_titleColumnWidth", viewModel);
         Assert.DoesNotContain("using System.Windows;", viewModel);
-
-        Assert.Contains("Template.Phrase.Row", launcher);
-        Assert.Contains("local:PhraseListActions.TitleColumnWidth=\"100\"", launcher);
-        Assert.Contains("Path=(local:PhraseListActions.TitleColumnWidth)", sharedRows);
-        Assert.Contains("Size.Phrase.Row.Minimum", sharedRows);
+        Assert.DoesNotContain("Template.Phrase.Row", sharedRows);
+        Assert.Contains("Size.Phrase.Row.Compact", sharedRows);
     }
 
     private static string Slice(string source, string start, string end)

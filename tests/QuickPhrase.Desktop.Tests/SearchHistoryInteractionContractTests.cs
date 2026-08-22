@@ -8,8 +8,8 @@ using QuickPhrase.Desktop;
 namespace QuickPhrase.Desktop.Tests;
 
 /// <summary>
-/// 搜索历史的显示与保存时机契约：输入过程只展示候选历史，
-/// 只有话术库确认搜索或闪念成功插入后才持久化关键词。
+/// 搜索历史的显示与保存时机契约：话术库输入过程展示候选历史，
+/// 闪念仅在空查询时展示历史；只有话术库确认搜索或闪念成功插入后才持久化关键词。
 /// </summary>
 public sealed class SearchHistoryInteractionContractTests
 {
@@ -27,11 +27,11 @@ public sealed class SearchHistoryInteractionContractTests
         Assert.Contains("await RecordConfirmedSearchAsync(query);", ExtractMethod(code, "private async void SearchHistoryPanel_QuerySelected", "private async void SearchHistoryPanel_ClearRequested"), StringComparison.Ordinal);
         Assert.Contains("await RecordConfirmedSearchAsync(_viewModel.SearchQuery);", ExtractMethod(code, "private async void SearchBox_KeyDown", "// ============"), StringComparison.Ordinal);
         Assert.DoesNotContain("_recordSearchHistory", viewModel, StringComparison.Ordinal);
-        Assert.DoesNotContain("历史搜索保存失败", ExtractMethod(viewModel, "private async Task Insert", "private void Copy"), StringComparison.Ordinal);
+        Assert.DoesNotContain("历史搜索保存失败", viewModel, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void LauncherHistory_IsAboveSearchBox_AndUsesRemainingResultsViewport()
+    public void LauncherHistory_IsBelowSearchBox_AndUsesResultsViewportWhenQueryEntered()
     {
         var markup = File.ReadAllText(Path.Combine(
             FindRepositoryRoot(), "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
@@ -40,20 +40,21 @@ public sealed class SearchHistoryInteractionContractTests
         var queryStart = markup.IndexOf("<TextBox x:Name=\"QueryBox\"", StringComparison.Ordinal);
         var resultsStart = markup.IndexOf("<ListBox x:Name=\"ResultsList\"", StringComparison.Ordinal);
 
-        Assert.True(historyStart >= 0 && historyStart < queryStart && queryStart < resultsStart);
-        Assert.Contains("Grid.Row=\"0\"", markup[historyStart..queryStart], StringComparison.Ordinal);
-        Assert.Contains("Grid.Row=\"1\"", markup[queryStart..resultsStart], StringComparison.Ordinal);
+        Assert.True(queryStart >= 0 && queryStart < historyStart && historyStart < resultsStart);
+        Assert.Contains("Grid.Row=\"0\"", markup[queryStart..historyStart], StringComparison.Ordinal);
+        Assert.Contains("Grid.Row=\"1\"", markup[historyStart..resultsStart], StringComparison.Ordinal);
         Assert.Contains("Grid.Row=\"2\"", markup[resultsStart..], StringComparison.Ordinal);
         Assert.Contains("<RowDefinition Height=\"*\" />", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("<Popup x:Name=\"SearchHistoryPopup\"", markup, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void LauncherHistory_OpensWhenFocusedOrTextChanges_AndClosesWhenHidden()
+    public void LauncherHistory_ShowsForEmptyQueryAndHidesWhenKeywordIsEntered()
     {
         WpfTestApplicationHost.Invoke(_ =>
         {
             var history = new SearchHistoryCoordinator(new RecordingSearchHistoryRepository());
+            history.InitializeAsync().GetAwaiter().GetResult();
             var window = new LauncherWindow(new EmptySearchService(), history);
             try
             {
@@ -63,7 +64,7 @@ public sealed class SearchHistoryInteractionContractTests
                 Assert.Equal(Visibility.Visible, window.SearchHistoryHost.Visibility);
 
                 window.QueryBox.Text = "报价";
-                Assert.Equal(Visibility.Visible, window.SearchHistoryHost.Visibility);
+                Assert.Equal(Visibility.Collapsed, window.SearchHistoryHost.Visibility);
 
                 window.HideLauncher();
                 Assert.Equal(Visibility.Collapsed, window.SearchHistoryHost.Visibility);
@@ -115,7 +116,7 @@ public sealed class SearchHistoryInteractionContractTests
     private sealed class RecordingSearchHistoryRepository : ISearchHistoryRepository
     {
         public Task<IReadOnlyList<SearchHistoryEntry>> ListAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<SearchHistoryEntry>>([]);
+            Task.FromResult<IReadOnlyList<SearchHistoryEntry>>([new SearchHistoryEntry("回访", DateTimeOffset.UtcNow)]);
 
         public Task<RepositoryResult<SearchHistoryEntry>> RecordAsync(string query, CancellationToken cancellationToken = default) =>
             Task.FromResult(RepositoryResult<SearchHistoryEntry>.Success(

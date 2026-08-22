@@ -1,16 +1,18 @@
 using System.Windows;
-using System.Windows.Data;
 using System.Windows.Input;
 using QuickPhrase.Core;
-using QuickPhrase.Desktop.Converters;
+using QuickPhrase.Desktop.DesignSystem.Components;
 using QuickPhrase.Desktop.Services;
 using QuickPhrase.Desktop.ViewModels;
 
 namespace QuickPhrase.Desktop;
 
-/// <summary>话术编辑器：标题/正文/分类/固定颜色/保存/取消/删除。纯 WPF，不依赖外部页面运行时。</summary>
+/// <summary>
+/// 新建/编辑话术共享表单。正文交互集中在 PhraseRichTextEditor，View 只负责窗口级命令、文件选择和分类创建编排。
+/// </summary>
 public partial class EditorView : System.Windows.Controls.UserControl
 {
+    private bool _documentInitialized;
     public EditorViewModel ViewModel { get; }
 
     public event EventHandler<Phrase>? PhraseSaved;
@@ -23,6 +25,9 @@ public partial class EditorView : System.Windows.Controls.UserControl
         InitializeComponent();
         ViewModel = new EditorViewModel(commands, existing, defaultCategoryId);
         DataContext = ViewModel;
+        RichEditor.ClipboardImageImporter = ViewModel.ImportClipboardImageAsync;
+        RichEditor.ImageProcessingFailed += RichEditor_ImageProcessingFailed;
+        RichEditor.DraftChanged += RichEditor_DraftChanged;
 
         ViewModel.Saved += (_, phrase) =>
         {
@@ -39,13 +44,33 @@ public partial class EditorView : System.Windows.Controls.UserControl
     private async void OnLoaded(object? sender, RoutedEventArgs e)
     {
         await ViewModel.LoadCategoriesAsync();
-        // 分类下拉分组：一级分类 / 二级分类（对齐 design-system.md 5.7 optgroup）
-        var grouped = new ListCollectionView(ViewModel.Categories);
-        grouped.GroupDescriptions.Add(new PropertyGroupDescription("ParentId", new CategoryLevelConverter()));
-        CategoryCombo.ItemsSource = grouped;
-
+        if (!_documentInitialized)
+        {
+            RichEditor.ResetDocument(ViewModel.Segments);
+            _documentInitialized = true;
+        }
         TitleBox.Focus();
         TitleBox.SelectAll();
+    }
+
+    private void RichEditor_ImageProcessingFailed(object? sender, string message) => ViewModel.ErrorMessage = message;
+
+    private void RichEditor_DraftChanged(object? sender, PhraseRichDocumentDraft draft) =>
+        ViewModel.ApplyDocumentDraft(draft);
+
+    private async void InsertImage_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.IsReadOnly || ViewModel.IsBusy) return;
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "插入图片",
+            Filter = "支持的图片|*.png;*.jpg;*.jpeg;*.bmp|PNG 图片|*.png|JPEG 图片|*.jpg;*.jpeg|BMP 图片|*.bmp",
+            Multiselect = false,
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        var item = await ViewModel.ImportImageItemAsync(dialog.FileName);
+        if (item is not null) RichEditor.InsertImage(item);
     }
 
     private void CreateRootCategory_Click(object sender, RoutedEventArgs e) =>

@@ -16,7 +16,7 @@ public sealed class PhrasePackagePlatformTests
         using var temp = new TemporaryDirectory();
         await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
         var category = (await runtime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "导出测试"))).Value!;
-        var phrase = (await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "导出话术", "导出正文", category.Id, ShortcutMode.None, null))).Value!;
+        var phrase = (await runtime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "导出话术", PhraseBody.FromText("导出正文"), category.Id, ShortcutMode.None, null))).Value!;
         var snapshot = await runtime.CaptureSnapshotAsync();
         var document = PhrasePackagePlanner.BuildExportDocument(
             snapshot,
@@ -32,7 +32,8 @@ public sealed class PhrasePackagePlatformTests
         Assert.Equal(document.Manifest.Format, restored.Manifest.Format);
         Assert.Single(restored.Phrases);
         Assert.Equal(document.Phrases[0].Title, restored.Phrases[0].Title);
-        Assert.Equal(document.Phrases[0].Content, restored.Phrases[0].Content);
+        Assert.Equal(document.Phrases[0].Body.BatchSeparator, restored.Phrases[0].Body.BatchSeparator);
+        Assert.Equal(document.Phrases[0].Body.Segments.Select(x => (x.Kind, x.Text, x.Image)), restored.Phrases[0].Body.Segments.Select(x => (x.Kind, x.Text, x.Image)));
     }
 
     [Fact]
@@ -45,7 +46,7 @@ public sealed class PhrasePackagePlatformTests
         var package = CreatePackage(
             Guid.NewGuid(),
             new PhrasePackageCategory(packageCategoryId, "平台导入测试", null, 0),
-            new PhrasePackagePhrase(packagePhraseId, "  批量导入测试  ", "正文精确匹配", packageCategoryId, 0));
+            new PhrasePackagePhrase(packagePhraseId, "  批量导入测试  ", PhraseBody.FromText("正文精确匹配"), packageCategoryId, 0));
 
         var firstPlan = PhrasePackagePlanner.BuildImportPlan(package, await runtime.CaptureSnapshotAsync());
         var first = await runtime.ImportAsync(firstPlan);
@@ -54,7 +55,7 @@ public sealed class PhrasePackagePlatformTests
         Assert.True(first.Succeeded, first.Message);
         Assert.Equal(1, first.NewCategoryCount);
         Assert.Equal(1, first.NewPhraseCount);
-        Assert.Contains(search.Items, item => item.Phrase.Content == "正文精确匹配");
+        Assert.Contains(search.Items, item => item.Phrase.Body.TextProjection == "正文精确匹配");
 
         var secondPlan = PhrasePackagePlanner.BuildImportPlan(package, await runtime.CaptureSnapshotAsync());
         var second = await runtime.ImportAsync(secondPlan);
@@ -74,7 +75,7 @@ public sealed class PhrasePackagePlatformTests
         var package = CreatePackage(
             Guid.NewGuid(),
             new PhrasePackageCategory(categoryId, "应整体回滚的分类", null, 0),
-            new PhrasePackagePhrase(Guid.NewGuid(), "应整体回滚的话术", "正文", categoryId, 0));
+            new PhrasePackagePhrase(Guid.NewGuid(), "应整体回滚的话术", PhraseBody.FromText("正文"), categoryId, 0));
         var plan = PhrasePackagePlanner.BuildImportPlan(package, await runtime.CaptureSnapshotAsync());
         var duplicateMapping = plan.CategoryMappings[0];
         var invalidPlan = plan with
@@ -120,9 +121,14 @@ public sealed class PhrasePackagePlatformTests
                 "平台测试包",
                 DateTimeOffset.UtcNow,
                 1,
-                1),
+                1,
+                phrase.Body.ImageCount),
             [category],
-            [phrase]);
+            [phrase],
+            phrase.Body.ImageCount == 0 ? [] : phrase.Body.Segments
+                .Where(segment => segment.Image is not null)
+                .Select(segment => new PhrasePackageMedia(segment.Image!, []))
+                .ToArray());
 
     private static string[] ReadEntryNames(string path)
     {

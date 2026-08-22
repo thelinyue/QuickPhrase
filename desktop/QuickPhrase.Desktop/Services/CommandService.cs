@@ -18,6 +18,7 @@ public sealed class CommandService : ICommandService
     private readonly IEnterpriseCatalog? _enterprise;
     private readonly Func<AppSettings, CancellationToken, Task<RepositoryResult<AppSettings>>>? _saveSettings;
     private readonly IPhrasePackageService? _phrasePackages;
+    private readonly IMediaAssetStore? _mediaAssets;
 
     public CommandService(
         IPhraseRepository phrases,
@@ -27,7 +28,8 @@ public sealed class CommandService : ICommandService
         Func<Phrase, CancellationToken, Task<bool>>? insertPhrase = null,
         Func<AppSettings, CancellationToken, Task<RepositoryResult<AppSettings>>>? saveSettings = null,
         IPhrasePackageService? phrasePackages = null,
-        IEnterpriseCatalog? enterprise = null)
+        IEnterpriseCatalog? enterprise = null,
+        IMediaAssetStore? mediaAssets = null)
     {
         _phrases = phrases;
         _search = search;
@@ -37,6 +39,7 @@ public sealed class CommandService : ICommandService
         _enterprise = enterprise;
         _saveSettings = saveSettings;
         _phrasePackages = phrasePackages;
+        _mediaAssets = mediaAssets;
     }
 
     public async Task<IReadOnlyList<Phrase>> ListPhrasesAsync(CancellationToken cancellationToken = default)
@@ -85,6 +88,16 @@ public sealed class CommandService : ICommandService
 
     public Task<bool> InsertPhraseAsync(Phrase phrase, CancellationToken cancellationToken = default) =>
         _insertPhrase(phrase, cancellationToken);
+
+    public Task<MediaImportResult> ImportImageAsync(string path, CancellationToken cancellationToken = default) =>
+        _mediaAssets?.ImportAsync(path, cancellationToken)
+        ?? Task.FromResult(MediaImportResult.Failure("MEDIA_NOT_AVAILABLE", "当前媒体库未初始化。"));
+
+    public Task<MediaAssetContent?> ReadMediaAsync(Guid assetId, CancellationToken cancellationToken = default) =>
+        _mediaAssets?.ReadAsync(assetId, cancellationToken) ?? Task.FromResult<MediaAssetContent?>(null);
+
+    public Task DeleteMediaIfUnreferencedAsync(Guid assetId, CancellationToken cancellationToken = default) =>
+        _mediaAssets?.DeleteIfUnreferencedAsync(assetId, cancellationToken) ?? Task.CompletedTask;
 
     public async Task<IReadOnlyList<Category>> ListCategoriesAsync(CancellationToken cancellationToken = default)
     {

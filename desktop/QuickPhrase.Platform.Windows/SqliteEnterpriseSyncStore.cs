@@ -89,7 +89,7 @@ internal sealed class SqliteEnterpriseSyncStore : IEnterpriseCatalog
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var items = new List<Phrase>();
         while (await reader.ReadAsync(cancellationToken))
-            items.Add(new Phrase(Guid.Parse(reader.GetString(0)), reader.GetString(2), reader.GetString(3), Guid.Parse(reader.GetString(1)), ShortcutMode.None, null, 0, null, reader.GetInt64(5), DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, "default", reader.GetInt32(4), PhraseScope.Enterprise));
+            items.Add(new Phrase(Guid.Parse(reader.GetString(0)), reader.GetString(2), PhraseBody.FromText(reader.GetString(3)), Guid.Parse(reader.GetString(1)), ShortcutMode.None, null, 0, null, reader.GetInt64(5), DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, "default", reader.GetInt32(4), PhraseScope.Enterprise));
         return items;
     }
 

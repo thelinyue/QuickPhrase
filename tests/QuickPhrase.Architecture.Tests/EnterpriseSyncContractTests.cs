@@ -8,7 +8,7 @@ public sealed class EnterpriseSyncContractTests
     public void ExistingPhraseAndCategoryConstructorsDefaultToPersonalScope()
     {
         var category = new Category(Guid.NewGuid(), null, "本地分类", 0, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
-        var phrase = new Phrase(Guid.NewGuid(), "本地话术", "正文", category.Id, ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var phrase = new Phrase(Guid.NewGuid(), "本地话术", PhraseBody.FromText("正文"), category.Id, ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
         Assert.Equal(PhraseScope.Personal, category.Scope);
         Assert.Equal(PhraseScope.Personal, phrase.Scope);

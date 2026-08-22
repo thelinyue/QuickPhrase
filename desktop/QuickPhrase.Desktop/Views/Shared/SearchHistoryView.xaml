@@ -39,7 +39,7 @@
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
                             <UniformGrid Rows="1"
-                                         Columns="{Binding Tag, RelativeSource={RelativeSource AncestorType=ListBox}}" />
+                                         Columns="5" />
                         </ItemsPanelTemplate>
                     </ListBox.ItemsPanel>
                     <ListBox.ItemTemplate>

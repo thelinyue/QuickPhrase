@@ -8,7 +8,6 @@
     <conv:ColorKeyToBrushConverter x:Key="ColorKeyToBrush" />
     <conv:BoolToArrowRotationConverter x:Key="BoolToArrowRotation" />
     <conv:InverseBoolConverter x:Key="InverseBool" />
-    <conv:CategoryLevelConverter x:Key="CategoryLevelConverter" />
     <conv:CategoryColorBrushConverter x:Key="CategoryColorBrush" />
     <conv:CategoryTintBrushConverter x:Key="CategoryTintBrush" />
     <conv:CategoryBackgroundBrushConverter x:Key="CategoryBackgroundBrush" />

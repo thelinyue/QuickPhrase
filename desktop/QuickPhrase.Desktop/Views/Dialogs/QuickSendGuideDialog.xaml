@@ -6,7 +6,7 @@
         SizeToContent="Height"
         ResizeMode="No"
         Style="{StaticResource Style.Dialog.Window}"
-        Title="确认快捷发送"
+        Title="确认插入并发送"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="{StaticResource Thickness.Dialog}">
         <Grid.RowDefinitions>
@@ -16,7 +16,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Text="快捷发送会发送当前目标输入框中的全部内容"
+        <TextBlock Text="插入并发送会发送当前目标输入框中的全部内容"
                    Style="{StaticResource Style.Text.Title.Small}"
                    TextWrapping="Wrap" />
         <TextBlock Grid.Row="1"
@@ -27,7 +27,7 @@
         <TextBlock Grid.Row="2"
                    Margin="{StaticResource Thickness.Gap.Stack.Before.SM}"
                    Foreground="{DynamicResource Brush.Text.Secondary}"
-                   Text="开启快捷发送模式后，之后按 Ctrl+Enter 将不再显示此确认。"
+                   Text="开启免确认模式后，按 Ctrl+Enter 插入并发送将不再显示此确认。"
                    Style="{StaticResource Style.Text.Body.Small}"
                    TextWrapping="Wrap" />
         <StackPanel Grid.Row="3"
@@ -43,7 +43,7 @@
                     Click="ContinueOnce_Click"
                     Margin="{StaticResource Thickness.Gap.Inline.SM}" />
             <Button Style="{StaticResource Style.Button.Primary}"
-                    Content="开启快捷发送并继续"
+                    Content="开启免确认并继续"
                     Click="EnableAndContinue_Click" />
         </StackPanel>
     </Grid>

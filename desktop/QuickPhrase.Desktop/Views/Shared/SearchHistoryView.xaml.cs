@@ -9,15 +9,14 @@ namespace QuickPhrase.Desktop.Views.Shared;
 /// <summary>
 /// Launcher 与话术库共用的历史搜索单行视图。
 ///
-/// 持久化层仍保存最近十条历史记录；本控件只根据实际可用宽度展示最近五至八条，
+/// 持久化层仍保存最近十条历史记录；本控件固定展示排序靠前的五条，
 /// 让垃圾桶按钮和关键词标签始终保持在同一行。键盘选择只遍历当前可见记录，
 /// 避免窗口缩放后继续选中已经隐藏的历史项。
 /// </summary>
 public partial class SearchHistoryView : System.Windows.Controls.UserControl
 {
-    private const int MinimumVisibleEntryCount = 5;
-    private const int MaximumVisibleEntryCount = 8;
-    private const double TargetEntryWidth = 96d;
+    // 历史搜索在所有入口固定展示前五条，避免 Launcher 自动聚焦时因可用宽度变化而暴露更多条目。
+    private const int VisibleEntryCount = 5;
 
     private bool _suppressSelectionEvent;
     private SearchHistoryViewModel? _viewModel;
@@ -28,7 +27,6 @@ public partial class SearchHistoryView : System.Windows.Controls.UserControl
         InitializeComponent();
         DataContextChanged += (_, _) => AttachViewModel();
         Loaded += (_, _) => AttachViewModel();
-        SizeChanged += (_, _) => RefreshVisibleEntries();
     }
 
     public event EventHandler<string>? QuerySelected;
@@ -45,20 +43,10 @@ public partial class SearchHistoryView : System.Windows.Controls.UserControl
     public SearchHistoryEntry? SelectedEntry => HistoryList.SelectedItem as SearchHistoryEntry;
 
     /// <summary>
-    /// 将历史标签区域的可用宽度转换为可见记录数。
-    /// 96 DIP 是单个标签的目标宽度；无效或过窄尺寸按五条处理，宽屏最多展示八条。
+    /// 返回固定历史视区容量。
+    /// 历史记录保持单行前五条，不随窗口宽度扩张，确保可见项与键盘选择范围一致。
     /// </summary>
-    internal static int CalculateVisibleEntryLimit(double availableWidth)
-    {
-        if (double.IsPositiveInfinity(availableWidth))
-            return MaximumVisibleEntryCount;
-
-        if (!double.IsFinite(availableWidth) || availableWidth <= 0)
-            return MinimumVisibleEntryCount;
-
-        var countByWidth = (int)Math.Floor(availableWidth / TargetEntryWidth);
-        return Math.Clamp(countByWidth, MinimumVisibleEntryCount, MaximumVisibleEntryCount);
-    }
+    internal static int CalculateVisibleEntryLimit(double availableWidth) => VisibleEntryCount;
 
     public bool MoveSelection(int delta)
     {
@@ -133,7 +121,6 @@ public partial class SearchHistoryView : System.Windows.Controls.UserControl
     {
         var selectedEntry = SelectedEntry;
         var visibleLimit = CalculateVisibleEntryLimit(HistoryHost.ActualWidth);
-        HistoryList.Tag = visibleLimit;
         var visibleEntries = _viewModel?.Entries.Take(visibleLimit).ToArray() ?? [];
 
         _suppressSelectionEvent = true;
