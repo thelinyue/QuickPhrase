@@ -73,6 +73,12 @@ public partial class EditorView : System.Windows.Controls.UserControl
         if (item is not null) RichEditor.InsertImage(item);
     }
 
+    private void InsertSeparator_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.IsReadOnly || ViewModel.IsBusy) return;
+        RichEditor.InsertBatchSeparator();
+    }
+
     private void CreateRootCategory_Click(object sender, RoutedEventArgs e) =>
         CreateRootCategoryRequested?.Invoke(this, EventArgs.Empty);
 

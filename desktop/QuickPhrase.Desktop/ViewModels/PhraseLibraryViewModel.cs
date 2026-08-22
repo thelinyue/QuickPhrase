@@ -318,7 +318,13 @@ public partial class PhraseLibraryViewModel : ObservableObject
 
     private void AppendCategory(CategoryItem category, List<object> items, bool includeHeader)
     {
-        if (includeHeader) items.Add(new SubHeaderItem(category) { ParentName = Categories.FirstOrDefault(c => c.Id == category.ParentId)?.Name });
+        if (includeHeader)
+        {
+            // 折叠时保留二级分类标题作为展开入口，但不把其下话术加入扁平列表。
+            items.Add(new SubHeaderItem(category) { ParentName = Categories.FirstOrDefault(c => c.Id == category.ParentId)?.Name });
+            if (!category.IsExpanded) return;
+        }
+
         foreach (var phrase in Phrases.Where(p => p.CategoryId == category.Id).OrderBy(p => p.SortOrder)) items.Add(phrase);
         if (!category.IsExpanded && !category.IsSynthetic) return;
         foreach (var child in Categories.Where(c => c.ParentId == category.Id).OrderBy(c => c.SortOrder)) AppendCategory(child, items, includeHeader: true);

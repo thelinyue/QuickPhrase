@@ -172,7 +172,7 @@ public sealed class PhrasePackageFileStore
     private static PhraseBody ReplaceImageReferences(PhraseBody body, IReadOnlyDictionary<Guid, PhrasePackageMedia> media) =>
         new(body.Segments.Select(segment => segment.Kind == PhraseSegmentKind.Image && segment.Image is not null && media.TryGetValue(segment.Image.AssetId, out var item)
             ? segment with { Image = item.Image }
-            : segment).ToImmutableArray(), body.BatchSeparator);
+            : segment).ToImmutableArray());
 
     private static Dictionary<string, ZipArchiveEntry> ValidateEntries(ZipArchive archive)
     {

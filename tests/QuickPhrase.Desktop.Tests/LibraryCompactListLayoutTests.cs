@@ -18,7 +18,7 @@ public sealed class LibraryCompactListLayoutTests
         Assert.Contains("<sys:Double x:Key=\"Size.Library.SubHeader.Height\">24</sys:Double>", markup);
         Assert.Contains("<sys:Double x:Key=\"Size.Library.SubHeader.ArrowWidth\">16</sys:Double>", markup);
         Assert.Contains("<GridLength x:Key=\"Size.Library.SubHeader.ArrowColumn\">16</GridLength>", markup);
-        Assert.Contains("<GridLength x:Key=\"Size.Library.CompactList.GapColumn\">0</GridLength>", markup);
+        Assert.Contains("<GridLength x:Key=\"Size.Library.CompactList.GapColumn\">4</GridLength>", markup);
         Assert.Contains("<Setter Property=\"Height\" Value=\"{StaticResource Size.Library.SubHeader.Height}\" />", style);
         Assert.Contains("<Setter Property=\"Padding\" Value=\"{StaticResource Thickness.None}\" />", style);
         Assert.Contains("<Setter Property=\"Margin\" Value=\"{StaticResource Thickness.None}\" />", style);
@@ -74,6 +74,28 @@ public sealed class LibraryCompactListLayoutTests
         Assert.DoesNotContain("<Storyboard", style);
         Assert.DoesNotContain("ColorAnimation", style);
         Assert.DoesNotContain("DoubleAnimation", style);
+    }
+
+    [Fact]
+    public void PhraseLibraryRows_KeepSelectionVisibleWithoutBlueBorder()
+    {
+        var markup = ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml");
+        var style = Slice(markup, "<Style x:Key=\"Style.ListItem.Phrase.Library\"", "</Style>");
+
+        Assert.DoesNotContain(
+            "<Setter TargetName=\"Root\" Property=\"BorderBrush\" Value=\"{DynamicResource Brush.Border.Focus}\" />",
+            style);
+        Assert.Equal(
+            2,
+            style.Split(
+                "<Setter TargetName=\"Root\" Property=\"BorderBrush\" Value=\"{DynamicResource Brush.Border.Default}\" />",
+                StringSplitOptions.None).Length - 1);
+        Assert.Contains(
+            "<Setter TargetName=\"Root\" Property=\"Background\" Value=\"{DynamicResource Brush.Surface.Selected}\" />",
+            style);
+        Assert.Contains(
+            "<Setter TargetName=\"AccentBar\" Property=\"Visibility\" Value=\"Visible\" />",
+            style);
     }
 
     [Fact]

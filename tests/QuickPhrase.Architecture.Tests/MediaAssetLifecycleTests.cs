@@ -122,7 +122,7 @@ public sealed class MediaAssetLifecycleTests
         var phrase = (await runtime.Phrases.CreateAsync(CreateImagePhrase("替换前", category.Id, oldImage))).Value!;
 
         var updated = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(
-            phrase.Id, phrase.Version, "替换后", new PhraseBody([PhraseSegment.CreateImage(newImage)], "---"),
+            phrase.Id, phrase.Version, "替换后", new PhraseBody([PhraseSegment.CreateImage(newImage)]),
             category.Id, ShortcutMode.None, null));
 
         Assert.True(updated.IsSuccess, updated.Error?.Message);
@@ -270,7 +270,7 @@ public sealed class MediaAssetLifecycleTests
     }
 
     private static CreatePhraseCommand CreateImagePhrase(string title, Guid categoryId, PhraseImageReference image) =>
-        new(Guid.NewGuid(), title, new PhraseBody([PhraseSegment.CreateImage(image)], "---"), categoryId, ShortcutMode.None, null);
+        new(Guid.NewGuid(), title, new PhraseBody([PhraseSegment.CreateImage(image)]), categoryId, ShortcutMode.None, null);
 
     private static async Task<PhraseImageReference> ImportPngAsync(QuickPhraseDataRuntime runtime, string directory)
     {

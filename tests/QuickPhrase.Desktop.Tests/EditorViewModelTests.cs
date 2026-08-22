@@ -190,8 +190,7 @@ public class EditorViewModelTests
         var vm = new EditorViewModel(fake, null);
         vm.SelectedCategoryId = categoryId;
         vm.Title = "拆分话术";
-        vm.BatchSeparator = "  分隔  ";
-        var preview = PhraseBodyParser.SplitText("第一段\n 分隔 \n第二段", vm.BatchSeparator);
+        var preview = PhraseBodyParser.SplitText("第一段\n  ---  \n第二段");
         Assert.True(preview.IsSuccess);
 
         ApplySegments(vm, preview.Segments.Select(PhraseSegment.CreateText).ToArray());
@@ -199,7 +198,6 @@ public class EditorViewModelTests
         await vm.SaveAsync();
 
         var saved = Assert.IsType<CreatePhraseCommand>(fake.LastCreatedPhraseCommand);
-        Assert.Equal("分隔", saved.Body.BatchSeparator);
         Assert.Equal(preview.Segments, saved.Body.Segments.Select(segment => segment.Text!).ToArray());
     }
 
@@ -324,7 +322,7 @@ public class EditorViewModelTests
         var existingImage = new PhraseImageReference(Guid.NewGuid(), "image/png", 68, 1, 1);
         var newImage = new PhraseImageReference(Guid.NewGuid(), "image/png", 68, 1, 1);
         var categoryId = Guid.NewGuid();
-        var existing = new Phrase(Guid.NewGuid(), "原话术", new PhraseBody([PhraseSegment.CreateImage(existingImage)], "---"),
+        var existing = new Phrase(Guid.NewGuid(), "原话术", new PhraseBody([PhraseSegment.CreateImage(existingImage)]),
             categoryId, ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var fake = new FakeCommandService
         {

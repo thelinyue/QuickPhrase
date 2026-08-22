@@ -54,7 +54,6 @@ internal abstract class SqliteRepositoryBase
         existing.Shortcut?.Normalized == shortcut?.Normalized;
 
     private static bool BodiesEqual(PhraseBody left, PhraseBody right) =>
-        string.Equals(left.BatchSeparator, right.BatchSeparator, StringComparison.Ordinal) &&
         left.Segments.SequenceEqual(right.Segments);
     protected static bool ValidateColorKey(string? colorKey, out string normalized, out DataError? error)
     {
@@ -85,7 +84,7 @@ internal abstract class SqliteRepositoryBase
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
-            command.CommandText = "SELECT id,title,batch_separator,category_id,shortcut_mode,shortcut_display,shortcut_normalized,usage_count,last_used_at_utc,version,created_at_utc,updated_at_utc,color_key,sort_order FROM phrases WHERE id=$id;";
+            command.CommandText = "SELECT id,title,category_id,shortcut_mode,shortcut_display,shortcut_normalized,usage_count,last_used_at_utc,version,created_at_utc,updated_at_utc,color_key,sort_order FROM phrases WHERE id=$id;";
             command.Parameters.AddWithValue("$id", id);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken)) return null;
@@ -101,7 +100,7 @@ internal abstract class SqliteRepositoryBase
         var headers = new List<PhraseHeader>();
         await using (var command = connection.CreateCommand())
         {
-            command.CommandText = "SELECT id,title,batch_separator,category_id,shortcut_mode,shortcut_display,shortcut_normalized,usage_count,last_used_at_utc,version,created_at_utc,updated_at_utc,color_key,sort_order FROM phrases ORDER BY sort_order,updated_at_utc DESC,title;";
+            command.CommandText = "SELECT id,title,category_id,shortcut_mode,shortcut_display,shortcut_normalized,usage_count,last_used_at_utc,version,created_at_utc,updated_at_utc,color_key,sort_order FROM phrases ORDER BY sort_order,updated_at_utc DESC,title;";
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken)) headers.Add(ReadHeader(reader));
         }
@@ -137,18 +136,18 @@ internal abstract class SqliteRepositoryBase
     }
 
     private static PhraseHeader ReadHeader(SqliteDataReader reader) => new(
-        ReadId(reader, 0), reader.GetString(1), reader.GetString(2), ReadId(reader, 3),
-        Enum.Parse<ShortcutMode>(reader.GetString(4), true),
-        reader.IsDBNull(5) ? null : new ShortcutValue(reader.GetString(5), reader.GetString(6)),
-        reader.GetInt32(7), ReadNullableTime(reader, 8), reader.GetInt64(9), ReadTime(reader, 10), ReadTime(reader, 11),
-        reader.IsDBNull(12) ? "default" : reader.GetString(12), reader.GetInt32(13));
+        ReadId(reader, 0), reader.GetString(1), ReadId(reader, 2),
+        Enum.Parse<ShortcutMode>(reader.GetString(3), true),
+        reader.IsDBNull(4) ? null : new ShortcutValue(reader.GetString(4), reader.GetString(5)),
+        reader.GetInt32(6), ReadNullableTime(reader, 7), reader.GetInt64(8), ReadTime(reader, 9), ReadTime(reader, 10),
+        reader.IsDBNull(11) ? "default" : reader.GetString(11), reader.GetInt32(12));
 
     private static Phrase ToPhrase(PhraseHeader header, ImmutableArray<PhraseSegment> segments) => new(
-        header.Id, header.Title, new PhraseBody(segments, header.BatchSeparator), header.CategoryId, header.ShortcutMode,
+        header.Id, header.Title, new PhraseBody(segments), header.CategoryId, header.ShortcutMode,
         header.Shortcut, header.UsageCount, header.LastUsedAtUtc, header.Version, header.CreatedAtUtc, header.UpdatedAtUtc,
         header.ColorKey, header.SortOrder);
 
-    private sealed record PhraseHeader(Guid Id, string Title, string BatchSeparator, Guid CategoryId, ShortcutMode ShortcutMode,
+    private sealed record PhraseHeader(Guid Id, string Title, Guid CategoryId, ShortcutMode ShortcutMode,
         ShortcutValue? Shortcut, int UsageCount, DateTimeOffset? LastUsedAtUtc, long Version, DateTimeOffset CreatedAtUtc,
         DateTimeOffset UpdatedAtUtc, string ColorKey, int SortOrder);
 }

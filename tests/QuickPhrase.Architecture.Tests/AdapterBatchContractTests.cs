@@ -412,7 +412,7 @@ public sealed class AdapterBatchContractTests
 
     private static Phrase CreatePhrase(PhraseSegment[] segments)
     {
-        var body = new PhraseBody(segments.ToImmutableArray(), PhraseBody.DefaultBatchSeparator);
+        var body = new PhraseBody(segments.ToImmutableArray());
         return new Phrase(
             Guid.NewGuid(),
             "批次话术",

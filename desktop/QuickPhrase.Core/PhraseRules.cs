@@ -10,7 +10,6 @@ public static class PhraseRules
     public const int MaxSegmentCount = 20;
     public const int MaxImageCount = 10;
     public const int MaxTextLength = 4000;
-    public const int MaxSeparatorLength = 32;
 
     public static bool Validate(CreatePhraseCommand command, out DataError? error) =>
         Validate(command.Title, command.Body, command.CategoryId, out error);
@@ -28,10 +27,6 @@ public static class PhraseRules
 
         if (body is null || body.Segments.IsDefaultOrEmpty)
             return Fail("话术至少需要一个有效内容段。", out error);
-
-        var normalizedSeparator = PhraseBody.NormalizeBatchSeparator(body.BatchSeparator);
-        if (normalizedSeparator.Length == 0 || normalizedSeparator.Length > MaxSeparatorLength)
-            return Fail($"文字分隔符去除首尾空格后必须为 1–{MaxSeparatorLength} 个非空白字符。", out error);
 
         if (body.Segments.Length > MaxSegmentCount)
             return Fail($"每条话术最多包含 {MaxSegmentCount} 个内容段。", out error);

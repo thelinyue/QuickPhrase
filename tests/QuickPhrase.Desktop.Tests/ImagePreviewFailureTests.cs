@@ -30,7 +30,7 @@ public sealed class ImagePreviewFailureTests
         {
             var image = new PhraseImageReference(Guid.NewGuid(), "image/png", 100, 10, 10);
             var phrase = new Phrase(
-                Guid.NewGuid(), "图片话术", new PhraseBody([PhraseSegment.CreateImage(image)], "---"),
+                Guid.NewGuid(), "图片话术", new PhraseBody([PhraseSegment.CreateImage(image)]),
                 Guid.NewGuid(), ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
             var fake = new FakeCommandService { ReadMediaException = new IOException("不应逃逸") };
             var vm = new EditorViewModel(fake, new PhraseItemViewModel(phrase, "分类"));
@@ -53,7 +53,7 @@ public sealed class ImagePreviewFailureTests
         {
             var image = new PhraseImageReference(Guid.NewGuid(), "image/png", 100, 10, 10);
             var phrase = new Phrase(
-                Guid.NewGuid(), "图片话术", new PhraseBody([PhraseSegment.CreateImage(image)], "---"),
+                Guid.NewGuid(), "图片话术", new PhraseBody([PhraseSegment.CreateImage(image)]),
                 Guid.NewGuid(), ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
             var window = new BatchPreviewWindow(phrase, new ThrowingMediaStore(), confirmation: false, new AdapterCapabilities(
                 CapabilityStatus.Unverified, CapabilityStatus.Unverified, CapabilityStatus.Unsupported,

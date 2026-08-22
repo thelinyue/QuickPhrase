@@ -4,7 +4,7 @@ using System.IO;
 namespace QuickPhrase.Desktop.Tests.Theme;
 
 /// <summary>
-/// 锁定应用图标在桌面、托盘与 WPF 品牌位的尺寸选择，避免低分辨率 ICO 图层被放大后变得模糊。
+/// 锁定应用图标在桌面和托盘中的呈现边界，避免标题栏重复显示品牌图标。
 /// </summary>
 public sealed class ApplicationIconPresentationTests
 {
@@ -18,17 +18,15 @@ public sealed class ApplicationIconPresentationTests
     }
 
     [Fact]
-    public void BrandIcon_Uses48PixelSourceForIts16DipTitleBarPresentation()
+    public void TitleBar_DoesNotRenderTheApplicationBrandIcon()
     {
         var components = ReadDesktopFile("DesignSystem", "Components", "Components.xaml");
         var titleBar = ReadDesktopFile("TitleBar.xaml");
         var sizes = ReadDesktopFile("DesignSystem", "Tokens", "Sizes.xaml");
 
-        Assert.Contains("DecodePixelWidth=\"48\"", components, StringComparison.Ordinal);
-        Assert.Contains("DecodePixelHeight=\"48\"", components, StringComparison.Ordinal);
-        Assert.Contains("Size.TitleBar.BrandIcon\">16<", sizes, StringComparison.Ordinal);
-        Assert.Contains("Width=\"{StaticResource Size.TitleBar.BrandIcon}\"", titleBar, StringComparison.Ordinal);
-        Assert.Contains("Height=\"{StaticResource Size.TitleBar.BrandIcon}\"", titleBar, StringComparison.Ordinal);
+        Assert.DoesNotContain("Image.Brand.AppIcon", components, StringComparison.Ordinal);
+        Assert.DoesNotContain("Image.Brand.AppIcon", titleBar, StringComparison.Ordinal);
+        Assert.DoesNotContain("Size.TitleBar.BrandIcon", sizes, StringComparison.Ordinal);
     }
 
     [Fact]

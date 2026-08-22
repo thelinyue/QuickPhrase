@@ -5,12 +5,8 @@ namespace QuickPhrase.Core;
 /// <summary>将粘贴的整段文字按“独占一行”的普通文本分隔符解析为有序文字段。</summary>
 public static class PhraseBodyParser
 {
-    public static PhraseBodySplitResult SplitText(string source, string separator)
+    public static PhraseBodySplitResult SplitText(string source)
     {
-        var normalizedSeparator = PhraseBody.NormalizeBatchSeparator(separator);
-        if (normalizedSeparator.Length == 0 || normalizedSeparator.Length > PhraseRules.MaxSeparatorLength)
-            return PhraseBodySplitResult.Failure("INVALID_SEPARATOR", $"文字分隔符去除首尾空格后必须为 1–{PhraseRules.MaxSeparatorLength} 个非空白字符。");
-
         var normalized = (source ?? string.Empty).Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
         var lines = normalized.Split('\n');
         var segments = ImmutableArray.CreateBuilder<string>();
@@ -18,7 +14,7 @@ public static class PhraseBodyParser
 
         foreach (var line in lines)
         {
-            if (!string.Equals(line.Trim(), normalizedSeparator, StringComparison.Ordinal))
+            if (!string.Equals(line.Trim(), PhraseBody.DefaultBatchSeparator, StringComparison.Ordinal))
             {
                 current.Add(line);
                 continue;

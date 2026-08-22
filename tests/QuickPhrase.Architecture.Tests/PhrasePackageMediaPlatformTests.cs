@@ -23,8 +23,7 @@ public sealed class PhrasePackageMediaPlatformTests
         Assert.True(imported.IsSuccess, imported.ErrorMessage);
         var category = (await sourceRuntime.Categories.CreateAsync(new CreateCategoryCommand(Guid.NewGuid(), "图文"))).Value!;
         var body = new PhraseBody(
-            [PhraseSegment.CreateText("第一段"), PhraseSegment.CreateImage(imported.Image!), PhraseSegment.CreateText("第三段")],
-            "###");
+            [PhraseSegment.CreateText("第一段"), PhraseSegment.CreateImage(imported.Image!), PhraseSegment.CreateText("第三段")]);
         var phrase = (await sourceRuntime.Phrases.CreateAsync(new CreatePhraseCommand(Guid.NewGuid(), "图文导出", body, category.Id, ShortcutMode.None, null))).Value!;
         var package = PhrasePackagePlanner.BuildExportDocument(
             await sourceRuntime.CaptureSnapshotAsync(),
@@ -42,7 +41,6 @@ public sealed class PhrasePackageMediaPlatformTests
 
         Assert.True(result.Succeeded, result.Message);
         Assert.Equal([PhraseSegmentKind.Text, PhraseSegmentKind.Image, PhraseSegmentKind.Text], saved.Body.Segments.Select(x => x.Kind));
-        Assert.Equal("###", saved.Body.BatchSeparator);
         Assert.NotNull(await targetRuntime.MediaAssets.ReadAsync(saved.Body.Segments[1].Image!.AssetId));
     }
 
@@ -162,7 +160,7 @@ public sealed class PhrasePackageMediaPlatformTests
         return new PhrasePackageDocument(
             new PhrasePackageManifest(PhrasePackageFormat.Format, PhrasePackageFormat.Version, Guid.NewGuid(), "图片包", DateTimeOffset.UtcNow, 1, 1, 1),
             [new PhrasePackageCategory(categoryId, "图片", null, 0)],
-            [new PhrasePackagePhrase(Guid.NewGuid(), "图片", new PhraseBody([PhraseSegment.CreateImage(image)], "---"), categoryId, 0)],
+            [new PhrasePackagePhrase(Guid.NewGuid(), "图片", new PhraseBody([PhraseSegment.CreateImage(image)]), categoryId, 0)],
             [new PhrasePackageMedia(image, [])]);
     }
 

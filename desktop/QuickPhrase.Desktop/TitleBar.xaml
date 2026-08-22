@@ -13,12 +13,6 @@
 
         <!-- 拖动 / 双击最大化 / Snap 区域（非命中可见，走原生 caption）。 -->
         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="{StaticResource Thickness.Gap.Inline.Before.LG}">
-            <Image Source="{StaticResource Image.Brand.AppIcon}"
-                   Width="{StaticResource Size.TitleBar.BrandIcon}"
-                   Height="{StaticResource Size.TitleBar.BrandIcon}"
-                   Stretch="Uniform"
-                   VerticalAlignment="Center"
-                   AutomationProperties.Name="闪语应用图标" />
             <TextBlock Text="闪语 · "
                        Style="{StaticResource Style.Text.Title.Small}"
                        Margin="{StaticResource Thickness.Gap.Inline.SM}" />

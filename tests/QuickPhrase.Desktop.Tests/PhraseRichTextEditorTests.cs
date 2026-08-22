@@ -12,6 +12,38 @@ namespace QuickPhrase.Desktop.Tests;
 public sealed class PhraseRichTextEditorTests
 {
     [Fact]
+    public void InsertBatchSeparatorAtCaret_SplitsTextAndRemainsUndoable()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var editor = new PhraseRichTextEditor();
+            var window = new System.Windows.Window { Content = editor, Width = 480, Height = 360 };
+            window.Show();
+            editor.ResetDocument([PhraseSegmentItemViewModel.From(PhraseSegment.CreateText("甲乙"))]);
+            var paragraph = Assert.IsType<Paragraph>(editor.Document.Blocks.FirstBlock);
+            var run = Assert.IsType<Run>(paragraph.Inlines.FirstInline);
+            editor.TextBox.CaretPosition = run.ContentStart.GetPositionAtOffset(1)!;
+
+            var insertMethod = typeof(PhraseRichTextEditor).GetMethod("InsertBatchSeparator", Type.EmptyTypes);
+            Assert.NotNull(insertMethod);
+            insertMethod!.Invoke(editor, null);
+
+            var readMethod = typeof(PhraseRichDocumentMapper).GetMethod("ReadDocument", [typeof(FlowDocument)]);
+            Assert.NotNull(readMethod);
+            var draft = Assert.IsType<PhraseRichDocumentDraft>(readMethod!.Invoke(null, [editor.Document]));
+            Assert.True(draft.IsValid);
+            Assert.Equal(["甲", "乙"], draft.Segments.Select(segment => segment.Text!).ToArray());
+            Assert.True(editor.TextBox.CanUndo);
+
+            editor.TextBox.Undo();
+            var restored = Assert.IsType<PhraseRichDocumentDraft>(readMethod.Invoke(null, [editor.Document]));
+            Assert.True(restored.IsValid);
+            Assert.Equal(["甲乙"], restored.Segments.Select(segment => segment.Text!).ToArray());
+            window.Close();
+        });
+    }
+
+    [Fact]
     public void InsertImageAtCaret_SplitsTextIntoVisualOrder_AndUndoRestoresText()
     {
         WpfTestApplicationHost.Invoke(_ =>
@@ -39,7 +71,7 @@ public sealed class PhraseRichTextEditorTests
 
             Assert.True(editor.TextBox.CanUndo);
             editor.TextBox.Undo();
-            var restored = PhraseRichDocumentMapper.ReadDocument(editor.Document, "---");
+            var restored = PhraseRichDocumentMapper.ReadDocument(editor.Document);
             Assert.True(restored.IsValid);
             Assert.Single(restored.Segments);
             Assert.Equal("abcd", restored.Segments[0].Text);
@@ -70,10 +102,10 @@ public sealed class PhraseRichTextEditorTests
             };
 
             editor.TextBox.RaiseEvent(key);
-            Assert.DoesNotContain(PhraseRichDocumentMapper.ReadDocument(editor.Document, "---").Segments, segment => segment.Kind == PhraseSegmentKind.Image);
+            Assert.DoesNotContain(PhraseRichDocumentMapper.ReadDocument(editor.Document).Segments, segment => segment.Kind == PhraseSegmentKind.Image);
 
             editor.TextBox.Undo();
-            var restored = PhraseRichDocumentMapper.ReadDocument(editor.Document, "---");
+            var restored = PhraseRichDocumentMapper.ReadDocument(editor.Document);
             Assert.Contains(restored.Segments, segment => segment.Image?.AssetId == image.Image!.AssetId);
             window.Close();
         });
@@ -94,7 +126,7 @@ public sealed class PhraseRichTextEditorTests
             editor.TextBox.CaretPosition.InsertTextInRun("新增");
 
             Assert.Same(originalDocument, editor.Document);
-            var draft = PhraseRichDocumentMapper.ReadDocument(editor.Document, "---");
+            var draft = PhraseRichDocumentMapper.ReadDocument(editor.Document);
             Assert.Equal("原文新增", Assert.Single(draft.Segments).Text);
         });
     }

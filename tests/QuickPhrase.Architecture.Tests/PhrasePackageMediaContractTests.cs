@@ -18,8 +18,7 @@ public sealed class PhrasePackageMediaContractTests
                     PhraseSegment.CreateText("请提供订单号"),
                     PhraseSegment.CreateImage(image),
                     PhraseSegment.CreateText("收到后马上查询"),
-                ],
-                "---"),
+                ]),
             categoryId,
             0);
         var document = CreateDocument(categoryId, phrase, [new PhrasePackageMedia(image, [])]);
@@ -41,8 +40,7 @@ public sealed class PhrasePackageMediaContractTests
                 PhraseSegment.CreateImage(image),
                 PhraseSegment.CreateImage(image),
                 PhraseSegment.CreateText("最后一段"),
-            ],
-            "###");
+            ]);
         var phrase = new Phrase(
             Guid.NewGuid(), "导出图文", body, categoryId, ShortcutMode.None, null, 0, null, 1,
             DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
@@ -56,7 +54,6 @@ public sealed class PhrasePackageMediaContractTests
             DateTimeOffset.UnixEpoch);
 
         var exported = Assert.Single(document.Phrases);
-        Assert.Equal("###", exported.Body.BatchSeparator);
         Assert.Equal(
             [PhraseSegmentKind.Text, PhraseSegmentKind.Image, PhraseSegmentKind.Image, PhraseSegmentKind.Text],
             exported.Body.Segments.Select(segment => segment.Kind));

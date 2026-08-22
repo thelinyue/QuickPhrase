@@ -64,6 +64,32 @@ public class PhraseLibraryViewModelTests
     }
 
     [Fact]
+    public async Task ToggleSubCategory_CollapsesAndRestoresItsPhrases()
+    {
+        var topCategory = MakeCategory(out var topCategoryId, "客户", 0);
+        var subCategory = new Category(Guid.NewGuid(), topCategoryId, "跟进", 0, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var phrase = MakePhrase("回访", "请问最近使用情况如何？", subCategory.Id);
+        var fake = new FakeCommandService();
+        fake.Seed(new[] { topCategory, subCategory });
+        fake.Seed(new[] { phrase });
+
+        var vm = new PhraseLibraryViewModel(fake);
+        await vm.LoadAsync();
+
+        Assert.Contains(vm.VisibleItems.OfType<SubHeaderItem>(), item => item.Id == subCategory.Id);
+        Assert.Contains(vm.VisibleItems.OfType<PhraseItemViewModel>(), item => item.Id == phrase.Id);
+
+        vm.ToggleSubCategoryCommand.Execute(subCategory.Id);
+
+        Assert.Contains(vm.VisibleItems.OfType<SubHeaderItem>(), item => item.Id == subCategory.Id);
+        Assert.DoesNotContain(vm.VisibleItems.OfType<PhraseItemViewModel>(), item => item.Id == phrase.Id);
+
+        vm.ToggleSubCategoryCommand.Execute(subCategory.Id);
+
+        Assert.Contains(vm.VisibleItems.OfType<PhraseItemViewModel>(), item => item.Id == phrase.Id);
+    }
+
+    [Fact]
     public async Task Search_FiltersByTitleAndContent()
     {
         var category = MakeCategory(out var catId);

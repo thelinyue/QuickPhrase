@@ -32,7 +32,7 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
     private readonly Guid? _defaultCategoryId;
     private long _version;
     private string _baseTitle = "";
-    private PhraseBody _baseBody = new([], PhraseBody.DefaultBatchSeparator);
+    private PhraseBody _baseBody = new([]);
     private Guid _baseCategoryId;
     private string _baseColorKey = "default";
     private bool _synchronizingCategorySelection;
@@ -40,7 +40,6 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
     private readonly HashSet<Guid> _sessionImportedAssetIds = [];
 
     [ObservableProperty] private string _title = "";
-    [ObservableProperty] private string _batchSeparator = PhraseBody.DefaultBatchSeparator;
     [ObservableProperty] private ObservableCollection<PhraseSegmentItemViewModel> _segments = new();
     [ObservableProperty] private Guid _selectedCategoryId;
     [ObservableProperty] private ObservableCollection<CategoryItem> _categories = new();
@@ -51,7 +50,6 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
     [ObservableProperty] private string _colorKey = "default";
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string? _errorMessage;
-    [ObservableProperty] private string? _batchSeparatorError;
     [ObservableProperty] private string? _documentError;
     [ObservableProperty] private int _documentCharacterCount;
     [ObservableProperty] private int _documentImageCount;
@@ -64,11 +62,9 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
     public bool HasCategories => Categories.Count > 0;
     public bool HasSecondaryCategories => SecondaryCategoryOptions.Any(option => option.CategoryId.HasValue);
     public string CompositionSummary => $"{DocumentCharacterCount} 字 · {DocumentSegmentCount} 段 · {DocumentImageCount} 图";
-    public string? VisibleErrorMessage => DocumentError ?? BatchSeparatorError ?? ErrorMessage;
+    public string? VisibleErrorMessage => DocumentError ?? ErrorMessage;
     public bool HasDocumentError => !string.IsNullOrWhiteSpace(DocumentError);
 
-    partial void OnBatchSeparatorChanged(string value) { BatchSeparatorError = null; OnPropertyChanged(nameof(VisibleErrorMessage)); }
-    partial void OnBatchSeparatorErrorChanged(string? value) => OnPropertyChanged(nameof(VisibleErrorMessage));
     partial void OnDocumentErrorChanged(string? value) { OnPropertyChanged(nameof(VisibleErrorMessage)); OnPropertyChanged(nameof(HasDocumentError)); }
     partial void OnErrorMessageChanged(string? value) => OnPropertyChanged(nameof(VisibleErrorMessage));
 
@@ -95,7 +91,6 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
             _baseBody = phrase.Body;
             _baseColorKey = NormalizeColorKey(phrase.ColorKey);
             Title = _baseTitle;
-            BatchSeparator = phrase.Body.BatchSeparator;
             ReplaceSegments(phrase.Body.Segments);
             SelectedCategoryId = _baseCategoryId;
             ColorKey = _baseColorKey;
@@ -178,7 +173,6 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
         DocumentCharacterCount = draft.CharacterCount;
         DocumentImageCount = draft.ImageCount;
         DocumentSegmentCount = draft.Segments.Length;
-        BatchSeparatorError = draft.ErrorCode == "INVALID_SEPARATOR" ? draft.ErrorMessage : null;
         DocumentError = draft.IsValid ? ValidateDraftLimits(draft) : draft.ErrorMessage;
         _hasInvalidDocumentDraft = !draft.IsValid;
 
@@ -220,10 +214,8 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
         // Task.Run 避免在 WPF 同步上下文上阻塞异步 SQLite 续体造成死锁。
         ReleaseSessionImportsSynchronously();
         Title = _baseTitle;
-        BatchSeparatorError = null;
         DocumentError = null;
         _hasInvalidDocumentDraft = false;
-        BatchSeparator = _baseBody.BatchSeparator;
         ReplaceSegments(_baseBody.Segments);
         SelectedCategoryId = _baseCategoryId;
         ColorKey = _baseColorKey;
@@ -235,7 +227,6 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
         if (!string.IsNullOrWhiteSpace(DocumentError)) { ErrorMessage = DocumentError; return; }
         IsBusy = true;
         ErrorMessage = null;
-        BatchSeparatorError = null;
         try
         {
             var body = BuildBody();
@@ -248,7 +239,6 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
                 _version = phrase.Version;
                 _baseTitle = phrase.Title;
                 _baseBody = phrase.Body;
-                BatchSeparator = phrase.Body.BatchSeparator;
                 _baseCategoryId = phrase.CategoryId;
                 _baseColorKey = NormalizeColorKey(phrase.ColorKey);
                 ColorKey = _baseColorKey;
@@ -261,7 +251,7 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
         finally { IsBusy = false; }
     }
 
-    private PhraseBody BuildBody() => new(Segments.Select(item => item.ToModel()).ToImmutableArray(), BatchSeparator);
+    private PhraseBody BuildBody() => new(Segments.Select(item => item.ToModel()).ToImmutableArray());
 
     private void ReplaceSegments(IEnumerable<PhraseSegment> segments)
     {
@@ -414,7 +404,7 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
 
     private static bool BodiesEqual(PhraseBody left, PhraseBody right)
     {
-        if (left.BatchSeparator != right.BatchSeparator || left.Segments.Length != right.Segments.Length) return false;
+        if (left.Segments.Length != right.Segments.Length) return false;
         for (var index = 0; index < left.Segments.Length; index++)
         {
             var leftSegment = left.Segments[index];

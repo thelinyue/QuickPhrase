@@ -485,7 +485,6 @@ public static class PhrasePackagePlanner
         {
             var hash = new HashCode();
             hash.Add(value.Title, StringComparer.Ordinal);
-            hash.Add(value.Body.BatchSeparator, StringComparer.Ordinal);
             foreach (var segment in value.Body.Segments)
             {
                 hash.Add(segment.Kind);
@@ -497,7 +496,7 @@ public static class PhrasePackagePlanner
 
         private static bool BodiesEqual(PhraseBody left, PhraseBody right)
         {
-            if (!string.Equals(left.BatchSeparator, right.BatchSeparator, StringComparison.Ordinal) || left.Segments.Length != right.Segments.Length)
+            if (left.Segments.Length != right.Segments.Length)
                 return false;
             for (var index = 0; index < left.Segments.Length; index++)
             {

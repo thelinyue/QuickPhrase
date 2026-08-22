@@ -140,12 +140,13 @@
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="Root" Property="Background" Value="{DynamicResource Brush.Surface.Selected}" />
-                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
+                            <!-- 选中态保留浅色背景和左侧指示条，不再绘制蓝色外框。 -->
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
                             <Setter TargetName="AccentBar" Property="Visibility" Value="Visible" />
                             <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Primary.Pressed}" />
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />

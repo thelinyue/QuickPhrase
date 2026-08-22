@@ -17,7 +17,7 @@
         <sys:Double x:Key="Size.Library.SubHeader.Height">24</sys:Double>
         <sys:Double x:Key="Size.Library.SubHeader.ArrowWidth">16</sys:Double>
         <GridLength x:Key="Size.Library.SubHeader.ArrowColumn">16</GridLength>
-        <GridLength x:Key="Size.Library.CompactList.GapColumn">0</GridLength>
+        <GridLength x:Key="Size.Library.CompactList.GapColumn">4</GridLength>
         <!-- 话术行可见内容与第一个一级分类 chip 共用 16px 左侧基准线。 -->
         <Thickness x:Key="Thickness.Library.PhraseRow.Horizontal">16,0</Thickness>
 
@@ -483,11 +483,13 @@
                                AutomationProperties.Name="话术搜索"
                               Tag="搜索标题、正文或拼音...">
                     </TextBox>
+                     <!-- 历史浮层由 LibraryView 的焦点事件显式关闭；禁止使用 False，
+                          否则打开浮层的搜索框点击会被 Popup 误判为外部点击，导致历史记录闪退。 -->
                      <Popup x:Name="SearchHistoryPopup"
                             PlacementTarget="{Binding ElementName=SearchBox}"
                             Placement="Top"
                             VerticalOffset="-4"
-                            StaysOpen="False"
+                            StaysOpen="True"
                             AllowsTransparency="True"
                             Width="{Binding ActualWidth, ElementName=SearchBox}"
                             PopupAnimation="Fade"

@@ -156,7 +156,7 @@ internal sealed class DatabaseInitializer
         var expectedColumns = new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["categories"] = ["id", "parent_id", "name", "normalized_name", "sort_order", "version", "created_at_utc", "updated_at_utc"],
-            ["phrases"] = ["id", "title", "batch_separator", "category_id", "shortcut_mode", "shortcut_display", "shortcut_normalized", "usage_count", "last_used_at_utc", "version", "created_at_utc", "updated_at_utc", "color_key", "sort_order"],
+            ["phrases"] = ["id", "title", "category_id", "shortcut_mode", "shortcut_display", "shortcut_normalized", "usage_count", "last_used_at_utc", "version", "created_at_utc", "updated_at_utc", "color_key", "sort_order"],
             ["phrase_segments"] = ["segment_id", "phrase_id", "segment_kind", "text_content", "media_asset_id", "sort_order"],
             ["media_assets"] = ["asset_id", "storage_key", "mime_type", "byte_length", "pixel_width", "pixel_height", "created_at_utc"],
             ["settings"] = ["key", "value_json", "version", "updated_at_utc"],
@@ -201,7 +201,7 @@ internal sealed class DatabaseInitializer
             || !await HasForeignKeyAsync(connection, transaction, "phrase_segments", "phrase_id", "phrases", "id", "CASCADE", cancellationToken)
             || !await HasForeignKeyAsync(connection, transaction, "phrase_segments", "media_asset_id", "media_assets", "asset_id", "RESTRICT", cancellationToken)
             || !await HasConstraintFragmentsAsync(connection, transaction, "phrases",
-                ["CHECK (LENGTH(TITLE) BETWEEN 1 AND 80)", "CHECK (LENGTH(BATCH_SEPARATOR) BETWEEN 1 AND 32 AND LENGTH(TRIM(BATCH_SEPARATOR)) > 0)"],
+                ["CHECK (LENGTH(TITLE) BETWEEN 1 AND 80)"],
                 cancellationToken)
             || !await HasConstraintFragmentsAsync(connection, transaction, "media_assets",
                 ["CHECK (MIME_TYPE IN ('IMAGE/PNG', 'IMAGE/JPEG'))", "CHECK (BYTE_LENGTH BETWEEN 1 AND 10485760)"],

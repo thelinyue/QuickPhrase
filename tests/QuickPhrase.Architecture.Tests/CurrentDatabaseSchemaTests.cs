@@ -65,6 +65,7 @@ public sealed class CurrentDatabaseSchemaTests
         foreach (var index in CurrentIndexes)
             Assert.True(await IndexExistsAsync(databasePath, index), $"缺少当前 V1 索引：{index}");
         Assert.False(await ColumnExistsAsync(databasePath, "phrases", "favorite"));
+        Assert.False(await ColumnExistsAsync(databasePath, "phrases", "batch_separator"));
     }
 
     [Fact]

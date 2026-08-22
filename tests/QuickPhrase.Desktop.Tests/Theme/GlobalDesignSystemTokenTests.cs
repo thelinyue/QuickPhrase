@@ -236,10 +236,10 @@ public sealed class GlobalDesignSystemTokenTests
             {
                 "Size.Control.Compact", "Size.Control.Default", "Size.Button.Icon.Width", "Size.Button.Icon.Height",
                 "Size.Input.Search", "Size.Switch.Width", "Size.Switch.Height", "Size.Switch.Thumb",
-                "Size.TitleBar.Height", "Size.TitleBar.GridLength", "Size.TitleBar.CaptionButton.Width", "Size.TitleBar.BrandIcon", "Size.TitleBar.ActionIcon",
+                "Size.TitleBar.Height", "Size.TitleBar.GridLength", "Size.TitleBar.CaptionButton.Width", "Size.TitleBar.ActionIcon",
                 "Size.Navigation.Item", "Size.Phrase.Row.Minimum", "Size.Phrase.Row.Compact", "Size.Phrase.Row.GapColumn", "Size.Phrase.IndexColumn.GridLength",
                 "Size.PhraseEditorWindow.Width", "Size.PhraseEditorWindow.Height", "Size.PhraseEditorWindow.MinimumWidth", "Size.PhraseEditorWindow.MinimumHeight",
-                "Size.PhraseEditor.Field.GapColumn", "Size.PhraseEditor.Toolbar.GapColumn", "Size.PhraseEditor.Separator.Width", "Size.PhraseEditor.ColorTile", "Size.PhraseRichEditor.MinimumHeight", "Size.PhraseRichEditor.Image.MaximumHeight",
+                "Size.PhraseEditor.Field.GapColumn", "Size.PhraseEditor.Toolbar.GapColumn", "Size.PhraseEditor.ColorTile", "Size.PhraseRichEditor.MinimumHeight", "Size.PhraseRichEditor.Image.MaximumHeight",
                 "Size.Settings.Sidebar.Width", "Size.Settings.Sidebar.GridLength", "Size.Settings.Content.Maximum",
                 "Size.MainWindow.Width", "Size.MainWindow.Height", "Size.MainWindow.MinimumWidth", "Size.MainWindow.MinimumHeight",
                 "Size.SettingsWindow.Width", "Size.SettingsWindow.Height", "Size.SettingsWindow.MinimumWidth", "Size.SettingsWindow.MinimumHeight",
@@ -583,7 +583,6 @@ public sealed class GlobalDesignSystemTokenTests
             ("Size.Switch.Thumb", 18),
             ("Size.TitleBar.Height", 32),
             ("Size.TitleBar.CaptionButton.Width", 48),
-            ("Size.TitleBar.BrandIcon", 16),
             ("Size.TitleBar.ActionIcon", 16),
             ("Size.PhraseEditorWindow.Width", 720),
             ("Size.PhraseEditorWindow.Height", 680),
@@ -653,7 +652,6 @@ public sealed class GlobalDesignSystemTokenTests
         Assert.Equal(new GridLength(8), Assert.IsType<GridLength>(sizes["Size.SearchHistory.Gutter.GridLength"]));
         Assert.Equal(new GridLength(16), Assert.IsType<GridLength>(sizes["Size.PhraseEditor.Field.GapColumn"]));
         Assert.Equal(new GridLength(8), Assert.IsType<GridLength>(sizes["Size.PhraseEditor.Toolbar.GapColumn"]));
-        Assert.Equal(new GridLength(80), Assert.IsType<GridLength>(sizes["Size.PhraseEditor.Separator.Width"]));
 
         var motion = LoadDictionary(DesignSystemPath("Tokens", "Motion.xaml"));
         Assert.Equal(TimeSpan.FromMilliseconds(80), Assert.IsType<Duration>(motion["Motion.Duration.Fast"]).TimeSpan);

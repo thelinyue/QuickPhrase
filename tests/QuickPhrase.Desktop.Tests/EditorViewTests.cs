@@ -10,6 +10,22 @@ namespace QuickPhrase.Desktop.Tests;
 public class EditorViewTests
 {
     [Fact]
+    public void EditorToolbarUsesIconActionsAndNoSeparatorInput()
+    {
+        var root = FindRepoRoot();
+        var markup = File.ReadAllText(Path.Combine(
+            root, "desktop", "QuickPhrase.Desktop", "Views", "EditorView.xaml"));
+
+        Assert.DoesNotContain("文字分隔符", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("BatchSeparator=", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"插入图片\"", markup, StringComparison.Ordinal);
+        Assert.Contains("InsertSeparator_Click", markup, StringComparison.Ordinal);
+        Assert.Contains("ToolTip=\"添加分段\"", markup, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"添加分段\"", markup, StringComparison.Ordinal);
+        Assert.Contains("<Path", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SavedHandler_RequestsEditorClose()
     {
         var root = FindRepoRoot();

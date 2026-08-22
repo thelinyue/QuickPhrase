@@ -97,8 +97,8 @@ internal sealed class SqlitePhrasePackageImporter
                 await using (var command = connection.CreateCommand())
                 {
                     command.Transaction = transaction;
-                    command.CommandText = "INSERT INTO phrases(id,title,batch_separator,category_id,shortcut_mode,shortcut_display,shortcut_normalized,usage_count,version,created_at_utc,updated_at_utc,color_key,sort_order) VALUES($id,$title,$separator,$category,'None',NULL,NULL,0,1,$created,$updated,'default',$sort);";
-                    command.Parameters.AddWithValue("$id", DbId(phraseId)); command.Parameters.AddWithValue("$title", phrase.Title.Trim()); command.Parameters.AddWithValue("$separator", phrase.Body.BatchSeparator);
+                    command.CommandText = "INSERT INTO phrases(id,title,category_id,shortcut_mode,shortcut_display,shortcut_normalized,usage_count,version,created_at_utc,updated_at_utc,color_key,sort_order) VALUES($id,$title,$category,'None',NULL,NULL,0,1,$created,$updated,'default',$sort);";
+                    command.Parameters.AddWithValue("$id", DbId(phraseId)); command.Parameters.AddWithValue("$title", phrase.Title.Trim());
                     command.Parameters.AddWithValue("$category", DbId(categoryId)); command.Parameters.AddWithValue("$created", now); command.Parameters.AddWithValue("$updated", now); command.Parameters.AddWithValue("$sort", phrase.SortOrder);
                     await command.ExecuteNonQueryAsync(cancellationToken);
                 }
@@ -125,14 +125,14 @@ internal sealed class SqlitePhrasePackageImporter
     }
 
     private static PhraseBody ReplaceImages(PhraseBody body, IReadOnlyDictionary<Guid, PhraseImageReference> map) =>
-        new(body.Segments.Select(s => s.Kind == PhraseSegmentKind.Image && s.Image is not null && map.TryGetValue(s.Image.AssetId, out var image) ? s with { Image = image } : s).ToImmutableArray(), body.BatchSeparator);
+        new(body.Segments.Select(s => s.Kind == PhraseSegmentKind.Image && s.Image is not null && map.TryGetValue(s.Image.AssetId, out var image) ? s with { Image = image } : s).ToImmutableArray());
 
     private static async Task<bool> IsDuplicateAsync(SqliteConnection connection, SqliteTransaction transaction, string title, PhraseBody body, CancellationToken cancellationToken)
     {
         if (!body.IsSingleText) return false;
         await using var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = "SELECT 1 FROM phrases p JOIN phrase_segments ps ON ps.phrase_id=p.id WHERE p.title=$title AND p.batch_separator=$separator AND ps.sort_order=0 AND ps.segment_kind='Text' AND ps.text_content=$content AND NOT EXISTS(SELECT 1 FROM phrase_segments extra WHERE extra.phrase_id=p.id AND extra.sort_order<>0) LIMIT 1;";
-        command.Parameters.AddWithValue("$title", title); command.Parameters.AddWithValue("$separator", body.BatchSeparator); command.Parameters.AddWithValue("$content", body.Segments[0].Text!);
+        command.CommandText = "SELECT 1 FROM phrases p JOIN phrase_segments ps ON ps.phrase_id=p.id WHERE p.title=$title AND ps.sort_order=0 AND ps.segment_kind='Text' AND ps.text_content=$content AND NOT EXISTS(SELECT 1 FROM phrase_segments extra WHERE extra.phrase_id=p.id AND extra.sort_order<>0) LIMIT 1;";
+        command.Parameters.AddWithValue("$title", title); command.Parameters.AddWithValue("$content", body.Segments[0].Text!);
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
     }
 

@@ -1,13 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:components="clr-namespace:QuickPhrase.Desktop.DesignSystem.Components">
-    <!-- 应用品牌图标由中央组件字典提供，页面不直接拼接程序集资源 URI。 -->
-    <BitmapImage x:Key="Image.Brand.AppIcon"
-                 UriSource="pack://application:,,,/QuickPhrase;component/Assets/quickphrase.ico"
-                 DecodePixelWidth="48"
-                 DecodePixelHeight="48"
-                 CacheOption="OnLoad" />
-
     <!-- 组件级 Style 只描述复合控件外壳；内部排版继续复用 Text、Input、Button 与 Surface 公共 Style。 -->
     <Style x:Key="Style.Component.SettingItem" TargetType="{x:Type components:SettingItem}">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />

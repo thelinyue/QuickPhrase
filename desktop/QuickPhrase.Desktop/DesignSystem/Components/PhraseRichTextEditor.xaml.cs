@@ -36,12 +36,6 @@ public partial class PhraseRichTextEditor : UserControl
     private BlockUIContainer? _selectedImageBlock;
     private Point _dragStart;
 
-    public static readonly DependencyProperty BatchSeparatorProperty = DependencyProperty.Register(
-        nameof(BatchSeparator),
-        typeof(string),
-        typeof(PhraseRichTextEditor),
-        new FrameworkPropertyMetadata(PhraseBody.DefaultBatchSeparator, OnDocumentSettingChanged));
-
     public static readonly DependencyProperty IsReadOnlyProperty = DependencyProperty.Register(
         nameof(IsReadOnly),
         typeof(bool),
@@ -64,12 +58,6 @@ public partial class PhraseRichTextEditor : UserControl
     {
         InitializeComponent();
         DataObject.AddPastingHandler(EditorBox, EditorBox_OnPaste);
-    }
-
-    public string BatchSeparator
-    {
-        get => (string)GetValue(BatchSeparatorProperty);
-        set => SetValue(BatchSeparatorProperty, value);
     }
 
     public bool IsReadOnly
@@ -110,7 +98,6 @@ public partial class PhraseRichTextEditor : UserControl
         {
             EditorBox.Document = PhraseRichDocumentMapper.CreateDocument(
                 items.Select(item => item.ToModel()),
-                BatchSeparator,
                 segment => CreateImageVisual(byId[segment.Id], null));
 
             foreach (var container in EditorBox.Document.Blocks.OfType<BlockUIContainer>())
@@ -127,6 +114,28 @@ public partial class PhraseRichTextEditor : UserControl
         finally
         {
             _suppressDocumentChanged = false;
+        }
+
+        PublishDraft();
+    }
+
+    /// <summary>
+    /// 在当前选区或光标位置插入系统固定分隔符。换行与分隔符作为一个原生 WPF 编辑操作提交，
+    /// 因而用户可以用一次撤销恢复插入前的正文。
+    /// </summary>
+    public void InsertBatchSeparator()
+    {
+        if (IsReadOnly || IsProcessing) return;
+
+        EditorBox.Focus();
+        EditorBox.BeginChange();
+        try
+        {
+            EditorBox.Selection.Text = $"\r\n{PhraseBody.DefaultBatchSeparator}\r\n";
+        }
+        finally
+        {
+            EditorBox.EndChange();
         }
 
         PublishDraft();
@@ -254,7 +263,7 @@ public partial class PhraseRichTextEditor : UserControl
     private void PublishDraft()
     {
         if (_suppressDocumentChanged) return;
-        DraftChanged?.Invoke(this, PhraseRichDocumentMapper.ReadDocument(EditorBox.Document, BatchSeparator));
+        DraftChanged?.Invoke(this, PhraseRichDocumentMapper.ReadDocument(EditorBox.Document));
     }
 
     private void EditorBox_OnPaste(object sender, DataObjectPastingEventArgs e)
@@ -429,9 +438,6 @@ public partial class PhraseRichTextEditor : UserControl
 
     private void UpdateEditorBorder() => EditorBorder.SetResourceReference(
         BorderBrushProperty, EditorBox.IsKeyboardFocusWithin ? "Brush.Border.Focus" : HasError ? "Brush.Status.Error" : "Brush.Border.Default");
-
-    private static void OnDocumentSettingChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
-        ((PhraseRichTextEditor)d).PublishDraft();
 
     private static void OnIsReadOnlyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {

@@ -18,7 +18,6 @@
     <GridLength x:Key="Size.TitleBar.GridLength">32</GridLength>
     <sys:Double x:Key="Size.TitleBar.CaptionButton.Width">48</sys:Double>
     <!-- 标题栏内的品牌与操作图标统一为 16px，在 32px 高度内保留足够的上下留白。 -->
-    <sys:Double x:Key="Size.TitleBar.BrandIcon">16</sys:Double>
     <sys:Double x:Key="Size.TitleBar.ActionIcon">16</sys:Double>
     <sys:Double x:Key="Size.Navigation.Item">40</sys:Double>
     <sys:Double x:Key="Size.Phrase.Row.Minimum">32</sys:Double>
@@ -35,7 +34,6 @@
     <sys:Double x:Key="Size.PhraseEditorWindow.MinimumHeight">520</sys:Double>
     <GridLength x:Key="Size.PhraseEditor.Field.GapColumn">16</GridLength>
     <GridLength x:Key="Size.PhraseEditor.Toolbar.GapColumn">8</GridLength>
-    <GridLength x:Key="Size.PhraseEditor.Separator.Width">80</GridLength>
     <sys:Double x:Key="Size.PhraseEditor.ColorTile">24</sys:Double>
     <sys:Double x:Key="Size.PhraseRichEditor.MinimumHeight">240</sys:Double>
     <sys:Double x:Key="Size.PhraseRichEditor.Image.MaximumHeight">180</sys:Double>

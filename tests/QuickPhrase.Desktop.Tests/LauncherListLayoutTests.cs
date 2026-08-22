@@ -195,8 +195,7 @@ public sealed class LauncherListLayoutTests
                 PhraseSegment.CreateImage(new PhraseImageReference(Guid.NewGuid(), "image/png", 100, 10, 10)),
                 PhraseSegment.CreateText("第一段文字"),
                 PhraseSegment.CreateText("第二段文字"),
-            ],
-            "---"),
+            ]),
             Guid.NewGuid(), ShortcutMode.None, null, 0, null, 1,
             DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 

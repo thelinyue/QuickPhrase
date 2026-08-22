@@ -3,19 +3,18 @@ using System.IO;
 namespace QuickPhrase.Desktop.Tests;
 
 /// <summary>
-/// 验证主窗口的品牌和设置入口位于标题栏，避免话术库重新出现重复的底部应用栏。
+/// 验证主窗口的设置入口位于标题栏，并避免话术库标题栏重复显示应用品牌图标。
 /// </summary>
 public sealed class TitleBarBrandingContractTests
 {
     [Fact]
-    public void MainWindow_TitleBar_ShowsBrandAndSettingsBeforeWindowControls()
+    public void MainWindow_TitleBar_HidesBrandIconAndKeepsSettingsBeforeWindowControls()
     {
         var titleBar = ReadDesktopFile("TitleBar.xaml");
         var mainWindow = ReadDesktopFile("MainWindow.xaml");
 
-        Assert.Contains("Source=\"{StaticResource Image.Brand.AppIcon}\"", titleBar, StringComparison.Ordinal);
-        Assert.Contains("Width=\"{StaticResource Size.TitleBar.BrandIcon}\"", titleBar, StringComparison.Ordinal);
-        Assert.Contains("Height=\"{StaticResource Size.TitleBar.BrandIcon}\"", titleBar, StringComparison.Ordinal);
+        Assert.DoesNotContain("Image.Brand.AppIcon", titleBar, StringComparison.Ordinal);
+        Assert.DoesNotContain("Size.TitleBar.BrandIcon", titleBar, StringComparison.Ordinal);
         Assert.Contains("Text=\"闪语 · \"", titleBar, StringComparison.Ordinal);
         Assert.Contains("Margin=\"{StaticResource Thickness.Gap.Inline.SM}\"", titleBar, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"SettingsButton\"", titleBar, StringComparison.Ordinal);
@@ -46,11 +45,13 @@ public sealed class TitleBarBrandingContractTests
     }
 
     [Fact]
-    public void TitleBarBrandIcon_UsesSixteenPixelSemanticToken()
+    public void TitleBarBrandIcon_ResourcesAreRemovedWhenNotRendered()
     {
+        var components = ReadDesktopFile("DesignSystem", "Components", "Components.xaml");
         var sizes = ReadDesktopFile("DesignSystem", "Tokens", "Sizes.xaml");
 
-        Assert.Contains("x:Key=\"Size.TitleBar.BrandIcon\">16</sys:Double>", sizes, StringComparison.Ordinal);
+        Assert.DoesNotContain("Image.Brand.AppIcon", components, StringComparison.Ordinal);
+        Assert.DoesNotContain("Size.TitleBar.BrandIcon", sizes, StringComparison.Ordinal);
         Assert.DoesNotContain("Size.Library.BrandIcon", sizes, StringComparison.Ordinal);
         Assert.DoesNotContain("Size.Library.SettingsIcon", sizes, StringComparison.Ordinal);
         Assert.DoesNotContain("Size.Library.Footer.Height", sizes, StringComparison.Ordinal);

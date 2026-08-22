@@ -90,7 +90,7 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
             await using (var insert = connection.CreateCommand())
             {
                 insert.Transaction = transaction;
-                insert.CommandText = "INSERT INTO phrases(id,title,batch_separator,category_id,shortcut_mode,shortcut_display,shortcut_normalized,usage_count,version,created_at_utc,updated_at_utc,color_key,sort_order) VALUES($id,$title,$separator,$categoryId,$mode,$display,$normalized,0,1,$created,$updated,$colorKey,(SELECT COALESCE(MAX(sort_order),0)+1 FROM (SELECT sort_order FROM phrases WHERE category_id=$categoryId)));";
+                insert.CommandText = "INSERT INTO phrases(id,title,category_id,shortcut_mode,shortcut_display,shortcut_normalized,usage_count,version,created_at_utc,updated_at_utc,color_key,sort_order) VALUES($id,$title,$categoryId,$mode,$display,$normalized,0,1,$created,$updated,$colorKey,(SELECT COALESCE(MAX(sort_order),0)+1 FROM (SELECT sort_order FROM phrases WHERE category_id=$categoryId)));";
                 AddCreateParameters(insert, command, shortcut, colorKey, now);
                 await insert.ExecuteNonQueryAsync(cancellationToken);
             }
@@ -127,9 +127,8 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
             await using (var update = connection.CreateCommand())
             {
                 update.Transaction = transaction;
-                update.CommandText = "UPDATE phrases SET title=$title,batch_separator=$separator,category_id=$categoryId,shortcut_mode=$mode,shortcut_display=$display,shortcut_normalized=$normalized,color_key=$colorKey,sort_order=$sortOrder,version=version+1,updated_at_utc=$updated WHERE id=$id AND version=$version;";
+                update.CommandText = "UPDATE phrases SET title=$title,category_id=$categoryId,shortcut_mode=$mode,shortcut_display=$display,shortcut_normalized=$normalized,color_key=$colorKey,sort_order=$sortOrder,version=version+1,updated_at_utc=$updated WHERE id=$id AND version=$version;";
                 update.Parameters.AddWithValue("$title", command.Title.Trim());
-                update.Parameters.AddWithValue("$separator", command.Body.BatchSeparator);
                 update.Parameters.AddWithValue("$categoryId", DbId(command.CategoryId));
                 update.Parameters.AddWithValue("$mode", command.ShortcutMode.ToString());
                 update.Parameters.AddWithValue("$display", (object?)shortcut?.Display ?? DBNull.Value);
@@ -209,7 +208,6 @@ internal sealed class SqlitePhraseRepository : SqliteRepositoryBase, IPhraseRepo
     {
         command.Parameters.AddWithValue("$id", DbId(phrase.Id));
         command.Parameters.AddWithValue("$title", phrase.Title.Trim());
-        command.Parameters.AddWithValue("$separator", phrase.Body.BatchSeparator);
         command.Parameters.AddWithValue("$categoryId", DbId(phrase.CategoryId));
         command.Parameters.AddWithValue("$mode", phrase.ShortcutMode.ToString());
         command.Parameters.AddWithValue("$display", (object?)shortcut?.Display ?? DBNull.Value);

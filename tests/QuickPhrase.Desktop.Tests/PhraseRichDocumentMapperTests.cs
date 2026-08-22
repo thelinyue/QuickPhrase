@@ -22,8 +22,8 @@ public sealed class PhraseRichDocumentMapperTests
                 PhraseSegment.CreateText("下一段"),
             };
 
-            var document = PhraseRichDocumentMapper.CreateDocument(source, "---", _ => new Border());
-            var draft = PhraseRichDocumentMapper.ReadDocument(document, "---");
+            var document = PhraseRichDocumentMapper.CreateDocument(source, _ => new Border());
+            var draft = PhraseRichDocumentMapper.ReadDocument(document);
 
             Assert.True(draft.IsValid);
             Assert.Equal(new[] { "第一行\n第二行", "下一段" }, draft.Segments.Select(segment => segment.Text).ToArray());
@@ -44,8 +44,8 @@ public sealed class PhraseRichDocumentMapperTests
                 PhraseSegment.CreateText("后文"),
             };
 
-            var document = PhraseRichDocumentMapper.CreateDocument(source, "---", _ => new Border());
-            var draft = PhraseRichDocumentMapper.ReadDocument(document, "---");
+            var document = PhraseRichDocumentMapper.CreateDocument(source, _ => new Border());
+            var draft = PhraseRichDocumentMapper.ReadDocument(document);
 
             Assert.True(draft.IsValid);
             Assert.Equal(new[] { PhraseSegmentKind.Text, PhraseSegmentKind.Image, PhraseSegmentKind.Text }, draft.Segments.Select(segment => segment.Kind));
@@ -62,9 +62,9 @@ public sealed class PhraseRichDocumentMapperTests
         {
             var first = PhraseSegment.CreateImage(new PhraseImageReference(Guid.NewGuid(), "image/png", 10, 1, 1));
             var second = PhraseSegment.CreateImage(new PhraseImageReference(Guid.NewGuid(), "image/jpeg", 20, 2, 2));
-            var document = PhraseRichDocumentMapper.CreateDocument([first, second], "---", _ => new Border());
+            var document = PhraseRichDocumentMapper.CreateDocument([first, second], _ => new Border());
 
-            var draft = PhraseRichDocumentMapper.ReadDocument(document, "---");
+            var draft = PhraseRichDocumentMapper.ReadDocument(document);
 
             Assert.True(draft.IsValid);
             Assert.Equal(2, draft.Segments.Length);
@@ -82,7 +82,7 @@ public sealed class PhraseRichDocumentMapperTests
         {
             var document = new FlowDocument(new Paragraph(new Run(text)));
 
-            var draft = PhraseRichDocumentMapper.ReadDocument(document, "---");
+            var draft = PhraseRichDocumentMapper.ReadDocument(document);
 
             Assert.False(draft.IsValid);
             Assert.Equal("EMPTY_TEXT_SEGMENT", draft.ErrorCode);
@@ -96,10 +96,10 @@ public sealed class PhraseRichDocumentMapperTests
         WpfTestApplicationHost.Invoke(_ =>
         {
             var image = PhraseSegment.CreateImage(new PhraseImageReference(Guid.NewGuid(), "image/png", 10, 1, 1));
-            var document = PhraseRichDocumentMapper.CreateDocument([PhraseSegment.CreateText("正文"), image], "---", _ => new Border());
+            var document = PhraseRichDocumentMapper.CreateDocument([PhraseSegment.CreateText("正文"), image], _ => new Border());
             document.Blocks.InsertBefore(document.Blocks.LastBlock!, new Paragraph(new Run("---")));
 
-            var draft = PhraseRichDocumentMapper.ReadDocument(document, "---");
+            var draft = PhraseRichDocumentMapper.ReadDocument(document);
 
             Assert.False(draft.IsValid);
             Assert.Equal("SEPARATOR_ADJACENT_TO_IMAGE", draft.ErrorCode);
@@ -114,7 +114,7 @@ public sealed class PhraseRichDocumentMapperTests
             var paragraph = new Paragraph();
             paragraph.Inlines.Add(new Run("正文"));
             paragraph.Inlines.Add(new InlineUIContainer(new Button { Content = "不支持" }));
-            var draft = PhraseRichDocumentMapper.ReadDocument(new FlowDocument(paragraph), "---");
+            var draft = PhraseRichDocumentMapper.ReadDocument(new FlowDocument(paragraph));
 
             Assert.False(draft.IsValid);
             Assert.Equal("UNSUPPORTED_INLINE_CONTENT", draft.ErrorCode);
@@ -129,8 +129,8 @@ public sealed class PhraseRichDocumentMapperTests
     {
         WpfTestApplicationHost.Invoke(_ =>
         {
-            var document = PhraseRichDocumentMapper.CreateDocument([PhraseSegment.CreateText(text)], "---", _ => new Border());
-            var draft = PhraseRichDocumentMapper.ReadDocument(document, "---");
+            var document = PhraseRichDocumentMapper.CreateDocument([PhraseSegment.CreateText(text)], _ => new Border());
+            var draft = PhraseRichDocumentMapper.ReadDocument(document);
 
             Assert.True(draft.IsValid);
             Assert.Equal(text, Assert.Single(draft.Segments).Text);

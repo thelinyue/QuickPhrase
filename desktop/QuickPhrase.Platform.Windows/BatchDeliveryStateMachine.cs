@@ -81,7 +81,7 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
 
     private Task<DeliveryResult> DeliverTextSegmentAsync(DeliveryRequest request, PhraseSegment segment, CancellationToken cancellationToken)
     {
-        var segmentPhrase = request.Phrase with { Body = PhraseBody.FromText(segment.Text!, request.Phrase.Body.BatchSeparator) };
+        var segmentPhrase = request.Phrase with { Body = PhraseBody.FromText(segment.Text!) };
         var segmentRequest = request with
         {
             Phrase = segmentPhrase,
@@ -135,7 +135,7 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
 
         var segmentPhrase = request.Phrase with
         {
-            Body = new PhraseBody([segment], request.Phrase.Body.BatchSeparator),
+            Body = new PhraseBody([segment]),
         };
         var segmentRequest = request with
         {

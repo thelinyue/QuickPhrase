@@ -30,8 +30,7 @@ public class PhraseItemViewModelTests
                 PhraseSegment.CreateImage(new PhraseImageReference(Guid.NewGuid(), "image/png", 100, 10, 10)),
                 PhraseSegment.CreateText("第一段文字"),
                 PhraseSegment.CreateText("第二段不应进入摘要"),
-            ],
-            "---"),
+            ]),
         };
 
         var vm = new PhraseItemViewModel(phrase, "分类");

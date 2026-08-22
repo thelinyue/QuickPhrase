@@ -480,6 +480,7 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     {
         if (!IsLoaded || !string.IsNullOrWhiteSpace(_viewModel.SearchQuery)) return;
         CloseSearchResults();
+        // 历史 Popup 使用 StaysOpen=True；关闭时机统一由搜索框和 Popup 的焦点事件显式决定。
         SearchHistoryPopup.IsOpen = true;
     }
 

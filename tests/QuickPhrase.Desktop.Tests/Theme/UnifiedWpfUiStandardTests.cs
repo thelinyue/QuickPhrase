@@ -56,7 +56,7 @@ public sealed class UnifiedWpfUiStandardTests
     {
         var expectations = new Dictionary<string, string[]>
         {
-            [Path.Combine("Views", "EditorView.xaml")] = ["话术标题", "文字分隔符", "话术图文内容编辑区", "一级分类", "二级分类"],
+            [Path.Combine("Views", "EditorView.xaml")] = ["话术标题", "在光标处插入图片", "添加分段", "话术图文内容编辑区", "一级分类", "二级分类"],
             [Path.Combine("Views", "LibraryView.xaml")] = ["话术搜索"],
             ["OnboardingWindow.xaml"] = ["引导分类名称", "引导话术分类", "引导话术标题", "引导话术内容", "开机时启动闪语"],
             ["TitleBar.xaml"] = ["最小化窗口", "最大化或还原窗口", "关闭窗口"],

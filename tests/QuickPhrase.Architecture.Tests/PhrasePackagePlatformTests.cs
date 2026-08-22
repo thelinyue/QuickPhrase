@@ -32,8 +32,22 @@ public sealed class PhrasePackagePlatformTests
         Assert.Equal(document.Manifest.Format, restored.Manifest.Format);
         Assert.Single(restored.Phrases);
         Assert.Equal(document.Phrases[0].Title, restored.Phrases[0].Title);
-        Assert.Equal(document.Phrases[0].Body.BatchSeparator, restored.Phrases[0].Body.BatchSeparator);
         Assert.Equal(document.Phrases[0].Body.Segments.Select(x => (x.Kind, x.Text, x.Image)), restored.Phrases[0].Body.Segments.Select(x => (x.Kind, x.Text, x.Image)));
+    }
+
+    [Fact]
+    public void SerializedPackageDataDoesNotContainPerPhraseSeparator()
+    {
+        var categoryId = Guid.NewGuid();
+        var document = new PhrasePackageDocument(
+            new PhrasePackageManifest(PhrasePackageFormat.Format, PhrasePackageFormat.Version, Guid.NewGuid(), "包", DateTimeOffset.UtcNow, 1, 1, 0),
+            [new PhrasePackageCategory(categoryId, "分类", null, 0)],
+            [new PhrasePackagePhrase(Guid.NewGuid(), "标题", PhraseBody.FromText("正文"), categoryId, 0)],
+            []);
+
+        var json = Encoding.UTF8.GetString(PhrasePackageJsonSerializer.SerializeData(document));
+
+        Assert.DoesNotContain("batchSeparator", json, StringComparison.Ordinal);
     }
 
     [Fact]

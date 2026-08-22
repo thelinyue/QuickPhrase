@@ -78,16 +78,15 @@ public sealed record PhraseSegment(
 /// </summary>
 public sealed record PhraseBody
 {
+    /// <summary>系统统一使用的文字分隔符；正文模型不再允许每条话术单独配置。</summary>
     public const string DefaultBatchSeparator = "---";
 
-    public PhraseBody(ImmutableArray<PhraseSegment> segments, string batchSeparator)
+    public PhraseBody(ImmutableArray<PhraseSegment> segments)
     {
         Segments = segments;
-        BatchSeparator = NormalizeBatchSeparator(batchSeparator);
     }
 
     public ImmutableArray<PhraseSegment> Segments { get; }
-    public string BatchSeparator { get; }
     public int SegmentCount => Segments.IsDefault ? 0 : Segments.Length;
     public int ImageCount => Segments.IsDefault ? 0 : Segments.Count(segment => segment.Kind == PhraseSegmentKind.Image);
     public bool RequiresBatchDelivery => SegmentCount > 1 || ImageCount > 0;
@@ -104,10 +103,8 @@ public sealed record PhraseBody
             .Where(segment => segment.Kind == PhraseSegmentKind.Text && segment.Text is not null)
             .Select(segment => segment.Text));
 
-    public static string NormalizeBatchSeparator(string? separator) => (separator ?? string.Empty).Trim();
-
-    public static PhraseBody FromText(string text, string batchSeparator = DefaultBatchSeparator) =>
-        new([PhraseSegment.CreateText(text)], batchSeparator);
+    public static PhraseBody FromText(string text) =>
+        new([PhraseSegment.CreateText(text)]);
 }
 
 /// <summary>媒体导入结果只返回脱敏资产引用；错误信息不得包含原文件名或绝对路径。</summary>

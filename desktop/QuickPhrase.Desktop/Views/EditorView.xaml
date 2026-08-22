@@ -146,23 +146,35 @@
                         <ColumnDefinition Width="{StaticResource Size.PhraseEditor.Toolbar.GapColumn}" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="{StaticResource Size.PhraseEditor.Toolbar.GapColumn}" />
-                        <ColumnDefinition Width="{StaticResource Size.PhraseEditor.Separator.Width}" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Button Style="{StaticResource Style.Button.Secondary}"
-                            Content="插入图片"
+                    <Button Style="{StaticResource Style.Button.Icon}"
                             Click="InsertImage_Click"
                             IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
                             Visibility="{Binding IsReadOnly, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}"
-                            AutomationProperties.Name="在光标处插入图片" />
-                    <TextBlock Grid.Column="2" Text="分隔符" Style="{StaticResource Style.Text.Label}" VerticalAlignment="Center" />
-                    <TextBox Grid.Column="4"
-                             Style="{StaticResource Style.Input.Default}"
-                             Text="{Binding BatchSeparator, UpdateSourceTrigger=PropertyChanged}"
-                             IsReadOnly="{Binding IsReadOnly}"
-                             AutomationProperties.Name="文字分隔符" />
-                    <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="{StaticResource Thickness.Gap.Inline.Before.MD}">
+                            ToolTip="在光标处插入图片"
+                            ToolTipService.ShowOnDisabled="True"
+                            AutomationProperties.Name="在光标处插入图片">
+                        <Viewbox Width="{StaticResource Size.Button.Icon.Width}" Height="{StaticResource Size.Button.Icon.Height}" IsHitTestVisible="False">
+                            <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  Data="M2,2 H22 V22 H2 Z M4,4 V20 H20 V4 Z M7,7 A2,2 0 1,0 7,11 A2,2 0 0,0 7,7 Z M4,18 L9,13 L12,16 L15,12 L20,18 Z" />
+                        </Viewbox>
+                    </Button>
+                    <Button Grid.Column="2"
+                            Style="{StaticResource Style.Button.Icon}"
+                            Click="InsertSeparator_Click"
+                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
+                            Visibility="{Binding IsReadOnly, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}"
+                            ToolTip="添加分段"
+                            ToolTipService.ShowOnDisabled="True"
+                            AutomationProperties.Name="添加分段">
+                        <Viewbox Width="{StaticResource Size.Button.Icon.Width}" Height="{StaticResource Size.Button.Icon.Height}" IsHitTestVisible="False">
+                            <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  Data="M3,4 H21 V6 H3 Z M3,11 H13 V13 H3 Z M3,18 H21 V20 H3 Z M16,10 H18 V14 H22 V16 H18 V20 H16 V16 H12 V14 H16 Z" />
+                        </Viewbox>
+                    </Button>
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Margin="{StaticResource Thickness.Gap.Inline.Before.MD}">
                         <TextBlock Text="Ctrl+V 可直接粘贴图片"
                                    Style="{StaticResource Style.Text.Body.Small}"
                                    Foreground="{DynamicResource Brush.Text.Secondary}"
@@ -173,7 +185,7 @@
                                    Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}"
                                    AutomationProperties.Name="正在处理图片" />
                     </StackPanel>
-                    <TextBlock Grid.Column="6"
+                    <TextBlock Grid.Column="5"
                                Text="{Binding CompositionSummary}"
                                Style="{StaticResource Style.Text.Body.Small}"
                                Foreground="{DynamicResource Brush.Text.Secondary}"
@@ -191,7 +203,6 @@
                     <components:PhraseRichTextEditor x:Name="RichEditor"
                                                      Grid.Row="1"
                                                      MinHeight="{StaticResource Size.PhraseRichEditor.MinimumHeight}"
-                                                     BatchSeparator="{Binding BatchSeparator, Mode=TwoWay}"
                                                      IsReadOnly="{Binding IsReadOnly}"
                                                      IsProcessing="{Binding IsBusy}"
                                                      HasError="{Binding HasDocumentError}"

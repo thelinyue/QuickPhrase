@@ -2,8 +2,10 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using QuickPhrase.Core;
 using QuickPhrase.Desktop;
+using QuickPhrase.Desktop.Tests.Fakes;
 
 namespace QuickPhrase.Desktop.Tests;
 
@@ -28,6 +30,38 @@ public sealed class SearchHistoryInteractionContractTests
         Assert.Contains("await RecordConfirmedSearchAsync(_viewModel.SearchQuery);", ExtractMethod(code, "private async void SearchBox_KeyDown", "// ============"), StringComparison.Ordinal);
         Assert.DoesNotContain("_recordSearchHistory", viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("历史搜索保存失败", viewModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LibrarySearchHistoryPopup_RemainsOpenWhileSearchBoxHasFocus_AndClosesAfterFocusMovesAway()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var history = new SearchHistoryCoordinator(new RecordingSearchHistoryRepository());
+            history.InitializeAsync().GetAwaiter().GetResult();
+            var view = new LibraryView(new FakeCommandService(), history);
+            var window = new Window { Content = view, Width = 900, Height = 560 };
+
+            try
+            {
+                window.Show();
+                view.SearchBox.Focus();
+                Keyboard.Focus(view.SearchBox);
+                window.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+
+                Assert.True(view.SearchHistoryPopup.StaysOpen);
+                Assert.True(view.SearchHistoryPopup.IsOpen);
+
+                Keyboard.Focus(view.RootLayout);
+                window.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+
+                Assert.False(view.SearchHistoryPopup.IsOpen);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
     }
 
     [Fact]

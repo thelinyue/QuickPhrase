@@ -35,13 +35,11 @@ internal static class PhraseRichDocumentMapper
 
     public static FlowDocument CreateDocument(
         IEnumerable<PhraseSegment> segments,
-        string separator,
         Func<PhraseSegment, UIElement> imageFactory)
     {
         ArgumentNullException.ThrowIfNull(segments);
         ArgumentNullException.ThrowIfNull(imageFactory);
 
-        var normalizedSeparator = PhraseBody.NormalizeBatchSeparator(separator);
         var document = new FlowDocument();
         PhraseSegmentKind? previousKind = null;
 
@@ -50,7 +48,7 @@ internal static class PhraseRichDocumentMapper
             if (segment.Kind == PhraseSegmentKind.Text)
             {
                 if (previousKind == PhraseSegmentKind.Text)
-                    document.Blocks.Add(new Paragraph(new Run(normalizedSeparator)));
+                    document.Blocks.Add(new Paragraph(new Run(PhraseBody.DefaultBatchSeparator)));
 
                 document.Blocks.Add(new Paragraph(new Run(segment.Text ?? string.Empty)));
             }
@@ -70,12 +68,9 @@ internal static class PhraseRichDocumentMapper
         return document;
     }
 
-    public static PhraseRichDocumentDraft ReadDocument(FlowDocument document, string separator)
+    public static PhraseRichDocumentDraft ReadDocument(FlowDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        var normalizedSeparator = PhraseBody.NormalizeBatchSeparator(separator);
-        if (normalizedSeparator.Length is 0 or > PhraseRules.MaxSeparatorLength)
-            return PhraseRichDocumentDraft.Failure("INVALID_SEPARATOR", $"文字分隔符去除首尾空格后必须为 1–{PhraseRules.MaxSeparatorLength} 个非空白字符。");
 
         var segments = ImmutableArray.CreateBuilder<PhraseSegment>();
         var currentLines = new List<string>();
@@ -89,7 +84,7 @@ internal static class PhraseRichDocumentMapper
                     return PhraseRichDocumentDraft.Failure("UNSUPPORTED_INLINE_CONTENT", "正文包含不支持的嵌入内容，请只保留纯文字和图片。");
                 foreach (var line in ReadParagraphText(paragraph).Split('\n'))
                 {
-                    if (!string.Equals(line.Trim(), normalizedSeparator, StringComparison.Ordinal))
+                    if (!string.Equals(line.Trim(), PhraseBody.DefaultBatchSeparator, StringComparison.Ordinal))
                     {
                         currentLines.Add(line);
                         if (separatorPending && currentLines.Any(value => !string.IsNullOrWhiteSpace(value)))

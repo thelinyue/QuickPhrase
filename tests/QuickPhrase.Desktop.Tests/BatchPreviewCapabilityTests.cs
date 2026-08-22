@@ -16,8 +16,7 @@ public sealed class BatchPreviewCapabilityTests
                 Guid.NewGuid(),
                 "图文批次",
                 new PhraseBody(
-                    [PhraseSegment.CreateText("第一段"), PhraseSegment.CreateImage(new PhraseImageReference(Guid.NewGuid(), "image/png", 64, 10, 20))],
-                    PhraseBody.DefaultBatchSeparator),
+                    [PhraseSegment.CreateText("第一段"), PhraseSegment.CreateImage(new PhraseImageReference(Guid.NewGuid(), "image/png", 64, 10, 20))]),
                 Guid.NewGuid(),
                 ShortcutMode.None,
                 null,
@@ -75,7 +74,7 @@ public sealed class BatchPreviewCapabilityTests
         {
             var image = new PhraseImageReference(Guid.NewGuid(), "image/png", 64, 10, 20);
             var phrase = new Phrase(
-                Guid.NewGuid(), "图片批次", new PhraseBody([PhraseSegment.CreateImage(image)], PhraseBody.DefaultBatchSeparator),
+                Guid.NewGuid(), "图片批次", new PhraseBody([PhraseSegment.CreateImage(image)]),
                 Guid.NewGuid(), ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
             using var resolver = new WindowsAdapterResolver(_ => "matrix-verified", _ => true);
             var target = new DeliveryTarget(
