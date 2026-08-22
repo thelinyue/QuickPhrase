@@ -176,8 +176,8 @@ public sealed class LauncherListLayoutTests
     }
 
     [Theory]
-    [InlineData(0, 122)]
-    [InlineData(8, 318)]
+    [InlineData(0, 136)]
+    [InlineData(8, 332)]
     [InlineData(20, 520)]
     public void LauncherHeightTracksActualPhraseRowHeightWithoutLargeUnusedViewport(int itemCount, double expectedHeight)
     {

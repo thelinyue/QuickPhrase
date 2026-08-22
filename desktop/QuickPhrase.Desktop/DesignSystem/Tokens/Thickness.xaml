@@ -56,6 +56,9 @@
     <Thickness x:Key="Thickness.BatchPreview.Thumbnail">0,6,0,0</Thickness>
     <Thickness x:Key="Thickness.BatchPreview.Footer">0,14,0,0</Thickness>
     <Thickness x:Key="Thickness.BatchPreview.ConfirmButton">10,0,0,0</Thickness>
+    <!-- 搜索框比结果区更靠近浮层边缘；提示文案在空光标后额外留出 4px。 -->
+    <Thickness x:Key="Thickness.Launcher.Query.Horizontal">6,0</Thickness>
+    <Thickness x:Key="Thickness.Launcher.QueryHint.Content">10,0,6,0</Thickness>
     <Thickness x:Key="Thickness.Launcher.Horizontal">12,0</Thickness>
     <Thickness x:Key="Thickness.Launcher.Hint">12,0,12,8</Thickness>
     <Thickness x:Key="Thickness.Onboarding.Content">0,20,0,16</Thickness>

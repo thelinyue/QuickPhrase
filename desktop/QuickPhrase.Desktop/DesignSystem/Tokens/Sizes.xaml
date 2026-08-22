@@ -61,9 +61,10 @@
     <sys:Double x:Key="Size.Launcher.MinimumWidth">680</sys:Double>
     <sys:Double x:Key="Size.Launcher.MinimumHeight">36</sys:Double>
     <sys:Double x:Key="Size.Launcher.Query.Height">44</sys:Double>
-    <GridLength x:Key="Size.Launcher.Query.GridLength">44</GridLength>
-    <sys:Double x:Key="Size.Launcher.CompactHeight">70</sys:Double>
-    <sys:Double x:Key="Size.Launcher.HistoryHeight">128</sys:Double>
+    <!-- 搜索头在空白、历史和结果状态保持固定高度，内容区只从其下方展开。 -->
+    <GridLength x:Key="Size.Launcher.SearchArea.GridLength">58</GridLength>
+    <sys:Double x:Key="Size.Launcher.CompactHeight">58</sys:Double>
+    <sys:Double x:Key="Size.Launcher.HistoryHeight">142</sys:Double>
     <sys:Double x:Key="Size.Launcher.Row.Height">28</sys:Double>
     <GridLength x:Key="Size.Launcher.IndexColumn.GridLength">32</GridLength>
     <GridLength x:Key="Size.Launcher.TitleColumn.GridLength">120</GridLength>

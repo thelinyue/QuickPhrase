@@ -30,7 +30,7 @@ public sealed class LauncherRuntimeStabilityTests
                 Assert.Empty(search.Requests);
                 Assert.Equal(System.Windows.Visibility.Visible, window.QueryHintText.Visibility);
                 Assert.Equal(System.Windows.Visibility.Collapsed, window.ResultsList.Visibility);
-                Assert.Equal(70d, window.Height);
+                Assert.Equal(58d, window.Height);
                 Assert.NotNull(window.LauncherSurface.Style);
 
                 window.QueryBox.Text = "报价";
@@ -45,7 +45,7 @@ public sealed class LauncherRuntimeStabilityTests
     }
 
     [Fact]
-    public void EmptyLauncherCentersItsSearchAreaAndPlacesHintAtTheInputContentStart()
+    public void EmptyLauncherCentersItsSearchAreaAndPlacesHintAfterTheCaret()
     {
         WpfTestApplicationHost.Invoke(_ =>
         {
@@ -62,7 +62,8 @@ public sealed class LauncherRuntimeStabilityTests
                 var hintContentStart = hintOrigin.X + window.QueryHintText.Padding.Left;
 
                 Assert.InRange(Math.Abs(queryBoxOrigin.Y + window.QueryBox.ActualHeight / 2 - surfaceCenterY), 0, 1);
-                Assert.InRange(Math.Abs(hintContentStart - queryContentStart), 0, 1);
+                Assert.InRange(queryContentStart, 11.5, 13.5);
+                Assert.InRange(Math.Abs(hintContentStart - queryContentStart - 4), 0, 0.5);
                 Assert.Equal(HorizontalAlignment.Left, window.QueryHintText.HorizontalAlignment);
                 Assert.True(System.Windows.Controls.Panel.GetZIndex(window.QueryBox) > System.Windows.Controls.Panel.GetZIndex(window.QueryHintText));
             }
@@ -74,7 +75,7 @@ public sealed class LauncherRuntimeStabilityTests
     }
 
     [Fact]
-    public void KeywordSearchHidesCenteredHintAndKeepsQueryAtTheTopLeft()
+    public void KeywordSearchHidesHintAndKeepsQueryAtTheSameVerticalPosition()
     {
         WpfTestApplicationHost.Invoke(_ =>
         {
@@ -82,13 +83,20 @@ public sealed class LauncherRuntimeStabilityTests
             try
             {
                 window.Open();
+                window.UpdateLayout();
+                var emptyQueryBoxOrigin = window.QueryBox.TransformToAncestor(window.LauncherSurface).Transform(new Point());
+
                 window.QueryBox.Text = "报价";
                 window.UpdateLayout();
 
                 var queryBoxOrigin = window.QueryBox.TransformToAncestor(window.LauncherSurface).Transform(new Point());
+                var resultsOrigin = window.ResultsList.TransformToAncestor(window.LauncherSurface).Transform(new Point());
 
                 Assert.Equal(Visibility.Collapsed, window.QueryHintText.Visibility);
-                Assert.InRange(queryBoxOrigin.Y, 0, 1);
+                Assert.InRange(Math.Abs(queryBoxOrigin.Y - emptyQueryBoxOrigin.Y), 0, 1);
+                Assert.True(resultsOrigin.Y >= queryBoxOrigin.Y + window.QueryBox.ActualHeight,
+                    $"结果区顶部 {resultsOrigin.Y} 应位于搜索框底部 {queryBoxOrigin.Y + window.QueryBox.ActualHeight} 之后。");
+                Assert.Equal(136d, window.Height);
                 Assert.Equal(HorizontalAlignment.Left, window.QueryBox.HorizontalContentAlignment);
             }
             finally
@@ -113,7 +121,7 @@ public sealed class LauncherRuntimeStabilityTests
                 Keyboard.Focus(window.QueryBox);
 
                 Assert.Equal(System.Windows.Visibility.Visible, window.SearchHistoryHost.Visibility);
-                Assert.Equal(128d, window.Height);
+                Assert.Equal(142d, window.Height);
 
                 window.QueryBox.Text = "报价";
                 Assert.Equal(System.Windows.Visibility.Collapsed, window.SearchHistoryHost.Visibility);
