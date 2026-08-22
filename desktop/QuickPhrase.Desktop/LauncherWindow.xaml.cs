@@ -289,6 +289,15 @@ public partial class LauncherWindow : Window
     {
         var isSearchQueryEmpty = IsSearchQueryEmpty(QueryBox.Text);
         var hasSearchHistory = _searchHistory.ViewModel.HasEntries;
+        // 紧凑空态没有下方内容，搜索区填满浮层后才能与外层表面垂直居中；
+        // 历史、结果和预览态仍固定为 44px 顶部搜索行，保持内容层级稳定。
+        var isCompactEmptyState = isSearchQueryEmpty && !hasSearchHistory;
+        SearchRow.Height = isCompactEmptyState
+            ? new GridLength(1, GridUnitType.Star)
+            : new GridLength(QueryBox.Height);
+        ContentRow.Height = isCompactEmptyState
+            ? new GridLength(0)
+            : new GridLength(1, GridUnitType.Star);
         var showSearchHistory = isSearchQueryEmpty && hasSearchHistory && IsVisible && !_closing;
         var hasResults = _items.Count > 0;
         var hasSelectedResult = ResultsList.SelectedItem is LauncherPhraseListItem;

@@ -98,19 +98,22 @@
     <Border x:Name="LauncherSurface" Style="{StaticResource Style.Popup.Surface}" Padding="0">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="{StaticResource Size.Launcher.Query.GridLength}" />
+                <RowDefinition x:Name="SearchRow" Height="{StaticResource Size.Launcher.Query.GridLength}" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
+                <RowDefinition x:Name="ContentRow" Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <TextBox x:Name="QueryBox" Grid.Row="0" Margin="{StaticResource Thickness.Launcher.Horizontal}"
                      Style="{StaticResource Style.Launcher.Input}" AutomationProperties.Name="Launcher搜索框"
+                     VerticalAlignment="Center" Panel.ZIndex="1"
                      GotKeyboardFocus="QueryBox_GotKeyboardFocus" LostKeyboardFocus="QueryBox_LostKeyboardFocus"
                      TextChanged="OnQueryChanged" />
             <TextBlock x:Name="QueryHintText" Grid.Row="0" Margin="{StaticResource Thickness.Launcher.Horizontal}"
+                       Padding="{StaticResource Thickness.Control.Input}"
                        Text="搜索话术标题、正文或拼音；Ctrl+Enter 插入并发送"
                        Style="{StaticResource Style.Text.InputHint}" VerticalAlignment="Center"
+                       HorizontalAlignment="Left"
                        IsHitTestVisible="False" Visibility="Collapsed" />
 
             <Border x:Name="SearchHistoryHost" Grid.Row="1" Margin="{StaticResource Thickness.Launcher.Horizontal}"

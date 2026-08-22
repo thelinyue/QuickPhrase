@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Reflection;
+using System.Windows;
 using System.Windows.Input;
 using QuickPhrase.Core;
 
@@ -35,6 +36,60 @@ public sealed class LauncherRuntimeStabilityTests
                 window.QueryBox.Text = "报价";
                 Assert.Single(search.Requests);
                 Assert.Equal(System.Windows.Visibility.Visible, window.ResultsList.Visibility);
+            }
+            finally
+            {
+                window.DisposeLauncher();
+            }
+        });
+    }
+
+    [Fact]
+    public void EmptyLauncherCentersItsSearchAreaAndPlacesHintAtTheInputContentStart()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var window = new LauncherWindow(new RecordingSearchService(), new SearchHistoryCoordinator(new SearchHistoryRepository()));
+            try
+            {
+                window.Open();
+                window.UpdateLayout();
+
+                var queryBoxOrigin = window.QueryBox.TransformToAncestor(window.LauncherSurface).Transform(new Point());
+                var hintOrigin = window.QueryHintText.TransformToAncestor(window.LauncherSurface).Transform(new Point());
+                var surfaceCenterY = window.LauncherSurface.ActualHeight / 2;
+                var queryContentStart = queryBoxOrigin.X + window.QueryBox.Padding.Left;
+                var hintContentStart = hintOrigin.X + window.QueryHintText.Padding.Left;
+
+                Assert.InRange(Math.Abs(queryBoxOrigin.Y + window.QueryBox.ActualHeight / 2 - surfaceCenterY), 0, 1);
+                Assert.InRange(Math.Abs(hintContentStart - queryContentStart), 0, 1);
+                Assert.Equal(HorizontalAlignment.Left, window.QueryHintText.HorizontalAlignment);
+                Assert.True(System.Windows.Controls.Panel.GetZIndex(window.QueryBox) > System.Windows.Controls.Panel.GetZIndex(window.QueryHintText));
+            }
+            finally
+            {
+                window.DisposeLauncher();
+            }
+        });
+    }
+
+    [Fact]
+    public void KeywordSearchHidesCenteredHintAndKeepsQueryAtTheTopLeft()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var window = new LauncherWindow(new RecordingSearchService(), new SearchHistoryCoordinator(new SearchHistoryRepository()));
+            try
+            {
+                window.Open();
+                window.QueryBox.Text = "报价";
+                window.UpdateLayout();
+
+                var queryBoxOrigin = window.QueryBox.TransformToAncestor(window.LauncherSurface).Transform(new Point());
+
+                Assert.Equal(Visibility.Collapsed, window.QueryHintText.Visibility);
+                Assert.InRange(queryBoxOrigin.Y, 0, 1);
+                Assert.Equal(HorizontalAlignment.Left, window.QueryBox.HorizontalContentAlignment);
             }
             finally
             {

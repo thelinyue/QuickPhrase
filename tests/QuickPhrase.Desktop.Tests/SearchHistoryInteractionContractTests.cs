@@ -44,7 +44,7 @@ public sealed class SearchHistoryInteractionContractTests
         Assert.Contains("Grid.Row=\"0\"", markup[queryStart..historyStart], StringComparison.Ordinal);
         Assert.Contains("Grid.Row=\"1\"", markup[historyStart..resultsStart], StringComparison.Ordinal);
         Assert.Contains("Grid.Row=\"2\"", markup[resultsStart..], StringComparison.Ordinal);
-        Assert.Contains("<RowDefinition Height=\"*\" />", markup, StringComparison.Ordinal);
+        Assert.Contains("<RowDefinition x:Name=\"ContentRow\" Height=\"*\" />", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("<Popup x:Name=\"SearchHistoryPopup\"", markup, StringComparison.Ordinal);
     }
 
