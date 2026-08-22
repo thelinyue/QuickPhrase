@@ -88,6 +88,58 @@ public sealed class LauncherHistoryViewportTests
         });
     }
 
+    [Fact]
+    public void HistoryPillsUseNaturalContentSizeWithoutParentStretching()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var history = new SearchHistoryCoordinator(new AdaptiveEntrySearchHistoryRepository());
+            history.InitializeAsync().GetAwaiter().GetResult();
+            var window = new LauncherWindow(new EmptySearchService(), history, hideOnDeactivate: false);
+            try
+            {
+                window.Open();
+                window.QueryBox.Focus();
+                Keyboard.Focus(window.QueryBox);
+                window.UpdateLayout();
+
+                var historyList = Assert.IsType<ListBox>(window.SearchHistoryPanel.FindName("HistoryList"));
+                var pills = Enumerable.Range(0, historyList.Items.Count)
+                    .Select(index => Assert.IsType<ListBoxItem>(historyList.ItemContainerGenerator.ContainerFromIndex(index)))
+                    .ToArray();
+
+                Assert.Equal(3, pills.Length);
+                Assert.All(pills, pill =>
+                {
+                    Assert.True(double.IsNaN(pill.Width));
+                    Assert.True(double.IsNaN(pill.Height));
+                    Assert.Equal(HorizontalAlignment.Left, pill.HorizontalAlignment);
+                    Assert.Equal(HorizontalAlignment.Left, pill.HorizontalContentAlignment);
+                    Assert.Equal(VerticalAlignment.Center, pill.VerticalAlignment);
+
+                    var card = Assert.IsType<Border>(pill.Template.FindName("Card", pill));
+                    var content = Assert.IsType<ContentPresenter>(card.Child);
+                    Assert.InRange(
+                        Math.Abs(card.ActualWidth - content.ActualWidth - card.Padding.Left - card.Padding.Right),
+                        0,
+                        0.5);
+                    Assert.InRange(
+                        Math.Abs(card.ActualHeight - content.ActualHeight - card.Padding.Top - card.Padding.Bottom),
+                        0,
+                        0.5);
+                });
+
+                Assert.True(pills[0].ActualWidth < pills[1].ActualWidth);
+                Assert.True(pills[1].ActualWidth < pills[2].ActualWidth);
+                Assert.InRange(pills[2].ActualWidth, 0, 104.5);
+            }
+            finally
+            {
+                window.DisposeLauncher();
+            }
+        });
+    }
+
     private sealed class EmptySearchService : ISearchService
     {
         public SearchIndexStatus Status { get; } = new(SearchIndexState.Ready, 0);
@@ -116,6 +168,24 @@ public sealed class LauncherHistoryViewportTests
                 Enumerable.Range(1, 6)
                     .Select(index => new SearchHistoryEntry($"历史关键词 {index}", DateTimeOffset.UtcNow.AddMinutes(-index)))
                     .ToArray());
+
+        public Task<RepositoryResult<SearchHistoryEntry>> RecordAsync(string query, CancellationToken cancellationToken = default) =>
+            Task.FromResult(RepositoryResult<SearchHistoryEntry>.Success(
+                new SearchHistoryEntry(query.Trim(), DateTimeOffset.UtcNow)));
+
+        public Task<RepositoryResult<bool>> ClearAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(RepositoryResult<bool>.Success(true));
+    }
+
+    private sealed class AdaptiveEntrySearchHistoryRepository : ISearchHistoryRepository
+    {
+        public Task<IReadOnlyList<SearchHistoryEntry>> ListAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SearchHistoryEntry>>(
+            [
+                new SearchHistoryEntry("短", DateTimeOffset.UtcNow),
+                new SearchHistoryEntry("客户回访", DateTimeOffset.UtcNow.AddMinutes(-1)),
+                new SearchHistoryEntry("这是一个非常长的历史搜索关键词", DateTimeOffset.UtcNow.AddMinutes(-2)),
+            ]);
 
         public Task<RepositoryResult<SearchHistoryEntry>> RecordAsync(string query, CancellationToken cancellationToken = default) =>
             Task.FromResult(RepositoryResult<SearchHistoryEntry>.Success(

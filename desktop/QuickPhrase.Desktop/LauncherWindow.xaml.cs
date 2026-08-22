@@ -33,6 +33,8 @@ public partial class LauncherWindow : Window
     private const int PageSize = 5;
     private const double CompactLauncherHeight = 58;
     private const double HistoryLauncherHeight = 142;
+    private const double EmptyStateLauncherHeight = 176;
+    private const double ErrorStateLauncherHeight = 212;
     private const double LauncherChromeHeight = 108;
     private const double PhraseRowHeight = 28;
 
@@ -310,15 +312,20 @@ public partial class LauncherWindow : Window
             Height = hasSearchHistory ? HistoryLauncherHeight : CompactLauncherHeight;
             MaxHeight = Height;
         }
-        else if (_preview && hasSelectedResult)
-        {
-            Height = CalculateListHeight(1);
-            MaxHeight = 520;
-        }
         else
         {
-            Height = CalculateListHeight(_items.Count);
+            // 空白状态会把 MaxHeight 收紧到紧凑高度；展开前必须先解除约束，
+            // 否则 WPF 会把新的 Height 强制压回 58px，首次搜索结果仍不可见。
             MaxHeight = 520;
+            // 共享状态控件包含完整说明间距，错误状态还包含重试按钮；分别预留实际内容高度，
+            // 避免只扩展控件边界却仍裁切内部文字或动作入口。
+            Height = hasError
+                ? ErrorStateLauncherHeight
+                : !hasResults
+                    ? EmptyStateLauncherHeight
+                    : _preview && hasSelectedResult
+                        ? CalculateListHeight(1)
+                        : CalculateListHeight(_items.Count);
         }
     }
 

@@ -275,7 +275,10 @@
         <Setter Property="MaxWidth" Value="{StaticResource Size.SearchHistory.Pill.MaximumWidth}" />
         <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
         <Setter Property="Margin" Value="{StaticResource Thickness.Gap.Inline.SM}" />
-        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <!-- 卡片不设置固定宽高，由单行文字和内边距共同决定自然尺寸。 -->
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Focusable" Value="False" />
         <Setter Property="Template">
@@ -286,7 +289,7 @@
                             Background="{DynamicResource Brush.Accent.Soft}"
                             BorderThickness="0"
                             CornerRadius="{StaticResource Radius.Control}">
-                        <ContentPresenter />
+                        <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">

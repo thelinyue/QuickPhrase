@@ -1,7 +1,9 @@
 using System.Collections.Immutable;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using QuickPhrase.Core;
 
 namespace QuickPhrase.Desktop.Tests;
@@ -94,10 +96,80 @@ public sealed class LauncherRuntimeStabilityTests
 
                 Assert.Equal(Visibility.Collapsed, window.QueryHintText.Visibility);
                 Assert.InRange(Math.Abs(queryBoxOrigin.Y - emptyQueryBoxOrigin.Y), 0, 1);
+                Assert.Equal(136d, window.ActualHeight);
                 Assert.True(resultsOrigin.Y >= queryBoxOrigin.Y + window.QueryBox.ActualHeight,
                     $"结果区顶部 {resultsOrigin.Y} 应位于搜索框底部 {queryBoxOrigin.Y + window.QueryBox.ActualHeight} 之后。");
                 Assert.Equal(136d, window.Height);
                 Assert.Equal(HorizontalAlignment.Left, window.QueryBox.HorizontalContentAlignment);
+            }
+            finally
+            {
+                window.DisposeLauncher();
+            }
+        });
+    }
+
+    [Fact]
+    public void NoResultsStateExpandsEnoughToShowItsDescription()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var window = new LauncherWindow(new EmptySearchService(), new SearchHistoryCoordinator(new SearchHistoryRepository()));
+            try
+            {
+                window.Open();
+                window.QueryBox.Text = "不存在的话术";
+                window.UpdateLayout();
+
+                var emptyStateBottom = window.EmptyState
+                    .TransformToAncestor(window.LauncherSurface)
+                    .Transform(new Point(0, window.EmptyState.ActualHeight)).Y;
+                var description = FindVisualDescendant<TextBlock>(
+                    window.EmptyState,
+                    text => string.Equals(text.Text, window.EmptyState.Description, StringComparison.Ordinal));
+                var descriptionBottom = description
+                    .TransformToAncestor(window.LauncherSurface)
+                    .Transform(new Point(0, description.ActualHeight)).Y;
+
+                Assert.Equal(Visibility.Visible, window.EmptyState.Visibility);
+                Assert.Equal(176d, window.ActualHeight);
+                Assert.True(description.ActualHeight > 0, "无结果说明文字必须参与实际布局。");
+                Assert.True(emptyStateBottom <= window.LauncherSurface.ActualHeight,
+                    $"无结果说明底部 {emptyStateBottom} 不应超过浮层高度 {window.LauncherSurface.ActualHeight}。");
+                Assert.True(descriptionBottom <= window.LauncherSurface.ActualHeight,
+                    $"无结果说明文字底部 {descriptionBottom} 不应超过浮层高度 {window.LauncherSurface.ActualHeight}。");
+            }
+            finally
+            {
+                window.DisposeLauncher();
+            }
+        });
+    }
+
+    [Fact]
+    public void SearchErrorStateExpandsEnoughToShowItsRetryAction()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var window = new LauncherWindow(new ThrowingSearchService(), new SearchHistoryCoordinator(new SearchHistoryRepository()));
+            try
+            {
+                window.Open();
+                window.QueryBox.Text = "触发搜索错误";
+                window.UpdateLayout();
+
+                var retryButton = FindVisualDescendant<Button>(
+                    window.SearchRetryState,
+                    button => string.Equals(button.Content?.ToString(), "重试", StringComparison.Ordinal));
+                var retryBottom = retryButton
+                    .TransformToAncestor(window.LauncherSurface)
+                    .Transform(new Point(0, retryButton.ActualHeight)).Y;
+
+                Assert.Equal(Visibility.Visible, window.SearchRetryState.Visibility);
+                Assert.Equal(Visibility.Visible, retryButton.Visibility);
+                Assert.Equal(212d, window.ActualHeight);
+                Assert.True(retryBottom <= window.LauncherSurface.ActualHeight,
+                    $"搜索重试按钮底部 {retryBottom} 不应超过浮层高度 {window.LauncherSurface.ActualHeight}。");
             }
             finally
             {
@@ -171,6 +243,52 @@ public sealed class LauncherRuntimeStabilityTests
             Requests.Add(request);
             return new SearchResponse(ImmutableArray.Create(_result), Status);
         }
+    }
+
+    private sealed class EmptySearchService : ISearchService
+    {
+        public SearchIndexStatus Status { get; } = new(SearchIndexState.Ready, 0);
+
+        public SearchResponse Search(SearchRequest request) =>
+            new(ImmutableArray<SearchResult>.Empty, Status);
+    }
+
+    private sealed class ThrowingSearchService : ISearchService
+    {
+        public SearchIndexStatus Status { get; } = new(SearchIndexState.Dirty, 0);
+
+        public SearchResponse Search(SearchRequest request) =>
+            throw new InvalidOperationException("审计用搜索失败");
+    }
+
+    private static T FindVisualDescendant<T>(DependencyObject root, Func<T, bool> predicate)
+        where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is T match && predicate(match)) return match;
+
+            var descendant = TryFindVisualDescendant(child, predicate);
+            if (descendant is not null) return descendant;
+        }
+
+        throw new InvalidOperationException($"找不到 {typeof(T).Name} 视觉子元素。");
+    }
+
+    private static T? TryFindVisualDescendant<T>(DependencyObject root, Func<T, bool> predicate)
+        where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is T match && predicate(match)) return match;
+
+            var descendant = TryFindVisualDescendant(child, predicate);
+            if (descendant is not null) return descendant;
+        }
+
+        return null;
     }
 
     private sealed class SearchHistoryRepository(params string[] queries) : ISearchHistoryRepository
