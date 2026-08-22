@@ -1,6 +1,7 @@
 <UserControl x:Class="QuickPhrase.Desktop.Views.Shared.SearchHistoryView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:QuickPhrase.Desktop.Controls"
              AutomationProperties.Name="历史搜索记录">
     <Border Background="Transparent" BorderThickness="0" Padding="0">
         <Grid>
@@ -46,11 +47,11 @@
                     </ListBox.ItemsPanel>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding Query}"
-                                       Foreground="{DynamicResource Brush.Text.Primary}"
-                                       TextWrapping="NoWrap"
-                                       TextTrimming="CharacterEllipsis"
-                                       AutomationProperties.Name="{Binding Query}" />
+                            <!-- 仅在文字实际溢出时开放键盘焦点，并通过共享浮层披露完整历史关键词。 -->
+                            <controls:OverflowTextBlock Text="{Binding Query}"
+                                                        Foreground="{DynamicResource Brush.Text.Primary}"
+                                                        TextWrapping="NoWrap"
+                                                        TextTrimming="CharacterEllipsis" />
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>

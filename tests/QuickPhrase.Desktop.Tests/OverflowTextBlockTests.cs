@@ -77,6 +77,35 @@ public sealed class OverflowTextBlockTests
             Assert.Equal(DependencyProperty.UnsetValue, border.ReadLocalValue(Border.CornerRadiusProperty));
         });
     }
+
+    [Fact]
+    public void HighContrastTooltip_UsesSystemForegroundAndBackgroundColors()
+    {
+        var appearance = WpfTestApplicationHost.Invoke(_ =>
+        {
+            var border = new Border();
+            var text = new TextBlock();
+            var tooltip = new ToolTip();
+
+            OverflowTextBlock.ApplyHighContrastTooltipAppearance(tooltip, border, text);
+
+            return new
+            {
+                border.Background,
+                border.BorderBrush,
+                border.BorderThickness,
+                text.Foreground,
+                tooltip.HasDropShadow,
+            };
+        });
+
+        Assert.Same(SystemColors.InfoBrush, appearance.Background);
+        Assert.Same(SystemColors.WindowTextBrush, appearance.BorderBrush);
+        Assert.Equal(new Thickness(1), appearance.BorderThickness);
+        Assert.Same(SystemColors.InfoTextBrush, appearance.Foreground);
+        Assert.False(appearance.HasDropShadow);
+    }
+
     [Fact]
     public void LongText_TooltipStaysOpenWhenManagedByToolTipService()
     {

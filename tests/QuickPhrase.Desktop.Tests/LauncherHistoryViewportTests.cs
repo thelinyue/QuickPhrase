@@ -2,8 +2,10 @@ using System.Collections.Immutable;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using QuickPhrase.Core;
 using QuickPhrase.Desktop;
+using QuickPhrase.Desktop.Controls;
 using QuickPhrase.Desktop.Views.Shared;
 
 namespace QuickPhrase.Desktop.Tests;
@@ -138,6 +140,63 @@ public sealed class LauncherHistoryViewportTests
                 window.DisposeLauncher();
             }
         });
+    }
+
+    [Fact]
+    public void LongHistoryPill_ExposesItsFullQueryThroughKeyboardFocusableTooltip()
+    {
+        const string longQuery = "这是一个非常长的历史搜索关键词";
+
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var history = new SearchHistoryCoordinator(new AdaptiveEntrySearchHistoryRepository());
+            history.InitializeAsync().GetAwaiter().GetResult();
+            var window = new LauncherWindow(new EmptySearchService(), history, hideOnDeactivate: false);
+            try
+            {
+                window.Open();
+                window.QueryBox.Focus();
+                Keyboard.Focus(window.QueryBox);
+                window.UpdateLayout();
+                window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+                var historyList = Assert.IsType<ListBox>(window.SearchHistoryPanel.FindName("HistoryList"));
+                var longPill = Assert.IsType<ListBoxItem>(historyList.ItemContainerGenerator.ContainerFromIndex(2));
+                var label = FindVisualDescendant<OverflowTextBlock>(longPill);
+                var tooltip = Assert.IsType<ToolTip>(label.ToolTip);
+
+                Assert.True(label.HasOverflow);
+                Assert.True(label.Focusable);
+                Assert.True(KeyboardNavigation.GetIsTabStop(label));
+                Assert.Equal(longQuery, label.Text);
+                Assert.Contains(longQuery, System.Windows.Automation.AutomationProperties.GetHelpText(label));
+                Assert.Same(label, tooltip.PlacementTarget);
+            }
+            finally
+            {
+                window.DisposeLauncher();
+            }
+        });
+    }
+
+    private static T FindVisualDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is T match) return match;
+
+            try
+            {
+                return FindVisualDescendant<T>(child);
+            }
+            catch (InvalidOperationException)
+            {
+                // 继续检查同级视觉元素。
+            }
+        }
+
+        throw new InvalidOperationException($"找不到 {typeof(T).Name} 视觉子元素。");
     }
 
     private sealed class EmptySearchService : ISearchService

@@ -200,6 +200,26 @@ public sealed class OverflowTextBlock : TextBlock
         _tooltipText.TextDecorations = TextDecorations;
         _tooltipText.Foreground = Foreground;
         _tooltipText.MaxWidth = Math.Max(1, tooltip.MaxWidth - 32);
+
+        if (SystemParameters.HighContrast && tooltip.Content is Border border)
+        {
+            ApplyHighContrastTooltipAppearance(tooltip, border, _tooltipText);
+        }
+    }
+
+    /// <summary>
+    /// 高对比度模式下，提示浮层不能继续使用应用的浅色语义 Brush。
+    /// WPF 会将文字映射为系统高对比度前景色，因此浮层同步使用系统信息背景色与边框，
+    /// 让完整文字在键盘聚焦和鼠标悬停时都保持可辨识。
+    /// </summary>
+    internal static void ApplyHighContrastTooltipAppearance(WpfToolTip tooltip, Border border, TextBlock text)
+    {
+        tooltip.HasDropShadow = false;
+        border.Background = System.Windows.SystemColors.InfoBrush;
+        border.BorderBrush = System.Windows.SystemColors.WindowTextBrush;
+        border.BorderThickness = new Thickness(1);
+        border.Effect = null;
+        text.Foreground = System.Windows.SystemColors.InfoTextBrush;
     }
 
     private CustomPopupPlacement[] PlaceTooltip(System.Windows.Size popupSize, System.Windows.Size targetSize, System.Windows.Point offset)
