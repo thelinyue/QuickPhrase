@@ -20,10 +20,34 @@
         AllowsTransparency="True"
         Background="Transparent">
     <Window.Resources>
-        <Style x:Key="Style.Launcher.Input" TargetType="TextBox" BasedOn="{StaticResource Style.Input.Search}">
+        <!--
+            闪念搜索框与浮层共用一个视觉表面：输入框仅保留文字、光标和选区，
+            不继承通用输入框的边框、悬停描边或焦点环，避免焦点状态破坏浮层外框的中性外观。
+        -->
+        <Style x:Key="Style.Launcher.Input" TargetType="TextBox">
             <Setter Property="Height" Value="{StaticResource Size.Launcher.Query.Height}" />
+            <Setter Property="Padding" Value="{StaticResource Thickness.Control.Input}" />
             <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource Brush.Accent.Primary}" />
+            <Setter Property="SelectionBrush" Value="{DynamicResource Brush.Surface.Selected}" />
+            <Setter Property="FontFamily" Value="{StaticResource Typography.FontFamily.UI}" />
+            <Setter Property="FontSize" Value="{StaticResource Typography.Body.Medium.FontSize}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <ScrollViewer x:Name="PART_ContentHost"
+                                      Margin="{TemplateBinding Padding}"
+                                      Background="{TemplateBinding Background}"
+                                      VerticalAlignment="Center"
+                                      HorizontalScrollBarVisibility="Hidden"
+                                      VerticalScrollBarVisibility="Hidden" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <!-- Launcher 使用独立紧凑行，避免话术库的边框、操作列和选中强调条进入浮层。 -->
         <Style x:Key="Style.Launcher.ListItem.Phrase" TargetType="ListBoxItem" BasedOn="{StaticResource Style.ListItem.Phrase}">

@@ -92,7 +92,8 @@ public sealed class ShellAndDialogDesignSystemMigrationTests
         var titleBar = ReadDesktopXaml("TitleBar.xaml");
 
         Assert.Contains("Style=\"{StaticResource Style.Popup.Surface}\"", launcher, StringComparison.Ordinal);
-        Assert.Contains("BasedOn=\"{StaticResource Style.Input.Search}\"", launcher, StringComparison.Ordinal);
+        Assert.Contains("x:Key=\"Style.Launcher.Input\"", launcher, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PART_ContentHost\"", launcher, StringComparison.Ordinal);
         Assert.Contains("ItemContainerStyle=\"{StaticResource Style.Launcher.ListItem.Phrase}\"", launcher, StringComparison.Ordinal);
         Assert.Contains("VirtualizingStackPanel.IsVirtualizing=\"True\"", launcher, StringComparison.Ordinal);
         Assert.Contains("VirtualizingStackPanel.VirtualizationMode=\"Recycling\"", launcher, StringComparison.Ordinal);

@@ -92,7 +92,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderThickness="{StaticResource Thickness.Border.Bottom}"
                                 BorderBrush="{DynamicResource Brush.Border.Default}">
-                            <ContentPresenter Margin="{StaticResource Thickness.Library.CompactHorizontal}"
+                            <ContentPresenter Margin="{StaticResource Thickness.Library.PhraseRow.Horizontal}"
                                               VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>

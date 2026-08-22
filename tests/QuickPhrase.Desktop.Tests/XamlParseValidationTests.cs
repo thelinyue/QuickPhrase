@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
 using QuickPhrase.Core;
@@ -126,6 +127,37 @@ public class XamlParseValidationTests
             Assert.NotNull(app.Resources["Brush.Border.Focus"]);
             textBox.ApplyTemplate();
             textBox.Measure(new Size(textBox.Width, textBox.Height));
+        });
+    }
+
+    [Fact]
+    public void LibrarySubCategoryHeaderTemplate_ResolvesItsLocalHorizontalMarginResource()
+    {
+        WpfTestApplicationHost.Invoke(_ =>
+        {
+            var view = new LibraryView(
+                new FakeCommandService(),
+                new SearchHistoryCoordinator(new EmptySearchHistoryRepository()));
+            var header = new ToggleButton
+            {
+                Content = "示例二级分类",
+                Style = Assert.IsType<Style>(view.Resources["Style.Library.SubHeaderButton"]),
+            };
+            var host = new Grid();
+
+            try
+            {
+                host.Children.Add(header);
+                host.Measure(new Size(300, 40));
+                host.Arrange(new Rect(0, 0, 300, 40));
+                header.ApplyTemplate();
+
+                Assert.NotNull(header.Template.FindName("Root", header));
+            }
+            finally
+            {
+                host.Children.Remove(header);
+            }
         });
     }
 

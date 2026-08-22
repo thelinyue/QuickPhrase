@@ -51,6 +51,24 @@ public sealed class LauncherListLayoutTests
     }
 
     [Fact]
+    public void LauncherSearchInputUsesABorderlessTemplateWithoutFocusRing()
+    {
+        var launcher = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(), "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
+        var inputStyleStart = launcher.IndexOf("<Style x:Key=\"Style.Launcher.Input\"", StringComparison.Ordinal);
+        var inputStyleEnd = launcher.IndexOf("</Style>", inputStyleStart, StringComparison.Ordinal);
+        var inputStyle = launcher[inputStyleStart..(inputStyleEnd + "</Style>".Length)];
+
+        Assert.DoesNotContain("BasedOn=\"{StaticResource Style.Input.Search}\"", inputStyle, StringComparison.Ordinal);
+        Assert.Contains("PART_ContentHost", inputStyle, StringComparison.Ordinal);
+        Assert.DoesNotContain("FocusRing", inputStyle, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsMouseOver", inputStyle, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsKeyboardFocused", inputStyle, StringComparison.Ordinal);
+        Assert.Contains("<Border x:Name=\"LauncherSurface\" Style=\"{StaticResource Style.Popup.Surface}\"", launcher, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsKeyboardFocusWithin", launcher, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LibraryKeepsTheSharedRowWhileLauncherUsesItsDedicatedCompactRow()
     {
         var root = FindRepositoryRoot();

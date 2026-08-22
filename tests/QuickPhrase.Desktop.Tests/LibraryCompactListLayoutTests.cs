@@ -22,7 +22,7 @@ public sealed class LibraryCompactListLayoutTests
         Assert.Contains("<Setter Property=\"Height\" Value=\"{StaticResource Size.Library.SubHeader.Height}\" />", style);
         Assert.Contains("<Setter Property=\"Padding\" Value=\"{StaticResource Thickness.None}\" />", style);
         Assert.Contains("<Setter Property=\"Margin\" Value=\"{StaticResource Thickness.None}\" />", style);
-        Assert.Contains("<ContentPresenter Margin=\"{StaticResource Thickness.Library.CompactHorizontal}\"", style);
+        Assert.Contains("<ContentPresenter Margin=\"{StaticResource Thickness.Library.PhraseRow.Horizontal}\"", style);
         Assert.Contains("<Setter Property=\"Width\" Value=\"{StaticResource Size.Library.SubHeader.ArrowWidth}\" />", markup);
         Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Library.SubHeader.ArrowColumn}\" />", template);
         Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Library.CompactList.GapColumn}\" />", template);
