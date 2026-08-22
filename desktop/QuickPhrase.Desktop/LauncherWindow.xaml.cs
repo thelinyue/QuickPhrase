@@ -12,7 +12,7 @@ namespace QuickPhrase.Desktop;
 
 /// <summary>
 /// WPF Native Launcher。窗口实例会被隐藏后复用，搜索只访问 Core 的内存快照，
-/// 不依赖数据库查询或外部页面运行时。历史搜索使用窗口内覆盖层并与话术搜索共用当前输入框，
+/// 不依赖数据库查询或外部页面运行时。历史搜索以内联区域与话术搜索共用当前输入框，
 /// 但历史确认只执行搜索，不直接插入话术。
 /// </summary>
 public partial class LauncherWindow : Window
@@ -29,8 +29,10 @@ public partial class LauncherWindow : Window
     private LauncherInvocationContext? _invocationContext;
     private readonly LauncherSubmissionGuard _submissionGuard = new();
     private const int PageSize = 5;
-    private const double LauncherChromeHeight = 128;
-    private const double PhraseRowHeight = 32;
+    private const double CompactLauncherHeight = 70;
+    private const double HistoryLauncherHeight = 128;
+    private const double LauncherChromeHeight = 94;
+    private const double PhraseRowHeight = 28;
 
     public LauncherWindow(ISearchService search, SearchHistoryCoordinator searchHistory, bool hideOnDeactivate = true)
     {
@@ -45,7 +47,6 @@ public partial class LauncherWindow : Window
         if (hideOnDeactivate)
             Deactivated += (_, _) => HideLauncher();
         Closing += OnClosing;
-        UpdateTitleColumnWidth();
     }
 
     public event Action<Phrase, SendMode, DeliveryTarget?, string?>? DeliveryRequested;
@@ -166,7 +167,7 @@ public partial class LauncherWindow : Window
     private void OpenSearchHistory()
     {
         // Launcher 隐藏或进入关闭流程后，排队的 GotKeyboardFocus 回调不得重新显示历史覆盖层。
-        if (!IsLoaded || !IsVisible || _closing) return;
+        if (!IsLoaded || !IsVisible || _closing || !IsSearchQueryEmpty(QueryBox.Text) || !_searchHistory.ViewModel.HasEntries) return;
         SearchHistoryHost.Visibility = Visibility.Visible;
     }
 
@@ -188,8 +189,7 @@ public partial class LauncherWindow : Window
     private void OnQueryChanged(object sender, TextChangedEventArgs e)
     {
         RefreshResults();
-        // 文本变化可能来自热键预填或用户输入；窗口可见时统一展示历史记录。
-        OpenSearchHistory();
+        if (IsSearchQueryEmpty(QueryBox.Text)) OpenSearchHistory(); else CloseSearchHistory();
     }
 
     private void FocusSearchBox()
@@ -228,7 +228,7 @@ public partial class LauncherWindow : Window
             var response = _search.Search(new SearchRequest(query, 8));
             _results = response.Items;
             _items = _results
-                .Select((item, index) => LauncherPhraseListItem.FromPhrase(item.Phrase, index + 1))
+                .Select((item, index) => LauncherPhraseListItem.FromSearchResult(item, index + 1))
                 .ToArray();
             if (_invocationContext is { Mode: LauncherInvocationMode.Practice, SearchHandler: not null } practice &&
                 !string.IsNullOrWhiteSpace(QueryBox.Text))
@@ -271,11 +271,13 @@ public partial class LauncherWindow : Window
 
     private void UpdatePreviewPhrase()
     {
-        _previewPhrase = (ResultsList.SelectedItem as LauncherPhraseListItem)?.Phrase;
-        if (_previewPhrase is null) return;
-        PreviewTitle.Text = _previewPhrase.Title;
-        PreviewCategory.Text = "话术预览";
-        PreviewContent.Text = _previewPhrase.Content;
+        var item = ResultsList.SelectedItem as LauncherPhraseListItem;
+        _previewPhrase = item?.Phrase;
+        if (item is null) return;
+        PreviewIndex.Text = item.IndexInCategory.ToString();
+        PreviewTitle.Text = item.Title;
+        PreviewCategory.Text = item.CategoryPath;
+        PreviewContent.Text = item.Content;
     }
 
     private static bool IsSearchQueryEmpty(string? query) => string.IsNullOrWhiteSpace(query);
@@ -284,13 +286,14 @@ public partial class LauncherWindow : Window
     internal static double CalculateListHeight(int itemCount)
     {
         var safeCount = Math.Max(0, itemCount);
-        return Math.Clamp(LauncherChromeHeight + safeCount * PhraseRowHeight, 260, 520);
+        return Math.Clamp(LauncherChromeHeight + safeCount * PhraseRowHeight, 122, 520);
     }
 
     private void ApplyViewState()
     {
         var isSearchQueryEmpty = IsSearchQueryEmpty(QueryBox.Text);
         var hasResults = _items.Count > 0;
+        var hasSearchHistory = _searchHistory.ViewModel.HasEntries;
         var hasError = !string.IsNullOrWhiteSpace(SearchErrorText);
         QueryHintText.Visibility = isSearchQueryEmpty ? Visibility.Visible : Visibility.Collapsed;
         ResultsList.Visibility = (!isSearchQueryEmpty && !_preview && hasResults && !hasError) ? Visibility.Visible : Visibility.Collapsed;
@@ -300,11 +303,17 @@ public partial class LauncherWindow : Window
         SearchRetryState.Description = hasError ? SearchErrorText : "搜索索引初始化失败，请重试。";
         SearchRetryState.Visibility = !isSearchQueryEmpty && hasError ? Visibility.Visible : Visibility.Collapsed;
         PreviewHintText.Text = _preview ? "Tab 返回列表 · Esc 关闭" : "Tab 预览 · Esc 关闭";
-        if (_preview)
+        KeyboardHints.Visibility = !isSearchQueryEmpty && hasResults ? Visibility.Visible : Visibility.Collapsed;
+        HistoryHints.Visibility = isSearchQueryEmpty && hasSearchHistory ? Visibility.Visible : Visibility.Collapsed;
+        if (isSearchQueryEmpty)
         {
-            var contentLength = _previewPhrase?.Content.Length ?? 0;
-            Height = Math.Clamp(300 + (contentLength / 35) * 16, 360, 640);
-            MaxHeight = 640;
+            Height = hasSearchHistory ? HistoryLauncherHeight : CompactLauncherHeight;
+            MaxHeight = Height;
+        }
+        else if (_preview)
+        {
+            Height = CalculateListHeight(1);
+            MaxHeight = 520;
         }
         else
         {
@@ -484,20 +493,6 @@ public partial class LauncherWindow : Window
         }
         HideLauncher();
         DeliveryRequested?.Invoke(phrase, mode, _target, QueryBox.Text?.Trim());
-    }
-
-    private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e) => UpdateTitleColumnWidth();
-
-    private void UpdateTitleColumnWidth()
-    {
-        if (!IsInitialized) return;
-        var width = ResultsList.ActualWidth > 0 ? ResultsList.ActualWidth : Width - 32;
-        PhraseListActions.SetTitleColumnWidth(ResultsList, width switch
-        {
-            >= 1024 => new GridLength(160),
-            >= 768 => new GridLength(130),
-            _ => new GridLength(100),
-        });
     }
 
     private void PositionOnCurrentMonitor()

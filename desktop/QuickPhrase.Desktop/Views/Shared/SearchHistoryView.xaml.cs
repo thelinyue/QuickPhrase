@@ -9,15 +9,12 @@ namespace QuickPhrase.Desktop.Views.Shared;
 /// <summary>
 /// Launcher 与话术库共用的历史搜索单行视图。
 ///
-/// 持久化层仍保存最近十条历史记录；本控件只根据实际可用宽度展示最近五至八条，
-/// 让垃圾桶按钮和关键词标签始终保持在同一行。键盘选择只遍历当前可见记录，
-/// 避免窗口缩放后继续选中已经隐藏的历史项。
+/// 持久化层仍保存最近十条历史记录；本控件固定展示最近五条，
+/// 让垃圾桶按钮和关键词标签始终保持在同一行。键盘选择只遍历当前可见记录。
 /// </summary>
 public partial class SearchHistoryView : System.Windows.Controls.UserControl
 {
-    private const int MinimumVisibleEntryCount = 5;
-    private const int MaximumVisibleEntryCount = 8;
-    private const double TargetEntryWidth = 96d;
+    private const int VisibleEntryCount = 5;
 
     private bool _suppressSelectionEvent;
     private SearchHistoryViewModel? _viewModel;
@@ -46,19 +43,10 @@ public partial class SearchHistoryView : System.Windows.Controls.UserControl
 
     /// <summary>
     /// 将历史标签区域的可用宽度转换为可见记录数。
-    /// 96 DIP 是单个标签的目标宽度；无效或过窄尺寸按五条处理，宽屏最多展示八条。
+    /// 闪念固定宽度下只展示五个浅色标签，键盘遍历范围必须与可见项一致。
     /// </summary>
     internal static int CalculateVisibleEntryLimit(double availableWidth)
-    {
-        if (double.IsPositiveInfinity(availableWidth))
-            return MaximumVisibleEntryCount;
-
-        if (!double.IsFinite(availableWidth) || availableWidth <= 0)
-            return MinimumVisibleEntryCount;
-
-        var countByWidth = (int)Math.Floor(availableWidth / TargetEntryWidth);
-        return Math.Clamp(countByWidth, MinimumVisibleEntryCount, MaximumVisibleEntryCount);
-    }
+        => VisibleEntryCount;
 
     public bool MoveSelection(int delta)
     {

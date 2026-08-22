@@ -10,7 +10,7 @@ namespace QuickPhrase.Desktop.Tests;
 public sealed class SearchHistoryViewLayoutTests
 {
     [Fact]
-    public void SharedHistoryViewUsesIconOnlySingleRowLayout()
+    public void SharedHistoryViewUsesLabeledPillsInASingleRow()
     {
         var markup = File.ReadAllText(Path.Combine(
             FindRepositoryRoot(),
@@ -21,36 +21,36 @@ public sealed class SearchHistoryViewLayoutTests
             "SearchHistoryView.xaml"));
 
         Assert.DoesNotContain("<TextBlock Text=\"清除全部\"", markup, StringComparison.Ordinal);
-        Assert.DoesNotContain("Text=\"历史搜索\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Text=\"最近搜索\"", markup, StringComparison.Ordinal);
         Assert.Contains("ToolTip=\"清除全部历史搜索\"", markup, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"清除全部历史搜索\"", markup, StringComparison.Ordinal);
-        Assert.Contains("<UniformGrid Rows=\"1\"", markup, StringComparison.Ordinal);
-        Assert.Contains("Columns=\"{Binding Tag, RelativeSource={RelativeSource AncestorType=ListBox}}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("<StackPanel Orientation=\"Horizontal\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Size.SearchHistory.Pill.MaximumWidth", File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(), "desktop", "QuickPhrase.Desktop", "DesignSystem", "Styles", "Lists.xaml")), StringComparison.Ordinal);
         Assert.Contains("ScrollViewer.HorizontalScrollBarVisibility=\"Disabled\"", markup, StringComparison.Ordinal);
         Assert.Contains("ScrollViewer.VerticalScrollBarVisibility=\"Disabled\"", markup, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void BothHistorySurfacesRemainBoundToTheirSearchBoxWidth()
+    public void LibraryHistoryTracksItsSearchBoxWhileFixedLauncherDoesNotResize()
     {
         var root = FindRepositoryRoot();
         var launcher = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
         var library = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "LibraryView.xaml"));
 
-        Assert.Contains("Width=\"{Binding ActualWidth, ElementName=QueryBox}\"", launcher, StringComparison.Ordinal);
+        Assert.Contains("MinWidth=\"{StaticResource Size.Launcher.Width}\"", launcher, StringComparison.Ordinal);
+        Assert.Contains("MaxWidth=\"{StaticResource Size.Launcher.Width}\"", launcher, StringComparison.Ordinal);
+        Assert.DoesNotContain("Width=\"{Binding ActualWidth, ElementName=QueryBox}\"", launcher, StringComparison.Ordinal);
         Assert.Contains("Width=\"{Binding ActualWidth, ElementName=SearchBox}\"", library, StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData(0, 5)]
-    [InlineData(479, 5)]
-    [InlineData(576, 6)]
-    [InlineData(672, 7)]
-    [InlineData(768, 8)]
-    [InlineData(1200, 8)]
-    public void VisibleHistoryCountStaysBetweenFiveAndEight(double availableWidth, int expected)
+    [InlineData(0)]
+    [InlineData(576)]
+    [InlineData(1200)]
+    public void VisibleHistoryCountIsAlwaysFiveForTheSingleLauncherRow(double availableWidth)
     {
-        Assert.Equal(expected, SearchHistoryView.CalculateVisibleEntryLimit(availableWidth));
+        Assert.Equal(5, SearchHistoryView.CalculateVisibleEntryLimit(availableWidth));
     }
 
     private static string FindRepositoryRoot()

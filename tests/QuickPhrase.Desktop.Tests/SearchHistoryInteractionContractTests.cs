@@ -31,7 +31,7 @@ public sealed class SearchHistoryInteractionContractTests
     }
 
     [Fact]
-    public void LauncherHistory_IsAboveSearchBox_AndUsesRemainingResultsViewport()
+    public void LauncherHistory_FollowsTheSearchBoxAndUsesTheRemainingResultsViewport()
     {
         var markup = File.ReadAllText(Path.Combine(
             FindRepositoryRoot(), "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
@@ -40,16 +40,16 @@ public sealed class SearchHistoryInteractionContractTests
         var queryStart = markup.IndexOf("<TextBox x:Name=\"QueryBox\"", StringComparison.Ordinal);
         var resultsStart = markup.IndexOf("<ListBox x:Name=\"ResultsList\"", StringComparison.Ordinal);
 
-        Assert.True(historyStart >= 0 && historyStart < queryStart && queryStart < resultsStart);
-        Assert.Contains("Grid.Row=\"0\"", markup[historyStart..queryStart], StringComparison.Ordinal);
-        Assert.Contains("Grid.Row=\"1\"", markup[queryStart..resultsStart], StringComparison.Ordinal);
+        Assert.True(queryStart >= 0 && queryStart < historyStart && historyStart < resultsStart);
+        Assert.Contains("Grid.Row=\"0\"", markup[queryStart..historyStart], StringComparison.Ordinal);
+        Assert.Contains("Grid.Row=\"1\"", markup[historyStart..resultsStart], StringComparison.Ordinal);
         Assert.Contains("Grid.Row=\"2\"", markup[resultsStart..], StringComparison.Ordinal);
         Assert.Contains("<RowDefinition Height=\"*\" />", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("<Popup x:Name=\"SearchHistoryPopup\"", markup, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void LauncherHistory_OpensWhenFocusedOrTextChanges_AndClosesWhenHidden()
+    public void LauncherWithoutHistoryKeepsTheEmptyQueryCompactAndClosesWhenHidden()
     {
         WpfTestApplicationHost.Invoke(_ =>
         {
@@ -60,10 +60,10 @@ public sealed class SearchHistoryInteractionContractTests
                 window.Show();
                 window.QueryBox.Focus();
                 Keyboard.Focus(window.QueryBox);
-                Assert.Equal(Visibility.Visible, window.SearchHistoryHost.Visibility);
+                Assert.Equal(Visibility.Collapsed, window.SearchHistoryHost.Visibility);
 
                 window.QueryBox.Text = "报价";
-                Assert.Equal(Visibility.Visible, window.SearchHistoryHost.Visibility);
+                Assert.Equal(Visibility.Collapsed, window.SearchHistoryHost.Visibility);
 
                 window.HideLauncher();
                 Assert.Equal(Visibility.Collapsed, window.SearchHistoryHost.Visibility);

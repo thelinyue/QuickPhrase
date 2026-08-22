@@ -49,6 +49,8 @@
     <Thickness x:Key="Thickness.Launcher.Section">0,12,0,8</Thickness>
     <Thickness x:Key="Thickness.Launcher.Preview">0,4,0,12</Thickness>
     <Thickness x:Key="Thickness.Launcher.FooterHint">0,0,16,0</Thickness>
+    <Thickness x:Key="Thickness.Launcher.Horizontal">12,0</Thickness>
+    <Thickness x:Key="Thickness.Launcher.Hint">12,0,12,8</Thickness>
     <Thickness x:Key="Thickness.Onboarding.Content">0,20,0,16</Thickness>
     <Thickness x:Key="Thickness.Onboarding.IntroDescription">0,12,0,20</Thickness>
     <Thickness x:Key="Thickness.Onboarding.CopyBlock">0,12,0,16</Thickness>

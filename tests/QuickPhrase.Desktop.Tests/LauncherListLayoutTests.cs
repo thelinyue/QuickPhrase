@@ -7,13 +7,51 @@ using Xunit;
 namespace QuickPhrase.Desktop.Tests;
 
 /// <summary>
-/// Launcher 与话术库共享列表结构的回归约束。
+/// Launcher 一体化浮层的回归约束。
 /// 这些测试只验证正式 WPF 链路的资源接入和领域字段映射，不读取 src/ 原型链路。
 /// </summary>
 public sealed class LauncherListLayoutTests
 {
     [Fact]
-    public void LibraryAndLauncherUseTheSamePhraseRowResource()
+    public void LauncherItemPreservesCategoryPathFromTheCoreSearchResult()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var phrase = new Phrase(
+            Guid.NewGuid(),
+            "售后问候",
+            "您好，感谢您的联系。",
+            Guid.NewGuid(),
+            ShortcutMode.None,
+            null,
+            0,
+            null,
+            1,
+            now,
+            now);
+
+        var item = LauncherPhraseListItem.FromSearchResult(
+            new SearchResult(phrase, SearchMatchKind.TitleContains, "客户服务 / 售后"),
+            1);
+
+        Assert.Equal("客户服务 / 售后", item.CategoryPath);
+    }
+
+    [Fact]
+    public void LauncherUsesItsOwnUnifiedPopupRowWithoutListChrome()
+    {
+        var launcher = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(), "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
+
+        Assert.Contains("Style.Popup.Surface", launcher, StringComparison.Ordinal);
+        Assert.Contains("Style.Launcher.ListItem.Phrase", launcher, StringComparison.Ordinal);
+        Assert.Contains("CategoryPath", launcher, StringComparison.Ordinal);
+        Assert.Contains("搜索话术标题、正文或拼音；Ctrl+Enter 插入并发送", launcher, StringComparison.Ordinal);
+        Assert.DoesNotContain("Template.Phrase.Row", launcher, StringComparison.Ordinal);
+        Assert.DoesNotContain("AccentBar", launcher, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LibraryKeepsTheSharedRowWhileLauncherUsesItsDedicatedCompactRow()
     {
         var root = FindRepositoryRoot();
         var library = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "LibraryView.xaml"));
@@ -22,7 +60,8 @@ public sealed class LauncherListLayoutTests
 
         Assert.Contains("Template.Phrase.Row", library);
         Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", library);
-        Assert.Contains("Template.Phrase.Row", launcher);
+        Assert.DoesNotContain("Template.Phrase.Row", launcher);
+        Assert.Contains("LauncherPhraseTemplate", launcher);
         Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", launcher);
         Assert.DoesNotContain("Themes/PhraseListResources.xaml", app);
         Assert.Contains("Themes/Controls.xaml", app);
@@ -37,13 +76,13 @@ public sealed class LauncherListLayoutTests
 
         var sharedResources = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "DesignSystem", "Styles", "Lists.xaml"));
 
-        Assert.Contains("Template.Phrase.Row", launcher);
+        Assert.Contains("LauncherPhraseTemplate", launcher);
         Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", launcher);
-        Assert.Contains("IndexInCategory", sharedResources);
-        Assert.Contains("Title", sharedResources);
-        Assert.Contains("Content", sharedResources);
-        Assert.Contains("OverflowTextBlock", sharedResources);
-        Assert.Equal(2, sharedResources.Split("OverflowTextBlock", StringSplitOptions.None).Length - 1);
+        Assert.Contains("IndexInCategory", launcher);
+        Assert.Contains("Title", launcher);
+        Assert.Contains("Content", launcher);
+        Assert.Contains("CategoryPath", launcher);
+        Assert.Equal(6, launcher.Split("OverflowTextBlock", StringSplitOptions.None).Length - 1);
         Assert.DoesNotContain("CategoryId", launcher);
         Assert.DoesNotContain("直接发送", launcher);
         Assert.DoesNotContain("sendRequested", codeBehind);
@@ -62,7 +101,7 @@ public sealed class LauncherListLayoutTests
         var launcher = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
         var codeBehind = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml.cs"));
 
-        Assert.Contains("<TextBlock Grid.Row=", launcher);
+        Assert.Contains("<TextBlock x:Name=\"KeyboardHints\" Grid.Row=", launcher);
         Assert.Contains("<Run x:Name=\"InsertHintText\"", launcher);
         Assert.Contains("<Run x:Name=\"SendHintText\"", launcher);
         Assert.DoesNotContain("QueueText", launcher);
@@ -115,8 +154,8 @@ public sealed class LauncherListLayoutTests
     }
 
     [Theory]
-    [InlineData(0, 260)]
-    [InlineData(8, 384)]
+    [InlineData(0, 122)]
+    [InlineData(8, 318)]
     [InlineData(20, 520)]
     public void LauncherHeightTracksActualPhraseRowHeightWithoutLargeUnusedViewport(int itemCount, double expectedHeight)
     {

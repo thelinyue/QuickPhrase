@@ -2,135 +2,34 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:QuickPhrase.Desktop"
+        xmlns:controls="clr-namespace:QuickPhrase.Desktop.Controls"
         xmlns:shared="clr-namespace:QuickPhrase.Desktop.Views.Shared"
-        Title=""
-        Width="{StaticResource Size.Launcher.Width}"
-        Height="{StaticResource Size.Launcher.Height}"
-        MinWidth="{StaticResource Size.Launcher.MinimumWidth}"
-        MinHeight="{StaticResource Size.Launcher.MinimumHeight}"
-        MaxHeight="{StaticResource Size.Launcher.MaximumHeight}"
-        WindowStartupLocation="Manual"
-        ResizeMode="NoResize"
-        ShowInTaskbar="False"
-        ShowActivated="True"
-        Topmost="True"
-        WindowStyle="None"
-        AllowsTransparency="True"
-        Background="Transparent"
-        SizeChanged="OnWindowSizeChanged">
+        Title="" Width="{StaticResource Size.Launcher.Width}" Height="{StaticResource Size.Launcher.Height}"
+        MinWidth="{StaticResource Size.Launcher.Width}" MaxWidth="{StaticResource Size.Launcher.Width}"
+        MinHeight="{StaticResource Size.Launcher.CompactHeight}" MaxHeight="{StaticResource Size.Launcher.MaximumHeight}"
+        WindowStartupLocation="Manual" ResizeMode="NoResize" ShowInTaskbar="False" ShowActivated="True" Topmost="True" WindowStyle="None" AllowsTransparency="True" Background="Transparent">
     <Window.Resources>
+        <Style x:Key="Style.Launcher.Input" TargetType="TextBox" BasedOn="{StaticResource Style.Input.Search}"><Setter Property="Height" Value="{StaticResource Size.Launcher.Query.Height}" /><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /></Style>
+        <Style x:Key="Style.Launcher.ListItem.Phrase" TargetType="ListBoxItem" BasedOn="{StaticResource Style.ListItem.Phrase}"><Setter Property="Height" Value="{StaticResource Size.Launcher.Row.Height}" /><Setter Property="MinHeight" Value="{StaticResource Size.Launcher.Row.Height}" /><Setter Property="Padding" Value="{StaticResource Thickness.XS}" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Cursor" Value="Hand" /></Style>
         <DataTemplate x:Key="LauncherPhraseTemplate">
-            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Template.Phrase.Row}">
-                <ContentControl.ContextMenu>
-                    <ContextMenu Opened="OnContextMenuOpened">
-                        <MenuItem Header="发送到输入区" InputGestureText="双击" Click="OnInsertContextMenuClick" />
-                        <MenuItem Header="复制内容到剪贴板" Click="OnCopyContextMenuClick" />
-                    </ContextMenu>
-                </ContentControl.ContextMenu>
+            <ContentControl Content="{Binding}">
+                <ContentControl.Template><ControlTemplate TargetType="ContentControl"><Grid Height="{StaticResource Size.Launcher.Row.Height}"><Grid.ColumnDefinitions><ColumnDefinition Width="{StaticResource Size.Launcher.IndexColumn.GridLength}" /><ColumnDefinition Width="{StaticResource Size.Launcher.TitleColumn.GridLength}" /><ColumnDefinition Width="*" /><ColumnDefinition Width="{StaticResource Size.Launcher.CategoryColumn.GridLength}" /></Grid.ColumnDefinitions><TextBlock Style="{StaticResource Style.Text.Mono}" VerticalAlignment="Center" Foreground="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=Foreground}" Text="{Binding IndexInCategory}" /><controls:OverflowTextBlock Grid.Column="1" Margin="{StaticResource Thickness.XS}" Style="{StaticResource Style.Text.Label}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Text="{Binding Title}" /><controls:OverflowTextBlock Grid.Column="2" Margin="{StaticResource Thickness.XS}" Style="{StaticResource Style.Text.Body.Medium}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Text="{Binding Content}" /><controls:OverflowTextBlock Grid.Column="3" Margin="{StaticResource Thickness.XS}" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Secondary}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Text="{Binding CategoryPath}" /></Grid></ControlTemplate></ContentControl.Template>
+                <ContentControl.ContextMenu><ContextMenu Opened="OnContextMenuOpened"><MenuItem Header="发送到输入区" InputGestureText="双击" Click="OnInsertContextMenuClick" /><MenuItem Header="复制内容到剪贴板" Click="OnCopyContextMenuClick" /></ContextMenu></ContentControl.ContextMenu>
             </ContentControl>
         </DataTemplate>
     </Window.Resources>
-    <Border Style="{StaticResource Style.Card.Elevated}"
-            CornerRadius="{StaticResource Radius.Launcher}"
-            Padding="{StaticResource Thickness.LG}">
-        <Grid>
-            <Grid.RowDefinitions>
-                <!-- 历史记录展开时占用结果列表的可用视区，闪念窗口总高度保持不变。 -->
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-
-            <Border x:Name="SearchHistoryHost"
-                    Grid.Row="0"
-                    Margin="{StaticResource Thickness.Gap.Stack.Before.XS}"
-                    Width="{Binding ActualWidth, ElementName=QueryBox}"
-                    Panel.ZIndex="10"
-                    HorizontalAlignment="Stretch"
-                    Visibility="Collapsed"
-                    LostKeyboardFocus="SearchHistoryHost_LostKeyboardFocus">
-                <shared:SearchHistoryView x:Name="SearchHistoryPanel"
-                                          QuerySelected="SearchHistoryPanel_QuerySelected"
-                                          ClearRequested="SearchHistoryPanel_ClearRequested" />
-            </Border>
-
-            <TextBox x:Name="QueryBox"
-                     Grid.Row="1"
-                     Style="{StaticResource Style.Input.Search}"
-                     AutomationProperties.Name="Launcher搜索框"
-                     GotKeyboardFocus="QueryBox_GotKeyboardFocus"
-                     LostKeyboardFocus="QueryBox_LostKeyboardFocus"
-                     TextChanged="OnQueryChanged" />
-            <TextBlock x:Name="QueryHintText"
-                       Grid.Row="1"
-                       Margin="{StaticResource Thickness.Control.Input}"
-                       Text="可搜索话术标题、正文或拼音"
-                       Style="{StaticResource Style.Text.InputHint}"
-                       VerticalAlignment="Center"
-                       IsHitTestVisible="False"
-                       Focusable="False"
-                       Visibility="Collapsed" />
-            <ListBox x:Name="ResultsList"
-                     Grid.Row="2"
-                     Margin="{StaticResource Thickness.Launcher.Section}"
-                     BorderThickness="0"
-                     Background="Transparent"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     ScrollViewer.CanContentScroll="True"
-                     VirtualizingStackPanel.IsVirtualizing="True"
-                     VirtualizingStackPanel.VirtualizationMode="Recycling"
-                     SelectionChanged="OnSelectionChanged"
-                     MouseDoubleClick="OnResultsDoubleClick"
-                     ItemTemplate="{StaticResource LauncherPhraseTemplate}"
-                     local:PhraseListActions.ShowSendButton="False"
-                     local:PhraseListActions.TitleColumnWidth="100"
-                     ItemContainerStyle="{StaticResource Style.ListItem.Phrase}" />
-
-            <ScrollViewer x:Name="PreviewHost"
-                          Grid.Row="2"
-                          Margin="{StaticResource Thickness.Launcher.Section}"
-                          VerticalScrollBarVisibility="Auto"
-                          Visibility="Collapsed">
-                <StackPanel>
-                    <TextBlock x:Name="PreviewTitle" Style="{StaticResource Style.Text.Title.Medium}" TextWrapping="Wrap" />
-                    <TextBlock x:Name="PreviewCategory" Style="{StaticResource Style.Text.Caption}" Margin="{StaticResource Thickness.Launcher.Preview}" />
-                    <TextBlock x:Name="PreviewContent" Style="{StaticResource Style.Text.Body.Medium}" TextWrapping="Wrap" />
-                </StackPanel>
-            </ScrollViewer>
-
-            <shared:StatePresenter x:Name="EmptyState"
-                                   Grid.Row="2"
-                                   StateKind="{x:Static shared:StateKind.Empty}"
-                                   Title="没有找到匹配话术"
-                                   Description="换个关键词试试；也可以按 Enter 创建话术。"
-                                   Visibility="Collapsed" />
-            <shared:StatePresenter x:Name="LoadingState"
-                                   Grid.Row="2"
-                                   StateKind="{x:Static shared:StateKind.Loading}"
-                                   Title="正在准备搜索"
-                                   Description="正在恢复内存搜索索引，请稍候。"
-                                   Visibility="Collapsed" />
-            <shared:StatePresenter x:Name="SearchRetryState"
-                                   Grid.Row="2"
-                                   StateKind="{x:Static shared:StateKind.Error}"
-                                   Title="搜索暂时不可用"
-                                   Description="搜索索引初始化失败，请重试。"
-                                   ActionText="重试"
-                                   Visibility="Collapsed" />
-
-            <TextBlock Grid.Row="3"
-                       Style="{StaticResource Style.Text.Caption}"
-                       VerticalAlignment="Center">
-                <Run Text="↑ ↓ 选择" />
-                <Run Text="&#x2002;&#x2002;" />
-                <Run x:Name="InsertHintText" Text="Enter 插入" Foreground="{DynamicResource Brush.Accent.Primary}" FontWeight="SemiBold" />
-                <Run Text="&#x2002;&#x2002;" />
-                <Run x:Name="SendHintText" Text="Ctrl+Enter 显式发送" />
-                <Run Text="&#x2002;&#x2002;" />
-                <Run x:Name="PreviewHintText" Text="Tab 预览 · Esc 关闭" />
-            </TextBlock>
+    <Border x:Name="LauncherSurface" Style="{StaticResource Style.Popup.Surface}" Padding="0">
+        <Grid><Grid.RowDefinitions><RowDefinition Height="{StaticResource Size.Launcher.Query.GridLength}" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <TextBox x:Name="QueryBox" Grid.Row="0" Margin="{StaticResource Thickness.Launcher.Horizontal}" Style="{StaticResource Style.Launcher.Input}" AutomationProperties.Name="Launcher搜索框" GotKeyboardFocus="QueryBox_GotKeyboardFocus" LostKeyboardFocus="QueryBox_LostKeyboardFocus" TextChanged="OnQueryChanged" />
+            <TextBlock x:Name="QueryHintText" Grid.Row="0" Margin="{StaticResource Thickness.Launcher.Horizontal}" Text="搜索话术标题、正文或拼音；Ctrl+Enter 插入并发送" Style="{StaticResource Style.Text.InputHint}" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed" />
+            <Border x:Name="SearchHistoryHost" Grid.Row="1" Margin="{StaticResource Thickness.Launcher.Horizontal}" Visibility="Collapsed" LostKeyboardFocus="SearchHistoryHost_LostKeyboardFocus"><shared:SearchHistoryView x:Name="SearchHistoryPanel" QuerySelected="SearchHistoryPanel_QuerySelected" ClearRequested="SearchHistoryPanel_ClearRequested" /></Border>
+            <ListBox x:Name="ResultsList" Grid.Row="2" Margin="{StaticResource Thickness.Launcher.Horizontal}" BorderThickness="0" Background="Transparent" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="True" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" SelectionChanged="OnSelectionChanged" MouseDoubleClick="OnResultsDoubleClick" ItemTemplate="{StaticResource LauncherPhraseTemplate}" ItemContainerStyle="{StaticResource Style.Launcher.ListItem.Phrase}" />
+            <Grid x:Name="PreviewHost" Grid.Row="2" Margin="{StaticResource Thickness.Launcher.Horizontal}" Visibility="Collapsed"><Grid.ColumnDefinitions><ColumnDefinition Width="{StaticResource Size.Launcher.IndexColumn.GridLength}" /><ColumnDefinition Width="{StaticResource Size.Launcher.TitleColumn.GridLength}" /><ColumnDefinition Width="*" /><ColumnDefinition Width="{StaticResource Size.Launcher.CategoryColumn.GridLength}" /></Grid.ColumnDefinitions><TextBlock x:Name="PreviewIndex" Style="{StaticResource Style.Text.Mono}" VerticalAlignment="Center" /><controls:OverflowTextBlock x:Name="PreviewTitle" Grid.Column="1" Margin="{StaticResource Thickness.XS}" Style="{StaticResource Style.Text.Label}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" /><controls:OverflowTextBlock x:Name="PreviewContent" Grid.Column="2" Margin="{StaticResource Thickness.XS}" Style="{StaticResource Style.Text.Body.Medium}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" /><controls:OverflowTextBlock x:Name="PreviewCategory" Grid.Column="3" Margin="{StaticResource Thickness.XS}" Style="{StaticResource Style.Text.Caption}" Foreground="{DynamicResource Brush.Text.Secondary}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" /></Grid>
+            <shared:StatePresenter x:Name="EmptyState" Grid.Row="2" StateKind="{x:Static shared:StateKind.Empty}" Title="没有找到匹配话术" Description="换个关键词试试；也可以按 Enter 创建话术。" Visibility="Collapsed" />
+            <shared:StatePresenter x:Name="LoadingState" Grid.Row="2" StateKind="{x:Static shared:StateKind.Loading}" Title="正在准备搜索" Description="正在恢复内存搜索索引，请稍候。" Visibility="Collapsed" />
+            <shared:StatePresenter x:Name="SearchRetryState" Grid.Row="2" StateKind="{x:Static shared:StateKind.Error}" Title="搜索暂时不可用" Description="搜索索引初始化失败，请重试。" ActionText="重试" Visibility="Collapsed" />
+            <TextBlock x:Name="KeyboardHints" Grid.Row="3" Margin="{StaticResource Thickness.Launcher.Hint}" Style="{StaticResource Style.Text.Caption}" Visibility="Collapsed"><Run Text="↑ ↓ 选择  ·  " /><Run x:Name="InsertHintText" Text="Enter 插入" Foreground="{DynamicResource Brush.Accent.Primary}" FontWeight="SemiBold" /><Run Text="  ·  " /><Run x:Name="SendHintText" Text="Ctrl+Enter 显式发送" /><Run Text="  ·  " /><Run x:Name="PreviewHintText" Text="Tab 预览 · Esc 关闭" /></TextBlock>
+            <TextBlock x:Name="HistoryHints" Grid.Row="3" Margin="{StaticResource Thickness.Launcher.Hint}" Style="{StaticResource Style.Text.Caption}" Text="↑ ↓ 选择历史记录  ·  Enter 搜索  ·  Esc 关闭" Visibility="Collapsed" />
         </Grid>
     </Border>
 </Window>

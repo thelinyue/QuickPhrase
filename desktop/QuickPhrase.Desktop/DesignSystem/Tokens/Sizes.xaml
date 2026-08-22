@@ -46,8 +46,17 @@
 
     <sys:Double x:Key="Size.Launcher.Width">760</sys:Double>
     <sys:Double x:Key="Size.Launcher.Height">300</sys:Double>
+    <!-- 保留旧窗口尺寸键，供其他已发布视图和设计系统校验继续读取。 -->
     <sys:Double x:Key="Size.Launcher.MinimumWidth">680</sys:Double>
     <sys:Double x:Key="Size.Launcher.MinimumHeight">260</sys:Double>
+    <sys:Double x:Key="Size.Launcher.Query.Height">44</sys:Double>
+    <GridLength x:Key="Size.Launcher.Query.GridLength">44</GridLength>
+    <sys:Double x:Key="Size.Launcher.CompactHeight">70</sys:Double>
+    <sys:Double x:Key="Size.Launcher.HistoryHeight">128</sys:Double>
+    <sys:Double x:Key="Size.Launcher.Row.Height">28</sys:Double>
+    <GridLength x:Key="Size.Launcher.IndexColumn.GridLength">32</GridLength>
+    <GridLength x:Key="Size.Launcher.TitleColumn.GridLength">120</GridLength>
+    <GridLength x:Key="Size.Launcher.CategoryColumn.GridLength">144</GridLength>
     <sys:Double x:Key="Size.Launcher.MaximumHeight">520</sys:Double>
 
     <!-- 首次引导的行高使用 GridLength，确保 RowDefinition 不接收错误的 Double 类型。 -->
@@ -71,6 +80,7 @@
     <sys:Double x:Key="Size.Library.SettingsIcon">18</sys:Double>
     <sys:Double x:Key="Size.List.SelectionIndicator.Width">3</sys:Double>
     <GridLength x:Key="Size.SearchHistory.Gutter.GridLength">8</GridLength>
+    <sys:Double x:Key="Size.SearchHistory.Pill.MaximumWidth">104</sys:Double>
     <sys:Double x:Key="Size.StatePresenter.MinimumHeight">84</sys:Double>
 
     <!-- 对话框尺寸集中管理；Navigation 高度由旧 190px 对齐到 4px 网格的 192px。 -->

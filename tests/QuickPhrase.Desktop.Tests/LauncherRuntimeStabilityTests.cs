@@ -46,11 +46,11 @@ public sealed class LauncherRuntimeStabilityTests
                 Assert.Equal(System.Windows.Visibility.Collapsed, window.EmptyState.Visibility);
                 Assert.Equal(System.Windows.Visibility.Collapsed, window.SearchRetryState.Visibility);
                 Assert.Equal(-1, window.ResultsList.SelectedIndex);
-                Assert.Equal(LauncherWindow.CalculateListHeight(0), window.Height);
+                Assert.Equal(70, window.Height);
 
                 window.QueryBox.Focus();
                 Keyboard.Focus(window.QueryBox);
-                Assert.Equal(System.Windows.Visibility.Visible, window.SearchHistoryHost.Visibility);
+                Assert.Equal(System.Windows.Visibility.Collapsed, window.SearchHistoryHost.Visibility);
 
                 window.QueryBox.Text = "报价";
                 Assert.Single(search.Requests);
@@ -67,7 +67,7 @@ public sealed class LauncherRuntimeStabilityTests
                 Assert.Equal(System.Windows.Visibility.Collapsed, window.EmptyState.Visibility);
                 Assert.Equal(System.Windows.Visibility.Collapsed, window.SearchRetryState.Visibility);
                 Assert.Equal(-1, window.ResultsList.SelectedIndex);
-                Assert.Equal(LauncherWindow.CalculateListHeight(0), window.Height);
+                Assert.Equal(70, window.Height);
             }
             finally
             {

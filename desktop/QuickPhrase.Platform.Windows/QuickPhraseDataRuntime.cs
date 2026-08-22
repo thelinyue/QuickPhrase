@@ -72,7 +72,7 @@ public sealed class QuickPhraseDataRuntime : IAsyncDisposable, IPhrasePackageSer
             var rawCategories = new SqliteCategoryRepository(connections, queue, clock);
             var searchHistory = new SqliteSearchHistoryRepository(connections, queue, clock);
             var enterpriseSyncStore = new SqliteEnterpriseSyncStore(connections, queue, clock);
-            var searchRuntime = await PhraseSearchRuntime.CreateAsync(rawPhrases, new PinyinMProvider(), enterpriseSyncStore, cancellationToken);
+            var searchRuntime = await PhraseSearchRuntime.CreateAsync(rawPhrases, new PinyinMProvider(), enterpriseSyncStore, cancellationToken, rawCategories);
             var hubSync = new QuickPhraseHubSyncProvider(enterpriseSyncStore, new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, new DpapiTokenStore(options.SecretsDirectory), searchRuntime.RefreshEnterpriseAsync, clock);
             return new QuickPhraseDataRuntime(
                 options,
