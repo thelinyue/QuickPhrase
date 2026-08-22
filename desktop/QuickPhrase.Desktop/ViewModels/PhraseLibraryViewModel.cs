@@ -201,6 +201,51 @@ public partial class PhraseLibraryViewModel : ObservableObject
         OnPropertyChanged(nameof(IsEmpty));
     }
 
+    /// <summary>
+    /// 新建话术保存后的异步刷新入口。新建窗口可能在话术库之外刚刚创建了分类，
+    /// 此时先重载分类和话术，再恢复库内筛选状态，避免新话术因分类树过期而不可见。
+    /// </summary>
+    public async Task RefreshFromPhraseAsync(Phrase phrase)
+    {
+        if (Categories.Any(category => category.Id == phrase.CategoryId))
+        {
+            RefreshFromPhrase(phrase);
+        }
+        else
+        {
+            var selectedCategoryId = SelectedCategoryId;
+            var isCategoryFilterActive = IsCategoryFilterActive;
+            var collapsedCategoryIds = Categories
+                .Where(category => !category.IsExpanded)
+                .Select(category => category.Id)
+                .ToHashSet();
+
+            await LoadAsync();
+
+            // 新分类允许进入分类树，但不改变用户当前正在浏览的分类和折叠状态。
+            if (!selectedCategoryId.HasValue || Categories.Any(category => category.Id == selectedCategoryId.Value))
+            {
+                SelectedCategoryId = selectedCategoryId;
+                IsCategoryFilterActive = isCategoryFilterActive && selectedCategoryId.HasValue;
+            }
+
+            for (var index = 0; index < Categories.Count; index++)
+            {
+                var category = Categories[index];
+                if (collapsedCategoryIds.Contains(category.Id) && category.IsExpanded)
+                    Categories[index] = category with { IsExpanded = false };
+            }
+
+            RefreshTopCategories();
+            RebuildVisibleItems();
+            OnPropertyChanged(nameof(IsEmpty));
+        }
+
+        // 增量刷新不会自动把新话术加入已有搜索结果，保存后重新执行当前搜索条件。
+        if (!string.IsNullOrWhiteSpace(SearchQuery))
+            await SearchCommand.ExecuteAsync(null);
+    }
+
     /// <summary>移动成功后刷新列表并向用户明确反馈目标分类。</summary>
     public void RefreshMovedPhrase(Phrase phrase)
     {

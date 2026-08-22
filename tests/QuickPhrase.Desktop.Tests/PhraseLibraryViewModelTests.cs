@@ -290,6 +290,55 @@ public class PhraseLibraryViewModelTests
     }
 
     [Fact]
+    public async Task RefreshFromPhraseAsync_WhenSavedCategoryIsNew_LoadsCategoryAndShowsPhrase()
+    {
+        var fake = new FakeCommandService();
+        var vm = new PhraseLibraryViewModel(fake);
+        await vm.LoadAsync();
+        Assert.Empty(vm.Categories);
+
+        var category = MakeCategory(out var categoryId, "新分类");
+        var phrase = MakePhrase("新话术", "新内容", categoryId);
+        fake.Seed(new[] { category });
+        fake.Seed(new[] { phrase });
+
+        await vm.RefreshFromPhraseAsync(phrase);
+
+        Assert.Contains(vm.Categories, item => item.Id == categoryId);
+        Assert.Contains(vm.VisibleItems.OfType<PhraseItemViewModel>(), item => item.Id == phrase.Id);
+        Assert.False(vm.IsEmpty);
+    }
+
+    [Fact]
+    public async Task RefreshFromPhraseAsync_WhenSavedCategoryIsNew_PreservesViewStateAndRefreshesSearch()
+    {
+        var sourceCategory = MakeCategory(out var sourceCategoryId, "已有分类");
+        var subCategory = new Category(Guid.NewGuid(), sourceCategoryId, "已折叠分类", 0, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var existingPhrase = MakePhrase("已有话术", "已有内容", subCategory.Id);
+        var fake = new FakeCommandService();
+        fake.Seed(new[] { sourceCategory, subCategory });
+        fake.Seed(new[] { existingPhrase });
+
+        var vm = new PhraseLibraryViewModel(fake);
+        await vm.LoadAsync();
+        vm.SelectCategoryCommand.Execute(sourceCategoryId);
+        vm.ToggleSubCategoryCommand.Execute(subCategory.Id);
+        vm.SearchQuery = "新话术";
+        await WaitForAsync(() => !vm.IsSearchBusy && vm.IsSearchResultEmpty);
+
+        var newCategory = MakeCategory(out var newCategoryId, "新增分类", 1);
+        var newPhrase = MakePhrase("新话术", "新内容", newCategoryId);
+        fake.Seed(new[] { newCategory });
+        fake.Seed(new[] { newPhrase });
+
+        await vm.RefreshFromPhraseAsync(newPhrase);
+
+        Assert.Equal(sourceCategoryId, vm.SelectedCategoryId);
+        Assert.False(Assert.Single(vm.Categories, item => item.Id == subCategory.Id).IsExpanded);
+        Assert.Contains(GetSearchResults(vm), item => item.Id == newPhrase.Id);
+    }
+
+    [Fact]
     public async Task RefreshMovedPhrase_PreservesSearchResultAndUpdatesCategoryName()
     {
         var sourceCategory = MakeCategory(out var sourceCategoryId, "售前", 0);

@@ -241,8 +241,12 @@ public partial class MainWindow : Window
         ShowEditorModal(new PhraseItemViewModel(phrase, null));
     }
 
-    /// <summary>仅在话术库已创建时刷新保存结果，不会为了刷新而打开话术库。</summary>
+    /// <summary>仅在话术库已创建时刷新已有话术，不会为了刷新而打开话术库。</summary>
     internal void RefreshPhrase(Phrase phrase) => _libraryView?.RefreshPhrase(phrase);
+
+    /// <summary>独立新建窗口保存后刷新话术库；若保存同时创建了分类，会补充过期的分类树。</summary>
+    internal Task RefreshNewPhraseAsync(Phrase phrase) =>
+        _libraryView?.RefreshPhraseAsync(phrase) ?? Task.CompletedTask;
 
     /// <summary>设置窗口完成导入后重载已创建的话术库；话术库尚未打开时无需提前创建它。</summary>
     internal Task ReloadLibraryAsync() => _libraryView?.ReloadAsync() ?? Task.CompletedTask;

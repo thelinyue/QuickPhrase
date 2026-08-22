@@ -42,7 +42,7 @@ public sealed class IndependentNewPhraseWindowTests
         Assert.Contains("WindowStartupLocation = WindowStartupLocation.CenterOwner", mainWindow, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource Style.Window.Shell}\"", window, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource Style.Surface.ContentRegion}\"", window, StringComparison.Ordinal);
-        Assert.Contains("_management?.RefreshPhrase(phrase);", controller, StringComparison.Ordinal);
+        Assert.Contains("_management?.RefreshNewPhraseAsync(phrase);", controller, StringComparison.Ordinal);
         Assert.DoesNotContain("Owner=", window, StringComparison.Ordinal);
         Assert.Contains("RequestNewPhrase(null)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("RequestNewPhrase(c.Id)", mainWindow, StringComparison.Ordinal);

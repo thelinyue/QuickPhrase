@@ -228,7 +228,7 @@ internal sealed class ApplicationController : IAsyncDisposable
     }
 
     private void NewPhraseWindow_PhraseSaved(object? sender, Phrase phrase) =>
-        _management?.RefreshPhrase(phrase);
+        _ = _management?.RefreshNewPhraseAsync(phrase);
 
     private void NewPhraseWindow_Closed(object? sender, EventArgs e)
     {

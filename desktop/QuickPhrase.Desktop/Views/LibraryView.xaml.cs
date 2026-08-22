@@ -346,6 +346,9 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     /// <summary>编辑器保存或移动分类后，就地刷新对应话术行（保持列表滚动/选中状态）�?/summary>
     public void RefreshPhrase(Phrase phrase) => _viewModel.RefreshFromPhrase(phrase);
 
+    /// <summary>独立新建窗口保存后刷新话术和可能刚创建的分类，同时保留话术库当前浏览状态。</summary>
+    public Task RefreshPhraseAsync(Phrase phrase) => _viewModel.RefreshFromPhraseAsync(phrase);
+
     /// <summary>话术移动成功后用最新持久化结果刷新列表，并显示明确的成功反馈。</summary>
     public void RefreshMovedPhrase(Phrase phrase) => _viewModel.RefreshMovedPhrase(phrase);
 
