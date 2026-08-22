@@ -45,9 +45,7 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
             if (!isCommitted(result)) return result;
             try
             {
-                var phrases = await LoadAllPhrasesAsync(linked.Token);
-                var categoryNames = await LoadCategoryNamesAsync(linked.Token);
-                _search.Replace(phrases, categoryNames, allowPinyinFallback: false, out var degraded);
+                var degraded = await ReplaceSearchSnapshotAsync(linked.Token, allowPinyinFallback: false);
                 if (degraded) ScheduleRebuild();
             }
             catch (Exception)
@@ -81,9 +79,7 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(pinyinProvider);
         var search = new SearchService(pinyinProvider);
         var runtime = new PhraseSearchRuntime(repository, search, enterpriseCatalog, categoryRepository);
-        var phrases = await runtime.LoadAllPhrasesAsync(cancellationToken);
-        var categoryNames = await runtime.LoadCategoryNamesAsync(cancellationToken);
-        search.Replace(phrases, categoryNames, allowPinyinFallback: true, out var degraded);
+        var degraded = await runtime.ReplaceSearchSnapshotAsync(cancellationToken, allowPinyinFallback: true);
         if (degraded) runtime.ScheduleRebuild();
         return runtime;
     }
@@ -95,9 +91,7 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
         await _mutationGate.WaitAsync(linked.Token);
         try
         {
-            var phrases = await LoadAllPhrasesAsync(linked.Token);
-            var categoryNames = await LoadCategoryNamesAsync(linked.Token);
-            _search.Replace(phrases, categoryNames, allowPinyinFallback: false, out var degraded);
+            var degraded = await ReplaceSearchSnapshotAsync(linked.Token, allowPinyinFallback: false);
             if (degraded) ScheduleRebuild();
         }
         catch
@@ -117,11 +111,47 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
         return personal.Concat(enterprise).ToArray();
     }
 
-    private async Task<IReadOnlyDictionary<Guid, string>> LoadCategoryNamesAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// 在索引提交阶段一次性解析分类树。路径随后随不可变搜索快照发布，
+    /// 因此 Launcher 搜索不会触发持久化层或企业缓存读取。
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, string>> LoadCategoryPathsAsync(CancellationToken cancellationToken)
     {
-        if (_categories is null) return new Dictionary<Guid, string>();
-        var categories = await _categories.ListAsync(cancellationToken);
-        return categories.ToDictionary(category => category.Id, category => category.Name);
+        var categories = new List<Category>();
+        if (_categories is not null)
+            categories.AddRange(await _categories.ListAsync(cancellationToken));
+        if (_enterprise is not null)
+            categories.AddRange(await _enterprise.ListCategoriesAsync(cancellationToken));
+
+        var byId = categories
+            .GroupBy(category => category.Id)
+            .ToDictionary(group => group.Key, group => group.First());
+        var paths = new Dictionary<Guid, string>();
+        foreach (var category in byId.Values)
+            paths[category.Id] = BuildCategoryPath(category, byId);
+        return paths;
+    }
+
+    private static string BuildCategoryPath(Category category, IReadOnlyDictionary<Guid, Category> categories)
+    {
+        var names = new List<string>();
+        var visited = new HashSet<Guid>();
+        Category? current = category;
+        while (current is not null && visited.Add(current.Id))
+        {
+            names.Add(current.Name);
+            current = current.ParentId is Guid parentId && categories.TryGetValue(parentId, out var parent) ? parent : null;
+        }
+        names.Reverse();
+        return string.Join(" / ", names);
+    }
+
+    private async Task<bool> ReplaceSearchSnapshotAsync(CancellationToken cancellationToken, bool allowPinyinFallback)
+    {
+        var phrases = await LoadAllPhrasesAsync(cancellationToken);
+        var categoryPaths = await LoadCategoryPathsAsync(cancellationToken);
+        _search.Replace(phrases, categoryPaths, allowPinyinFallback, out var degraded);
+        return degraded;
     }
 
     public async ValueTask DisposeAsync()
@@ -160,9 +190,9 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
     {
         if (phrase is null || change is null) return;
         var wasDirty = _search.Status.State != SearchIndexState.Ready;
-        var categoryNames = await LoadCategoryNamesAsync(cancellationToken);
-        categoryNames.TryGetValue(phrase.CategoryId, out var categoryName);
-        if (!_search.TryBuildEntry(phrase, categoryName, out var entry))
+        var categoryPaths = await LoadCategoryPathsAsync(cancellationToken);
+        categoryPaths.TryGetValue(phrase.CategoryId, out var categoryPath);
+        if (!_search.TryBuildEntry(phrase, categoryPath, out var entry))
         {
             _search.MarkDirty("话术已保存，但拼音索引更新失败；正在保留旧索引并后台恢复。");
             ScheduleRebuild();
@@ -191,13 +221,19 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
         await Task.CompletedTask;
     }
 
-    private async Task PublishCategoryRenameAsync(Category? category, CancellationToken cancellationToken)
+    private async Task PublishCategoryChangedAsync(Category? category, CancellationToken cancellationToken)
     {
         if (category is null) return;
-        var phrases = await LoadAllPhrasesAsync(cancellationToken);
-        var categoryNames = await LoadCategoryNamesAsync(cancellationToken);
-        _search.Replace(phrases, categoryNames, allowPinyinFallback: false, out var degraded);
-        if (degraded) ScheduleRebuild();
+        try
+        {
+            var degraded = await ReplaceSearchSnapshotAsync(cancellationToken, allowPinyinFallback: false);
+            if (degraded) ScheduleRebuild();
+        }
+        catch
+        {
+            _search.MarkDirty("分类已保存，但搜索索引刷新失败；正在后台恢复。");
+            ScheduleRebuild();
+        }
     }
 
     private void _searchInternalUpsert(SearchService.SearchEntry entry, bool markReady = true) => _search.Upsert(entry, markReady);
@@ -244,9 +280,7 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
             await _mutationGate.WaitAsync(_shutdown.Token);
             try
             {
-                var phrases = await LoadAllPhrasesAsync(_shutdown.Token);
-                var categoryNames = await LoadCategoryNamesAsync(_shutdown.Token);
-                _search.Replace(phrases, categoryNames, allowPinyinFallback: false, out _);
+                await ReplaceSearchSnapshotAsync(_shutdown.Token, allowPinyinFallback: false);
             }
             finally
             {
@@ -276,9 +310,14 @@ public sealed class PhraseSearchRuntime : IAsyncDisposable
         public Task<RepositoryResult<Category>> RenameAsync(RenameCategoryCommand command, CancellationToken cancellationToken = default) =>
             _owner.MutateAsync(
                 ct => _source.RenameAsync(command, ct),
-                (result, ct) => _owner.PublishCategoryRenameAsync(result.Value, ct),
+                (result, ct) => _owner.PublishCategoryChangedAsync(result.Value, ct),
                 cancellationToken);
-        public Task<RepositoryResult<Category>> MoveAsync(MoveCategoryCommand command, CancellationToken cancellationToken = default) => _source.MoveAsync(command, cancellationToken);
+
+        public Task<RepositoryResult<Category>> MoveAsync(MoveCategoryCommand command, CancellationToken cancellationToken = default) =>
+            _owner.MutateAsync(
+                ct => _source.MoveAsync(command, ct),
+                (result, ct) => _owner.PublishCategoryChangedAsync(result.Value, ct),
+                cancellationToken);
 
         public Task<RepositoryResult<DeleteResult>> DeleteAsync(Guid id, long? expectedVersion, CancellationToken cancellationToken = default) =>
             _owner.MutateAsync(

@@ -2,16 +2,18 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              AutomationProperties.Name="历史搜索记录">
-    <Border Style="{StaticResource Style.Popup.Surface}">
+    <Border Background="Transparent" BorderThickness="0" Padding="0">
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="{StaticResource Size.SearchHistory.Gutter.GridLength}" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
+            <TextBlock Text="最近搜索" Style="{StaticResource Style.Text.Caption}" VerticalAlignment="Center" />
+
             <Button x:Name="ClearButton"
-                    Grid.Column="0"
+                    Grid.Column="2"
                     Style="{StaticResource Style.Button.Icon}"
                     Foreground="{DynamicResource Brush.Status.Error}"
                     Click="ClearButton_Click"
@@ -25,7 +27,7 @@
                            VerticalAlignment="Center" />
             </Button>
 
-            <Grid x:Name="HistoryHost" Grid.Column="2">
+            <Grid x:Name="HistoryHost" Grid.Column="1" Margin="{StaticResource Thickness.Gap.Inline.SM}">
                 <ListBox x:Name="HistoryList"
                          BorderThickness="0"
                          Background="Transparent"
@@ -38,8 +40,7 @@
                          ItemContainerStyle="{StaticResource Style.ListItem.SearchHistory}">
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
-                            <UniformGrid Rows="1"
-                                         Columns="5" />
+                            <StackPanel Orientation="Horizontal" />
                         </ItemsPanelTemplate>
                     </ListBox.ItemsPanel>
                     <ListBox.ItemTemplate>

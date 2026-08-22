@@ -12,23 +12,24 @@ namespace QuickPhrase.Desktop.Tests;
 public sealed class LauncherCompactResultListTests
 {
     [Fact]
-    public void LauncherAndLibraryReuseTheSameCompactPhraseRowWithFixedHeight()
+    public void LauncherUsesDedicatedCompactRowWhileLibraryKeepsItsSharedTemplate()
     {
         var root = FindRepositoryRoot();
         var launcher = ReadDesktopFile(root, "LauncherWindow.xaml");
         var library = ReadDesktopFile(root, "Views", "LibraryView.xaml");
         var sharedRows = ReadDesktopFile(root, "DesignSystem", "Styles", "Lists.xaml");
 
-        Assert.Contains("ContentTemplate=\"{StaticResource Template.Phrase.CompactRow}\"", launcher);
+        Assert.Contains("LauncherPhraseTemplate", launcher);
+        Assert.DoesNotContain("ContentTemplate=\"{StaticResource Template.Phrase.CompactRow}\"", launcher);
         Assert.Contains("Template.Phrase.CompactRow", library);
         Assert.DoesNotContain("Template.Library.CompactPhraseRow", library);
         Assert.Contains("<DataTemplate x:Key=\"Template.Phrase.CompactRow\">", sharedRows);
         Assert.Contains("Height=\"{StaticResource Size.Phrase.Row.Compact}\"", sharedRows);
         Assert.Contains("TextWrapping=\"NoWrap\"", sharedRows);
         Assert.Contains("TextTrimming=\"CharacterEllipsis\"", sharedRows);
-        Assert.Contains("ItemContainerStyle=\"{StaticResource Style.ListItem.Phrase.Compact}\"", launcher);
+        Assert.Contains("ItemContainerStyle=\"{StaticResource Style.Launcher.ListItem.Phrase}\"", launcher);
         Assert.Contains("x:Key=\"Style.ListItem.Phrase.Compact\"", sharedRows);
-        Assert.Contains("<Setter Property=\"Height\" Value=\"{StaticResource Size.Phrase.Row.Compact}\" />", sharedRows);
+        Assert.Contains("Size.Launcher.Row.Height", launcher);
     }
 
     [Fact]

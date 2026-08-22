@@ -112,7 +112,7 @@ public sealed class LibraryCompactListLayoutTests
     }
 
     [Fact]
-    public void LibraryAndLauncher_UseSharedCompactRowWithoutTitleWidthProperty()
+    public void Library_RemovesResponsiveTitleWidthWhileLauncherUsesFixedColumns()
     {
         var library = ReadDesktopFile("Views", "LibraryView.xaml");
         var libraryCode = ReadDesktopFile("Views", "LibraryView.xaml.cs");
@@ -122,7 +122,7 @@ public sealed class LibraryCompactListLayoutTests
         var sharedRows = ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml");
 
         Assert.Contains("Template.Phrase.CompactRow", library);
-        Assert.Contains("Template.Phrase.CompactRow", launcher);
+        Assert.Contains("LauncherPhraseTemplate", launcher);
         Assert.DoesNotContain("Template.Library.CompactPhraseRow", library);
         Assert.DoesNotContain("local:PhraseListActions.TitleColumnWidth", library);
         Assert.DoesNotContain("local:PhraseListActions.TitleColumnWidth", launcher);
@@ -132,6 +132,10 @@ public sealed class LibraryCompactListLayoutTests
         Assert.DoesNotContain("using System.Windows;", viewModel);
         Assert.DoesNotContain("Template.Phrase.Row", sharedRows);
         Assert.Contains("Size.Phrase.Row.Compact", sharedRows);
+        Assert.Contains("Size.Launcher.TitleColumn.GridLength", launcher);
+        Assert.Contains("Size.Launcher.CategoryColumn.GridLength", launcher);
+        Assert.DoesNotContain("PhraseListActions.TitleColumnWidth", launcher);
+        Assert.Contains("Size.Phrase.Row.Minimum", sharedRows);
     }
 
     private static string Slice(string source, string start, string end)

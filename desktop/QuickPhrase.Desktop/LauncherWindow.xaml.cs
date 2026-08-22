@@ -31,11 +31,9 @@ public partial class LauncherWindow : Window
     private AdapterCapabilities _targetCapabilities = UnsupportedCapabilities;
     private readonly LauncherSubmissionGuard _submissionGuard = new();
     private const int PageSize = 5;
-    // 紧凑空态仍需容纳 36px 搜索框及 Border 上下各 16px 留白；36px 窗口高度会裁切输入框。
-    private const double CompactLauncherHeight = 68;
-    // 搜索框、历史容器和上下留白完整容纳固定的五条历史标签，禁止自动聚焦时裁切最后一行。
-    private const double HistoryLauncherHeight = 120;
-    private const double LauncherChromeHeight = 128;
+    private const double CompactLauncherHeight = 70;
+    private const double HistoryLauncherHeight = 128;
+    private const double LauncherChromeHeight = 94;
     private const double PhraseRowHeight = 28;
 
     public LauncherWindow(ISearchService search, SearchHistoryCoordinator searchHistory, bool hideOnDeactivate = true, IMediaAssetStore? mediaAssets = null)
@@ -177,7 +175,7 @@ public partial class LauncherWindow : Window
 
     private void OpenSearchHistory()
     {
-        // Launcher 隐藏或进入关闭流程后，排队的 GotKeyboardFocus 回调不得重新显示历史快捷入口。
+        // Launcher 隐藏或进入关闭流程后，排队的 GotKeyboardFocus 回调不得重新显示历史入口。
         if (!IsLoaded || !IsVisible || _closing || !IsSearchQueryEmpty(QueryBox.Text) || !_searchHistory.ViewModel.HasEntries) return;
         SearchHistoryHost.Visibility = Visibility.Visible;
     }
@@ -224,12 +222,12 @@ public partial class LauncherWindow : Window
         var query = QueryBox.Text ?? string.Empty;
         if (IsSearchQueryEmpty(query))
         {
-            var response = _search.Search(new SearchRequest(string.Empty, 5));
-            _results = response.Items;
-            _items = _results.Select((item, index) => LauncherPhraseListItem.FromPhrase(item.Phrase, index + 1)).ToArray();
+            // 空查询不访问搜索服务，避免默认选择常用话术而触发误投递。
+            _results = [];
+            _items = [];
             _preview = false;
             SearchErrorText = string.Empty;
-            ResultsList.ItemsSource = _items;
+            ResultsList.ItemsSource = null;
             ResultsList.SelectedIndex = -1;
             ApplyViewState();
             return;
@@ -240,7 +238,7 @@ public partial class LauncherWindow : Window
             var response = _search.Search(new SearchRequest(query, 8));
             _results = response.Items;
             _items = _results
-                .Select((item, index) => LauncherPhraseListItem.FromPhrase(item.Phrase, index + 1))
+                .Select((item, index) => LauncherPhraseListItem.FromSearchResult(item, index + 1))
                 .ToArray();
             if (_invocationContext is { Mode: LauncherInvocationMode.Practice, SearchHandler: not null } practice &&
                 !string.IsNullOrWhiteSpace(QueryBox.Text))
@@ -278,14 +276,13 @@ public partial class LauncherWindow : Window
         if (_preview) ApplyViewState();
     }
 
-
     private static bool IsSearchQueryEmpty(string? query) => string.IsNullOrWhiteSpace(query);
 
     /// <summary>根据列表项数计算 Launcher 高度，保持共享话术行的固定节奏。</summary>
     internal static double CalculateListHeight(int itemCount)
     {
         var safeCount = Math.Max(0, itemCount);
-        return Math.Clamp(LauncherChromeHeight + safeCount * PhraseRowHeight, 260, 520);
+        return Math.Clamp(LauncherChromeHeight + safeCount * PhraseRowHeight, 122, 520);
     }
 
     private void ApplyViewState()
@@ -305,18 +302,13 @@ public partial class LauncherWindow : Window
         LoadingState.Visibility = Visibility.Collapsed;
         SearchRetryState.Description = hasError ? SearchErrorText : "搜索索引初始化失败，请重试。";
         SearchRetryState.Visibility = !isSearchQueryEmpty && hasError ? Visibility.Visible : Visibility.Collapsed;
-        KeyboardHints.Visibility = hasResults ? Visibility.Visible : Visibility.Collapsed;
+        KeyboardHints.Visibility = !isSearchQueryEmpty && hasResults ? Visibility.Visible : Visibility.Collapsed;
+        HistoryHints.Visibility = isSearchQueryEmpty && hasSearchHistory ? Visibility.Visible : Visibility.Collapsed;
         PreviewHintText.Text = _preview ? "Tab 返回列表 · Esc 关闭" : "Tab 预览 · Esc 关闭";
-
-        if (isSearchQueryEmpty && !hasResults && !hasSearchHistory)
+        if (isSearchQueryEmpty)
         {
-            Height = CompactLauncherHeight;
-            MaxHeight = CompactLauncherHeight;
-        }
-        else if (isSearchQueryEmpty)
-        {
-            Height = CalculateListHeight(_items.Count) + (hasSearchHistory ? 44 : 0);
-            MaxHeight = 520;
+            Height = hasSearchHistory ? HistoryLauncherHeight : CompactLauncherHeight;
+            MaxHeight = Height;
         }
         else if (_preview && hasSelectedResult)
         {
@@ -553,7 +545,6 @@ public partial class LauncherWindow : Window
             CapabilityStatus.Unsupported);
 
     private static AdapterCapabilities UnsupportedCapabilities { get; } = CreateFallbackCapabilities(false);
-
     private void PositionOnCurrentMonitor()
     {
         var workArea = System.Windows.Forms.Screen.FromPoint(System.Windows.Forms.Cursor.Position).WorkingArea;

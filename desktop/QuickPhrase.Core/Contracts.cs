@@ -296,7 +296,11 @@ public sealed record SearchIndexStatus(
     string? ErrorCode = null,
     string? Message = null);
 
-public sealed record SearchResult(Phrase Phrase, SearchMatchKind MatchKind);
+/// <summary>
+/// 内存搜索命中项。分类路径由索引快照在重建时写入，供展示层识别结果来源；
+/// 搜索调用本身不访问分类仓储或任何持久化实现。
+/// </summary>
+public sealed record SearchResult(Phrase Phrase, SearchMatchKind MatchKind, string CategoryPath = "未分类");
 
 public sealed record SearchResponse(
     ImmutableArray<SearchResult> Items,

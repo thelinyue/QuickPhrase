@@ -218,6 +218,51 @@ public sealed class Phase3SearchTests
     }
 
     [Fact]
+    public async Task SearchReturnsCompleteCategoryPathFromTheInMemorySnapshot()
+    {
+        var parent = Category("客户服务", parentId: null);
+        var child = Category("售后", parent.Id);
+        var phrase = Phrase("after-sales", "售后问候", "您好，感谢您的联系。", 1, DateTimeOffset.UtcNow, child.Id);
+        var repository = new FakePhraseRepository([phrase]);
+        var categories = new FakeCategoryRepository([parent, child]);
+
+        await using var runtime = await PhraseSearchRuntime.CreateAsync(
+            repository,
+            new MappingPinyinProvider(),
+            categoryRepository: categories);
+        categories.ListCalls = 0;
+
+        var result = runtime.Search.Search(new SearchRequest("售后")).Items.Single();
+
+        Assert.Equal("客户服务 / 售后", result.CategoryPath);
+        Assert.Equal(0, categories.ListCalls);
+    }
+
+    [Fact]
+    public async Task CategoryRenameRefreshesThePublishedSearchPath()
+    {
+        var parent = Category("客户服务", parentId: null);
+        var child = Category("售后", parent.Id);
+        var phrase = Phrase("after-sales", "售后问候", "您好，感谢您的联系。", 1, DateTimeOffset.UtcNow, child.Id);
+        var categories = new FakeCategoryRepository([parent, child]);
+
+        await using var runtime = await PhraseSearchRuntime.CreateAsync(
+            new FakePhraseRepository([phrase]),
+            new MappingPinyinProvider(),
+            categoryRepository: categories);
+        var indexedCategories = runtime.WrapCategoryRepository(categories);
+
+        var renamed = await indexedCategories.RenameAsync(new RenameCategoryCommand(
+            child.Id,
+            child.Version,
+            "售后支持",
+            child.SortOrder));
+
+        Assert.True(renamed.IsSuccess);
+        Assert.Equal("客户服务 / 售后支持", runtime.Search.Search(new SearchRequest("售后")).Items.Single().CategoryPath);
+    }
+
+    [Fact]
     public async Task FailedPinyinUpdateKeepsOldSnapshotAndRecoversFromRepository()
     {
         var repository = new FakePhraseRepository([Phrase("one", "设备说明", "正文", 1, DateTimeOffset.UtcNow)]);
@@ -251,6 +296,9 @@ public sealed class Phase3SearchTests
     private static Phrase Phrase(string id, string title, string content, int usage, DateTimeOffset updated, Guid? categoryId = null) =>
         new(StableId(id), title, PhraseBody.FromText(content), categoryId ?? StableId($"category-{id}"), ShortcutMode.None, null, usage, updated, 1, updated.AddMinutes(-1), updated);
 
+    private static Category Category(string name, Guid? parentId) =>
+        new(StableId($"category-{name}"), parentId, name, 0, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
 
     private static Guid StableId(string value) => new(SHA256.HashData(Encoding.UTF8.GetBytes(value)).AsSpan(0, 16));
 
@@ -262,22 +310,6 @@ public sealed class Phase3SearchTests
     {
         for (var i = 0; i < 100 && !condition(); i++) await Task.Delay(20);
         Assert.True(condition());
-    }
-
-    private sealed class FakeCategoryRepository : ICategoryRepository
-    {
-        private readonly IReadOnlyList<Category> _categories;
-        public FakeCategoryRepository(IReadOnlyList<Category> categories) => _categories = categories;
-        public int ListCalls { get; private set; }
-        public Task<IReadOnlyList<Category>> ListAsync(CancellationToken cancellationToken = default)
-        {
-            ListCalls++;
-            return Task.FromResult(_categories);
-        }
-        public Task<RepositoryResult<Category>> CreateAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<RepositoryResult<Category>> RenameAsync(RenameCategoryCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<RepositoryResult<Category>> MoveAsync(MoveCategoryCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<RepositoryResult<DeleteResult>> DeleteAsync(Guid id, long? expectedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class MappingPinyinProvider : IPinyinProvider
@@ -329,6 +361,42 @@ public sealed class Phase3SearchTests
             _phrases[id] = updated;
             return Task.FromResult(RepositoryResult<Phrase>.Success(updated, new CommittedDataChange("phrase", id, "increment_usage", usedAtUtc)));
         }
+    }
+
+    private sealed class FakeCategoryRepository : ICategoryRepository
+    {
+        private readonly List<Category> _categories;
+
+        public FakeCategoryRepository(IEnumerable<Category> categories) => _categories = categories.ToList();
+
+        public int ListCalls { get; set; }
+
+        public Task<IReadOnlyList<Category>> ListAsync(CancellationToken cancellationToken = default)
+        {
+            ListCalls++;
+            return Task.FromResult<IReadOnlyList<Category>>(_categories);
+        }
+
+        public Task<RepositoryResult<Category>> CreateAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<RepositoryResult<Category>> RenameAsync(RenameCategoryCommand command, CancellationToken cancellationToken = default)
+        {
+            var index = _categories.FindIndex(category => category.Id == command.Id);
+            if (index < 0 || _categories[index].Version != command.ExpectedVersion)
+                return Task.FromResult(RepositoryResult<Category>.Failure(new DataError("VERSION_CONFLICT", "版本冲突。")));
+
+            var now = DateTimeOffset.UtcNow;
+            var renamed = _categories[index] with { Name = command.Name, SortOrder = command.SortOrder, Version = _categories[index].Version + 1, UpdatedAtUtc = now };
+            _categories[index] = renamed;
+            return Task.FromResult(RepositoryResult<Category>.Success(renamed, new CommittedDataChange("category", renamed.Id, "rename", now)));
+        }
+
+        public Task<RepositoryResult<Category>> MoveAsync(MoveCategoryCommand command, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<RepositoryResult<DeleteResult>> DeleteAsync(Guid id, long? expectedVersion, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class TemporaryDirectory : IDisposable

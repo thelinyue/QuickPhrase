@@ -30,7 +30,7 @@ public sealed class LauncherHistoryViewportTests
                     .TransformToAncestor(window)
                     .Transform(new Point(0, window.QueryBox.ActualHeight)).Y;
 
-                Assert.Equal(68d, window.ActualHeight);
+                Assert.Equal(70d, window.ActualHeight);
                 Assert.True(searchBoxBottom <= window.ActualHeight,
                     $"搜索框底部 {searchBoxBottom} 不应超过 Launcher 高度 {window.ActualHeight}。");
             }

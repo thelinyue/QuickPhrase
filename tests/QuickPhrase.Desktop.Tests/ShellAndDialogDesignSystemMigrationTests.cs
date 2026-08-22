@@ -91,13 +91,13 @@ public sealed class ShellAndDialogDesignSystemMigrationTests
         var state = ReadDesktopXaml(Path.Combine("Views", "Shared", "StatePresenter.xaml"));
         var titleBar = ReadDesktopXaml("TitleBar.xaml");
 
-        Assert.DoesNotContain("Style=\"{StaticResource Style.Card.Elevated}\"", launcher, StringComparison.Ordinal);
-        Assert.Contains("Style=\"{StaticResource Style.Input.Search}\"", launcher, StringComparison.Ordinal);
-        Assert.Contains("ItemContainerStyle=\"{StaticResource Style.ListItem.Phrase.Compact}\"", launcher, StringComparison.Ordinal);
+        Assert.Contains("Style=\"{StaticResource Style.Popup.Surface}\"", launcher, StringComparison.Ordinal);
+        Assert.Contains("BasedOn=\"{StaticResource Style.Input.Search}\"", launcher, StringComparison.Ordinal);
+        Assert.Contains("ItemContainerStyle=\"{StaticResource Style.Launcher.ListItem.Phrase}\"", launcher, StringComparison.Ordinal);
         Assert.Contains("VirtualizingStackPanel.IsVirtualizing=\"True\"", launcher, StringComparison.Ordinal);
         Assert.Contains("VirtualizingStackPanel.VirtualizationMode=\"Recycling\"", launcher, StringComparison.Ordinal);
 
-        Assert.Contains("Style=\"{StaticResource Style.Popup.Surface}\"", history, StringComparison.Ordinal);
+        Assert.Contains("Background=\"Transparent\"", history, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource Style.Button.Icon}\"", history, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource Style.Button.Secondary.Compact}\"", state, StringComparison.Ordinal);
         Assert.Contains("Height=\"{StaticResource Size.TitleBar.Height}\"", titleBar, StringComparison.Ordinal);

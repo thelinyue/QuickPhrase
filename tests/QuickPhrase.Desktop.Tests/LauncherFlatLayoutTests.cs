@@ -37,7 +37,8 @@ public sealed class LauncherFlatLayoutTests
         Assert.Contains("Text=\"{Binding Title}\"", markup);
         Assert.Contains("x:Name=\"PreviewContent\"", markup);
         Assert.Contains("Text=\"{Binding Content}\"", markup);
-        Assert.DoesNotContain("PreviewCategory", markup);
+        Assert.Contains("x:Name=\"PreviewCategory\"", markup);
+        Assert.Contains("Text=\"{Binding CategoryPath}\"", markup);
         Assert.Contains("TextWrapping=\"NoWrap\"", markup);
         Assert.Contains("TextTrimming=\"CharacterEllipsis\"", markup);
         Assert.DoesNotContain("contentLength / 35", codeBehind);

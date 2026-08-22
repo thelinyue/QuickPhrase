@@ -28,7 +28,7 @@ internal sealed class SearchService : ISearchService
         if (query.Length == 0)
         {
             var popular = snapshot.Values
-                .Select(entry => new SearchResult(entry.Phrase, SearchMatchKind.EmptyQuery))
+                .Select(entry => new SearchResult(entry.Phrase, SearchMatchKind.EmptyQuery, entry.CategoryPath))
                 .OrderByDescending(result => result.Phrase.UsageCount)
                 .ThenByDescending(result => result.Phrase.LastUsedAtUtc ?? DateTimeOffset.MinValue)
                 .ThenByDescending(result => result.Phrase.UpdatedAtUtc)
@@ -44,7 +44,7 @@ internal sealed class SearchService : ISearchService
         {
             var kind = FindStrongMatch(entry, query);
             if (kind is not null)
-                matches.Add(new ScoredResult(entry.Phrase, kind.Value));
+                matches.Add(new ScoredResult(entry, kind.Value));
         }
 
         if (matches.Count == 0 && IsFuzzyQuery(query))
@@ -53,28 +53,28 @@ internal sealed class SearchService : ISearchService
             {
                 var kind = FindFuzzyMatch(entry, query);
                 if (kind is not null)
-                    matches.Add(new ScoredResult(entry.Phrase, kind.Value));
+                matches.Add(new ScoredResult(entry, kind.Value));
             }
         }
 
         var results = matches
             .OrderBy(result => (int)result.MatchKind)
-            .ThenByDescending(result => result.Phrase.UsageCount)
-            .ThenByDescending(result => result.Phrase.LastUsedAtUtc ?? DateTimeOffset.MinValue)
-            .ThenByDescending(result => result.Phrase.UpdatedAtUtc)
-            .ThenBy(result => result.Phrase.Title, StringComparer.Ordinal)
-            .ThenBy(result => result.Phrase.Id)
+            .ThenByDescending(result => result.Entry.Phrase.UsageCount)
+            .ThenByDescending(result => result.Entry.Phrase.LastUsedAtUtc ?? DateTimeOffset.MinValue)
+            .ThenByDescending(result => result.Entry.Phrase.UpdatedAtUtc)
+            .ThenBy(result => result.Entry.Phrase.Title, StringComparer.Ordinal)
+            .ThenBy(result => result.Entry.Phrase.Id)
             .Take(limit)
-            .Select(result => new SearchResult(result.Phrase, result.MatchKind))
+            .Select(result => new SearchResult(result.Entry.Phrase, result.MatchKind, result.Entry.CategoryPath))
             .ToImmutableArray();
         return new SearchResponse(results, status);
     }
 
-    internal bool TryBuildEntry(Phrase phrase, string? categoryName, out SearchEntry entry)
+    internal bool TryBuildEntry(Phrase phrase, string? categoryPath, out SearchEntry entry)
     {
         try
         {
-            entry = BuildEntry(phrase, categoryName, includePinyin: true);
+            entry = BuildEntry(phrase, categoryPath, includePinyin: true);
             return true;
         }
         catch
@@ -84,23 +84,23 @@ internal sealed class SearchService : ISearchService
         }
     }
 
-    internal SearchEntry BuildFallbackEntry(Phrase phrase, string? categoryName) => BuildEntry(phrase, categoryName, includePinyin: false);
+    internal SearchEntry BuildFallbackEntry(Phrase phrase, string? categoryPath) => BuildEntry(phrase, categoryPath, includePinyin: false);
 
-    internal void Replace(IReadOnlyList<Phrase> phrases, IReadOnlyDictionary<Guid, string> categoryNames, bool allowPinyinFallback, out bool degraded)
+    internal void Replace(IReadOnlyList<Phrase> phrases, IReadOnlyDictionary<Guid, string> categoryPaths, bool allowPinyinFallback, out bool degraded)
     {
         degraded = false;
         var builder = ImmutableDictionary.CreateBuilder<SearchKey, SearchEntry>();
         foreach (var phrase in phrases)
         {
-            categoryNames.TryGetValue(phrase.CategoryId, out var categoryName);
-            if (TryBuildEntry(phrase, categoryName, out var entry))
+            categoryPaths.TryGetValue(phrase.CategoryId, out var categoryPath);
+            if (TryBuildEntry(phrase, categoryPath, out var entry))
             {
                 builder[new SearchKey(phrase.Scope, phrase.Id)] = entry;
                 continue;
             }
 
             if (!allowPinyinFallback) throw new InvalidOperationException("拼音索引构建失败。");
-            builder[new SearchKey(phrase.Scope, phrase.Id)] = BuildFallbackEntry(phrase, categoryName);
+            builder[new SearchKey(phrase.Scope, phrase.Id)] = BuildFallbackEntry(phrase, categoryPath);
             degraded = true;
         }
 
@@ -134,9 +134,10 @@ internal sealed class SearchService : ISearchService
     internal void MarkRebuilding() =>
         Interlocked.Exchange(ref _status, new SearchIndexStatus(SearchIndexState.Rebuilding, Status.SnapshotVersion, "SEARCH_INDEX_DIRTY", "正在从本地数据恢复搜索索引。"));
 
-    private SearchEntry BuildEntry(Phrase phrase, string? categoryName, bool includePinyin)
+    private SearchEntry BuildEntry(Phrase phrase, string? categoryPath, bool includePinyin)
     {
         var title = Normalize(phrase.Title);
+        var displayCategoryPath = string.IsNullOrWhiteSpace(categoryPath) ? "未分类" : categoryPath.Trim();
         var full = ImmutableArray.CreateBuilder<string>();
         var initials = ImmutableArray.CreateBuilder<string>();
         if (includePinyin)
@@ -146,7 +147,7 @@ internal sealed class SearchService : ISearchService
             AddTerms(_pinyin.BuildTerms(phrase.Body.TextProjection), full, initials);
         }
 
-        return new SearchEntry(phrase, title, Normalize(categoryName), Normalize(phrase.Body.TextProjection), full.ToImmutable(), initials.ToImmutable());
+        return new SearchEntry(phrase, title, displayCategoryPath, Normalize(displayCategoryPath), Normalize(phrase.Body.TextProjection), full.ToImmutable(), initials.ToImmutable());
     }
 
     private static void AddTerms(PinyinSearchTerms terms, ImmutableArray<string>.Builder full, ImmutableArray<string>.Builder initials)
@@ -248,10 +249,11 @@ internal sealed class SearchService : ISearchService
     internal sealed record SearchEntry(
         Phrase Phrase,
         string Title,
+        string CategoryPath,
         string Category,
         string Content,
         ImmutableArray<string> FullSpellings,
         ImmutableArray<string> Initials);
 
-    private sealed record ScoredResult(Phrase Phrase, SearchMatchKind MatchKind);
+    private sealed record ScoredResult(SearchEntry Entry, SearchMatchKind MatchKind);
 }
