@@ -2,6 +2,20 @@
 
 闪语（QuickPhrase）是面向 Windows 11 的本地快捷话术工具。按 `Alt + Space` 呼出纯 WPF Launcher，搜索固定标准回复，再安全插入当前聊天输入框。
 
+## 产品预览
+
+<p align="center">
+  <img src="docs/images/quickphrase-overview.png" alt="闪语 QuickPhrase：按 Alt 加 Space 搜索话术并安全插入当前输入框" width="1600" />
+</p>
+
+## 使用方式
+
+<p align="center">
+  <img src="docs/images/quickphrase-workflow.png" alt="闪语使用方式：创建图文话术，按 Alt 加 Space 搜索选择，再在企业微信场景中按 Ctrl 加 Enter 显式插入并触发发送" width="1600" />
+</p>
+
+企业微信面板为概念场景，不复刻企业微信界面，也不包含真实聊天内容或联系人资料。`Ctrl+Enter` 仅在运行时验证目标与能力后执行插入并触发发送；这不代表目标应用已最终送达或对方已收到。
+
 ## 当前支持范围
 
 - Windows 11 x64。
