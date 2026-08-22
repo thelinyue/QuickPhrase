@@ -69,6 +69,59 @@ public sealed class CurrentDatabaseSchemaTests
     }
 
     [Fact]
+    public async Task CurrentV1Schema_AllowsEmptyTitleOnCreate()
+    {
+        using var temp = new TemporaryDirectory();
+        await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
+        var categoryId = Guid.NewGuid();
+        var category = await runtime.Categories.CreateAsync(new CreateCategoryCommand(categoryId, "空标题分类"));
+        Assert.True(category.IsSuccess, category.Error?.Message);
+
+        var result = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(
+            Guid.NewGuid(), string.Empty, PhraseBody.FromText("正文"), categoryId, ShortcutMode.None, null));
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Equal(string.Empty, result.Value!.Title);
+        Assert.Equal(string.Empty, (await runtime.Phrases.GetAsync(result.Value.Id))!.Title);
+    }
+
+    [Fact]
+    public async Task CurrentV1Schema_NormalizesWhitespaceTitleToEmptyOnUpdate()
+    {
+        using var temp = new TemporaryDirectory();
+        await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
+        var categoryId = Guid.NewGuid();
+        var category = await runtime.Categories.CreateAsync(new CreateCategoryCommand(categoryId, "编辑空标题分类"));
+        Assert.True(category.IsSuccess, category.Error?.Message);
+        var created = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(
+            Guid.NewGuid(), "原标题", PhraseBody.FromText("正文"), categoryId, ShortcutMode.None, null));
+        Assert.True(created.IsSuccess, created.Error?.Message);
+
+        var result = await runtime.Phrases.UpdateAsync(new UpdatePhraseCommand(
+            created.Value!.Id, created.Value.Version, "   ", created.Value.Body, categoryId, ShortcutMode.None, null));
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Equal(string.Empty, result.Value!.Title);
+        Assert.Equal(string.Empty, (await runtime.Phrases.GetAsync(result.Value.Id))!.Title);
+    }
+
+    [Fact]
+    public async Task CurrentV1Schema_StillRejectsTitleLongerThanEightyCharacters()
+    {
+        using var temp = new TemporaryDirectory();
+        await using var runtime = await QuickPhraseDataRuntime.OpenAsync(new QuickPhraseDataOptions(temp.Path));
+        var categoryId = Guid.NewGuid();
+        var category = await runtime.Categories.CreateAsync(new CreateCategoryCommand(categoryId, "标题长度分类"));
+        Assert.True(category.IsSuccess, category.Error?.Message);
+
+        var result = await runtime.Phrases.CreateAsync(new CreatePhraseCommand(
+            Guid.NewGuid(), new string('字', PhraseRules.MaxTitleLength + 1), PhraseBody.FromText("正文"), categoryId, ShortcutMode.None, null));
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("VALIDATION_FAILED", result.Error!.Code);
+    }
+
+    [Fact]
     public async Task NonV1DatabaseIsClearedAndRebuilt()
     {
         using var temp = new TemporaryDirectory();

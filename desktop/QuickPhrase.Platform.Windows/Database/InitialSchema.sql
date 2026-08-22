@@ -22,7 +22,7 @@ CREATE INDEX ix_categories_parent_id ON categories(parent_id);
 
 CREATE TABLE phrases (
     id TEXT PRIMARY KEY,
-    title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 80),
+    title TEXT NOT NULL CHECK (length(title) BETWEEN 0 AND 80),
     category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
     shortcut_mode TEXT NOT NULL CHECK (shortcut_mode IN ('None', 'Quick', 'Custom')),
     shortcut_display TEXT NULL,

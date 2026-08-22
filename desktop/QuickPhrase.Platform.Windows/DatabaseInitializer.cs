@@ -201,7 +201,7 @@ internal sealed class DatabaseInitializer
             || !await HasForeignKeyAsync(connection, transaction, "phrase_segments", "phrase_id", "phrases", "id", "CASCADE", cancellationToken)
             || !await HasForeignKeyAsync(connection, transaction, "phrase_segments", "media_asset_id", "media_assets", "asset_id", "RESTRICT", cancellationToken)
             || !await HasConstraintFragmentsAsync(connection, transaction, "phrases",
-                ["CHECK (LENGTH(TITLE) BETWEEN 1 AND 80)"],
+                ["CHECK (LENGTH(TITLE) BETWEEN 0 AND 80)"],
                 cancellationToken)
             || !await HasConstraintFragmentsAsync(connection, transaction, "media_assets",
                 ["CHECK (MIME_TYPE IN ('IMAGE/PNG', 'IMAGE/JPEG'))", "CHECK (BYTE_LENGTH BETWEEN 1 AND 10485760)"],
