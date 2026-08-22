@@ -105,10 +105,10 @@ HWND、PID、WindowThreadId、ProcessStartTimeUtc、ProcessName、AutomationElem
 - 闪念始终只允许明确选择一条话术。
 - 空查询最多展示 5 条常用/最近话术，默认不选择；关键词搜索可默认选择第一项。
 - 单段纯文字：`Enter`/双击安全插入，目标不可验证时安全复制；`Ctrl+Enter` 进入现有显式发送流程。
-- 多段或含图片：`Enter`/双击只打开整批预览；`Ctrl+Enter` 打开整批发送确认。
-- 多段或含图片每次都必须确认整批发送，快捷发送设置不得跳过本次确认。
+- 多段或含图片：`Enter`/双击直接按段插入；`Ctrl+Enter` 直接按段插入并发送，不打开分批预览或确认窗口。
+- 两种模式都沿用文本话术的明确选择、目标重校验和失败即停语义；`Ctrl+Enter` 仍属于显式发送动作。
 
-用户确认后隐藏闪念并恢复目标焦点，随后按段顺序执行：
+用户选择话术后隐藏闪念并恢复目标焦点，随后按段顺序执行：
 
 ```text
 RevalidateTarget
@@ -116,16 +116,15 @@ RevalidateTarget
 → PrepareClipboardPayload
 → InsertSegment
 → VerifySegmentInsert
-→ RevalidateBeforeSend
-→ TriggerSendOnce
-→ RecordSegmentResult
+→ [InsertOnly: RecordSegmentResult]
+→ [InsertAndSend: RevalidateBeforeSend → TriggerSendOnce → RecordSegmentResult]
 → AdapterStabilityWait
 → NextSegment
 ```
 
 每段执行前都重新验证目标。Adapter 根据粘贴完成、目标、前台窗口、焦点/Caret 指纹稳定性决定何时进入下一段，不提供用户可配置的固定间隔。任一段失败、`Unknown` 或能力不支持时立即停止，不自动重试，不执行后续段，也不提供“继续剩余段”。
 
-`BatchDeliveryResult` 记录总段数、已完成段数、失败段索引、逐段结果和 TraceId。部分成功必须明确显示“已完成 X/N 段，第 Y 段停止”。整批完成只声明 `SendTriggered`，不得声称目标应用最终已发送；UsageCount 和搜索历史只在整批完成后更新一次。
+`BatchDeliveryResult` 记录总段数、已完成段数、失败段索引、逐段结果和 TraceId。部分成功必须明确显示“已完成 X/N 段，第 Y 段停止”。分批插入完整完成声明 `Inserted`；分批发送完整完成只声明 `SendTriggered`，不得声称目标应用最终已发送；UsageCount 和搜索历史只在分批完整成功后更新一次。
 
 ### Adapter Capabilities
 
@@ -144,7 +143,7 @@ VerifySend
 
 - Generic Adapter：文字能力按运行时规则检测；`InsertImage`、`VerifyImageInsert`、`TriggerSend`、`VerifySend` 默认为 `Unsupported`。
 - 企业微信 Adapter：`InsertText = Verified`、`VerifyTextInsert = Verified`、`TriggerSend = Verified`、`VerifySend = Unsupported`。
-- 企业微信图片人工矩阵通过前，`InsertImage = Unsupported`、`VerifyImageInsert = Unsupported`；不得使用企业微信版本号作为图片准入门槛。
+- 企业微信图片人工矩阵已通过，`InsertImage = Verified`、`VerifyImageInsert = Verified`；不得使用企业微信版本号作为图片准入门槛。
 - `VerifyTextInsert` 和未来的 `VerifyImageInsert` 只验证投递动作完整执行以及目标、前台窗口、焦点/Caret 指纹稳定，不读取聊天正文、不截图、不识别聊天区内容。
 - `SendTriggered` 仅表示发送快捷操作已完整执行；只有 Adapter 能确认目标应用最终发送结果时才可使用 `Sent`。
 
@@ -182,7 +181,7 @@ desktop/QuickPhrase.Desktop/LauncherWindow.xaml
 desktop/QuickPhrase.Desktop/BatchPreviewWindow.xaml
 ```
 
-MainWindow 当前为 `1200×760`，最小 `900×560`；话术库、图文段编辑器、设置、分类/移动/导航确认对话框、Launcher 和整批预览的布局以现有 XAML 和实际行为为准。不要基于 Floating Workspace、演示壁纸、假 Windows 桌面、任务栏或原型调试控件进行重构。
+MainWindow 当前为 `1200×760`，最小 `900×560`；话术库、图文段编辑器、设置、分类/移动/导航确认对话框和 Launcher 的布局以现有 XAML 和实际行为为准。不要基于 Floating Workspace、演示壁纸、假 Windows 桌面、任务栏或原型调试控件进行重构。
 
 ### Release Boundary
 
@@ -191,6 +190,6 @@ MainWindow 当前为 `1200×760`，最小 `900×560`；话术库、图文段编�
 - 发布目录不得包含 React bundle、HTML/JS/CSS 网页资源或 WebView2 Runtime 安装器。
 - `src/` 等原型链路可以保留，但不得被三个正式桌面 Project 引用。
 - 安装器保持当前用户、纯 WPF、自包含安装方式；数据库、媒体、备份和日志在卸载后保留。
-- 企业微信图片投递在 Windows 11 人工矩阵通过前必须保持 `Unsupported`，不得把代码存在或模拟测试通过写成真实图片能力已验收。
+- 企业微信图片投递已通过 Windows 11 人工矩阵，当前能力可保持 `Verified`；若验收结论失效，必须立即恢复 `Unsupported`，不得使用代码存在或模拟测试通过替代真实矩阵结论。
 
 插件、AI、团队图片同步、普通文件附件、视频、动画图片、OCR、图片编辑、截图、云媒体、浏览器扩展、跨平台、后台发送、失败续传和自动更新不属于本首发基线；个人图文话术与安全分批发送已经属于首发正式架构。

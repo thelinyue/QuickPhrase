@@ -253,7 +253,7 @@ internal sealed class TextDeliveryStateMachine : ITextDeliveryStateMachine, IDis
 
     private async Task RecordUsageAsync(DeliveryRequest request, CancellationToken cancellationToken)
     {
-        // 批次状态机逐段复用本状态机时显式关闭段级计数；只有整批完整成功后才由批次统一记录一次。
+        // 分批状态机逐段复用本状态机时显式关闭段级计数；只有分批完整成功后才由批次统一记录一次。
         if (!request.RecordUsageOnSuccess) return;
         try { await _usageRecorder(request.Phrase, cancellationToken).ConfigureAwait(false); }
         catch (Exception exception) { Console.Error.WriteLine($"使用次数保存失败：{exception.Message}"); }

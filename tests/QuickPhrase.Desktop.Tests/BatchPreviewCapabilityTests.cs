@@ -1,9 +1,10 @@
 using System.IO;
 using QuickPhrase.Core;
+using QuickPhrase.Platform.Windows;
 
 namespace QuickPhrase.Desktop.Tests;
 
-/// <summary>整批预览必须展示当前目标的六字段能力，避免用静态文案掩盖图片或发送能力缺失。</summary>
+/// <summary>分批预览必须展示当前目标的六字段能力，避免用静态文案掩盖图片或发送能力缺失。</summary>
 public sealed class BatchPreviewCapabilityTests
 {
     [Fact]
@@ -52,20 +53,23 @@ public sealed class BatchPreviewCapabilityTests
     }
 
     [Fact]
-    public void ApplicationControllerAndLauncherPassCurrentTargetCapabilitiesIntoPreview()
+    public void ApplicationControllerAndLauncherDispatchBatchModesWithoutPreview()
     {
         var root = FindRepositoryRoot();
         var controller = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "ApplicationController.cs"));
         var launcher = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml.cs"));
 
         Assert.Contains("var capabilities = GetTargetCapabilities(resolvedTarget);", controller, StringComparison.Ordinal);
-        Assert.Contains("_launcher.Open(initialQuery, resolvedTarget, phraseId, canExplicitSend, invocationContext, capabilities);", controller, StringComparison.Ordinal);
-        Assert.Contains("_targetCapabilities = targetCapabilities ??", launcher, StringComparison.Ordinal);
-        Assert.Contains("new BatchPreviewWindow(phrase, _mediaAssets, confirmation, _targetCapabilities)", launcher, StringComparison.Ordinal);
+        Assert.Contains("_launcher.Open(", controller, StringComparison.Ordinal);
+        Assert.Contains("invocationContext);", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("invocationContext, capabilities);", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("_targetCapabilities", launcher, StringComparison.Ordinal);
+        Assert.DoesNotContain("new BatchPreviewWindow", launcher, StringComparison.Ordinal);
+        Assert.Contains("DeliveryRequested?.Invoke(phrase, mode, _target, QueryBox.Text?.Trim(), true);", launcher, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void PreviewAllowsConfirmedImageBatchOnlyForFakeVerifiedImageCapabilities()
+    public void WeComVerifiedImageCapabilitiesRemainAvailableToBatchDelivery()
     {
         WpfTestApplicationHost.Invoke(_ =>
         {
@@ -73,17 +77,17 @@ public sealed class BatchPreviewCapabilityTests
             var phrase = new Phrase(
                 Guid.NewGuid(), "图片批次", new PhraseBody([PhraseSegment.CreateImage(image)], PhraseBody.DefaultBatchSeparator),
                 Guid.NewGuid(), ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
-            var capabilities = new AdapterCapabilities(
-                CapabilityStatus.Verified,
-                CapabilityStatus.Verified,
-                CapabilityStatus.Verified,
-                CapabilityStatus.Verified,
-                CapabilityStatus.Verified,
-                CapabilityStatus.Unsupported);
-            var window = new BatchPreviewWindow(phrase, null, confirmation: true, capabilities);
+            using var resolver = new WindowsAdapterResolver(_ => "matrix-verified", _ => true);
+            var target = new DeliveryTarget(
+                "WXWork", "WindowsDesktopWindow", "WXWork", "企业微信", Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow);
+            var capabilities = resolver.Resolve(target).DetectCapabilities();
+            var window = new BatchPreviewWindow(phrase, null, confirmation: false, capabilities);
             try
             {
-                Assert.True(window.ConfirmButton.IsEnabled);
+                Assert.Equal(CapabilityStatus.Verified, capabilities.InsertImage);
+                Assert.Equal(CapabilityStatus.Verified, capabilities.VerifyImageInsert);
+                Assert.Equal("分批预览", window.HeadingText.Text);
+                Assert.Equal(System.Windows.Visibility.Collapsed, window.ConfirmButton.Visibility);
             }
             finally
             {

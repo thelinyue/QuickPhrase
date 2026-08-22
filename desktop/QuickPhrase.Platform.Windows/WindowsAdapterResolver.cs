@@ -151,8 +151,8 @@ public sealed record AdapterStatusSnapshot(
     string FallbackMode);
 
 /// <summary>
-/// 企业微信运行时能力 Adapter。客户端版本只保留为诊断元数据；所有插入和发送准入均由
-/// 当前窗口身份、前台状态以及输入区焦点/Caret 指纹在动作前后实时决定。
+/// 企业微信运行时能力 Adapter。图片能力已通过 Windows 11 人工矩阵验收；客户端版本只保留为诊断元数据，
+/// 所有插入和发送准入仍由当前窗口身份、前台状态以及输入区焦点/Caret 指纹在动作前后实时决定。
 /// </summary>
 internal sealed class WeComAdapter : IApplicationAdapter, IImageApplicationAdapter
 {
@@ -177,8 +177,8 @@ internal sealed class WeComAdapter : IApplicationAdapter, IImageApplicationAdapt
         "WXWork", "WXWork", "phase5-wecom-runtime-1",
         CapabilityStatus.Verified,
         CapabilityStatus.Verified,
-        CapabilityStatus.Unsupported,
-        CapabilityStatus.Unsupported,
+        CapabilityStatus.Verified,
+        CapabilityStatus.Verified,
         CapabilityStatus.Verified,
         CapabilityStatus.Unsupported,
         "CopyOnly", null);
@@ -222,8 +222,7 @@ internal sealed class WeComAdapter : IApplicationAdapter, IImageApplicationAdapt
     }
 
     /// <summary>
-    /// 企业微信图片执行链已具备，但能力快照在 Windows 11 人工矩阵通过前始终保持 Unsupported，
-    /// 因此生产状态机不会调用此方法。未来启用时仍复用同一目标、焦点和剪贴板安全边界。
+    /// 企业微信图片能力已通过 Windows 11 人工矩阵，执行时仍复用同一目标、焦点和剪贴板安全边界。
     /// </summary>
     public async Task<InsertResult> InsertImageAsync(DeliveryRequest request, MediaAssetContent image, CancellationToken cancellationToken)
     {
