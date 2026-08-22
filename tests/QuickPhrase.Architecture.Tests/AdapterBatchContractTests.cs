@@ -32,7 +32,7 @@ public sealed class AdapterBatchContractTests
     }
 
     [Fact]
-    public void GenericAndWeComKeepImageCapabilitiesUnsupportedRegardlessOfProductVersion()
+    public void GenericKeepsImageCapabilitiesUnsupportedWhileWeComExposesVerifiedImageCapabilities()
     {
         using var resolver = new WindowsAdapterResolver(
             productVersionReader: _ => "diagnostic-only",
@@ -46,10 +46,10 @@ public sealed class AdapterBatchContractTests
 
         Assert.Equal(CapabilityStatus.Unsupported, generic.InsertImage);
         Assert.Equal(CapabilityStatus.Unsupported, generic.VerifyImageInsert);
-        Assert.Equal(CapabilityStatus.Unsupported, oldWeCom.InsertImage);
-        Assert.Equal(CapabilityStatus.Unsupported, oldWeCom.VerifyImageInsert);
-        Assert.Equal(oldWeCom.InsertImage, newWeCom.InsertImage);
-        Assert.Equal(oldWeCom.VerifyImageInsert, newWeCom.VerifyImageInsert);
+        Assert.Equal(CapabilityStatus.Verified, oldWeCom.InsertImage);
+        Assert.Equal(CapabilityStatus.Verified, oldWeCom.VerifyImageInsert);
+        Assert.Equal(CapabilityStatus.Verified, newWeCom.InsertImage);
+        Assert.Equal(CapabilityStatus.Verified, newWeCom.VerifyImageInsert);
         Assert.False(resolver.Resolve(genericTarget) is IImageApplicationAdapter);
         Assert.IsAssignableFrom<IImageApplicationAdapter>(resolver.Resolve(weComTarget));
     }
@@ -84,6 +84,76 @@ public sealed class AdapterBatchContractTests
         Assert.Equal(
             new[] { "Validate:1", "Deliver:1", "Wait", "Validate:2", "Validate:3", "Deliver:2" },
             events);
+        Assert.Equal(2, single.Requests.Count);
+        Assert.All(single.Requests, request =>
+        {
+            Assert.Equal(SendMode.InsertAndSend, request.Mode);
+            Assert.Equal(1, request.Phrase.Body.SegmentCount);
+        });
+        Assert.Equal(new[] { "第一段", "第二段" }, single.Requests.Select(request => request.Phrase.Body.TextProjection));
+    }
+
+    [Fact]
+    public async Task BatchInsertOnlyInsertsEachTextSegmentWithoutSending()
+    {
+        var target = CreateTarget("WXWork", "WXWork");
+        var detector = new ConfigurableTargetDetector(target);
+        var adapter = new ConfigurableAdapter();
+        var usageCalls = 0;
+        using var single = new TextDeliveryStateMachine(
+            detector,
+            new FixedAdapterResolver(adapter),
+            new RecordingClipboardTransaction(),
+            (_, _) => { usageCalls++; return Task.CompletedTask; });
+        var machine = new BatchDeliveryStateMachine(
+            single,
+            detector,
+            new RecordingStabilityWaiter([], VerificationResult.Verified),
+            new FixedAdapterResolver(adapter),
+            () => null,
+            (_, _) => { usageCalls++; return Task.CompletedTask; });
+
+        var result = await machine.DeliverAsync(CreateBatchRequest(target) with { Mode = SendMode.InsertOnly });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(DeliveryEffect.Inserted, result.Effect);
+        Assert.Equal(2, result.CompletedSegments);
+        Assert.Equal(0, adapter.SendCalls);
+        Assert.Equal(1, usageCalls);
+    }
+
+    [Fact]
+    public async Task VerifiedImageCapabilityInsertOnlyInsertsWithoutSending()
+    {
+        var target = CreateTarget("WXWork", "WXWork");
+        var detector = new ConfigurableTargetDetector(target);
+        var adapter = new ConfigurableAdapter(imageCapabilities: CapabilityStatus.Verified);
+        var image = CreateImageReference();
+        var media = new RecordingMediaStore(image, [1, 2, 3]);
+        var usageCalls = 0;
+        using var single = new TextDeliveryStateMachine(
+            detector,
+            new FixedAdapterResolver(adapter),
+            new RecordingClipboardTransaction(),
+            static (_, _) => Task.CompletedTask);
+        var machine = new BatchDeliveryStateMachine(
+            single,
+            detector,
+            new RecordingStabilityWaiter([], VerificationResult.Verified),
+            new FixedAdapterResolver(adapter),
+            () => media,
+            (_, _) => { usageCalls++; return Task.CompletedTask; });
+
+        var request = CreateBatchRequest(target, [PhraseSegment.CreateImage(image)]) with { Mode = SendMode.InsertOnly };
+        var result = await machine.DeliverAsync(request);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(DeliveryEffect.Inserted, result.Effect);
+        Assert.Equal(1, result.CompletedSegments);
+        Assert.Equal(1, adapter.ImageInsertCalls);
+        Assert.Equal(1, adapter.VerifyImageCalls);
+        Assert.Equal(0, adapter.SendCalls);
+        Assert.Equal(1, usageCalls);
     }
 
     [Fact]
@@ -331,10 +401,13 @@ public sealed class AdapterBatchContractTests
         Assert.Equal(0, adapter.SendCalls);
     }
 
-    private static DeliveryRequest CreateBatchRequest(DeliveryTarget target, PhraseSegment[]? segments = null)
+    private static DeliveryRequest CreateBatchRequest(
+        DeliveryTarget target,
+        PhraseSegment[]? segments = null,
+        SendMode mode = SendMode.InsertAndSend)
     {
         var phrase = CreatePhrase(segments ?? [PhraseSegment.CreateText("第一段"), PhraseSegment.CreateText("第二段")]);
-        return new DeliveryRequest(phrase, target, SendMode.InsertAndSend, ClipboardCompatibilityMode: true);
+        return new DeliveryRequest(phrase, target, mode, ClipboardCompatibilityMode: true);
     }
 
     private static Phrase CreatePhrase(PhraseSegment[] segments)
@@ -360,10 +433,12 @@ public sealed class AdapterBatchContractTests
     private sealed class RecordingSingleDelivery(List<string> events) : ITextDeliveryStateMachine
     {
         public int Calls { get; private set; }
+        public List<DeliveryRequest> Requests { get; } = [];
 
         public Task<DeliveryResult> DeliverAsync(DeliveryRequest request, CancellationToken cancellationToken = default)
         {
             Calls++;
+            Requests.Add(request);
             events.Add($"Deliver:{Calls}");
             return Task.FromResult(new DeliveryResult(
                 DeliveryStatus.Success,

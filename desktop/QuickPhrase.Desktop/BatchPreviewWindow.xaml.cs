@@ -7,7 +7,7 @@ using QuickPhrase.Core;
 
 namespace QuickPhrase.Desktop;
 
-/// <summary>多段/图片话术的整批预览与显式发送确认；预览本身绝不触发投递。</summary>
+/// <summary>保留的多段/图片只读预览组件；Launcher 的 Enter 与 Ctrl+Enter 投递路径不打开此窗口。</summary>
 public partial class BatchPreviewWindow : Window
 {
     private readonly IMediaAssetStore? _media;
@@ -18,8 +18,8 @@ public partial class BatchPreviewWindow : Window
     {
         InitializeComponent();
         _media = media;
-        HeadingText.Text = confirmation ? "确认整批发送" : "整批预览";
-        SummaryText.Text = $"共 {phrase.Body.SegmentCount} 条消息，{phrase.Body.ImageCount} 张图片；将严格按下列顺序处理。";
+        HeadingText.Text = confirmation ? "确认分批发送" : "分批预览";
+        SummaryText.Text = $"共 {phrase.Body.SegmentCount} 个发送段，{phrase.Body.ImageCount} 张图片；将按下列顺序逐段处理。";
         CapabilityText.Text = FormatCapabilities(capabilities);
         ConfirmButton.Visibility = confirmation ? Visibility.Visible : Visibility.Collapsed;
         ConfirmButton.IsEnabled = confirmation && CanDeliver(phrase, capabilities);

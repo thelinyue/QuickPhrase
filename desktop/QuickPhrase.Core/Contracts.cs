@@ -481,7 +481,7 @@ public sealed record DeliveryResult(
     public bool IsSuccess => Status == DeliveryStatus.Success;
 }
 
-/// <summary>整批投递结果；FailedSegmentIndex 使用从 1 开始的用户可见序号，空值表示没有失败段。</summary>
+/// <summary>分批投递结果；FailedSegmentIndex 使用从 1 开始的用户可见序号，空值表示没有失败段。</summary>
 public sealed record BatchDeliveryResult(
     DeliveryStatus Status,
     DeliveryEffect Effect,

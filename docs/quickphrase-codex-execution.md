@@ -1,7 +1,7 @@
 # QuickPhrase Codex 开发执行文档
 
 状态：正式架构已更新为“QuickPhrase 首发图文话术与分批发送基线”。
-当前重点：完成首发图文数据、媒体、`.qphrase`、WPF 图文管理和安全分批发送验证；企业微信图片能力在 Windows 11 人工矩阵通过前保持 `Unsupported`。
+当前重点：完成首发图文数据、媒体、`.qphrase`、WPF 图文管理和安全分批发送验证；企业微信图片能力已通过 Windows 11 人工矩阵并启用。
 
 ## 执行纪律
 
@@ -23,7 +23,7 @@
 - `dotnet build QuickPhrase.sln` 不触发 npm/node。
 - `desktop/` 生产源码无 ManagementIpc、ManagementBridge、ManagementRequest、ManagementResponse、protocolVersion、requestId。
 - WPF ViewModel 无 Web/Bridge DTO。
-- 主界面、话术库、图文段编辑器、设置、闪念和整批预览全部由当前 WPF XAML 实现。
+- 主界面、话术库、图文段编辑器、设置、闪念和分批投递全部由当前 WPF XAML/进程内状态机实现。
 - `src/` 等 Prototype 与生产 csproj 无依赖关系。
 - 正式发布目录不含 HTML、JS、CSS bundle 或 WebView2 Runtime 安装器。
 
@@ -80,7 +80,7 @@
 - 闪念一次只能明确选择一条话术。
 - 空查询最多展示 5 条常用/最近话术且默认不选择；关键词搜索结果可以默认选择第一项。
 - 单段纯文字保持 `Enter` 插入、`Ctrl+Enter` 显式发送。
-- 多段或含图片的 `Enter`/双击只预览，`Ctrl+Enter` 必须打开整批确认；快捷发送设置不能跳过。
+- 多段或含图片的 `Enter`/双击直接执行 `InsertOnly` 分批插入；`Ctrl+Enter` 直接执行 `InsertAndSend` 分批发送，不打开预览或确认窗口。
 
 ## Phase 5：Adapter 与投递安全
 
@@ -99,13 +99,13 @@ VerifySend
 
 - Generic Adapter：文字能力按运行时规则检测；图片、发送触发和发送验证默认为 `Unsupported`。
 - 企业微信：`InsertText = Verified`、`VerifyTextInsert = Verified`、`TriggerSend = Verified`、`VerifySend = Unsupported`。
-- 企业微信图片人工矩阵通过前：`InsertImage = Unsupported`、`VerifyImageInsert = Unsupported`。
+- 企业微信图片人工矩阵已通过：`InsertImage = Verified`、`VerifyImageInsert = Verified`。
 
 `VerifyTextInsert` 只确认粘贴动作完整执行以及目标、前台窗口、焦点/Caret 指纹稳定，不读取聊天正文。图片验证未来也不得通过读取聊天正文、截图或识别聊天区来实现。
 
 ### 批次状态机
 
-整批确认后按段执行：
+选择模式后按段执行：
 
 ```text
 RevalidateTarget
@@ -123,8 +123,8 @@ RevalidateTarget
 - 每段执行前重新验证目标。
 - Adapter 根据粘贴、目标、前台窗口和焦点稳定性决定下一段时机；不提供固定延时配置。
 - 任一段失败、`Unknown` 或能力不支持时立即停止，不执行后续段、不重试、不提供继续剩余段。
-- 完整批次只声明 `SendTriggered`；不得声称目标应用最终已发送。
-- UsageCount 和搜索历史只在整批完成后更新一次。
+- `InsertOnly` 完整分批声明 `Inserted`；`InsertAndSend` 完整分批只声明 `SendTriggered`，不得声称目标应用最终已发送。
+- UsageCount 和搜索历史只在分批完整成功后更新一次。
 
 文字和图片 Clipboard Transaction 复用独立 STA Worker、原剪贴板保存、目标重校验、一次 `Ctrl+V`、剪贴板序列检查和尽力恢复。图片二进制、路径、文件名和缩略图不得进入 Trace 或日志。
 
@@ -134,7 +134,7 @@ RevalidateTarget
 - 多段批次在当前段完成后调用 Adapter 稳定等待，再次验证目标和焦点后才进入下一段。
 - 不使用用户可配置间隔，也不使用客户端版本号决定等待。
 - 稳定性无法确认时返回 `Unknown` 并停止；目标或焦点明确变化时返回失败并停止。
-- 既有连续投递队列与图文整批状态机是不同入口，不得绕过整批确认或把 `InsertAndSend` 自动排队重试。
+- 既有连续投递队列与图文分批状态机是不同入口，不得把 `InsertAndSend` 自动排队重试；分批入口仍必须由用户明确选择 `Enter` 或 `Ctrl+Enter` 模式。
 
 ## Phase 6：Windows 11 发布验证
 
@@ -146,7 +146,7 @@ RevalidateTarget
 - 发布清单不得包含 WebView2 Runtime、WebView2 前置安装器或网页 bundle。
 - 主要平台为 Windows 11 x64；Windows 10 22H2 为 `UNVERIFIED / NOT SUPPORTED IN FIRST RELEASE`。
 
-已有企业微信纯文字投递矩阵不等于图片矩阵。只有 Windows 11 企业微信图片人工矩阵实际覆盖图片粘贴、图文交错、切换聊天、切换前台窗口、已有草稿、大图片和处理延迟后，图片能力才允许从 `Unsupported` 调整。未通过前不得声明图片投递已验收。
+已有企业微信纯文字投递矩阵不等于图片矩阵。Windows 11 企业微信图片人工矩阵已实际覆盖图片粘贴、图文交错、切换聊天、切换前台窗口、已有草稿、大图片和处理延迟，图片能力已从 `Unsupported` 调整为 `Verified`。
 
 ## `.qphrase`、CSV 与企业边界
 

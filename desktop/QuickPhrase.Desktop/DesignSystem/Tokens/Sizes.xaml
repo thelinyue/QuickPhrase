@@ -71,7 +71,7 @@
     <GridLength x:Key="Size.Launcher.CategoryColumn.GridLength">144</GridLength>
     <sys:Double x:Key="Size.Launcher.MaximumHeight">520</sys:Double>
 
-    <!-- 整批预览保持对话框级信息密度，内容区超高时只滚动段列表。 -->
+    <!-- 分批预览保持对话框级信息密度，内容区超高时只滚动段列表。 -->
     <sys:Double x:Key="Size.BatchPreview.Width">640</sys:Double>
     <sys:Double x:Key="Size.BatchPreview.Height">560</sys:Double>
     <sys:Double x:Key="Size.BatchPreview.MinimumWidth">560</sys:Double>

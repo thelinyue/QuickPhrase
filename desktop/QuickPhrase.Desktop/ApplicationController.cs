@@ -312,13 +312,13 @@ internal sealed class ApplicationController : IAsyncDisposable
                 _launcher.Open(
                     initialQuery, target, phraseId,
                     _adapterResolver.GetStatus(target).TriggerSend == CapabilityStatus.Verified,
-                    invocationContext, GetTargetCapabilities(target));
+                    invocationContext);
             _launcher.Activate();
             return;
         }
 
         if (_searchHistory is null) return;
-        _launcher ??= new LauncherWindow(_dataRuntime.Search, _searchHistory, mediaAssets: _dataRuntime.MediaAssets);
+        _launcher ??= new LauncherWindow(_dataRuntime.Search, _searchHistory);
         _launcher.DeliveryRequested -= OnDeliveryRequested;
         _launcher.DeliveryRequested += OnDeliveryRequested;
         _launcher.CreatePhraseRequested -= OnCreatePhraseRequested;
@@ -333,7 +333,7 @@ internal sealed class ApplicationController : IAsyncDisposable
         var capabilities = GetTargetCapabilities(resolvedTarget);
         var canExplicitSend = capabilities.TriggerSend == CapabilityStatus.Verified;
         _hotkeys.SetLauncherVisible(true);
-        _launcher.Open(initialQuery, resolvedTarget, phraseId, canExplicitSend, invocationContext, capabilities);
+        _launcher.Open(initialQuery, resolvedTarget, phraseId, canExplicitSend, invocationContext);
     }
 
     private AdapterCapabilities GetTargetCapabilities(DeliveryTarget? target) =>
@@ -502,12 +502,12 @@ internal sealed class ApplicationController : IAsyncDisposable
         }
     }
 
-    private void OnDeliveryRequested(Phrase phrase, SendMode mode, DeliveryTarget? target, string? query, bool batchConfirmed)
+    private void OnDeliveryRequested(Phrase phrase, SendMode mode, DeliveryTarget? target, string? query, bool deliveryAuthorized)
     {
         var traceId = Guid.NewGuid();
         var startedAt = Stopwatch.GetTimestamp();
         _ = ObserveDeliveryTaskAsync(
-            () => QueueOrDeliverPhraseAsync(phrase, target, mode, query, batchConfirmed),
+            () => QueueOrDeliverPhraseAsync(phrase, target, mode, query, deliveryAuthorized),
             exception =>
             {
                 var elapsed = Stopwatch.GetElapsedTime(startedAt);
@@ -624,7 +624,7 @@ internal sealed class ApplicationController : IAsyncDisposable
             MessageBoxButton.OK,
             MessageBoxImage.Warning);
     }
-    private async Task<DeliveryResult?> QueueOrDeliverPhraseAsync(Phrase phrase, DeliveryTarget? target, SendMode mode, string? query, bool batchConfirmed = false)
+    private async Task<DeliveryResult?> QueueOrDeliverPhraseAsync(Phrase phrase, DeliveryTarget? target, SendMode mode, string? query, bool deliveryAuthorized = false)
     {
         var settings = _settings ?? new AppSettings(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true);
         if (!phrase.Body.RequiresBatchDelivery && RequiresSendConfirmation(mode, settings))
@@ -650,22 +650,26 @@ internal sealed class ApplicationController : IAsyncDisposable
 
         if (phrase.Body.RequiresBatchDelivery)
         {
-            if (!batchConfirmed || mode != SendMode.InsertAndSend)
+            if (!deliveryAuthorized || mode is not (SendMode.InsertOnly or SendMode.InsertAndSend))
             {
                 return new DeliveryResult(DeliveryStatus.Cancelled, DeliveryEffect.None, DeliveryStage.NotStarted,
-                    DeliveryConfidence.Confirmed, "BATCH_CONFIRMATION_REQUIRED", "整批发送未获得本次明确确认。", false, Guid.NewGuid());
+                    DeliveryConfidence.Confirmed, "BATCH_DELIVERY_NOT_AUTHORIZED", "分批投递未获得本次明确操作授权。", false, Guid.NewGuid());
             }
             var batchRequest = new DeliveryRequest(phrase, target, mode, settings.ClipboardCompatibilityMode,
                 TargetChangeBehavior.Cancel, RecordUsageOnSuccess: false);
             var batch = await Task.Run(() => _batchDelivery.DeliverAsync(batchRequest, CancellationToken.None)).ConfigureAwait(true);
             var message = batch.IsSuccess
-                ? $"整批已触发发送：已完成 {batch.CompletedSegments}/{batch.TotalSegments} 段。"
-                : $"整批已停止：已完成 {batch.CompletedSegments}/{batch.TotalSegments} 段，第 {batch.FailedSegmentIndex ?? batch.CompletedSegments + 1} 段停止。";
+                ? mode == SendMode.InsertAndSend
+                    ? $"分批已触发发送：已完成 {batch.CompletedSegments}/{batch.TotalSegments} 段。"
+                    : $"分批已插入：已完成 {batch.CompletedSegments}/{batch.TotalSegments} 段。"
+                : $"分批投递已停止：已完成 {batch.CompletedSegments}/{batch.TotalSegments} 段，第 {batch.FailedSegmentIndex ?? batch.CompletedSegments + 1} 段停止。";
             _tray?.ShowBalloonTip(2600, "闪语", message, batch.IsSuccess ? Forms.ToolTipIcon.Info : Forms.ToolTipIcon.Warning);
             if (batch.IsSuccess && _searchHistory is not null && !string.IsNullOrWhiteSpace(query)) await _searchHistory.RecordAsync(query);
             return new DeliveryResult(batch.Status, batch.Effect, DeliveryStage.Completed,
-                batch.IsSuccess ? DeliveryConfidence.Probable : DeliveryConfidence.Confirmed,
-                batch.IsSuccess ? "BATCH_SEND_TRIGGERED" : "BATCH_STOPPED", message, false, batch.TraceId);
+                batch.IsSuccess && mode == SendMode.InsertAndSend ? DeliveryConfidence.Probable : DeliveryConfidence.Confirmed,
+                batch.IsSuccess
+                    ? mode == SendMode.InsertAndSend ? "BATCH_SEND_TRIGGERED" : "BATCH_INSERTED"
+                    : "BATCH_STOPPED", message, false, batch.TraceId);
         }
         // 适配器解析会读取目标进程元数据，必须离开 WPF UI 线程，避免闪念提交时窗口失去响应。
         var adapter = target is null

@@ -4,8 +4,8 @@ using QuickPhrase.Core;
 namespace QuickPhrase.Platform.Windows;
 
 /// <summary>
-/// 多段图文批次状态机。文字段复用既有 TextDeliveryStateMachine；图片段只有在运行时六字段能力
-/// 和图片 Adapter 契约都明确 Verified 时才执行。任一失败或不确定结果立即停止，且整批成功只记录一次使用次数。
+/// 多段图文分批状态机。文字段复用既有 TextDeliveryStateMachine；图片段只有在运行时六字段能力
+/// 和图片 Adapter 契约都明确 Verified 时才执行。任一失败或不确定结果立即停止，且分批成功只记录一次使用次数。
 /// </summary>
 public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
 {
@@ -42,13 +42,13 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
             cancellationToken.ThrowIfCancellationRequested();
             var segment = segments[index];
             if (request.Target is null || !_targets.Validate(request.Target, requireForeground: true).IsValid)
-                return Stop(DeliveryStatus.Failed, DeliveryEffect.None, index, "TARGET_CHANGED", "目标窗口已变化，整批发送已停止。", traceId, results, segments.Length);
+                return Stop(DeliveryStatus.Failed, DeliveryEffect.None, index, "TARGET_CHANGED", "目标窗口已变化，分批投递已停止。", traceId, results, segments.Length);
 
             var result = segment.Kind == PhraseSegmentKind.Image
                 ? await DeliverImageSegmentAsync(request, segment, cancellationToken).ConfigureAwait(false)
                 : await DeliverTextSegmentAsync(request, segment, cancellationToken).ConfigureAwait(false);
             results.Add(result);
-            if (!result.IsSuccess || result.Effect is not (DeliveryEffect.SendTriggered or DeliveryEffect.Sent))
+            if (!IsCompletedSegment(request.Mode, result))
                 return new BatchDeliveryResult(result.Status, result.Effect, segments.Length, index, index + 1, results.ToImmutable(), traceId);
 
             if (index + 1 < segments.Length)
@@ -57,8 +57,8 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
                 var stability = await _stabilityWaiter.WaitForStabilityAsync(request.Target, cancellationToken).ConfigureAwait(false);
                 var afterWait = _targets.Validate(request.Target, requireForeground: true);
                 if (!afterWait.IsValid)
-                    return Stop(DeliveryStatus.Failed, DeliveryEffect.SendTriggered, index + 1,
-                        afterWait.ErrorCode ?? "TARGET_CHANGED", "段间等待后目标窗口或输入焦点已变化，整批发送已停止。",
+                    return Stop(DeliveryStatus.Failed, CompletedEffect(request.Mode), index + 1,
+                        afterWait.ErrorCode ?? "TARGET_CHANGED", "段间等待后目标窗口或输入焦点已变化，分批投递已停止。",
                         traceId, results, segments.Length, DeliveryStage.AdapterStabilityWait);
 
                 if (!stability.IsVerified)
@@ -66,17 +66,17 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
                     var status = stability.IsInconclusive ? DeliveryStatus.Unknown : DeliveryStatus.Failed;
                     var confidence = stability.IsInconclusive ? DeliveryConfidence.Unknown : DeliveryConfidence.Confirmed;
                     var message = stability.IsInconclusive
-                        ? "无法确认目标在段间等待后保持稳定，整批发送已停止，未自动重试。"
-                        : "目标在段间等待后未达到稳定条件，整批发送已停止。";
-                    return Stop(status, DeliveryEffect.SendTriggered, index + 1, stability.Code, message,
+                        ? "无法确认目标在段间等待后保持稳定，分批投递已停止，未自动重试。"
+                        : "目标在段间等待后未达到稳定条件，分批投递已停止。";
+                    return Stop(status, CompletedEffect(request.Mode), index + 1, stability.Code, message,
                         traceId, results, segments.Length, DeliveryStage.AdapterStabilityWait, confidence);
                 }
             }
         }
 
         await _recordUsage(request.Phrase, cancellationToken).ConfigureAwait(false);
-        // 即使某个测试 Adapter 能验证单段发送，整批也只声明已触发发送，不宣称目标应用最终全部发送成功。
-        return new BatchDeliveryResult(DeliveryStatus.Success, DeliveryEffect.SendTriggered, segments.Length, segments.Length, null, results.ToImmutable(), traceId);
+        // 分批插入只声明插入完成；分批发送只声明已触发发送，不宣称目标应用最终全部发送成功。
+        return new BatchDeliveryResult(DeliveryStatus.Success, CompletedEffect(request.Mode), segments.Length, segments.Length, null, results.ToImmutable(), traceId);
     }
 
     private Task<DeliveryResult> DeliverTextSegmentAsync(DeliveryRequest request, PhraseSegment segment, CancellationToken cancellationToken)
@@ -85,7 +85,7 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
         var segmentRequest = request with
         {
             Phrase = segmentPhrase,
-            Mode = SendMode.InsertAndSend,
+            Mode = request.Mode,
             TargetChangeBehavior = TargetChangeBehavior.Cancel,
             RecordUsageOnSuccess = false,
         };
@@ -97,21 +97,21 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
         var traceId = Guid.NewGuid();
         if (request.Target is null || segment.Image is null)
             return ImageResult(DeliveryStatus.Failed, DeliveryEffect.None, DeliveryStage.NotStarted, DeliveryConfidence.Confirmed,
-                "IMAGE_REFERENCE_INVALID", "图片段引用无效，整批发送已停止。", traceId);
+                "IMAGE_REFERENCE_INVALID", "图片段引用无效，分批投递已停止。", traceId);
 
         var adapter = _adapters.Resolve(request.Target);
         var capabilities = adapter.DetectCapabilities();
         if (capabilities.InsertImage != CapabilityStatus.Verified
             || capabilities.VerifyImageInsert != CapabilityStatus.Verified
-            || capabilities.TriggerSend != CapabilityStatus.Verified
+            || request.Mode == SendMode.InsertAndSend && capabilities.TriggerSend != CapabilityStatus.Verified
             || adapter is not IImageApplicationAdapter imageAdapter)
             return ImageResult(DeliveryStatus.Unsupported, DeliveryEffect.None, DeliveryStage.DetectCapabilities, DeliveryConfidence.Confirmed,
-                "IMAGE_INSERT_UNSUPPORTED", "当前目标尚未通过图片投递人工矩阵，整批发送已停止。", traceId);
+                "IMAGE_INSERT_UNSUPPORTED", "当前目标的图片投递或发送能力未验证，分批投递已停止。", traceId);
 
         var mediaStore = _mediaAssets();
         if (mediaStore is null)
             return ImageResult(DeliveryStatus.Failed, DeliveryEffect.None, DeliveryStage.Insert, DeliveryConfidence.Confirmed,
-                "MEDIA_STORE_UNAVAILABLE", "图片媒体库尚未就绪，整批发送已停止。", traceId);
+                "MEDIA_STORE_UNAVAILABLE", "图片媒体库尚未就绪，分批投递已停止。", traceId);
 
         MediaAssetContent? content;
         try { content = await mediaStore.ReadAsync(segment.Image.AssetId, cancellationToken).ConfigureAwait(false); }
@@ -119,7 +119,7 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
         catch (Exception)
         {
             return ImageResult(DeliveryStatus.Failed, DeliveryEffect.None, DeliveryStage.Insert, DeliveryConfidence.Confirmed,
-                "MEDIA_READ_FAILED", "读取图片媒体失败，整批发送已停止。", traceId);
+                "MEDIA_READ_FAILED", "读取图片媒体失败，分批投递已停止。", traceId);
         }
 
         if (content is null
@@ -131,7 +131,7 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
             || content.Bytes.Length == 0
             || content.Bytes.LongLength != content.Image.ByteLength)
             return ImageResult(DeliveryStatus.Failed, DeliveryEffect.None, DeliveryStage.Insert, DeliveryConfidence.Confirmed,
-                "MEDIA_ASSET_INVALID", "图片媒体缺失或元数据不一致，整批发送已停止。", traceId);
+                "MEDIA_ASSET_INVALID", "图片媒体缺失或元数据不一致，分批投递已停止。", traceId);
 
         var segmentPhrase = request.Phrase with
         {
@@ -140,7 +140,7 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
         var segmentRequest = request with
         {
             Phrase = segmentPhrase,
-            Mode = SendMode.InsertAndSend,
+            Mode = request.Mode,
             TargetChangeBehavior = TargetChangeBehavior.Cancel,
             RecordUsageOnSuccess = false,
         };
@@ -151,17 +151,21 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
             if (!insert.WasApplied)
                 return insert.Inconclusive
                     ? ImageResult(DeliveryStatus.Unknown, DeliveryEffect.Unknown, DeliveryStage.Insert, DeliveryConfidence.Unknown,
-                        insert.Code, "图片插入动作结果无法确认，整批发送已停止，未自动重试。", traceId)
+                        insert.Code, "图片插入动作结果无法确认，分批投递已停止，未自动重试。", traceId)
                     : ImageResult(DeliveryStatus.Failed, DeliveryEffect.None, DeliveryStage.Insert, DeliveryConfidence.Confirmed,
-                        insert.Code, "图片插入失败，整批发送已停止。", traceId);
+                        insert.Code, "图片插入失败，分批投递已停止。", traceId);
 
             var verification = await imageAdapter.VerifyImageInsertAsync(segmentRequest, cancellationToken).ConfigureAwait(false);
             if (!verification.IsVerified)
                 return verification.IsInconclusive
                     ? ImageResult(DeliveryStatus.Unknown, DeliveryEffect.Unknown, DeliveryStage.VerifyInsert, DeliveryConfidence.Unknown,
-                        verification.Code, "图片插入结果无法确认，整批发送已停止，未自动重试。", traceId)
+                        verification.Code, "图片插入结果无法确认，分批投递已停止，未自动重试。", traceId)
                     : ImageResult(DeliveryStatus.Failed, DeliveryEffect.Inserted, DeliveryStage.VerifyInsert, DeliveryConfidence.Confirmed,
                         verification.Code, "图片已执行插入，但目标或焦点验证失败，未触发发送。", traceId);
+
+            if (request.Mode == SendMode.InsertOnly)
+                return ImageResult(DeliveryStatus.Success, DeliveryEffect.Inserted, DeliveryStage.Completed, DeliveryConfidence.Confirmed,
+                    "IMAGE_INSERTED", "已插入图片段。", traceId);
 
             var beforeSend = _targets.Validate(request.Target, requireForeground: true);
             if (!beforeSend.IsValid)
@@ -172,7 +176,7 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
             if (!send.WasApplied)
                 return send.Inconclusive
                     ? ImageResult(DeliveryStatus.Unknown, DeliveryEffect.Unknown, DeliveryStage.OptionalSend, DeliveryConfidence.Unknown,
-                        send.Code, "图片发送快捷操作结果无法确认，整批发送已停止，未自动重试。", traceId)
+                        send.Code, "图片发送快捷操作结果无法确认，分批投递已停止，未自动重试。", traceId)
                     : ImageResult(DeliveryStatus.Failed, DeliveryEffect.Inserted, DeliveryStage.OptionalSend, DeliveryConfidence.Confirmed,
                         send.Code, "图片已插入，但发送快捷操作执行失败。", traceId);
 
@@ -193,13 +197,13 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
         catch (OperationCanceledException)
         {
             return ImageResult(DeliveryStatus.Unknown, DeliveryEffect.Unknown, DeliveryStage.Insert, DeliveryConfidence.Unknown,
-                "DELIVERY_CANCELLED", "图片投递已取消，但动作结果无法确认，整批发送已停止，未自动重试。", traceId);
+                "DELIVERY_CANCELLED", "图片投递已取消，但动作结果无法确认，分批投递已停止，未自动重试。", traceId);
         }
         catch (Exception)
         {
             // 不传播或记录第三方异常消息，避免其中意外包含图片路径、文件名或内容。
             return ImageResult(DeliveryStatus.Unknown, DeliveryEffect.Unknown, DeliveryStage.Insert, DeliveryConfidence.Unknown,
-                "IMAGE_DELIVERY_EXCEPTION", "图片投递发生异常且结果无法确认，整批发送已停止，未自动重试。", traceId);
+                "IMAGE_DELIVERY_EXCEPTION", "图片投递发生异常且结果无法确认，分批投递已停止，未自动重试。", traceId);
         }
     }
 
@@ -212,6 +216,14 @@ public sealed class BatchDeliveryStateMachine : IBatchDeliveryStateMachine
         string message,
         Guid traceId) =>
         new(status, effect, stage, confidence, code, message, false, traceId);
+
+    private static bool IsCompletedSegment(SendMode mode, DeliveryResult result) =>
+        result.IsSuccess && (mode == SendMode.InsertOnly
+            ? result.Effect == DeliveryEffect.Inserted
+            : result.Effect is DeliveryEffect.SendTriggered or DeliveryEffect.Sent);
+
+    private static DeliveryEffect CompletedEffect(SendMode mode) =>
+        mode == SendMode.InsertOnly ? DeliveryEffect.Inserted : DeliveryEffect.SendTriggered;
 
     private static BatchDeliveryResult Stop(DeliveryStatus status, DeliveryEffect effect, int zeroBasedIndex, string code, string message,
         Guid traceId, ImmutableArray<DeliveryResult>.Builder results, int total,

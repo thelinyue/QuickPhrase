@@ -23,7 +23,6 @@ public partial class LauncherWindow : Window
 {
     private readonly ISearchService _search;
     private readonly SearchHistoryCoordinator _searchHistory;
-    private readonly IMediaAssetStore? _mediaAssets;
     private IReadOnlyList<SearchResult> _results = [];
     private IReadOnlyList<LauncherPhraseListItem> _items = [];
     private bool _closing;
@@ -32,7 +31,6 @@ public partial class LauncherWindow : Window
     private Guid? _preferredPhraseId;
     private LauncherInvocationContext? _invocationContext;
     private bool _canExplicitSend;
-    private AdapterCapabilities _targetCapabilities = UnsupportedCapabilities;
     private readonly LauncherSubmissionGuard _submissionGuard = new();
     private WpfPoint _launcherDragOrigin;
     private bool _launcherDragCandidate;
@@ -44,11 +42,10 @@ public partial class LauncherWindow : Window
     private const double LauncherChromeHeight = 108;
     private const double PhraseRowHeight = 28;
 
-    public LauncherWindow(ISearchService search, SearchHistoryCoordinator searchHistory, bool hideOnDeactivate = true, IMediaAssetStore? mediaAssets = null)
+    public LauncherWindow(ISearchService search, SearchHistoryCoordinator searchHistory, bool hideOnDeactivate = true)
     {
         _search = search;
         _searchHistory = searchHistory;
-        _mediaAssets = mediaAssets;
         InitializeComponent();
         SearchHistoryPanel.DataContext = _searchHistory.ViewModel;
         SearchRetryState.ActionCommand = new RelayCommand(RefreshResults);
@@ -146,7 +143,7 @@ public partial class LauncherWindow : Window
     internal void MarkLifecycleFaulted() => LifecycleState = LauncherLifecycleState.Faulted;
     public bool IsPracticeMode => _invocationContext?.Mode == LauncherInvocationMode.Practice;
 
-    public void Open(string initialQuery = "", DeliveryTarget? target = null, Guid? phraseId = null, bool canExplicitSend = false, LauncherInvocationContext? invocationContext = null, AdapterCapabilities? targetCapabilities = null)
+    public void Open(string initialQuery = "", DeliveryTarget? target = null, Guid? phraseId = null, bool canExplicitSend = false, LauncherInvocationContext? invocationContext = null)
     {
         if (_closing) return;
         LifecycleState = LauncherLifecycleState.Activating;
@@ -155,7 +152,6 @@ public partial class LauncherWindow : Window
         _preferredPhraseId = phraseId;
         _submissionGuard.Reset();
         _canExplicitSend = canExplicitSend && !IsPracticeMode && target is not null;
-        _targetCapabilities = targetCapabilities ?? CreateFallbackCapabilities(_canExplicitSend);
         PhraseListActions.SetShowSendButton(ResultsList, _canExplicitSend);
         var hasTarget = target is not null;
         InsertHintText.Text = IsPracticeMode
@@ -572,6 +568,7 @@ public partial class LauncherWindow : Window
     /// </summary>
     internal static SendMode ResolveSendMode(bool isPracticeMode, bool controlPressed) =>
         !isPracticeMode && controlPressed ? SendMode.InsertAndSend : SendMode.InsertOnly;
+
     /// <summary>
     /// 发送图标与 Ctrl+Enter 复用这一入口：同一窗口会话只允许一次投递，
     /// 后续仍由应用控制器和 Platform.Windows 执行目标重校验与安全发送。
@@ -610,10 +607,6 @@ public partial class LauncherWindow : Window
         }
         if (phrase.Body.RequiresBatchDelivery)
         {
-            var confirmation = mode == SendMode.InsertAndSend;
-            var preview = new BatchPreviewWindow(phrase, _mediaAssets, confirmation, _targetCapabilities) { Owner = this };
-            preview.ShowDialog();
-            if (!confirmation || !preview.Confirmed) { _submissionGuard.Reset(); return; }
             HideLauncher();
             DeliveryRequested?.Invoke(phrase, mode, _target, QueryBox.Text?.Trim(), true);
             return;
@@ -622,17 +615,6 @@ public partial class LauncherWindow : Window
         DeliveryRequested?.Invoke(phrase, mode, _target, QueryBox.Text?.Trim(), false);
     }
 
-
-    private static AdapterCapabilities CreateFallbackCapabilities(bool canExplicitSend) =>
-        new(
-            CapabilityStatus.Unverified,
-            CapabilityStatus.Unverified,
-            CapabilityStatus.Unsupported,
-            CapabilityStatus.Unsupported,
-            canExplicitSend ? CapabilityStatus.Verified : CapabilityStatus.Unsupported,
-            CapabilityStatus.Unsupported);
-
-    private static AdapterCapabilities UnsupportedCapabilities { get; } = CreateFallbackCapabilities(false);
     private void PositionOnCurrentMonitor()
     {
         var workArea = System.Windows.Forms.Screen.FromPoint(System.Windows.Forms.Cursor.Position).WorkingArea;

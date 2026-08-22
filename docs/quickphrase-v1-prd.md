@@ -8,7 +8,7 @@
 
 ## 1. 产品定义
 
-闪语是 Windows 本地快捷话术工具。用户在话术库管理个人图文话术，通过 `Alt + Space` 呼出 WPF 闪念，明确选择一条话术，再将其安全插入或按确认后的顺序分批发送到当前目标应用。
+闪语是 Windows 本地快捷话术工具。用户在话术库管理个人图文话术，通过 `Alt + Space` 呼出 WPF 闪念，明确选择一条话术，再将其按选择的模式安全插入或分批发送到当前目标应用。
 
 核心安全目标：宁可不能发送，也不能发错窗口、发错内容或重复发送。
 
@@ -17,10 +17,10 @@
 ### P0
 
 - WPF MainWindow：当前实际话术库、图文段编辑器、设置和导航确认流程。
-- WPF 闪念：`Alt + Space` 呼出、内存搜索、方向键、Enter、Esc、单击选择、双击预览或安全插入。
+- WPF 闪念：`Alt + Space` 呼出、内存搜索、方向键、Enter、Esc、单击选择、双击插入或显式发送。
 - 个人话术：标题、分类、排序、稳定 ColorKey、快捷键，以及有序文字段和图片段；首发不建立标签系统。
 - 每条话术独立文字分隔符；支持拆分预览、空段错误和确认后生成多个文字段。
-- 多段或含图片话术的整批预览、整批确认、逐段重校验、失败即停和批次结果。
+- 多段或含图片话术的 Enter 分批插入、Ctrl+Enter 分批发送、逐段重校验、失败即停和分批结果。
 - SQLite 本地事实源、开发库备份重建、单写者、图文 schema v1、媒体库和 Core 内存搜索索引。
 - 图文 `.qphrase` 导入导出；CSV 每行创建一个纯文字段。
 - 企业微信目标重校验、文字 Clipboard Transaction、投递 Trace 和安全降级。
@@ -30,7 +30,7 @@
 
 插件、AI、团队图片同步、普通文件附件、视频、动画图片、OCR、图片编辑、截图、云媒体、浏览器扩展、跨平台、后台目标发送、失败续传和自动更新不属于首发范围。
 
-企业微信图片投递在 Windows 11 人工矩阵通过前保持 `Unsupported`；代码、模拟测试或客户端版本号不能替代真实人工矩阵。
+企业微信图片投递已通过 Windows 11 人工矩阵并启用；代码、模拟测试或客户端版本号不能替代真实人工矩阵。
 
 ## 3. 正式 UI 与入口
 
@@ -48,7 +48,7 @@ desktop/QuickPhrase.Desktop/LauncherWindow.xaml
 desktop/QuickPhrase.Desktop/BatchPreviewWindow.xaml
 ```
 
-MainWindow 为 `1200×760`，最小 `900×560`。话术库、编辑器、设置、分类对话框、移动对话框、未保存导航确认、闪念和整批预览以当前 XAML、ViewModel 和代码为准。
+MainWindow 为 `1200×760`，最小 `900×560`。话术库、编辑器、设置、分类对话框、移动对话框、未保存导航确认和闪念投递以当前 XAML、ViewModel 和代码为准。
 
 ### 话术库
 
@@ -61,10 +61,7 @@ MainWindow 为 `1200×760`，最小 `900×560`。话术库、编辑器、设置�
 闪念是唯一投递入口，一次只能选择一条话术。空查询最多展示 5 条常用/最近话术但不默认选择；关键词搜索结果可以默认选择第一项。
 
 - 单段纯文字：`Enter`/双击安全插入；`Ctrl+Enter` 进入显式发送流程。
-- 多段或含图片：`Enter`/双击只打开整批预览；`Ctrl+Enter` 打开整批发送确认。
-- 多段或含图片每次都必须确认整批发送，快捷发送设置不能跳过本次确认。
-
-整批预览显示消息总数、段序号、段类型、文字摘要、图片缩略图与尺寸、最终顺序，以及当前目标的文字、图片和发送能力。
+- 多段或含图片：`Enter`/双击直接分批插入；`Ctrl+Enter` 直接分批发送，不打开预览或确认窗口。
 
 ## 4. 数据模型与验证
 
@@ -126,7 +123,7 @@ Core 使用平台无关的 `DeliveryTarget`。HWND、PID、WindowThreadId、Proc
 
 ### 多段或含图片
 
-整批确认后隐藏闪念、恢复目标焦点，并按正文段顺序执行：
+选择 `Enter` 或 `Ctrl+Enter` 模式后隐藏闪念、恢复目标焦点，并按正文段顺序执行：
 
 ```text
 RevalidateTarget
@@ -145,7 +142,7 @@ Adapter 根据粘贴完成、目标身份、前台窗口和焦点/Caret 指纹�
 
 任一段失败、`Unknown`、`Unsupported` 或结果不确定时立即停止，不执行后续段，不自动重试，不提供“继续剩余段”。部分成功必须明确显示“已完成 X/N 段，第 Y 段停止”。
 
-批次完整完成只声明 `SendTriggered`，不声称目标应用最终已发送。UsageCount 和搜索历史只在完整批次后更新一次；部分成功或 `Unknown` 不更新。
+分批插入完整完成声明 `Inserted`；分批发送完整完成只声明 `SendTriggered`，不声称目标应用最终已发送。UsageCount 和搜索历史只在分批完整完成后更新一次；部分成功或 `Unknown` 不更新。
 
 ## 7. Adapter 能力矩阵
 
@@ -166,8 +163,8 @@ VerifySend
 |---|---|---|
 | InsertText | 运行时检测 | Verified |
 | VerifyTextInsert | 运行时检测 | Verified |
-| InsertImage | Unsupported | Unsupported，图片人工矩阵通过前不开放 |
-| VerifyImageInsert | Unsupported | Unsupported，图片人工矩阵通过前不开放 |
+| InsertImage | Unsupported | Verified，Windows 11 企业微信图片人工矩阵已通过 |
+| VerifyImageInsert | Unsupported | Verified，Windows 11 企业微信图片人工矩阵已通过 |
 | TriggerSend | Unsupported | Verified |
 | VerifySend | Unsupported | Unsupported，只返回 `SendTriggered` |
 
@@ -208,4 +205,4 @@ CSV 每行只创建一个纯文字段，不支持图片和多段。
 - 发布目录为纯 WPF 自包含产物，不包含网页资源或 WebView2 Runtime 安装器。
 - `dotnet build QuickPhrase.sln` 不触发 npm/node。
 
-企业微信图片投递只有在 Windows 11 人工矩阵通过后才能从 `Unsupported` 调整为 `Verified`；在此之前不得声明首发图片发送能力已完成真实客户端验收。
+企业微信图片投递已在 Windows 11 人工矩阵通过后从 `Unsupported` 调整为 `Verified`，首发图片发送能力已有真实客户端验收。
