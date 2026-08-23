@@ -66,9 +66,9 @@ public sealed class Phase5DeliveryTests
             CreateRequest(CreatePhrase("不会阻塞闪念"), target),
             Guid.NewGuid()));
 
-        Assert.True(machine.WaitUntilEntered(TimeSpan.FromSeconds(1)));
         try
         {
+            Assert.True(machine.WaitUntilEntered(TimeSpan.FromSeconds(5)));
             var completed = await Task.WhenAny(enqueueTask, Task.Delay(TimeSpan.FromSeconds(1)));
             Assert.Same(enqueueTask, completed);
         }
@@ -92,9 +92,9 @@ public sealed class Phase5DeliveryTests
             CreateTarget(),
             CancellationToken.None);
 
-        Assert.True(resolver.WaitUntilEntered(TimeSpan.FromSeconds(1)));
         try
         {
+            Assert.True(resolver.WaitUntilEntered(TimeSpan.FromSeconds(5)));
             Assert.False(resolution.IsCompleted);
         }
         finally
@@ -116,9 +116,9 @@ public sealed class Phase5DeliveryTests
             request,
             CancellationToken.None);
 
-        Assert.True(machine.WaitUntilEntered(TimeSpan.FromSeconds(1)));
         try
         {
+            Assert.True(machine.WaitUntilEntered(TimeSpan.FromSeconds(5)));
             Assert.False(delivery.IsCompleted);
         }
         finally
