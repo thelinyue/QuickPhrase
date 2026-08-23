@@ -3,7 +3,7 @@ using System.Xml.Linq;
 namespace QuickPhrase.Architecture.Tests;
 
 /// <summary>
-/// 锁定 0.0.1 未签名正式发布的公开政策、GitHub Actions 门禁和发布资产契约。
+/// 锁定 0.0.2 未签名正式发布的公开政策、GitHub Actions 门禁和发布资产契约。
 /// 这些断言只验证源码声明，实际资产仍必须由 Phase 6 脚本在发布工作流中重新核验。
 /// </summary>
 public sealed class ReleasePublicationContractTests
@@ -26,7 +26,7 @@ public sealed class ReleasePublicationContractTests
     public void SecurityPolicyDefinesPrivateReportingAndResponseTargets()
     {
         var security = File.ReadAllText(Path.Combine(Root, "SECURITY.md"));
-        Assert.Contains("0.0.1", security, StringComparison.Ordinal);
+        Assert.Contains("0.0.2", security, StringComparison.Ordinal);
         Assert.Contains("Private Vulnerability Reporting", security, StringComparison.Ordinal);
         Assert.Contains("3 个工作日", security, StringComparison.Ordinal);
         Assert.Contains("7 个工作日", security, StringComparison.Ordinal);
@@ -48,13 +48,13 @@ public sealed class ReleasePublicationContractTests
     }
 
     [Fact]
-    public void DesktopDefaultsToVersionZeroZeroOne()
+    public void DesktopDefaultsToVersionZeroZeroTwo()
     {
         var project = XDocument.Load(Path.Combine(
             Root, "desktop", "QuickPhrase.Desktop", "QuickPhrase.Desktop.csproj"));
-        Assert.Equal("0.0.1", project.Descendants("Version").Single().Value);
-        Assert.Equal("0.0.1.0", project.Descendants("FileVersion").Single().Value);
-        Assert.Equal("0.0.1.0", project.Descendants("AssemblyVersion").Single().Value);
+        Assert.Equal("0.0.2", project.Descendants("Version").Single().Value);
+        Assert.Equal("0.0.2.0", project.Descendants("FileVersion").Single().Value);
+        Assert.Equal("0.0.2.0", project.Descendants("AssemblyVersion").Single().Value);
     }
 
     [Fact]
@@ -82,6 +82,8 @@ public sealed class ReleasePublicationContractTests
         foreach (var expected in new[]
         {
             "workflow_dispatch",
+            "default: 0.0.2",
+            "if ($version -ne '0.0.2')",
             "confirmWeComAcceptance",
             "confirmWin11Acceptance",
             "refs/tags/v$version",
@@ -111,6 +113,7 @@ public sealed class ReleasePublicationContractTests
         var verifier = File.ReadAllText(Path.Combine(Root, "scripts", "verify-phase6.ps1"));
         foreach (var expected in new[]
         {
+            "[string]$Version = '0.0.2'",
             "QUICKPHRASE_WECOM_ACCEPTANCE",
             "QUICKPHRASE_WIN11_ACCEPTANCE",
             "signed -ne $false",
@@ -153,6 +156,17 @@ public sealed class ReleasePublicationContractTests
     }
 
     [Fact]
+    public void ReadmeDescribesBothLibraryAndLauncherDeliveryEntryPoints()
+    {
+        var readme = File.ReadAllText(Path.Combine(Root, "README.md"));
+
+        Assert.Contains("话术库", readme, StringComparison.Ordinal);
+        Assert.Contains("双击", readme, StringComparison.Ordinal);
+        Assert.Contains("Ctrl+Enter", readme, StringComparison.Ordinal);
+        Assert.DoesNotContain("话术库只负责管理，闪念是唯一投递入口", readme, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ManualReleaseWorkflowsUsePowerShellSevenForUtf8Diagnostics()
     {
         foreach (var fileName in new[] { "release-candidate.yml", "release.yml" })
@@ -171,7 +185,8 @@ public sealed class ReleasePublicationContractTests
         foreach (var expected in new[]
         {
             "workflow_dispatch",
-            "default: 0.0.1-rc.1",
+            "default: 0.0.2-rc.1",
+            "^0\\.0\\.2-rc\\.[1-9]\\d*$",
             "confirmWeComAcceptance",
             "contents: read",
             "build-release.ps1",
@@ -197,7 +212,7 @@ public sealed class ReleasePublicationContractTests
         var build = File.ReadAllText(Path.Combine(Root, "scripts", "build-release.ps1"));
         foreach (var expected in new[]
         {
-            "[string]$Version = '0.0.1'",
+            "[string]$Version = '0.0.2'",
             "[switch]$UnsignedCandidate",
             "[string]$Stage = 'All'",
             "'Publish'",

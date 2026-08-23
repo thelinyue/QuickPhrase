@@ -21,7 +21,7 @@
 - Windows 11 x64。
 - 支持当前主流版本企业微信：不依赖客户端版本号，通过运行时目标、前台窗口和焦点/Caret 能力检测保证输入稳定性。
 - 当前实际 WPF 界面包含话术库、编辑器、设置、分类管理和 Native Launcher。
-- 个人话术支持有序文字段和图片段，并可设置独立文字分隔符；话术库只负责管理，闪念是唯一投递入口。单段纯文字保持 `Enter` 插入、`Ctrl+Enter` 显式发送；多段或含图片的 `Enter` 直接分批插入，`Ctrl+Enter` 直接分批发送，均逐段重校验且任一失败立即停止，不打开预览或确认窗口。企业微信图片投递已通过 Windows 11 人工矩阵并启用；企业同步仍为只读纯文字单段，个人图文话术不上传到 QuickPhrase Hub。后台发送、无用户授权自动发送、普通文件附件和公共云同步不属于当前范围。
+- 个人话术支持有序文字段和图片段，并可设置独立文字分隔符；话术库与闪念均可承载本次用户明确触发的投递动作。话术库中双击或 `Enter` 执行插入，左侧发送按钮或 `Ctrl+Enter` 执行插入并发送；闪念保持 `Enter` 插入、`Ctrl+Enter` 显式发送。多段或含图片的话术继续直接按段处理，均逐段重校验且任一失败立即停止，不打开预览或确认窗口。企业微信图片投递已通过 Windows 11 人工矩阵并启用；企业同步仍为只读纯文字单段，个人图文话术不上传到 QuickPhrase Hub。后台发送、无用户授权自动发送、普通文件附件和公共云同步不属于当前范围。
 - Windows 10 22H2 尚未作为 V1 支持平台验证。
 
 ## 正式架构
@@ -43,7 +43,7 @@ QuickPhrase.Desktop
 
 管理数据位于 `%LOCALAPPDATA%\QuickPhrase`。卸载会移除程序，但保留 `Data`、`Backups` 与 `Logs`，重新安装后会继续使用原话术库。
 
-0.0.1 正式版当前不附带 Authenticode 签名，Windows SmartScreen 可能显示未知发布者警告。请仅从 GitHub Release 下载，并在安装前使用 `SHA256SUMS.txt` 核对 ZIP 或安装器的 SHA-256；`release-manifest.json` 会明确声明 `signed: false`。
+0.0.2 正式版当前不附带 Authenticode 签名，Windows SmartScreen 可能显示未知发布者警告。请仅从 GitHub Release 下载，并在安装前使用 `SHA256SUMS.txt` 核对 ZIP 或安装器的 SHA-256；`release-manifest.json` 会明确声明 `signed: false`。
 
 ## 安全边界
 

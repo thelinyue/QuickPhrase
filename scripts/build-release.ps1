@@ -1,6 +1,6 @@
 ﻿param(
   [ValidatePattern('^\d+\.\d+\.\d+(?:-rc\.\d+)?$')]
-  [string]$Version = '0.0.1',
+  [string]$Version = '0.0.2',
   [ValidateSet('Publish', 'Installer', 'All')]
   [string]$Stage = 'All',
   [switch]$UnsignedCandidate,
@@ -64,7 +64,7 @@ function Write-ReleaseMetadata {
     signed = $false
     releaseChannel = if ($Version.Contains('-')) { 'prerelease' } else { 'stable' }
     supportedOs = 'Windows 11 x64'
-    windows10Status = 'unverified / not supported in 0.0.1'
+    windows10Status = 'unverified / not supported in 0.0.2'
     sourceRevision = $revision.Trim()
     artifacts = @($assets.Name)
   } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $releaseRoot 'release-manifest.json') -Encoding utf8

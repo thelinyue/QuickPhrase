@@ -1,12 +1,12 @@
 ; 闪语（QuickPhrase）按当前用户安装的 Inno Setup 脚本（纯 WPF 自包含安装包，无 WebView2 运行时依赖）。
 #ifndef AppVersion
-  #define AppVersion "0.0.1"
+  #define AppVersion "0.0.2"
 #endif
 #ifndef ReleaseRoot
-  #define ReleaseRoot "..\artifacts\release\0.0.1"
+  #define ReleaseRoot "..\artifacts\release\0.0.2"
 #endif
 #ifndef OutputBase
-  #define OutputBase "QuickPhrase-Setup-0.0.1"
+  #define OutputBase "QuickPhrase-Setup-0.0.2"
 #endif
 #define AppId "{E9DBDCE4-4E86-4F88-A845-7E91B5D7726C}"
 #define AppExeName "QuickPhrase.exe"

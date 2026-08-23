@@ -7,7 +7,7 @@ on:
       version:
         description: Stable SemVer
         required: true
-        default: 0.0.1
+        default: 0.0.2
       confirmWeComAcceptance:
         description: Confirm current WeCom manual matrix
         required: true
@@ -39,7 +39,7 @@ jobs:
       - name: Validate stable release gates
         run: |
           $version = '${{ inputs.version }}'
-          if ($version -ne '0.0.1') { throw "当前正式发布仅允许 0.0.1：$version" }
+          if ($version -ne '0.0.2') { throw "当前正式发布仅允许 0.0.2：$version" }
           if ($env:GITHUB_REF -ne "refs/tags/v$version") { throw "必须从 refs/tags/v$version 手动运行，当前为 $env:GITHUB_REF。" }
           if ('${{ inputs.confirmWeComAcceptance }}' -ne 'true') { throw '尚未确认企业微信人工矩阵。' }
           if ('${{ inputs.confirmWin11Acceptance }}' -ne 'true') { throw '尚未确认 Windows 11 安装矩阵。' }

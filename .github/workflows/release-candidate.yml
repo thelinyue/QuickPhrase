@@ -7,7 +7,7 @@ on:
       version:
         description: Candidate SemVer
         required: true
-        default: 0.0.1-rc.1
+        default: 0.0.2-rc.1
       confirmWeComAcceptance:
         description: Confirm current WeCom manual matrix
         required: true
@@ -52,7 +52,7 @@ jobs:
       - name: Validate gate and build unsigned candidate
         run: |
           $version = '${{ inputs.version }}'
-          if ($version -notmatch '^0\.0\.1-rc\.[1-9]\d*$') { throw "候选版本必须匹配 0.0.1-rc.N：$version" }
+          if ($version -notmatch '^0\.0\.2-rc\.[1-9]\d*$') { throw "候选版本必须匹配 0.0.2-rc.N：$version" }
           if ('${{ inputs.confirmWeComAcceptance }}' -ne 'true') { throw '尚未确认企业微信人工矩阵。' }
           $env:QUICKPHRASE_WECOM_ACCEPTANCE = 'passed'
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Version $version -UnsignedCandidate -Stage All

@@ -1,6 +1,6 @@
 # Code signing policy
 
-QuickPhrase 当前不使用第三方代码签名服务，也不为 0.0.1 发布 Authenticode 签名资产。
+QuickPhrase 当前不使用第三方代码签名服务，也不为 0.0.2 发布 Authenticode 签名资产。
 
 ## 发布资产与风险提示
 

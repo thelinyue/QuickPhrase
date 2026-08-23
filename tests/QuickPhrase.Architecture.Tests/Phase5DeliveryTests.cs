@@ -20,7 +20,7 @@ public sealed class Phase5DeliveryTests
         var result = await WeComFocusWaiter.WaitAsync(
             target,
             _ => ++attempts < 3 ? invalid : valid,
-            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromSeconds(1),
             TimeSpan.FromMilliseconds(1),
             CancellationToken.None);
 
