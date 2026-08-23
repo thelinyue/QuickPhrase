@@ -10,7 +10,7 @@ public sealed record ManagementWindowLayout(double Width, double Height, double 
     {
         layout = scene switch
         {
-            "library" or "editor" or "settings" => new(1200, 760, 900, 560),
+            "library" or "editor" or "settings" => new(520, 680, 380, 520),
             _ => null!,
         };
         return layout is not null;

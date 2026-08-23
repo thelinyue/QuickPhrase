@@ -79,7 +79,7 @@ CREATE TABLE settings (
 
 -- 仅保存应用运行所需的默认设置，不包含任何示例业务数据。
 INSERT INTO settings (key, value_json, version, updated_at_utc) VALUES
-('app.settings', '{"schemaVersion":1,"shortcuts":{"flashLauncher":{"modifiers":2,"keyCode":1}},"launchOnStartup":false,"startMinimized":false,"stayInTrayOnClose":true,"quickSendWithoutConfirmation":false,"clipboardCompatibilityMode":true,"hasCompletedOnboarding":false,"onboardingVersion":0}', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+('app.settings', '{"schemaVersion":1,"shortcuts":{"flashLauncher":{"modifiers":2,"keyCode":1}},"launchOnStartup":false,"startMinimized":false,"stayInTrayOnClose":true,"quickSendWithoutConfirmation":false,"clipboardCompatibilityMode":true,"hasCompletedOnboarding":false,"onboardingVersion":0,"managementWindow":{"mode":"floating","floatingLeft":null,"floatingTop":null,"floatingWidth":520,"floatingHeight":680}}', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 
 CREATE TABLE search_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

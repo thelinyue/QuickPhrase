@@ -55,7 +55,7 @@ internal static class WindowsNativeMethods
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct Rect
+    internal struct Rect
     {
         public int Left;
         public int Top;
@@ -85,6 +85,102 @@ internal static class WindowsNativeMethods
             info.CaretRect.Right,
             info.CaretRect.Bottom);
         return true;
+    }
+
+    public const uint WinEventOutOfContext = 0x0000;
+    public const uint MonitorDefaultToNearest = 0x00000002;
+    private const int WindowLongStyle = -16;
+    private const long WindowStyleMaximizeBox = 0x00010000L;
+    private const uint SetWindowPositionNoSize = 0x0001;
+    private const uint SetWindowPositionNoMove = 0x0002;
+    private const uint SetWindowPositionNoZOrder = 0x0004;
+    private const uint SetWindowPositionNoActivate = 0x0010;
+    private const uint SetWindowPositionFrameChanged = 0x0020;
+
+    internal delegate void WinEventDelegate(
+        nint hook,
+        uint eventType,
+        nint hwnd,
+        int objectId,
+        int childId,
+        uint eventThread,
+        uint eventTime);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
+    private static extern int GetWindowLong32(nint hwnd, int index);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    private static extern nint GetWindowLongPtr64(nint hwnd, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
+    private static extern int SetWindowLong32(nint hwnd, int index, int value);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    private static extern nint SetWindowLongPtr64(nint hwnd, int index, nint value);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(nint hwnd, nint insertAfter, int x, int y, int width, int height, uint flags);
+
+    /// <summary>
+    /// 移除管理窗口的原生最大化样式并刷新非客户区。消息钩子仍作为二次保护，
+    /// 两层共同避免系统菜单、标题栏双击或辅助工具把窗口带入第三种形态。
+    /// </summary>
+    internal static bool DisableMaximize(nint hwnd)
+    {
+        if (hwnd == 0) return false;
+        var style = IntPtr.Size == 8 ? GetWindowLongPtr64(hwnd, WindowLongStyle).ToInt64() : GetWindowLong32(hwnd, WindowLongStyle);
+        var updated = style & ~WindowStyleMaximizeBox;
+        if (updated == style) return true;
+        var previous = IntPtr.Size == 8
+            ? SetWindowLongPtr64(hwnd, WindowLongStyle, (nint)updated).ToInt64()
+            : SetWindowLong32(hwnd, WindowLongStyle, (int)updated);
+        if (previous == 0) return false;
+        return SetWindowPos(hwnd, 0, 0, 0, 0, 0,
+            SetWindowPositionNoSize | SetWindowPositionNoMove | SetWindowPositionNoZOrder |
+            SetWindowPositionNoActivate | SetWindowPositionFrameChanged);
+    }
+    [DllImport("user32.dll")]
+    internal static extern nint SetWinEventHook(
+        uint eventMin,
+        uint eventMax,
+        nint eventHookModule,
+        WinEventDelegate callback,
+        uint processId,
+        uint threadId,
+        uint flags);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool UnhookWinEvent(nint hook);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetWindowRect(nint hwnd, out Rect rect);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool IsIconic(nint hwnd);
+
+    [DllImport("user32.dll")]
+    internal static extern uint GetDpiForWindow(nint hwnd);
+
+    [DllImport("user32.dll")]
+    internal static extern nint MonitorFromWindow(nint hwnd, uint flags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MonitorInfo
+    {
+        public uint Size;
+        public Rect Monitor;
+        public Rect Work;
+        public uint Flags;
+
+        public static MonitorInfo Create() => new() { Size = (uint)Marshal.SizeOf<MonitorInfo>() };
     }
 
     [DllImport("user32.dll")]

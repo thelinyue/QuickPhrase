@@ -15,11 +15,10 @@ using QuickPhrase.Desktop.Views.Shared;
 namespace QuickPhrase.Desktop;
 
 /// <summary>
-/// 话术库视图（闪语原型·第七版）：单栏纵向�?
-/// Content Header �?一级分�?chips �?内联嵌套树（二级 SubHeader + 话术行）�?底部搜索 �?品牌区�?
-/// 交互：单击选中，双击或 Enter 打开编辑/只读详情，Delete 删除个人话术。
+/// 话术库正式 WPF 视图：保留分类与内容管理能力，并提供明确的话术投递入口。
+/// 单击选中，双击或 Enter 插入，左侧发送按钮或 Ctrl+Enter 插入并发送，F2 打开编辑窗口。
 /// </summary>
-public partial class LibraryView : System.Windows.Controls.UserControl
+public partial class LibraryView : System.Windows.Controls.UserControl, IDisposable
 {
     private readonly PhraseLibraryViewModel _viewModel;
     private readonly SearchHistoryCoordinator _searchHistory;
@@ -31,17 +30,17 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     private bool _libraryEventsAttached;
     private bool _suppressNextSearchHistoryOpen;
 
-    public LibraryView(ICommandService commands, SearchHistoryCoordinator searchHistory)
+    public LibraryView(ICommandService commands, SearchHistoryCoordinator searchHistory, ILibraryDeliveryCoordinator? delivery = null)
     {
         InitializeComponent();
         _blankAreaContextMenu = (System.Windows.Controls.ContextMenu)FindResource("BlankAreaContextMenu");
         _searchHistory = searchHistory;
-        _viewModel = new PhraseLibraryViewModel(commands);
+        _viewModel = new PhraseLibraryViewModel(commands, delivery);
         DataContext = _viewModel;
         SearchHistoryPanel.DataContext = _searchHistory.ViewModel;
         // Popup 脱离 UserControl 的可视树，显式绑定到库 ViewModel，避免结果列表在弹出窗口中丢失数据上下文。
         SearchResultsPopup.DataContext = _viewModel;
-// 把库级事件转发出去，�?MainWindow / ApplicationController 接入编辑器与投递�?
+        // 把库级事件转发给 MainWindow / ApplicationController，由宿主接入编辑器与投递编排。
         _viewModel.EditRequested += (_, item) => RequestEdit?.Invoke(this, item);
         _viewModel.NewRequested += (_, _) => RequestNew?.Invoke(this, EventArgs.Empty);
         _viewModel.MoveRequested += (_, item) => RequestMove?.Invoke(this, item);
@@ -106,6 +105,9 @@ public partial class LibraryView : System.Windows.Controls.UserControl
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e) => DetachLibraryEvents();
+
+    /// <summary>主窗口最终关闭时解除应用级投递能力订阅；临时卸载不释放，以支持同一视图再次挂载。</summary>
+    public void Dispose() => _viewModel.Dispose();
 
     private void OwnerWindow_SizeChanged(object sender, SizeChangedEventArgs e) => CloseBlankAreaMenu();
 
@@ -369,11 +371,11 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
     private void PhraseList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (e.OriginalSource is not DependencyObject source) return;
+        if (e.OriginalSource is not DependencyObject source || FindAncestor<System.Windows.Controls.Button>(source) is not null) return;
         if (FindAncestor<ListBoxItem>(source)?.DataContext is not PhraseItemViewModel item) return;
 
-        // 双击必须以实际命中的话术行为准，避免空白区域复用旧的 SelectedItem。
-        _viewModel.EditCommand.Execute(item);
+        // 双击只表达安全插入；按钮拥有独立的插入并发送语义，不允许冒泡造成二次动作。
+        _ = _viewModel.InsertCommand.ExecuteAsync(item);
     }
 
     private void OnListKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -396,11 +398,15 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         if (_viewModel.SelectedPhrase is null) return;
         switch (e.Key)
         {
-            case Key.Enter when (Keyboard.Modifiers & ModifierKeys.Control) == 0:
-                _viewModel.EditCommand.Execute(_viewModel.SelectedPhrase);
+            case Key.Enter when Keyboard.Modifiers.HasFlag(ModifierKeys.Control):
+                _ = _viewModel.SendCommand.ExecuteAsync(_viewModel.SelectedPhrase);
                 e.Handled = true;
                 break;
-            case Key.Enter when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
+            case Key.Enter:
+                _ = _viewModel.InsertCommand.ExecuteAsync(_viewModel.SelectedPhrase);
+                e.Handled = true;
+                break;
+            case Key.F2:
                 _viewModel.EditCommand.Execute(_viewModel.SelectedPhrase);
                 e.Handled = true;
                 break;
@@ -567,10 +573,10 @@ public partial class LibraryView : System.Windows.Controls.UserControl
 
     private void SearchResultsList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (e.OriginalSource is not DependencyObject source) return;
+        if (e.OriginalSource is not DependencyObject source || FindAncestor<System.Windows.Controls.Button>(source) is not null) return;
         if (FindAncestor<ListBoxItem>(source)?.DataContext is not PhraseItemViewModel item) return;
 
-        _viewModel.EditCommand.Execute(item);
+        _ = _viewModel.InsertCommand.ExecuteAsync(item);
         e.Handled = true;
     }
 
@@ -583,9 +589,20 @@ public partial class LibraryView : System.Windows.Controls.UserControl
             return;
         }
 
-        if (e.Key == Key.Enter && SearchResultsList.SelectedItem is PhraseItemViewModel item)
+        if (SearchResultsList.SelectedItem is not PhraseItemViewModel item) return;
+        if (e.Key == Key.F2)
         {
             _viewModel.EditCommand.Execute(item);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            _ = _viewModel.SendCommand.ExecuteAsync(item);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Enter)
+        {
+            _ = _viewModel.InsertCommand.ExecuteAsync(item);
             e.Handled = true;
         }
     }
@@ -659,10 +676,12 @@ public partial class LibraryView : System.Windows.Controls.UserControl
         await _viewModel.ReorderCategoriesAsync(snapshot);
     }
 
-    // ---- 话术行拖�?----
+    // ---- 话术行拖拽 ----
     private void PhraseItem_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (e.OriginalSource is DependencyObject d && IsContextMenuItem(d)) return;
+        // 每次按下先清理上一次未进入拖拽的候选项，发送按钮不能继承残留拖拽状态。
+        _dragPhraseSource = null;
+        if (e.OriginalSource is DependencyObject d && (IsContextMenuItem(d) || FindAncestor<System.Windows.Controls.Button>(d) is not null)) return;
         if (sender is ListBoxItem item && item.DataContext is PhraseItemViewModel phrase && phrase.CanManage)
         {
             _dragPhraseSource = phrase;

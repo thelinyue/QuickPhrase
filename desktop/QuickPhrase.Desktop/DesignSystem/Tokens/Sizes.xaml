@@ -19,10 +19,14 @@
     <sys:Double x:Key="Size.TitleBar.CaptionButton.Width">48</sys:Double>
     <!-- 标题栏内的品牌与操作图标统一为 16px，在 32px 高度内保留足够的上下留白。 -->
     <sys:Double x:Key="Size.TitleBar.ActionIcon">16</sys:Double>
+    <sys:Double x:Key="Size.TitleBar.DockIcon">18</sys:Double>
     <sys:Double x:Key="Size.Navigation.Item">40</sys:Double>
     <sys:Double x:Key="Size.Phrase.Row.Minimum">32</sys:Double>
     <!-- 话术库紧凑话术行：固定高度，避免正文显式换行撑开列表。 -->
     <sys:Double x:Key="Size.Phrase.Row.Compact">28</sys:Double>
+    <sys:Double x:Key="Size.Library.PhraseRow.Height">36</sys:Double>
+    <GridLength x:Key="Size.Library.PhraseRow.SendColumn">44</GridLength>
+    <GridLength x:Key="Size.Library.PhraseRow.TitleColumn">112</GridLength>
     <GridLength x:Key="Size.Phrase.Row.GapColumn">4</GridLength>
     <GridLength x:Key="Size.Phrase.IndexColumn.GridLength">32</GridLength>
     <!-- 闪念单行预览与结果列表使用相同的标题列宽，避免正文挤占标题识别空间。 -->
@@ -43,10 +47,10 @@
     <GridLength x:Key="Size.Settings.Sidebar.GridLength">176</GridLength>
     <sys:Double x:Key="Size.Settings.Content.Maximum">640</sys:Double>
 
-    <sys:Double x:Key="Size.MainWindow.Width">1200</sys:Double>
-    <sys:Double x:Key="Size.MainWindow.Height">760</sys:Double>
-    <sys:Double x:Key="Size.MainWindow.MinimumWidth">900</sys:Double>
-    <sys:Double x:Key="Size.MainWindow.MinimumHeight">560</sys:Double>
+    <sys:Double x:Key="Size.MainWindow.Width">520</sys:Double>
+    <sys:Double x:Key="Size.MainWindow.Height">680</sys:Double>
+    <sys:Double x:Key="Size.MainWindow.MinimumWidth">380</sys:Double>
+    <sys:Double x:Key="Size.MainWindow.MinimumHeight">520</sys:Double>
 
     <sys:Double x:Key="Size.SettingsWindow.Width">860</sys:Double>
     <sys:Double x:Key="Size.SettingsWindow.Height">680</sys:Double>

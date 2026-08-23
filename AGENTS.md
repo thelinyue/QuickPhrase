@@ -24,7 +24,7 @@ QuickPhrase 正式技术路线固定为：`.NET 10 LTS + Pure WPF + Win32/UIA + 
 8. 第三方应用能力必须通过运行时能力检测验证，不依赖客户端版本号准入。
 9. 降级失败不允许演变成误发送。
 10. 原型文件与生产 WPF 项目物理、依赖和验收边界分离。
-11. 闪念是唯一投递入口；话术库只负责内容管理。
+11. 闪念与话术库均可承载本次用户明确触发的投递动作；两者复用同一安全投递状态机。
 
 最高安全原则：宁可不能发送，也不能发错窗口、发错内容或重复发送。
 
@@ -101,8 +101,8 @@ HWND、PID、WindowThreadId、ProcessStartTimeUtc、ProcessName、AutomationElem
 
 ### Product and Delivery Boundary
 
-- 话术库只负责图文话术创建、编辑、排序、删除和企业只读详情，不提供插入、发送或投递快捷键。
-- 闪念始终只允许明确选择一条话术。
+- 话术库保留图文话术创建、编辑、排序、删除和企业只读详情，并提供明确投递入口：双击/`Enter` 插入，左侧发送按钮/`Ctrl+Enter` 插入并发送。
+- 闪念与话术库都必须基于用户本次明确选择的一条话术发起投递；话术库同一时刻只允许一个投递动作。
 - 空查询最多展示 5 条常用/最近话术，默认不选择；关键词搜索可默认选择第一项。
 - 单段纯文字：`Enter`/双击安全插入，目标不可验证时安全复制；`Ctrl+Enter` 进入现有显式发送流程。
 - 多段或含图片：`Enter`/双击直接按段插入；`Ctrl+Enter` 直接按段插入并发送，不打开分批预览或确认窗口。
@@ -181,7 +181,7 @@ desktop/QuickPhrase.Desktop/LauncherWindow.xaml
 desktop/QuickPhrase.Desktop/BatchPreviewWindow.xaml
 ```
 
-MainWindow 当前为 `1200×760`，最小 `900×560`；话术库、图文段编辑器、设置、分类/移动/导航确认对话框和 Launcher 的布局以现有 XAML 和实际行为为准。不要基于 Floating Workspace、演示壁纸、假 Windows 桌面、任务栏或原型调试控件进行重构。
+MainWindow 只有紧凑悬浮和右侧贴边两种正式形态：悬浮默认 `520×680 DIP`、最小 `380×520 DIP`、始终置顶；贴边约 `380 DIP` 宽并跟随最近有效业务窗口。话术库、图文段编辑器、设置、分类/移动/导航确认对话框和 Launcher 的布局以现有 XAML 和实际行为为准。不要基于 Floating Workspace、演示壁纸、假 Windows 桌面、任务栏或原型调试控件进行重构。
 
 ### Release Boundary
 

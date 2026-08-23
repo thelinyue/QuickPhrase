@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,30 +9,63 @@ using Forms = System.Windows.Forms;
 using QuickPhrase.Core;
 using QuickPhrase.Desktop.Services;
 using QuickPhrase.Desktop.ViewModels;
+using QuickPhrase.Platform.Windows;
 
 namespace QuickPhrase.Desktop;
 
-/// <summary>绠＄悊绐楀彛鍘熺敓澶栧３锛氭爣棰樻爮 + 瀵艰埅闈㈡澘 + 鍐呭鍖恒€傝瘽鏈簱锛圥hase D锟? 缂栬緫锟?/ 璁剧疆锛圥hase E锛夊潎涓虹函 WPF锟?/summary>
+/// <summary>
+/// 管理窗口原生外壳：在同一 MainWindow 中维护紧凑悬浮与右侧贴边两种形态，
+/// 并承载标题栏、话术库导航和窗口几何持久化事件。
+/// </summary>
 public partial class MainWindow : Window
 {
+    private const int WindowMessageSystemCommand = 0x0112;
+    private const int WindowMessageNonClientDoubleClick = 0x00A3;
+    private const int SystemCommandMaximize = 0xF030;
+    private const int SystemCommandMask = 0xFFF0;
+
+    private ManagementWindowPlacement _placement;
+    private DesktopWindowBounds _floatingBounds;
+    private bool _hasFloatingLeft;
+    private bool _hasFloatingTop;
+    private WindowsDockTargetSnapshot? _dockTarget;
+    private bool _isDocked;
     private ManagementWindowLayout? _appliedLayout;
     private readonly ICommandService _commands = null!;
     private readonly SearchHistoryCoordinator _searchHistory;
     private readonly Action<Guid?>? _openNewPhrase;
+    private readonly ILibraryDeliveryCoordinator? _libraryDelivery;
 
     private LibraryView? _libraryView;
     private INavigationGuard? _currentGuard;
 
-    /// <summary>涓荤晫闈㈡垨鎵樼洏璇锋眰鎵撳紑鐙珛璁剧疆绐楀彛锟?/summary>
+    /// <summary>主界面或托盘请求打开独立设置窗口。</summary>
     public event EventHandler? SettingsRequested;
+    public event Action<ManagementWindowPlacement>? PlacementChanged;
 
-    public MainWindow(ICommandService commands, SearchHistoryCoordinator searchHistory, string initialScene, Action<Guid?>? openNewPhrase = null)
+    public MainWindow(
+        ICommandService commands,
+        SearchHistoryCoordinator searchHistory,
+        string initialScene,
+        Action<Guid?>? openNewPhrase = null,
+        ManagementWindowPlacement? placement = null,
+        ILibraryDeliveryCoordinator? libraryDelivery = null)
     {
         InitializeComponent();
         _commands = commands;
         _searchHistory = searchHistory;
         _openNewPhrase = openNewPhrase;
+        _libraryDelivery = libraryDelivery;
+        _placement = placement ?? ManagementWindowPlacement.Default;
+        _hasFloatingLeft = _placement.FloatingLeft.HasValue;
+        _hasFloatingTop = _placement.FloatingTop.HasValue;
+        _floatingBounds = new DesktopWindowBounds(
+            _placement.FloatingLeft ?? 0,
+            _placement.FloatingTop ?? 0,
+            _placement.FloatingWidth,
+            _placement.FloatingHeight);
         ApplyScene(initialScene);
+        SourceInitialized += OnSourceInitialized;
         Loaded += OnLoaded;
         Closed += OnClosed;
     }
@@ -40,21 +74,56 @@ public partial class MainWindow : Window
     private void TitleBar_SettingsRequested(object sender, RoutedEventArgs e) =>
         SettingsRequested?.Invoke(this, EventArgs.Empty);
 
-    /// <summary>鎸夌鐞嗛〉鍦烘櫙璋冩暣瀹夸富灏哄骞堕噸鏂板眳涓紱闈炴硶鍦烘櫙涓嶄細鏀瑰彉褰撳墠绐楀彛锟?/summary>
+    private void TitleBar_DockToggleRequested(object sender, RoutedEventArgs e)
+    {
+        if (_placement.Mode == ManagementWindowMode.DockedRight)
+        {
+            // 等待贴边时窗口仍可移动缩放，取消等待前先保存用户刚调整的悬浮几何。
+            if (!_isDocked) CaptureFloatingBounds();
+            _placement = _placement with { Mode = ManagementWindowMode.Floating };
+            ApplyFloatingBounds();
+        }
+        else
+        {
+            CaptureFloatingBounds();
+            _placement = _placement with { Mode = ManagementWindowMode.DockedRight };
+            if (_dockTarget is not null) ApplyDockTarget(_dockTarget);
+        }
+        PlacementChanged?.Invoke(CurrentPlacement);
+    }
+
+    /// <summary>接收最近外部业务窗口的脱敏快照；目标不可用时保持原位，不主动跳回或关闭。</summary>
+    public void UpdateDockTarget(WindowsDockTargetSnapshot snapshot)
+    {
+        _dockTarget = snapshot;
+        if (_placement.Mode == ManagementWindowMode.DockedRight && snapshot.IsAvailable)
+            ApplyDockTarget(snapshot);
+    }
+
+    public ManagementWindowPlacement CurrentPlacement => _placement with
+    {
+        FloatingLeft = _hasFloatingLeft ? _floatingBounds.Left : null,
+        FloatingTop = _hasFloatingTop ? _floatingBounds.Top : null,
+        FloatingWidth = _floatingBounds.Width,
+        FloatingHeight = _floatingBounds.Height,
+    };
+
+    /// <summary>按管理页场景应用紧凑窗口最小尺寸；非法场景不会改变当前窗口。</summary>
     public void ApplyScene(string scene)
     {
         if (!ManagementWindowLayout.TryGet(scene, out var layout)) return;
         if (_appliedLayout == layout) return;
         _appliedLayout = layout;
-        if (IsVisible && WindowState == WindowState.Maximized) WindowState = WindowState.Normal;
         MinWidth = layout.MinWidth;
         MinHeight = layout.MinHeight;
-        Width = layout.Width;
-        Height = layout.Height;
-        if (IsVisible) CenterOnCurrentMonitor();
+        if (!_isDocked && !IsLoaded)
+        {
+            Width = _placement.FloatingWidth;
+            Height = _placement.FloatingHeight;
+        }
     }
 
-    /// <summary>锟?ApplicationController 璋冪敤锛屽垏鎹㈠凡鎵撳紑绐楀彛鐨勫唴瀹硅〃闈紙library/editor/settings 绛夛級锟?/summary>
+    /// <summary>由 ApplicationController 调用，切换已打开窗口的内容表面。</summary>
     public void NavigateTo(string key)
     {
         _ = OnNavigateAsync(key);
@@ -62,6 +131,7 @@ public partial class MainWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        ApplyInitialPlacement();
         StartupTrace.Mark("native-first-paint");
         if (ContentRegion.Content is null) _ = OnNavigateAsync("library");
     }
@@ -93,7 +163,7 @@ public partial class MainWindow : Window
     {
         if (_libraryView is null)
         {
-            _libraryView = new LibraryView(_commands, _searchHistory);
+            _libraryView = new LibraryView(_commands, _searchHistory, _libraryDelivery);
             _libraryView.RequestEdit += (_, item) => ShowEditorModal(item);
             _libraryView.RequestNew += (_, _) => RequestNewPhrase(null);
             _libraryView.RequestMove += (_, item) => ShowMoveDialog(item);
@@ -291,7 +361,10 @@ public partial class MainWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
-         // 关闭后的驻留和退出逻辑由 ApplicationController 统一处理。
+        if (!_isDocked) CaptureFloatingBounds();
+        PlacementChanged?.Invoke(CurrentPlacement);
+        _libraryView?.Dispose();
+        // 关闭后的驻留和退出逻辑由 ApplicationController 统一处理。
     }
 
     private UIElement BuildPlaceholder(string key)
@@ -315,16 +388,87 @@ public partial class MainWindow : Window
         return placeholder;
     }
 
-    private void CenterOnCurrentMonitor()
+    private void OnSourceInitialized(object? sender, EventArgs e)
+    {
+        if (PresentationSource.FromVisual(this) is not HwndSource source) return;
+        var traceId = Guid.NewGuid();
+        var startedAt = Stopwatch.GetTimestamp();
+        if (!WindowsNativeMethods.DisableMaximize(source.Handle))
+        {
+            Console.Error.WriteLine(
+                $"管理窗口禁用最大化样式失败。TraceId：{traceId:N}；阶段：WINDOW_STYLE；" +
+                $"结果码：DISABLE_MAXIMIZE_FAILED；耗时：{Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0} ms");
+        }
+        source.AddHook(WindowMessageHook);
+    }
+
+    /// <summary>禁止系统菜单和标题栏双击进入最大化，主窗口正式形态只允许悬浮或右侧贴边。</summary>
+    private nint WindowMessageHook(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    {
+        if (message == WindowMessageNonClientDoubleClick ||
+            (message == WindowMessageSystemCommand && ((int)wParam & SystemCommandMask) == SystemCommandMaximize))
+            handled = true;
+        return 0;
+    }
+
+    private void ApplyInitialPlacement()
+    {
+        ApplyFloatingBounds();
+        if (_placement.Mode == ManagementWindowMode.DockedRight && _dockTarget is not null)
+            ApplyDockTarget(_dockTarget);
+    }
+
+    private void ApplyDockTarget(WindowsDockTargetSnapshot snapshot)
+    {
+        if (!ManagementWindowPlacementCalculator.TryCalculateDockedRight(snapshot, out var bounds))
+        {
+            if (_isDocked) ApplyFloatingBounds();
+            return;
+        }
+        ApplyBounds(bounds);
+        _isDocked = true;
+        ResizeMode = ResizeMode.NoResize;
+        TitleBarControl.IsDocked = true;
+    }
+
+    private void ApplyFloatingBounds()
+    {
+        var workArea = GetCurrentWorkArea();
+        var bounds = ManagementWindowPlacementCalculator.ClampFloating(CurrentPlacement, workArea);
+        ApplyBounds(bounds);
+        _floatingBounds = bounds;
+        _hasFloatingLeft = true;
+        _hasFloatingTop = true;
+        _isDocked = false;
+        ResizeMode = ResizeMode.CanResizeWithGrip;
+        TitleBarControl.IsDocked = _placement.Mode == ManagementWindowMode.DockedRight;
+    }
+
+    private void CaptureFloatingBounds()
+    {
+        if (_isDocked || WindowState != WindowState.Normal) return;
+        _floatingBounds = new DesktopWindowBounds(Left, Top, ActualWidth > 0 ? ActualWidth : Width, ActualHeight > 0 ? ActualHeight : Height);
+        _hasFloatingLeft = true;
+        _hasFloatingTop = true;
+    }
+
+    private void ApplyBounds(DesktopWindowBounds bounds)
+    {
+        Left = bounds.Left;
+        Top = bounds.Top;
+        Width = bounds.Width;
+        Height = bounds.Height;
+    }
+
+    private DesktopWindowBounds GetCurrentWorkArea()
     {
         var handle = new WindowInteropHelper(this).Handle;
-        if (handle == IntPtr.Zero) return;
-        var workingArea = Forms.Screen.FromHandle(handle).WorkingArea;
+        var workingArea = handle == 0 ? Forms.Screen.PrimaryScreen!.WorkingArea : Forms.Screen.FromHandle(handle).WorkingArea;
         var source = PresentationSource.FromVisual(this);
         var fromDevice = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
         var topLeft = fromDevice.Transform(new System.Windows.Point(workingArea.Left, workingArea.Top));
         var bottomRight = fromDevice.Transform(new System.Windows.Point(workingArea.Right, workingArea.Bottom));
-        Left = topLeft.X + Math.Max(16, (bottomRight.X - topLeft.X - Width) / 2);
-        Top = topLeft.Y + Math.Max(16, (bottomRight.Y - topLeft.Y - Height) / 2);
+        return new DesktopWindowBounds(topLeft.X, topLeft.Y, bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y);
     }
+
 }

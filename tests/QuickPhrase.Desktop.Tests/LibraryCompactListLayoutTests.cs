@@ -30,35 +30,23 @@ public sealed class LibraryCompactListLayoutTests
     }
 
     [Fact]
-    public void PhraseRow_HidesIndexAndKeepsCompactTitleContentColumns()
+    public void PhraseRow_UsesFixedSendTitleContentColumns()
     {
         var markup = ReadDesktopFile("Views", "LibraryView.xaml");
-        var sharedRows = ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml");
-        var sizes = ReadDesktopFile("DesignSystem", "Tokens", "Sizes.xaml");
-        var thickness = ReadDesktopFile("DesignSystem", "Tokens", "Thickness.xaml");
-        var template = Slice(sharedRows, "<DataTemplate x:Key=\"Template.Phrase.CompactRow\"", "</DataTemplate>");
+        var template = Slice(markup, "<DataTemplate x:Key=\"PhraseRowTemplate\"", "</DataTemplate>");
         var phraseList = Slice(markup, "<ListBox x:Name=\"PhraseList\"", "</ListBox>");
-        var itemStyle = Slice(phraseList, "<ListBox.ItemContainerStyle>", "</ListBox.ItemContainerStyle>");
-        Assert.Contains("<sys:Double x:Key=\"Size.Phrase.Row.Compact\">28</sys:Double>", sizes);
-        Assert.Contains("<Thickness x:Key=\"Thickness.Phrase.Row.CompactHorizontal\">4,0</Thickness>", thickness);
-        Assert.Contains("Height=\"{StaticResource Size.Phrase.Row.Compact}\"", template);
-        Assert.Contains("<ColumnDefinition Width=\"{StaticResource Size.Phrase.Row.GapColumn}\" />", template);
-        Assert.Contains("<ColumnDefinition Width=\"Auto\" />", template);
-        Assert.Contains("<ColumnDefinition Width=\"*\" />", template);
-        Assert.Equal(1, template.Split("<ColumnDefinition Width=\"{StaticResource Size.Phrase.Row.GapColumn}\" />", StringSplitOptions.None).Length - 1);
-        Assert.DoesNotContain("IndexText", template);
+
+        Assert.Contains("Size.Library.PhraseRow.Height", template);
+        Assert.Contains("Size.Library.PhraseRow.SendColumn", template);
+        Assert.Contains("Size.Library.PhraseRow.TitleColumn", template);
+        Assert.Contains("Owner.SendCommand", template);
+        Assert.Contains("Text=\"{Binding Title}\"", template);
+        Assert.Contains("Text=\"{Binding Content}\"", template);
         Assert.DoesNotContain("IndexInCategory", template);
-        Assert.Contains("Background=\"Transparent\"", template);
-        Assert.DoesNotContain("SendBtn", template);
-        Assert.DoesNotContain("PhraseListActions", template);
-        Assert.DoesNotContain("<ControlTemplate.Triggers>", template);
-        Assert.Contains("BasedOn=\"{StaticResource Style.ListItem.Phrase.Compact}\"", itemStyle);
-        Assert.Contains("x:Key=\"Style.ListItem.Phrase.Compact\"", sharedRows);
-        Assert.Contains("<Setter Property=\"Padding\" Value=\"{StaticResource Thickness.Phrase.Row.CompactHorizontal}\" />", sharedRows);
-        Assert.Contains("<Setter Property=\"Margin\" Value=\"{StaticResource Thickness.None}\" />", itemStyle);
-        Assert.DoesNotContain("IsSubCategory", itemStyle);
-        Assert.DoesNotContain("DataContext.SearchQuery", itemStyle);
-        Assert.DoesNotContain("Thickness.Gap.Inline.Before.LG", itemStyle);
+        Assert.Contains("<Setter Property=\"Height\" Value=\"{StaticResource Size.Library.PhraseRow.Height}\" />", phraseList);
+        Assert.Contains("<Setter Property=\"MinHeight\" Value=\"{StaticResource Size.Library.PhraseRow.Height}\" />", phraseList);
+        Assert.Contains("VirtualizingStackPanel.IsVirtualizing=\"True\"", phraseList);
+        Assert.Contains("VirtualizingStackPanel.VirtualizationMode=\"Recycling\"", phraseList);
     }
 
     [Fact]
@@ -82,20 +70,14 @@ public sealed class LibraryCompactListLayoutTests
         var markup = ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml");
         var style = Slice(markup, "<Style x:Key=\"Style.ListItem.Phrase.Library\"", "</Style>");
 
-        Assert.DoesNotContain(
+        Assert.Contains(
             "<Setter TargetName=\"Root\" Property=\"BorderBrush\" Value=\"{DynamicResource Brush.Border.Focus}\" />",
             style);
-        Assert.Equal(
-            2,
-            style.Split(
-                "<Setter TargetName=\"Root\" Property=\"BorderBrush\" Value=\"{DynamicResource Brush.Border.Default}\" />",
-                StringSplitOptions.None).Length - 1);
         Assert.Contains(
             "<Setter TargetName=\"Root\" Property=\"Background\" Value=\"{DynamicResource Brush.Surface.Selected}\" />",
             style);
-        Assert.Contains(
-            "<Setter TargetName=\"AccentBar\" Property=\"Visibility\" Value=\"Visible\" />",
-            style);
+        Assert.DoesNotContain("AccentBar", style);
+        Assert.DoesNotContain("Brush.Selection.Indicator", style);
     }
 
     [Fact]
@@ -118,6 +100,20 @@ public sealed class LibraryCompactListLayoutTests
     }
 
     [Fact]
+    public void CategoryBar_ConstrainsChipsAndKeepsNewButtonVisibleInNarrowWindow()
+    {
+        var markup = ReadDesktopFile("Views", "LibraryView.xaml");
+        var start = markup.IndexOf("<!-- 1. Category Filter Bar", StringComparison.Ordinal);
+        var end = markup.IndexOf("<!-- 2. Phrase List", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start, "找不到分类筛选区域。");
+        var categoryBar = markup[start..end];
+
+        Assert.Contains("<ColumnDefinition Width=\"*\" />", categoryBar, StringComparison.Ordinal);
+        Assert.Contains("<ColumnDefinition Width=\"Auto\" />", categoryBar, StringComparison.Ordinal);
+        Assert.Contains("<ListBox x:Name=\"CategoryChipsList\"", categoryBar, StringComparison.Ordinal);
+        Assert.Contains("Grid.Column=\"1\"", categoryBar, StringComparison.Ordinal);
+    }
+    [Fact]
     public void Library_RemovesResponsiveTitleWidthWhileLauncherUsesFixedColumns()
     {
         var library = ReadDesktopFile("Views", "LibraryView.xaml");
@@ -127,7 +123,8 @@ public sealed class LibraryCompactListLayoutTests
         var launcherCode = ReadDesktopFile("LauncherWindow.xaml.cs");
         var sharedRows = ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml");
 
-        Assert.Contains("Template.Phrase.CompactRow", library);
+        Assert.Contains("x:Key=\"PhraseRowTemplate\"", library);
+        Assert.Contains("Size.Library.PhraseRow.TitleColumn", library);
         Assert.Contains("LauncherPhraseTemplate", launcher);
         Assert.DoesNotContain("Template.Library.CompactPhraseRow", library);
         Assert.DoesNotContain("local:PhraseListActions.TitleColumnWidth", library);

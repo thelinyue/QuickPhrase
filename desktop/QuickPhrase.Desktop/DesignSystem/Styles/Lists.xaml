@@ -101,7 +101,7 @@
     </Style>
 
     <!--
-        话术列表只保留业务专属的三列行结构和左侧选中指示条。
+        话术列表只保留业务专属的三列行结构，选中态使用中性背景。
         容器基础状态继承 Style.ListItem.Phrase，颜色、尺寸与排版全部消费全局 Design System。
     -->
     <Style x:Key="Style.ListItem.Phrase.Library"
@@ -123,15 +123,7 @@
                             Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}">
-                        <Grid>
-                            <!-- 3px 是业务选中指示条的几何宽度，不属于通用控件尺寸。 -->
-                            <Rectangle x:Name="AccentBar"
-                                       Width="{StaticResource Size.List.SelectionIndicator.Width}"
-                                       HorizontalAlignment="Left"
-                                       Fill="{DynamicResource Brush.Selection.Indicator}"
-                                       Visibility="Collapsed" />
-                            <ContentPresenter Margin="{TemplateBinding Padding}" />
-                        </Grid>
+                        <ContentPresenter Margin="{TemplateBinding Padding}" />
                     </Border>
                     <!-- Root 覆盖整条话术行；悬停和选中直接切换整行颜色，不使用淡入淡出动画。 -->
                     <ControlTemplate.Triggers>
@@ -140,13 +132,10 @@
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="Root" Property="Background" Value="{DynamicResource Brush.Surface.Selected}" />
-                            <!-- 选中态保留浅色背景和左侧指示条，不再绘制蓝色外框。 -->
                             <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
-                            <Setter TargetName="AccentBar" Property="Visibility" Value="Visible" />
-                            <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Primary.Pressed}" />
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Brush.Border.Default}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Brush.Border.Focus}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />

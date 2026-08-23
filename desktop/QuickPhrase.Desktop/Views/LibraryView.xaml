@@ -1,7 +1,6 @@
-<!-- 话术库：正式 WPF 单栏纵向布局。
-     自上而下：Content Header → Category Chips（一级横向）→ 主列表（内联嵌套树）
-             → Search Footer → App Footer（品牌 + 设置）。
-     无左侧分类边栏、无右侧详情面板。 -->
+<!-- 话术库：正式 WPF 紧凑单栏布局。
+     自上而下为搜索、可换行分类筛选和话术列表；话术行固定为“发送 / 标题 / 内容”三列。
+     无左侧分类边栏、右侧详情面板或目标验证常驻条。 -->
 <UserControl x:Class="QuickPhrase.Desktop.LibraryView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -163,68 +162,47 @@
             <MenuItem Header="如何批量操作？" IsEnabled="False" />
         </ContextMenu>
 
-        <!-- 话术行复用共享显示结构，但不注入任何 Insert/Send 命令。 -->
-        <!-- 宿主只注入话术库完整管理菜单；标题·正文显示结构来自共享资源。 -->
+        <!-- 主列表与搜索结果共享“发送 / 标题 / 内容”的单行语义；完整文本由 ToolTip 查看。 -->
         <DataTemplate x:Key="PhraseRowTemplate" DataType="{x:Type vm:PhraseItemViewModel}">
-            <ContentControl Content="{Binding}"
-                            ContentTemplate="{StaticResource Template.Phrase.CompactRow}"
-                            ContextMenu="{StaticResource PhraseRowContextMenu}" />
+            <Grid Height="{StaticResource Size.Library.PhraseRow.Height}" ContextMenu="{StaticResource PhraseRowContextMenu}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="{StaticResource Size.Library.PhraseRow.SendColumn}" />
+                    <ColumnDefinition Width="{StaticResource Size.Library.PhraseRow.TitleColumn}" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Content="发送" Margin="{StaticResource Thickness.Library.PhraseRow.Button}" Padding="{StaticResource Thickness.Phrase.Row.CompactHorizontal}"
+                        Style="{StaticResource Style.Button.Secondary.Compact}"
+                        Command="{Binding Owner.SendCommand}" CommandParameter="{Binding}"
+                        IsEnabled="{Binding CanSend}" ToolTip="{Binding SendDisabledReason}"
+                        ToolTipService.ShowOnDisabled="True" AutomationProperties.Name="插入并发送话术" />
+                <desktopControls:OverflowTextBlock Grid.Column="1" Margin="{StaticResource Thickness.Library.PhraseRow.Text}" VerticalAlignment="Center"
+                                                   Style="{StaticResource Style.Text.Label}" Text="{Binding Title}" ToolTip="{Binding Title}"
+                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                <desktopControls:OverflowTextBlock Grid.Column="2" Margin="{StaticResource Thickness.Library.PhraseRow.Text}" VerticalAlignment="Center"
+                                                   Style="{StaticResource Style.Text.Body.Medium}" Text="{Binding Content}" ToolTip="{Binding Content}"
+                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+            </Grid>
         </DataTemplate>
 
-        <!-- 搜索结果独立于主列表，保留序号并提供弱化的所属分类信息。 -->
         <DataTemplate x:Key="SearchResultRowTemplate" DataType="{x:Type vm:PhraseItemViewModel}">
-            <ContentControl ContextMenu="{StaticResource PhraseRowContextMenu}">
-                <Grid Height="{StaticResource Size.Phrase.Row.Compact}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="{StaticResource Size.Launcher.IndexColumn.GridLength}" />
-                        <ColumnDefinition Width="{StaticResource Size.Launcher.TitleColumn.GridLength}" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="{StaticResource Size.Launcher.CategoryColumn.GridLength}" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0"
-                               Style="{StaticResource Style.Text.Mono}"
-                               VerticalAlignment="Center"
-                               Text="{Binding SearchResultIndex}" />
-                    <Grid Grid.Column="1" Margin="{StaticResource Thickness.XS}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Border Grid.Column="0"
-                                Background="{DynamicResource Brush.Accent.Soft}"
-                                CornerRadius="{StaticResource Radius.XS}"
-                                Padding="{StaticResource Thickness.Gap.Inline.XS}"
-                                Margin="{StaticResource Thickness.Gap.Inline.XS}"
-                                Visibility="{Binding IsEnterprise, Converter={StaticResource BoolToVisibility}}">
-                            <TextBlock Text="企业"
-                                       Style="{StaticResource Style.Text.Caption}"
-                                       Foreground="{DynamicResource Brush.Accent.Primary.Pressed}" />
-                        </Border>
-                        <desktopControls:OverflowTextBlock Grid.Column="1"
-                                                           Style="{StaticResource Style.Text.Label}"
-                                                           VerticalAlignment="Center"
-                                                           TextWrapping="NoWrap"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           Foreground="{Binding ColorKey, Converter={StaticResource ColorKeyToBrush}}"
-                                                           Text="{Binding Title}" />
-                    </Grid>
-                    <desktopControls:OverflowTextBlock Grid.Column="2"
-                                                       Margin="{StaticResource Thickness.XS}"
-                                                       Style="{StaticResource Style.Text.Body.Medium}"
-                                                       VerticalAlignment="Center"
-                                                       TextWrapping="NoWrap"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Text="{Binding Content}" />
-                    <desktopControls:OverflowTextBlock Grid.Column="3"
-                                                       Margin="{StaticResource Thickness.XS}"
-                                                       Style="{StaticResource Style.Text.Caption}"
-                                                       Foreground="{DynamicResource Brush.Text.Secondary}"
-                                                       VerticalAlignment="Center"
-                                                       TextWrapping="NoWrap"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Text="{Binding CategoryName}" />
-                </Grid>
-            </ContentControl>
+            <Grid Height="{StaticResource Size.Library.PhraseRow.Height}" ContextMenu="{StaticResource PhraseRowContextMenu}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="{StaticResource Size.Library.PhraseRow.SendColumn}" />
+                    <ColumnDefinition Width="{StaticResource Size.Library.PhraseRow.TitleColumn}" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Content="发送" Margin="{StaticResource Thickness.Library.PhraseRow.Button}" Padding="{StaticResource Thickness.Phrase.Row.CompactHorizontal}"
+                        Style="{StaticResource Style.Button.Secondary.Compact}"
+                        Command="{Binding Owner.SendCommand}" CommandParameter="{Binding}"
+                        IsEnabled="{Binding CanSend}" ToolTip="{Binding SendDisabledReason}"
+                        ToolTipService.ShowOnDisabled="True" AutomationProperties.Name="插入并发送话术" />
+                <desktopControls:OverflowTextBlock Grid.Column="1" Margin="{StaticResource Thickness.Library.PhraseRow.Text}" VerticalAlignment="Center"
+                                                   Style="{StaticResource Style.Text.Label}" Text="{Binding Title}" ToolTip="{Binding Title}"
+                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                <desktopControls:OverflowTextBlock Grid.Column="2" Margin="{StaticResource Thickness.Library.PhraseRow.Text}" VerticalAlignment="Center"
+                                                   Style="{StaticResource Style.Text.Body.Medium}" Text="{Binding Content}" ToolTip="{Binding Content}"
+                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+            </Grid>
         </DataTemplate>
 
         <!-- 二级分类标题条模板。
@@ -331,143 +309,14 @@
           PreviewMouseRightButtonDown="RootLayout_PreviewMouseRightButtonDown"
           PreviewKeyDown="RootLayout_PreviewKeyDown">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />   <!-- Search -->
             <RowDefinition Height="Auto" />   <!-- Category Chips -->
             <RowDefinition Height="*" />      <!-- Phrase List -->
-            <RowDefinition Height="Auto" />   <!-- Search Footer -->
         </Grid.RowDefinitions>
 
-        <!-- 1. Category Filter Bar（一级 chips 横向，自动换行）。垂直内边距收窄，缩小标题区与列表内容区间距 -->
+        <!-- 搜索框置于列表上方，历史与结果均向下展开。 -->
         <Border Grid.Row="0" Background="{DynamicResource Brush.Surface.Default}"
                 BorderBrush="{DynamicResource Brush.Border.Default}" BorderThickness="{StaticResource Thickness.Border.Bottom}"
-                Padding="{StaticResource Thickness.Library.Header}">
-            <StackPanel Orientation="Horizontal">
-                <!-- 一级分类 chips 列表 —— ListBox + 横向 Wrap 面板，支持 ListBoxItem 拖拽事件 -->
-                <ListBox x:Name="CategoryChipsList"
-                         Background="Transparent" BorderThickness="0" Padding="{StaticResource Thickness.None}"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         ItemsSource="{Binding TopCategories}">
-                    <ListBox.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel Orientation="Horizontal" />
-                        </ItemsPanelTemplate>
-                    </ListBox.ItemsPanel>
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
-                            <Setter Property="Padding" Value="0" />
-                            <Setter Property="Margin" Value="0" />
-                            <Setter Property="Focusable" Value="False" />
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ListBoxItem">
-                                        <ContentPresenter />
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="CategoryChip_PreviewMouseLeftButtonDown" />
-                            <EventSetter Event="PreviewMouseMove" Handler="CategoryChip_PreviewMouseMove" />
-                            <EventSetter Event="DragEnter" Handler="CategoryChip_DragOver" />
-                            <EventSetter Event="DragOver" Handler="CategoryChip_DragOver" />
-                            <EventSetter Event="Drop" Handler="CategoryChip_Drop" />
-                        </Style>
-                    </ListBox.ItemContainerStyle>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:CategoryItem}">
-                            <ToggleButton Style="{StaticResource Style.Library.CategoryChip}"
-                                          Margin="{StaticResource Thickness.Gap.Inline.SM}"
-                                          Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                          ContextMenu="{StaticResource CategoryChipContextMenu}"
-                                          IsChecked="{Binding IsSelected, Mode=OneWay}"
-                                          Command="{Binding DataContext.SelectCategoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                          CommandParameter="{Binding Id}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </ToggleButton>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-                <!-- 新建一级 "+" -->
-                <Button Style="{StaticResource Style.Button.Secondary.Compact}"
-                        Margin="{StaticResource Thickness.None}" VerticalAlignment="Center"
-                        Command="{Binding NewCategoryCommand}"
-                        ToolTip="新建一级分类" Content="+" />
-            </StackPanel>
-        </Border>
-
-        <!-- 2. Phrase List（内联嵌套树）。列表容器不再保留左右内边距，由行内列宽/边距直接控制。 -->
-        <Grid Grid.Row="1">
-            <ListBox x:Name="PhraseList" Grid.Row="1"
-                     Padding="{StaticResource Thickness.None}"
-                     ItemsSource="{Binding VisibleItems}"
-                     SelectedItem="{Binding SelectedPhrase, Mode=TwoWay}"
-                     Foreground="{DynamicResource Brush.Text.Primary}"
-                     BorderThickness="0" Background="{DynamicResource Brush.Surface.Default}"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     ScrollViewer.CanContentScroll="True"
-                     VirtualizingStackPanel.IsVirtualizing="True"
-                     VirtualizingStackPanel.VirtualizationMode="Recycling"
-                     SelectionMode="Single"
-                     ItemTemplateSelector="{StaticResource PhraseRowSelector}"
-                     MouseDoubleClick="PhraseList_MouseDoubleClick">
-                <ListBox.ItemContainerStyle>
-                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource Style.ListItem.Phrase.Compact}">
-                        <Setter Property="Padding" Value="{StaticResource Thickness.Library.PhraseRow.Horizontal}" />
-                        <!-- 拖拽排序仍由话术库宿主处理；共享样式只负责行的视觉状态。 -->
-                        <EventSetter Event="PreviewMouseLeftButtonDown" Handler="PhraseItem_PreviewMouseLeftButtonDown" />
-                        <EventSetter Event="PreviewMouseMove" Handler="PhraseItem_PreviewMouseMove" />
-                        <EventSetter Event="DragEnter" Handler="PhraseItem_DragOver" />
-                        <EventSetter Event="DragOver" Handler="PhraseItem_DragOver" />
-                        <EventSetter Event="Drop" Handler="PhraseItem_Drop" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsSubHeader}" Value="True">
-                                <Setter Property="Height" Value="{StaticResource Size.Library.SubHeader.Height}" />
-                                <Setter Property="MinHeight" Value="{StaticResource Size.Library.SubHeader.Height}" />
-                                <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
-                                <Setter Property="Margin" Value="{StaticResource Thickness.None}" />
-                                <Setter Property="Focusable" Value="False" />
-                                <Setter Property="Cursor" Value="Arrow" />
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="ListBoxItem">
-                                            <ContentPresenter />
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </ListBox.ItemContainerStyle>
-            </ListBox>
-            <shared:StatePresenter StateKind="{x:Static shared:StateKind.Loading}"
-                                   Title="正在加载话术"
-                                   Description="正在读取话术库，请稍候。"
-                                   Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
-            <shared:StatePresenter StateKind="{x:Static shared:StateKind.Error}"
-                                   Title="话术库加载失败"
-                                   Description="{Binding StatusMessage}"
-                                   ActionText="重试"
-                                   ActionCommand="{Binding RetryLoadCommand}"
-                                   Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
-            <shared:StatePresenter StateKind="{x:Static shared:StateKind.Empty}"
-                                   Title="{Binding EmptyStateTitle}"
-                                   Description="{Binding EmptyStateDescription}"
-                                   ActionText="新建话术"
-                                   ActionCommand="{Binding NewCommand}"
-                                   Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}" />
-        </Grid>
-
-        <!-- 搜索时只遮住分类栏与主列表；搜索栏和结果 Popup 仍保持可操作。 -->
-        <Border x:Name="SearchBackdrop"
-                Grid.Row="0"
-                Grid.RowSpan="2"
-                Panel.ZIndex="20"
-                Background="{DynamicResource Brush.Overlay}"
-                Opacity="0.45"
-                Visibility="{Binding IsSearchResultVisible, Converter={StaticResource BoolToVisibility}}" />
-
-        <!-- 3. Search Footer（左下角不再渲染计数信息；上下间距已压缩为紧凑布局） -->
-        <Border Grid.Row="2" Background="{DynamicResource Brush.Surface.Default}"
-                BorderBrush="{DynamicResource Brush.Border.Default}" BorderThickness="{StaticResource Thickness.Border.Top}"
                 Padding="{StaticResource Thickness.Library.Toolbar}">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -487,8 +336,8 @@
                           否则打开浮层的搜索框点击会被 Popup 误判为外部点击，导致历史记录闪退。 -->
                      <Popup x:Name="SearchHistoryPopup"
                             PlacementTarget="{Binding ElementName=SearchBox}"
-                            Placement="Top"
-                            VerticalOffset="-4"
+                            Placement="Bottom"
+                            VerticalOffset="4"
                             StaysOpen="True"
                             AllowsTransparency="True"
                             Width="{Binding ActualWidth, ElementName=SearchBox}"
@@ -500,8 +349,8 @@
                      </Popup>
                      <Popup x:Name="SearchResultsPopup"
                             PlacementTarget="{Binding ElementName=SearchBox}"
-                            Placement="Top"
-                            VerticalOffset="-4"
+                            Placement="Bottom"
+                            VerticalOffset="4"
                             StaysOpen="True"
                             AllowsTransparency="True"
                             Width="{Binding ActualWidth, ElementName=SearchBox}"
@@ -552,8 +401,8 @@
                                              <Style TargetType="ListBoxItem" BasedOn="{StaticResource Style.ListItem.Phrase.Compact}">
                                                  <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
                                                  <Setter Property="Margin" Value="{StaticResource Thickness.None}" />
-                                                 <Setter Property="Height" Value="{StaticResource Size.Phrase.Row.Compact}" />
-                                                 <Setter Property="MinHeight" Value="{StaticResource Size.Library.SearchResult.MinimumHeight}" />
+                                                 <Setter Property="Height" Value="{StaticResource Size.Library.PhraseRow.Height}" />
+                                                 <Setter Property="MinHeight" Value="{StaticResource Size.Library.PhraseRow.Height}" />
                                              </Style>
                                          </ListBox.ItemContainerStyle>
                                      </ListBox>
@@ -576,6 +425,143 @@
                 </StackPanel>
             </Grid>
         </Border>
+
+        <!-- 1. Category Filter Bar（一级 chips 横向，自动换行）。垂直内边距收窄，缩小标题区与列表内容区间距 -->
+        <Border Grid.Row="1" Background="{DynamicResource Brush.Surface.Default}"
+                BorderBrush="{DynamicResource Brush.Border.Default}" BorderThickness="{StaticResource Thickness.Border.Bottom}"
+                Padding="{StaticResource Thickness.Library.Header}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <!-- 一级分类 chips 列表 —— ListBox + 横向 Wrap 面板，支持 ListBoxItem 拖拽事件 -->
+                <ListBox x:Name="CategoryChipsList" Grid.Column="0"
+                         Background="Transparent" BorderThickness="0" Padding="{StaticResource Thickness.None}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ItemsSource="{Binding TopCategories}">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <ContentPresenter />
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="CategoryChip_PreviewMouseLeftButtonDown" />
+                            <EventSetter Event="PreviewMouseMove" Handler="CategoryChip_PreviewMouseMove" />
+                            <EventSetter Event="DragEnter" Handler="CategoryChip_DragOver" />
+                            <EventSetter Event="DragOver" Handler="CategoryChip_DragOver" />
+                            <EventSetter Event="Drop" Handler="CategoryChip_Drop" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:CategoryItem}">
+                            <ToggleButton Style="{StaticResource Style.Library.CategoryChip}"
+                                          Margin="{StaticResource Thickness.Gap.Inline.SM}"
+                                          Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          ContextMenu="{StaticResource CategoryChipContextMenu}"
+                                          IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                          Command="{Binding DataContext.SelectCategoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          CommandParameter="{Binding Id}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <!-- 新建一级 "+" -->
+                <Button Grid.Column="1" Style="{StaticResource Style.Button.Secondary.Compact}"
+                        Margin="{StaticResource Thickness.None}" VerticalAlignment="Center"
+                        Command="{Binding NewCategoryCommand}"
+                        ToolTip="新建一级分类" Content="+" />
+            </Grid>
+        </Border>
+
+        <!-- 2. Phrase List（内联嵌套树）。列表容器不再保留左右内边距，由行内列宽/边距直接控制。 -->
+        <Grid Grid.Row="2">
+            <ListBox x:Name="PhraseList"
+                     Padding="{StaticResource Thickness.None}"
+                     ItemsSource="{Binding VisibleItems}"
+                     SelectedItem="{Binding SelectedPhrase, Mode=TwoWay}"
+                     Foreground="{DynamicResource Brush.Text.Primary}"
+                     BorderThickness="0" Background="{DynamicResource Brush.Surface.Default}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.CanContentScroll="True"
+                     VirtualizingStackPanel.IsVirtualizing="True"
+                     VirtualizingStackPanel.VirtualizationMode="Recycling"
+                     SelectionMode="Single"
+                     ItemTemplateSelector="{StaticResource PhraseRowSelector}"
+                     MouseDoubleClick="PhraseList_MouseDoubleClick">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource Style.ListItem.Phrase.Compact}">
+                        <Setter Property="Height" Value="{StaticResource Size.Library.PhraseRow.Height}" />
+                        <Setter Property="MinHeight" Value="{StaticResource Size.Library.PhraseRow.Height}" />
+                        <Setter Property="Padding" Value="{StaticResource Thickness.Library.PhraseRow.Horizontal}" />
+                        <!-- 拖拽排序仍由话术库宿主处理；共享样式只负责行的视觉状态。 -->
+                        <EventSetter Event="PreviewMouseLeftButtonDown" Handler="PhraseItem_PreviewMouseLeftButtonDown" />
+                        <EventSetter Event="PreviewMouseMove" Handler="PhraseItem_PreviewMouseMove" />
+                        <EventSetter Event="DragEnter" Handler="PhraseItem_DragOver" />
+                        <EventSetter Event="DragOver" Handler="PhraseItem_DragOver" />
+                        <EventSetter Event="Drop" Handler="PhraseItem_Drop" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSubHeader}" Value="True">
+                                <Setter Property="Height" Value="{StaticResource Size.Library.SubHeader.Height}" />
+                                <Setter Property="MinHeight" Value="{StaticResource Size.Library.SubHeader.Height}" />
+                                <Setter Property="Padding" Value="{StaticResource Thickness.None}" />
+                                <Setter Property="Margin" Value="{StaticResource Thickness.None}" />
+                                <Setter Property="Focusable" Value="False" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <ContentPresenter />
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+            </ListBox>
+            <shared:StatePresenter StateKind="{x:Static shared:StateKind.Loading}"
+                                   Title="正在加载话术"
+                                   Description="正在读取话术库，请稍候。"
+                                   Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
+            <shared:StatePresenter StateKind="{x:Static shared:StateKind.Error}"
+                                   Title="话术库加载失败"
+                                   Description="{Binding StatusMessage}"
+                                   ActionText="重试"
+                                   ActionCommand="{Binding RetryLoadCommand}"
+                                   Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
+            <shared:StatePresenter StateKind="{x:Static shared:StateKind.Empty}"
+                                   Title="{Binding EmptyStateTitle}"
+                                   Description="{Binding EmptyStateDescription}"
+                                   ActionText="新建话术"
+                                   ActionCommand="{Binding NewCommand}"
+                                   Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}" />
+        </Grid>
+
+        <!-- 搜索时只遮住分类栏与主列表；搜索栏和结果 Popup 仍保持可操作。 -->
+        <Border x:Name="SearchBackdrop"
+                Grid.Row="1"
+                Grid.RowSpan="2"
+                Panel.ZIndex="20"
+                Background="{DynamicResource Brush.Overlay}"
+                Opacity="0.45"
+                Visibility="{Binding IsSearchResultVisible, Converter={StaticResource BoolToVisibility}}" />
+
+
 
     </Grid>
 </UserControl>

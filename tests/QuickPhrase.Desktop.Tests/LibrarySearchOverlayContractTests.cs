@@ -12,33 +12,33 @@ namespace QuickPhrase.Desktop.Tests;
 public sealed class LibrarySearchOverlayContractTests
 {
     [Fact]
-    public void LibraryRow_HidesIndex_WhileSearchResultRowOwnsIndexAndCategory()
+    public void LibraryAndSearchRows_UseTheSameSendTitleContentSemantics()
     {
         var library = ReadDesktopFile("Views", "LibraryView.xaml");
-        var rows = ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml");
-        var libraryRow = Slice(rows, "<DataTemplate x:Key=\"Template.Phrase.CompactRow\"", "</DataTemplate>");
+        var libraryRow = Slice(library, "<DataTemplate x:Key=\"PhraseRowTemplate\"", "</DataTemplate>");
         var searchRow = Slice(library, "<DataTemplate x:Key=\"SearchResultRowTemplate\"", "</DataTemplate>");
 
-        Assert.DoesNotContain("IndexText", libraryRow, StringComparison.Ordinal);
-        Assert.DoesNotContain("IndexInCategory", libraryRow, StringComparison.Ordinal);
-        Assert.Contains("SearchResultIndex", searchRow, StringComparison.Ordinal);
-        Assert.Contains("CategoryName", searchRow, StringComparison.Ordinal);
-        Assert.Contains("Style=\"{StaticResource Style.Text.Mono}\"", searchRow, StringComparison.Ordinal);
-        Assert.Contains("Text=\"{Binding Title}\"", searchRow, StringComparison.Ordinal);
-        Assert.Contains("Text=\"{Binding Content}\"", searchRow, StringComparison.Ordinal);
+        foreach (var row in new[] { libraryRow, searchRow })
+        {
+            Assert.Contains("Owner.SendCommand", row, StringComparison.Ordinal);
+            Assert.Contains("Text=\"{Binding Title}\"", row, StringComparison.Ordinal);
+            Assert.Contains("Text=\"{Binding Content}\"", row, StringComparison.Ordinal);
+            Assert.DoesNotContain("SearchResultIndex", row, StringComparison.Ordinal);
+            Assert.DoesNotContain("CategoryName", row, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
-    public void SearchOverlay_IsAboveSearchBox_AndMasksOnlyLibraryContent()
+    public void SearchOverlay_OpensBelowSearchBox_AndMasksOnlyLibraryContent()
     {
         var markup = ReadDesktopFile("Views", "LibraryView.xaml");
 
         Assert.Contains("x:Name=\"SearchBackdrop\"", markup, StringComparison.Ordinal);
-        Assert.Contains("Grid.Row=\"0\"", Slice(markup, "<Border x:Name=\"SearchBackdrop\"", "/>"), StringComparison.Ordinal);
+        Assert.Contains("Grid.Row=\"1\"", Slice(markup, "<Border x:Name=\"SearchBackdrop\"", "/>"), StringComparison.Ordinal);
         Assert.Contains("Grid.RowSpan=\"2\"", Slice(markup, "<Border x:Name=\"SearchBackdrop\"", "/>"), StringComparison.Ordinal);
         Assert.Contains("Background=\"{DynamicResource Brush.Overlay}\"", markup, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"SearchResultsPopup\"", markup, StringComparison.Ordinal);
-        Assert.Contains("Placement=\"Top\"", Slice(markup, "<Popup x:Name=\"SearchResultsPopup\"", "</Popup>"), StringComparison.Ordinal);
+        Assert.Contains("Placement=\"Bottom\"", Slice(markup, "<Popup x:Name=\"SearchResultsPopup\"", "</Popup>"), StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding SearchResults}\"", markup, StringComparison.Ordinal);
         Assert.Contains("MaxHeight=\"{StaticResource Size.Library.SearchResults.MaximumHeight}\"", markup, StringComparison.Ordinal);
         Assert.Contains("ClearSearch", markup, StringComparison.Ordinal);

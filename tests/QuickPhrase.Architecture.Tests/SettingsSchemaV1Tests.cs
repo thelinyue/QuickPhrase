@@ -26,6 +26,7 @@ public sealed class SettingsSchemaV1Tests
         "clipboardCompatibilityMode",
         "hasCompletedOnboarding",
         "onboardingVersion",
+        "managementWindow",
     ];
 
     [Fact]
@@ -60,6 +61,11 @@ public sealed class SettingsSchemaV1Tests
         Assert.Equal((int)ShortcutModifiers.Alt, flashLauncher.GetProperty("modifiers").GetInt32());
         Assert.Equal((int)ShortcutKey.Space, flashLauncher.GetProperty("keyCode").GetInt32());
         Assert.False(root.GetProperty("quickSendWithoutConfirmation").GetBoolean());
+        var managementWindow = root.GetProperty("managementWindow");
+        AssertExactProperties(managementWindow, "mode", "floatingLeft", "floatingTop", "floatingWidth", "floatingHeight");
+        Assert.Equal("floating", managementWindow.GetProperty("mode").GetString());
+        Assert.Equal(520d, managementWindow.GetProperty("floatingWidth").GetDouble());
+        Assert.Equal(680d, managementWindow.GetProperty("floatingHeight").GetDouble());
     }
 
     [Fact]
@@ -77,7 +83,15 @@ public sealed class SettingsSchemaV1Tests
             QuickSendWithoutConfirmation: true,
             ClipboardCompatibilityMode: false,
             HasCompletedOnboarding: true,
-            OnboardingVersion: 1);
+            OnboardingVersion: 1)
+        {
+            ManagementWindow = new ManagementWindowPlacement(
+                ManagementWindowMode.DockedRight,
+                FloatingLeft: 120,
+                FloatingTop: 80,
+                FloatingWidth: 640,
+                FloatingHeight: 720),
+        };
 
         var result = await runtime.Settings.SaveAsync(requested, current.Version);
 
@@ -98,6 +112,12 @@ public sealed class SettingsSchemaV1Tests
         Assert.False(root.GetProperty("clipboardCompatibilityMode").GetBoolean());
         Assert.True(root.GetProperty("hasCompletedOnboarding").GetBoolean());
         Assert.Equal(1, root.GetProperty("onboardingVersion").GetInt32());
+        var managementWindow = root.GetProperty("managementWindow");
+        Assert.Equal("dockedRight", managementWindow.GetProperty("mode").GetString());
+        Assert.Equal(120d, managementWindow.GetProperty("floatingLeft").GetDouble());
+        Assert.Equal(80d, managementWindow.GetProperty("floatingTop").GetDouble());
+        Assert.Equal(640d, managementWindow.GetProperty("floatingWidth").GetDouble());
+        Assert.Equal(720d, managementWindow.GetProperty("floatingHeight").GetDouble());
     }
 
     [Fact]

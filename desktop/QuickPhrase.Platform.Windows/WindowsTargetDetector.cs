@@ -15,9 +15,11 @@ public sealed class WindowsTargetDetector : ITargetDetector
 
     internal WindowsTargetDetector(WindowsTargetContextStore contexts) => _contexts = contexts;
 
-    public DeliveryTarget? CaptureForeground()
+    public DeliveryTarget? CaptureForeground() => CaptureWindow(WindowsNativeMethods.GetForegroundWindow());
+
+    /// <summary>按 WinEvent 提供的句柄捕获目标，避免回调延迟时再次读取前台窗口而绑定到错误窗口。</summary>
+    internal DeliveryTarget? CaptureWindow(nint hwnd)
     {
-        var hwnd = WindowsNativeMethods.GetForegroundWindow();
         if (hwnd == 0 || !WindowsNativeMethods.IsWindow(hwnd)) return null;
         try
         {

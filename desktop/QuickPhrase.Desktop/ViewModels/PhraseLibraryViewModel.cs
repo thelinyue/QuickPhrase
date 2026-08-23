@@ -11,15 +11,18 @@ namespace QuickPhrase.Desktop.ViewModels;
 /// 话术库视图模型：负责搜索、列表选择、插入、复制、删除和打开编辑器。
 /// 所有数据访问都经由 ICommandService（→ Core 契约 → Platform.Windows 实现），不直接碰 SQLite。
 /// </summary>
-public partial class PhraseLibraryViewModel : ObservableObject
+public partial class PhraseLibraryViewModel : ObservableObject, IDisposable
 {
     private static readonly Guid EnterpriseRootId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
     private readonly ICommandService _commands;
+    private readonly ILibraryDeliveryCoordinator? _delivery;
     private Dictionary<Guid, string> _categoryNames = new();
 
-    public PhraseLibraryViewModel(ICommandService commands)
+    public PhraseLibraryViewModel(ICommandService commands, ILibraryDeliveryCoordinator? delivery = null)
     {
         _commands = commands;
+        _delivery = delivery;
+        if (_delivery is not null) _delivery.AvailabilityChanged += OnDeliveryAvailabilityChanged;
     }
 
     [ObservableProperty] private string _searchQuery = "";
@@ -517,6 +520,42 @@ public partial class PhraseLibraryViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSearchResultEmpty));
     }
 
+    /// <summary>把当前目标能力映射到单条话术，供行内发送按钮和禁用提示绑定。</summary>
+    internal void RefreshDeliveryAvailability(PhraseItemViewModel item)
+    {
+        var availability = _delivery?.Evaluate(item.ToPhrase())
+            ?? new LibraryDeliveryAvailability(false, false, "当前投递服务尚未就绪。", "当前投递服务尚未就绪。");
+        item.CanInsert = availability.CanInsert;
+        item.CanSend = availability.CanSend;
+        item.InsertDisabledReason = availability.InsertDisabledReason;
+        item.SendDisabledReason = availability.SendDisabledReason;
+    }
+
+    private void OnDeliveryAvailabilityChanged(object? sender, EventArgs e)
+    {
+        foreach (var item in Phrases.Concat(SearchResults).Distinct())
+            RefreshDeliveryAvailability(item);
+    }
+
+    [RelayCommand]
+    private async Task Insert(PhraseItemViewModel? item) => await DeliverAsync(item, SendMode.InsertOnly);
+
+    [RelayCommand]
+    private async Task Send(PhraseItemViewModel? item) => await DeliverAsync(item, SendMode.InsertAndSend);
+
+    private async Task DeliverAsync(PhraseItemViewModel? item, SendMode mode)
+    {
+        if (item is null || _delivery is null) return;
+        var availability = _delivery.Evaluate(item.ToPhrase());
+        var allowed = mode == SendMode.InsertOnly ? availability.CanInsert : availability.CanSend;
+        if (!allowed)
+        {
+            StatusMessage = mode == SendMode.InsertOnly ? availability.InsertDisabledReason : availability.SendDisabledReason;
+            return;
+        }
+        await _delivery.DeliverAsync(item.ToPhrase(), mode, CancellationToken.None);
+    }
+
     [RelayCommand]
     private void Copy(PhraseItemViewModel? item)
     {
@@ -564,4 +603,10 @@ public partial class PhraseLibraryViewModel : ObservableObject
 
     [RelayCommand]
     private void New() => NewRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>窗口关闭后解除应用级能力事件，避免协调器继续持有已关闭的话术库视图。</summary>
+    public void Dispose()
+    {
+        if (_delivery is not null) _delivery.AvailabilityChanged -= OnDeliveryAvailabilityChanged;
+    }
 }

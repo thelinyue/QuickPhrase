@@ -1,40 +1,49 @@
-using System;
 using System.IO;
-using Xunit;
 
 namespace QuickPhrase.Desktop.Tests;
 
-/// <summary>
-/// 话术库只负责管理内容；共享紧凑行可以继续服务 Launcher，但 Library 不得注入任何投递按钮或命令。
-/// </summary>
+/// <summary>话术库正式投递入口的 WPF 契约：左侧发送、单行标题/内容、键盘与双击语义一致。</summary>
 public sealed class LibrarySendButtonMarkupTests
 {
     [Fact]
-    public void Library_DoesNotEnableOrBindSharedSendAction()
+    public void MainAndSearchRows_UseSendTitleContentThreeColumnLayout()
     {
         var library = ReadDesktopFile("Views", "LibraryView.xaml");
-        var sharedRows = ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml");
-        var phraseList = Slice(library, "<ListBox x:Name=\"PhraseList\"", "</ListBox>");
-        var compactRow = Slice(sharedRows, "<DataTemplate x:Key=\"Template.Phrase.CompactRow\"", "</DataTemplate>");
+        var mainRow = Slice(library, "<DataTemplate x:Key=\"PhraseRowTemplate\"", "</DataTemplate>");
+        var searchRow = Slice(library, "<DataTemplate x:Key=\"SearchResultRowTemplate\"", "</DataTemplate>");
 
-        Assert.DoesNotContain("PhraseListActions.SendCommand", phraseList, StringComparison.Ordinal);
-        Assert.DoesNotContain("PhraseListActions.ShowSendButton=\"True\"", phraseList, StringComparison.Ordinal);
-        Assert.DoesNotContain("插入并发送", library, StringComparison.Ordinal);
-        Assert.DoesNotContain("直接发送", library, StringComparison.Ordinal);
-        Assert.DoesNotContain("发送到输入区", library, StringComparison.Ordinal);
-        Assert.DoesNotContain("SendBtn", compactRow, StringComparison.Ordinal);
-        Assert.DoesNotContain("PhraseListActions", compactRow, StringComparison.Ordinal);
+        foreach (var row in new[] { mainRow, searchRow })
+        {
+            Assert.Contains("Width=\"{StaticResource Size.Library.PhraseRow.SendColumn}\"", row, StringComparison.Ordinal);
+            Assert.Contains("Width=\"{StaticResource Size.Library.PhraseRow.TitleColumn}\"", row, StringComparison.Ordinal);
+            Assert.Contains("Command=\"{Binding Owner.SendCommand}\"", row, StringComparison.Ordinal);
+            Assert.Contains("ToolTipService.ShowOnDisabled=\"True\"", row, StringComparison.Ordinal);
+            Assert.Contains("TextTrimming=\"CharacterEllipsis\"", row, StringComparison.Ordinal);
+            Assert.Contains("TextWrapping=\"NoWrap\"", row, StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain("AccentBar", ReadDesktopFile("DesignSystem", "Styles", "Lists.xaml"), StringComparison.Ordinal);
+        Assert.DoesNotContain("企业微信", library, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Launcher_RemainsTheOnlyHostThatOwnsTheSharedDeliveryCommand()
+    public void Library_MapsDoubleClickAndKeyboardToExplicitDeliveryModesWithoutButtonBubble()
     {
-        var launcherCode = ReadDesktopFile("LauncherWindow.xaml.cs");
-        var libraryCode = ReadDesktopFile("Views", "LibraryView.xaml.cs");
+        var code = ReadDesktopFile("Views", "LibraryView.xaml.cs");
+        var xaml = ReadDesktopFile("Views", "LibraryView.xaml");
 
-        Assert.Contains("PhraseListActions.SetSendCommand(ResultsList", launcherCode, StringComparison.Ordinal);
-        Assert.DoesNotContain("SetSendCommand", libraryCode, StringComparison.Ordinal);
-        Assert.DoesNotContain("RequestInsertSend", libraryCode, StringComparison.Ordinal);
+        Assert.Contains("InsertCommand.ExecuteAsync", code, StringComparison.Ordinal);
+        Assert.Contains("SendCommand.ExecuteAsync", code, StringComparison.Ordinal);
+        Assert.Contains("Key.Enter", code, StringComparison.Ordinal);
+        Assert.Contains("Keyboard.Modifiers.HasFlag(ModifierKeys.Control)", code, StringComparison.Ordinal);
+        Assert.Contains("Key.F2", code, StringComparison.Ordinal);
+        Assert.Contains("FindAncestor<System.Windows.Controls.Button>", code, StringComparison.Ordinal);
+        var dragMouseDown = Slice(code, "private void PhraseItem_PreviewMouseLeftButtonDown", "private void PhraseItem_PreviewMouseMove");
+        var clearDragIndex = dragMouseDown.IndexOf("_dragPhraseSource = null;", StringComparison.Ordinal);
+        var buttonGuardIndex = dragMouseDown.IndexOf("FindAncestor<System.Windows.Controls.Button>", StringComparison.Ordinal);
+        Assert.True(clearDragIndex >= 0 && clearDragIndex < buttonGuardIndex,
+            "发送按钮按下前必须清空任何残留的话术拖拽源。");
+        Assert.Contains("Placement=\"Bottom\"", xaml, StringComparison.Ordinal);
+        Assert.True(xaml.IndexOf("x:Name=\"SearchBox\"", StringComparison.Ordinal) < xaml.IndexOf("x:Name=\"PhraseList\"", StringComparison.Ordinal));
     }
 
     private static string Slice(string source, string start, string end)
@@ -49,9 +58,7 @@ public sealed class LibrarySendButtonMarkupTests
     private static string ReadDesktopFile(params string[] segments)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "QuickPhrase.sln")))
-            directory = directory.Parent;
-        var root = directory?.FullName ?? throw new DirectoryNotFoundException("找不到 QuickPhrase.sln");
-        return File.ReadAllText(Path.Combine(new[] { root, "desktop", "QuickPhrase.Desktop" }.Concat(segments).ToArray()));
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "QuickPhrase.sln"))) directory = directory.Parent;
+        return File.ReadAllText(Path.Combine(new[] { directory!.FullName, "desktop", "QuickPhrase.Desktop" }.Concat(segments).ToArray()));
     }
 }

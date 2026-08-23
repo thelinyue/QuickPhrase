@@ -147,6 +147,25 @@ public sealed record Phrase(
     int SortOrder = 0,
     PhraseScope Scope = PhraseScope.Personal);
 
+/// <summary>管理窗口只保存平台无关的呈现形态；具体 HWND、显示器和 DPI 计算仍属于 Windows 平台层。</summary>
+public enum ManagementWindowMode
+{
+    Floating,
+    DockedRight,
+}
+
+/// <summary>管理窗口的悬浮几何统一使用 WPF 无关的 DIP 数值；空坐标表示首次打开时由 Desktop 居中。</summary>
+public sealed record ManagementWindowPlacement(
+    ManagementWindowMode Mode,
+    double? FloatingLeft,
+    double? FloatingTop,
+    double FloatingWidth,
+    double FloatingHeight)
+{
+    public static ManagementWindowPlacement Default { get; } =
+        new(ManagementWindowMode.Floating, null, null, 520, 680);
+}
+
 /// <summary>
 /// 应用设置聚合。Launcher 快捷键只以平台无关的 <see cref="ShortcutChord"/> 作为领域真值；
 /// 持久化行版本仍独立负责乐观并发，不能与设置文档 schemaVersion 混用。
@@ -162,6 +181,7 @@ public sealed record AppSettings(
     bool HasCompletedOnboarding = false,
     int OnboardingVersion = 0)
 {
+    public ManagementWindowPlacement ManagementWindow { get; init; } = ManagementWindowPlacement.Default;
 }
 
 public sealed record CreatePhraseCommand(

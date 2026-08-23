@@ -15,7 +15,7 @@ namespace QuickPhrase.Desktop.Tests;
 public sealed class LauncherCompactResultListTests
 {
     [Fact]
-    public void LauncherUsesDedicatedCompactRowWhileLibraryKeepsItsSharedTemplate()
+    public void LauncherAndLibraryUseDedicatedRowsForTheirDifferentActions()
     {
         var root = FindRepositoryRoot();
         var launcher = ReadDesktopFile(root, "LauncherWindow.xaml");
@@ -24,7 +24,8 @@ public sealed class LauncherCompactResultListTests
 
         Assert.Contains("LauncherPhraseTemplate", launcher);
         Assert.DoesNotContain("ContentTemplate=\"{StaticResource Template.Phrase.CompactRow}\"", launcher);
-        Assert.Contains("Template.Phrase.CompactRow", library);
+        Assert.Contains("x:Key=\"PhraseRowTemplate\"", library);
+        Assert.Contains("Owner.SendCommand", library);
         Assert.DoesNotContain("Template.Library.CompactPhraseRow", library);
         Assert.Contains("<DataTemplate x:Key=\"Template.Phrase.CompactRow\">", sharedRows);
         Assert.Contains("Height=\"{StaticResource Size.Phrase.Row.Compact}\"", sharedRows);

@@ -5,9 +5,9 @@ namespace QuickPhrase.Architecture.Tests;
 public sealed class ManagementWindowLayoutTests
 {
     [Theory]
-    [InlineData("library", 1200, 760)]
-    [InlineData("editor", 1200, 760)]
-    [InlineData("settings", 1200, 760)]
+    [InlineData("library", 520, 680)]
+    [InlineData("editor", 520, 680)]
+    [InlineData("settings", 520, 680)]
     public void KnownScenesUseTheUnifiedManagementWindowSize(string scene, double width, double height)
     {
         Assert.True(ManagementWindowLayout.TryGet(scene, out var layout));

@@ -24,6 +24,7 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
         "clipboardCompatibilityMode",
         "hasCompletedOnboarding",
         "onboardingVersion",
+        "managementWindow",
     ];
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -178,7 +179,10 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
                 || !HasExactProperties(shortcuts, ["flashLauncher"])
                 || !shortcuts.TryGetProperty("flashLauncher", out var flashLauncher)
                 || flashLauncher.ValueKind != JsonValueKind.Object
-                || !HasExactProperties(flashLauncher, ["modifiers", "keyCode"]))
+                || !HasExactProperties(flashLauncher, ["modifiers", "keyCode"])
+                || !root.TryGetProperty("managementWindow", out var managementWindow)
+                || managementWindow.ValueKind != JsonValueKind.Object
+                || !HasExactProperties(managementWindow, ["mode", "floatingLeft", "floatingTop", "floatingWidth", "floatingHeight"]))
             {
                 return false;
             }
@@ -191,7 +195,9 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
             if (!ShortcutChordValidator.Validate(shortcut).IsValid)
                 return false;
 
-            settings = stored.ToAppSettings(version, shortcut);
+            var materialized = stored.ToAppSettings(version, shortcut);
+            if (materialized is null) return false;
+            settings = materialized;
             return true;
         }
         catch (JsonException)
@@ -224,7 +230,10 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
         false,
         true,
         false,
-        0);
+        0)
+    {
+        ManagementWindow = ManagementWindowPlacement.Default,
+    };
 
     private sealed record StoredRow(string Json, long Version);
 
@@ -247,6 +256,39 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
         public static StoredShortcuts From(AppSettings settings) => new(StoredShortcut.From(settings.LauncherShortcut));
     }
 
+    /// <summary>设置文档中的窗口状态只保存语义模式和 DIP 几何，不保存 HWND 或显示器标识。</summary>
+    private sealed record StoredManagementWindow(
+        string Mode = "floating",
+        double? FloatingLeft = null,
+        double? FloatingTop = null,
+        double FloatingWidth = 520,
+        double FloatingHeight = 680)
+    {
+        public static StoredManagementWindow From(ManagementWindowPlacement placement) => new(
+            placement.Mode == ManagementWindowMode.DockedRight ? "dockedRight" : "floating",
+            placement.FloatingLeft,
+            placement.FloatingTop,
+            placement.FloatingWidth,
+            placement.FloatingHeight);
+
+        public ManagementWindowPlacement? ToPlacement()
+        {
+            var mode = Mode switch
+            {
+                "floating" => ManagementWindowMode.Floating,
+                "dockedRight" => ManagementWindowMode.DockedRight,
+                _ => (ManagementWindowMode?)null,
+            };
+            if (mode is null || !IsFiniteOrNull(FloatingLeft) || !IsFiniteOrNull(FloatingTop)
+                || !double.IsFinite(FloatingWidth) || !double.IsFinite(FloatingHeight)
+                || FloatingWidth < 380 || FloatingHeight < 520)
+                return null;
+            return new ManagementWindowPlacement(mode.Value, FloatingLeft, FloatingTop, FloatingWidth, FloatingHeight);
+        }
+
+        private static bool IsFiniteOrNull(double? value) => value is null || double.IsFinite(value.Value);
+    }
+
     private sealed record StoredSettings(
         int SchemaVersion = CurrentSettingsSchemaVersion,
         StoredShortcuts? Shortcuts = null,
@@ -256,7 +298,8 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
         bool QuickSendWithoutConfirmation = false,
         bool ClipboardCompatibilityMode = true,
         bool HasCompletedOnboarding = false,
-        int OnboardingVersion = 0)
+        int OnboardingVersion = 0,
+        StoredManagementWindow? ManagementWindow = null)
     {
         public static StoredSettings From(AppSettings settings) => new(
             CurrentSettingsSchemaVersion,
@@ -267,17 +310,26 @@ internal sealed class SqliteSettingsRepository : SqliteRepositoryBase, ISettings
             settings.QuickSendWithoutConfirmation,
             settings.ClipboardCompatibilityMode,
             settings.HasCompletedOnboarding,
-            settings.OnboardingVersion);
+            settings.OnboardingVersion,
+            StoredManagementWindow.From(settings.ManagementWindow));
 
-        public AppSettings ToAppSettings(long version, ShortcutChord shortcut) => new(
-            version,
-            LaunchOnStartup,
-            StartMinimized,
-            StayInTrayOnClose,
-            shortcut,
-            QuickSendWithoutConfirmation,
-            ClipboardCompatibilityMode,
-            HasCompletedOnboarding,
-            OnboardingVersion);
+        public AppSettings? ToAppSettings(long version, ShortcutChord shortcut)
+        {
+            var placement = ManagementWindow?.ToPlacement();
+            if (placement is null) return null;
+            return new AppSettings(
+                version,
+                LaunchOnStartup,
+                StartMinimized,
+                StayInTrayOnClose,
+                shortcut,
+                QuickSendWithoutConfirmation,
+                ClipboardCompatibilityMode,
+                HasCompletedOnboarding,
+                OnboardingVersion)
+            {
+                ManagementWindow = placement,
+            };
+        }
     }
 }

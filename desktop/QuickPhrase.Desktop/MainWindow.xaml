@@ -10,7 +10,9 @@
         Height="{StaticResource Size.MainWindow.Height}"
         MinWidth="{StaticResource Size.MainWindow.MinimumWidth}"
         MinHeight="{StaticResource Size.MainWindow.MinimumHeight}"
-        WindowStartupLocation="CenterScreen"
+        WindowStartupLocation="Manual"
+        Topmost="True"
+        ResizeMode="CanResizeWithGrip"
         Style="{StaticResource Style.Window.Shell}">
 
     <shell:WindowChrome.WindowChrome>
@@ -30,7 +32,9 @@
                         Grid.Row="0"
                         PageTitle="话术库"
                         ShowSettingsButton="True"
-                        SettingsRequested="TitleBar_SettingsRequested" />
+                        ShowDockButton="True"
+                        SettingsRequested="TitleBar_SettingsRequested"
+                        DockToggleRequested="TitleBar_DockToggleRequested" />
         <ContentControl x:Name="ContentRegion"
                         Grid.Row="1"
                         Style="{StaticResource Style.Surface.ContentRegion}" />

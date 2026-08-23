@@ -69,14 +69,15 @@ public sealed class LauncherListLayoutTests
     }
 
     [Fact]
-    public void LibraryKeepsTheSharedRowWhileLauncherUsesItsDedicatedCompactRow()
+    public void LibraryAndLauncherKeepDedicatedSingleLineRows()
     {
         var root = FindRepositoryRoot();
         var library = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "Views", "LibraryView.xaml"));
         var launcher = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "LauncherWindow.xaml"));
         var app = File.ReadAllText(Path.Combine(root, "desktop", "QuickPhrase.Desktop", "App.xaml"));
 
-        Assert.Contains("Template.Phrase.CompactRow", library);
+        Assert.Contains("x:Key=\"PhraseRowTemplate\"", library);
+        Assert.Contains("Size.Library.PhraseRow.TitleColumn", library);
         Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", library);
         Assert.DoesNotContain("Template.Phrase.Row", launcher);
         Assert.Contains("LauncherPhraseTemplate", launcher);

@@ -32,7 +32,16 @@ public partial class PhraseItemViewModel : ObservableObject
     public bool IsEnterprise => Scope == PhraseScope.Enterprise;
     public bool CanManage => !IsEnterprise;
     public string ScopeLabel => IsEnterprise ? "企业" : "个人";
-    public PhraseLibraryViewModel? Owner { get; set; }
+    private PhraseLibraryViewModel? _owner;
+    public PhraseLibraryViewModel? Owner
+    {
+        get => _owner;
+        set
+        {
+            _owner = value;
+            value?.RefreshDeliveryAvailability(this);
+        }
+    }
 
     [ObservableProperty] private string _title;
     [ObservableProperty] private string _content;
@@ -40,6 +49,10 @@ public partial class PhraseItemViewModel : ObservableObject
     [ObservableProperty] private string? _categoryName;
     [ObservableProperty] private string? _shortcut;
     [ObservableProperty] private string _colorKey;
+    [ObservableProperty] private bool _canInsert;
+    [ObservableProperty] private bool _canSend;
+    [ObservableProperty] private string _insertDisabledReason = "当前不可插入。";
+    [ObservableProperty] private string _sendDisabledReason = "当前不可发送。";
 
     /// <summary>持久化的拖拽排序顺序（由仓储层排序后回写，与分类 SortOrder 对齐）。</summary>
     public int SortOrder { get; set; }
@@ -81,6 +94,7 @@ public partial class PhraseItemViewModel : ObservableObject
         OnPropertyChanged(nameof(SegmentCount));
         OnPropertyChanged(nameof(ImageCount));
         OnPropertyChanged(nameof(CompositionSummary));
+        _owner?.RefreshDeliveryAvailability(this);
     }
 
     /// <summary>回放底层领域记录，用于构造 UpdatePhraseCommand 等写操作。</summary>

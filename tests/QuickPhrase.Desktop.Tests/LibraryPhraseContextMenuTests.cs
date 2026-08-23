@@ -50,12 +50,12 @@ public sealed class LibraryPhraseContextMenuTests
     }
 
     [Fact]
-    public void LibraryViewModel_DoesNotExposeDeliveryCommandsOrEvents()
+    public void LibraryViewModel_ExposesInsertAndSendCommandsWithoutPlatformEvents()
     {
         var type = typeof(PhraseLibraryViewModel);
 
-        Assert.Null(type.GetProperty("InsertCommand"));
-        Assert.Null(type.GetProperty("InsertSendCommand"));
+        Assert.NotNull(type.GetProperty("InsertCommand"));
+        Assert.NotNull(type.GetProperty("SendCommand"));
         Assert.Null(type.GetEvent("InsertSendRequested"));
     }
 

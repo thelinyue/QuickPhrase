@@ -3,55 +3,33 @@ using System.Windows.Controls;
 
 namespace QuickPhrase.Desktop;
 
-/// <summary>自定义标题栏：系统按钮直接操作所属 Window；拖动/双击/Snap 由 WindowChrome 的 caption 区域处理。</summary>
+/// <summary>自定义标题栏：只表达设置、最小化、贴边切换和关闭意图，不直接依赖窗口跟踪服务。</summary>
 public partial class TitleBar : System.Windows.Controls.UserControl
 {
     public static readonly DependencyProperty PageTitleProperty =
-        DependencyProperty.Register(
-            nameof(PageTitle), typeof(string), typeof(TitleBar),
-            new PropertyMetadata(string.Empty));
-
-    public string PageTitle
-    {
-        get => (string)GetValue(PageTitleProperty);
-        set => SetValue(PageTitleProperty, value);
-    }
-
-    /// <summary>仅主窗口显示全局设置入口，其他独立窗口继续保留纯系统标题栏。</summary>
+        DependencyProperty.Register(nameof(PageTitle), typeof(string), typeof(TitleBar), new PropertyMetadata(string.Empty));
     public static readonly DependencyProperty ShowSettingsButtonProperty =
-        DependencyProperty.Register(
-            nameof(ShowSettingsButton), typeof(bool), typeof(TitleBar),
-            new PropertyMetadata(false));
+        DependencyProperty.Register(nameof(ShowSettingsButton), typeof(bool), typeof(TitleBar), new PropertyMetadata(false));
+    public static readonly DependencyProperty ShowDockButtonProperty =
+        DependencyProperty.Register(nameof(ShowDockButton), typeof(bool), typeof(TitleBar), new PropertyMetadata(false));
+    public static readonly DependencyProperty IsDockedProperty =
+        DependencyProperty.Register(nameof(IsDocked), typeof(bool), typeof(TitleBar), new PropertyMetadata(false));
 
-    public bool ShowSettingsButton
-    {
-        get => (bool)GetValue(ShowSettingsButtonProperty);
-        set => SetValue(ShowSettingsButtonProperty, value);
-    }
+    public string PageTitle { get => (string)GetValue(PageTitleProperty); set => SetValue(PageTitleProperty, value); }
+    public bool ShowSettingsButton { get => (bool)GetValue(ShowSettingsButtonProperty); set => SetValue(ShowSettingsButtonProperty, value); }
+    public bool ShowDockButton { get => (bool)GetValue(ShowDockButtonProperty); set => SetValue(ShowDockButtonProperty, value); }
+    public bool IsDocked { get => (bool)GetValue(IsDockedProperty); set => SetValue(IsDockedProperty, value); }
 
-    /// <summary>请求由宿主窗口打开设置，标题栏不依赖应用编排或设置窗口实现。</summary>
     public event RoutedEventHandler? SettingsRequested;
+    public event RoutedEventHandler? DockToggleRequested;
 
     public TitleBar() => InitializeComponent();
-
-    private void SettingsButton_Click(object sender, RoutedEventArgs e) =>
-        SettingsRequested?.Invoke(this, e);
-
+    private void SettingsButton_Click(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke(this, e);
+    private void DockButton_Click(object sender, RoutedEventArgs e) => DockToggleRequested?.Invoke(this, e);
     private void MinButton_Click(object sender, RoutedEventArgs e)
     {
         if (Window.GetWindow(this) is { } window) window.WindowState = WindowState.Minimized;
     }
-
-    private void MaxButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (Window.GetWindow(this) is { } window)
-        {
-            window.WindowState = window.WindowState == WindowState.Maximized
-                ? WindowState.Normal
-                : WindowState.Maximized;
-        }
-    }
-
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
         if (Window.GetWindow(this) is { } window) window.Close();

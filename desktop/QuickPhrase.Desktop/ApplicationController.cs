@@ -21,6 +21,10 @@ internal sealed class ApplicationController : IAsyncDisposable
     private readonly HotkeyCoordinator _hotkeys;
     private readonly QuickPhraseDataOptions _dataOptions;
     private readonly WindowsTargetDetector _targetDetector;
+    private readonly WindowsDockTargetTracker _dockTargetTracker;
+    private readonly LibraryDeliveryCoordinator _libraryDelivery;
+    private readonly SemaphoreSlim _placementSaveGate = new(1, 1);
+    private Task _placementSaveTask = Task.CompletedTask;
     private readonly WindowsAdapterResolver _adapterResolver;
     private readonly ITextDeliveryStateMachine _delivery;
     private readonly IBatchDeliveryStateMachine _batchDelivery;
@@ -67,6 +71,11 @@ internal sealed class ApplicationController : IAsyncDisposable
         _batchDelivery = new BatchDeliveryStateMachine(
             _delivery, _targetDetector, _adapterResolver, _adapterResolver, () => _dataRuntime?.MediaAssets, RecordUsageAsync);
         _deliveryQueue = new DeliveryQueueCoordinator(_delivery);
+        _libraryDelivery = new LibraryDeliveryCoordinator((phrase, target, mode, cancellationToken) =>
+            QueueOrDeliverPhraseAsync(phrase, target, mode, query: null, deliveryAuthorized: true));
+        _dockTargetTracker = new WindowsDockTargetTracker(_targetDetector);
+        _dockTargetTracker.Changed += OnDockTargetChanged;
+        if (_dockTargetTracker.Current is { } initialDockTarget) OnDockTargetChanged(initialDockTarget);
         _deliveryQueue.ItemFailed += result => DispatchToUi(() => ShowDeliveryNotification(result, Forms.ToolTipIcon.Warning));
         _deliveryQueue.ItemCompleted += OnDeliveryCompleted;
         _deliveryQueue.BatchCompleted += summary => DispatchToUi(() =>
@@ -199,8 +208,16 @@ internal sealed class ApplicationController : IAsyncDisposable
 
         if (_commands is null) return;
         if (_searchHistory is null) return;
-        _management = new MainWindow(_commands, _searchHistory, scene ?? "library", OpenNewPhrase);
+        _management = new MainWindow(
+            _commands,
+            _searchHistory,
+            scene ?? "library",
+            OpenNewPhrase,
+            _settings?.ManagementWindow ?? ManagementWindowPlacement.Default,
+            _libraryDelivery);
         _management.SettingsRequested += (_, _) => OpenSettings();
+        _management.PlacementChanged += OnManagementPlacementChanged;
+        if (_dockTargetTracker.Current is { } dockTarget) _management.UpdateDockTarget(dockTarget);
         _management.Closed += (_, _) => OnManagementClosed();
         _management.Show();
         if (scene is not null) _management.NavigateTo(scene);
@@ -281,12 +298,62 @@ internal sealed class ApplicationController : IAsyncDisposable
     private void SettingsWindow_ImportCompleted(object? sender, EventArgs e) =>
         _ = _management?.ReloadLibraryAsync();
 
+    /// <summary>WinEvent 可能来自非 UI 线程；窗口位置和可用性统一切回 Dispatcher 更新。</summary>
+    private void OnDockTargetChanged(WindowsDockTargetSnapshot snapshot)
+    {
+        DispatchToUi(() =>
+        {
+            _lastExternalTarget = snapshot.Target;
+            _management?.UpdateDockTarget(snapshot);
+            var capabilities = snapshot.IsAvailable ? GetTargetCapabilities(snapshot.Target) : null;
+            _libraryDelivery.UpdateTarget(snapshot.IsAvailable ? snapshot.Target : null, capabilities);
+        });
+    }
+
+    /// <summary>模式切换和正常关闭时读取最新设置版本再保存，避免设置窗口并发更新被旧快照覆盖。</summary>
+    private void OnManagementPlacementChanged(ManagementWindowPlacement placement) =>
+        _placementSaveTask = SaveManagementPlacementAsync(placement);
+
+    private async Task SaveManagementPlacementAsync(ManagementWindowPlacement placement)
+    {
+        if (_dataRuntime is null) return;
+        var traceId = Guid.NewGuid();
+        var startedAt = Stopwatch.GetTimestamp();
+        await _placementSaveGate.WaitAsync();
+        try
+        {
+            var latest = await _dataRuntime.Settings.LoadAsync();
+            var result = await _dataRuntime.Settings.SaveAsync(latest with { ManagementWindow = placement }, latest.Version);
+            if (result.IsSuccess && result.Value is not null)
+            {
+                _settings = result.Value;
+            }
+            else
+            {
+                Console.Error.WriteLine(
+                    $"管理窗口位置保存失败。TraceId：{traceId:N}；阶段：SAVE_MANAGEMENT_WINDOW；" +
+                    $"结果码：{result.Error?.Code ?? "UNKNOWN"}；耗时：{Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0} ms");
+            }
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                $"管理窗口位置保存异常。TraceId：{traceId:N}；阶段：SAVE_MANAGEMENT_WINDOW；" +
+                $"结果码：SETTINGS_SAVE_FAILED；耗时：{Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:0} ms；异常类型：{exception.GetType().Name}");
+        }
+        finally
+        {
+            _placementSaveGate.Release();
+        }
+    }
+
     /// <summary>
     /// 主窗口关闭后，只要设置或独立新建窗口仍可见，就保留进程。
     /// 只有最后一个产品窗口也关闭时，才按“关闭后留在托盘”设置决定是否退出。
     /// </summary>
     private void OnManagementClosed()
     {
+        if (_management is not null) _management.PlacementChanged -= OnManagementPlacementChanged;
         _management = null;
         var suppressExit = _suppressManagementCloseExit;
         _suppressManagementCloseExit = false;
@@ -478,6 +545,10 @@ internal sealed class ApplicationController : IAsyncDisposable
         NetworkChange.NetworkAvailabilityChanged -= NetworkAvailabilityChanged;
         _networkSyncDebounce?.Cancel();
         _networkSyncDebounce?.Dispose();
+        _dockTargetTracker.Changed -= OnDockTargetChanged;
+        _dockTargetTracker.Dispose();
+        await _placementSaveTask;
+        _placementSaveGate.Dispose();
         _adapterResolver.Dispose();
         await _usageUpdates.DisposeAsync();
         (_delivery as IDisposable)?.Dispose();
@@ -636,7 +707,7 @@ internal sealed class ApplicationController : IAsyncDisposable
     private async Task<DeliveryResult?> QueueOrDeliverPhraseAsync(Phrase phrase, DeliveryTarget? target, SendMode mode, string? query, bool deliveryAuthorized = false)
     {
         var settings = _settings ?? new AppSettings(1, false, false, true, new ShortcutChord(ShortcutModifiers.Alt, ShortcutKey.Space), false, true);
-        if (!phrase.Body.RequiresBatchDelivery && RequiresSendConfirmation(mode, settings))
+        if (RequiresSendConfirmation(mode, settings))
         {
             var decision = ShowQuickSendGuideDialog();
             var quickSendEnabledSuccessfully = false;

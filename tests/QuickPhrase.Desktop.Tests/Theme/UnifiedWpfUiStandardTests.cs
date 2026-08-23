@@ -59,7 +59,7 @@ public sealed class UnifiedWpfUiStandardTests
             [Path.Combine("Views", "EditorView.xaml")] = ["话术标题", "在光标处插入图片", "添加分段", "话术图文内容编辑区", "一级分类", "二级分类"],
             [Path.Combine("Views", "LibraryView.xaml")] = ["话术搜索"],
             ["OnboardingWindow.xaml"] = ["引导分类名称", "引导话术分类", "引导话术标题", "引导话术内容", "开机时启动闪语"],
-            ["TitleBar.xaml"] = ["最小化窗口", "最大化或还原窗口", "关闭窗口"],
+            ["TitleBar.xaml"] = ["最小化窗口", "关闭窗口"],
             [Path.Combine("Views", "Dialogs", "CategoryDialog.xaml")] = ["分类名称"],
             [Path.Combine("Views", "Dialogs", "PhraseMoveDialog.xaml")] = ["目标分类"],
             [Path.Combine("Views", "Dialogs", "ExportPhrasePackageDialog.xaml")] = ["导出范围", "话术包名称"],
@@ -71,6 +71,10 @@ public sealed class UnifiedWpfUiStandardTests
             foreach (var name in names)
                 Assert.Contains($"AutomationProperties.Name=\"{name}\"", markup, StringComparison.Ordinal);
         }
+
+        var titleBar = ReadDesktopXaml("TitleBar.xaml");
+        Assert.Contains("贴到当前业务窗口右侧", titleBar, StringComparison.Ordinal);
+        Assert.Contains("解除贴边并恢复悬浮", titleBar, StringComparison.Ordinal);
 
         var richEditor = File.ReadAllText(DesktopPath("DesignSystem", "Components", "PhraseRichTextEditor.xaml.cs"));
         var editorViewModel = File.ReadAllText(DesktopPath("ViewModels", "EditorViewModel.cs"));
