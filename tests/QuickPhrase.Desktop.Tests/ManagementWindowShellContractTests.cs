@@ -30,6 +30,7 @@ public sealed class ManagementWindowShellContractTests
         var code = Read("MainWindow.xaml.cs");
 
         Assert.Contains("Topmost=\"True\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("WindowStyle=\"None\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ShowDockButton=\"True\"", xaml, StringComparison.Ordinal);
         Assert.Contains("DockToggleRequested=\"TitleBar_DockToggleRequested\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ManagementWindowMode.DockedRight", code, StringComparison.Ordinal);

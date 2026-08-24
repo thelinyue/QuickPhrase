@@ -13,6 +13,7 @@
         WindowStartupLocation="Manual"
         Topmost="True"
         ResizeMode="CanResizeWithGrip"
+        WindowStyle="None"
         Style="{StaticResource Style.Window.Shell}">
 
     <shell:WindowChrome.WindowChrome>
