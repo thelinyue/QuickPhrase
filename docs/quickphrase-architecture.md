@@ -90,7 +90,6 @@ desktop/QuickPhrase.Desktop/MainWindow.xaml
     └── Views/SettingsView.xaml
 
 desktop/QuickPhrase.Desktop/LauncherWindow.xaml
-desktop/QuickPhrase.Desktop/BatchPreviewWindow.xaml
 ```
 
 MainWindow 只有紧凑悬浮和右侧贴边两种形态：悬浮默认 `520×680 DIP`、最小 `380×520 DIP`、始终置顶；贴边约 `380 DIP` 宽，覆盖并跟随最近有效业务窗口的右侧内缘。话术库、图文段编辑器、设置、分类/移动/导航确认对话框和 Launcher 的真实布局与行为以现有 XAML、ViewModel 和代码为准。

@@ -17,6 +17,7 @@ Thumbs.db
 /coverage/
 /playwright-report/
 /test-results/
+**/TestResults/
 
 # 仓库根目录的本地构建、诊断和测试临时目录
 /.arch-*/

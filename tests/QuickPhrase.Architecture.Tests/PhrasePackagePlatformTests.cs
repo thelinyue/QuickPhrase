@@ -70,6 +70,7 @@ public sealed class PhrasePackagePlatformTests
         Assert.Equal(1, first.NewCategoryCount);
         Assert.Equal(1, first.NewPhraseCount);
         Assert.Contains(search.Items, item => item.Phrase.Body.TextProjection == "正文精确匹配");
+        Assert.Equal("orange", (await runtime.Phrases.ListAsync()).Single(phrase => phrase.Title == "批量导入测试").ColorKey);
 
         var secondPlan = PhrasePackagePlanner.BuildImportPlan(package, await runtime.CaptureSnapshotAsync());
         var second = await runtime.ImportAsync(secondPlan);

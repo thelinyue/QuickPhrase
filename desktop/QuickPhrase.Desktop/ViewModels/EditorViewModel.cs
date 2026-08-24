@@ -34,7 +34,7 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
     private string _baseTitle = "";
     private PhraseBody _baseBody = new([]);
     private Guid _baseCategoryId;
-    private string _baseColorKey = "default";
+    private string _baseColorKey = "orange";
     private bool _synchronizingCategorySelection;
     private bool _hasInvalidDocumentDraft;
     private readonly HashSet<Guid> _sessionImportedAssetIds = [];
@@ -47,7 +47,7 @@ public partial class EditorViewModel : ObservableObject, INavigationGuard
     [ObservableProperty] private ObservableCollection<SecondaryCategoryOption> _secondaryCategoryOptions = new();
     [ObservableProperty] private CategoryItem? _selectedPrimaryCategory;
     [ObservableProperty] private SecondaryCategoryOption? _selectedSecondaryCategory;
-    [ObservableProperty] private string _colorKey = "default";
+    [ObservableProperty] private string _colorKey = "orange";
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private string? _documentError;

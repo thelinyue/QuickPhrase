@@ -10,17 +10,13 @@ namespace QuickPhrase.Desktop.Tests;
 public sealed class ImagePreviewFailureTests
 {
     [Fact]
-    public void EditorAndBatchPreview_ShowChineseImageErrorStates()
+    public void EditorPreview_ShowsChineseImageErrorStates()
     {
         var editor = ReadDesktopFile("DesignSystem", "Components", "PhraseRichTextEditor.xaml.cs");
-        var batch = ReadDesktopFile("BatchPreviewWindow.xaml");
 
         Assert.Contains("AutomationProperties.SetName(status, \"图片加载错误\")", editor, StringComparison.Ordinal);
         Assert.Contains("nameof(PhraseSegmentItemViewModel.LoadError)", editor, StringComparison.Ordinal);
         Assert.Contains("nameof(PhraseSegmentItemViewModel.HasLoadError)", editor, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"图片加载错误\"", batch, StringComparison.Ordinal);
-        Assert.Contains("Visibility=\"{Binding HasLoadError", batch, StringComparison.Ordinal);
-        Assert.Contains("Text=\"{Binding LoadError}\"", batch, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -46,30 +42,6 @@ public sealed class ImagePreviewFailureTests
         });
     }
 
-    [Fact]
-    public void BatchPreview_ConvertsAsyncReadExceptionToChineseItemState()
-    {
-        WpfTestApplicationHost.Invoke(_ =>
-        {
-            var image = new PhraseImageReference(Guid.NewGuid(), "image/png", 100, 10, 10);
-            var phrase = new Phrase(
-                Guid.NewGuid(), "图片话术", new PhraseBody([PhraseSegment.CreateImage(image)]),
-                Guid.NewGuid(), ShortcutMode.None, null, 0, null, 1, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
-            var window = new BatchPreviewWindow(phrase, new ThrowingMediaStore(), confirmation: false, new AdapterCapabilities(
-                CapabilityStatus.Unverified, CapabilityStatus.Unverified, CapabilityStatus.Unsupported,
-                CapabilityStatus.Unsupported, CapabilityStatus.Unsupported, CapabilityStatus.Unsupported));
-            var method = typeof(BatchPreviewWindow).GetMethod("LoadThumbnailsAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
-
-            var task = Assert.IsAssignableFrom<Task>(method.Invoke(window, null));
-            task.GetAwaiter().GetResult();
-
-            var item = Assert.Single(window.Items);
-            var error = Assert.IsType<string>(item.GetType().GetProperty("LoadError")!.GetValue(item));
-            Assert.Contains("图片加载失败", error, StringComparison.Ordinal);
-            Assert.True(Assert.IsType<bool>(item.GetType().GetProperty("HasLoadError")!.GetValue(item)));
-        });
-    }
-
     private static string ReadDesktopFile(params string[] segments)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -77,14 +49,5 @@ public sealed class ImagePreviewFailureTests
             directory = directory.Parent;
         var root = directory?.FullName ?? throw new DirectoryNotFoundException("找不到 QuickPhrase.sln");
         return File.ReadAllText(Path.Combine(new[] { root, "desktop", "QuickPhrase.Desktop" }.Concat(segments).ToArray()));
-    }
-
-    private sealed class ThrowingMediaStore : IMediaAssetStore
-    {
-        public Task<MediaImportResult> ImportAsync(string sourcePath, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<MediaAssetContent?> ReadAsync(Guid assetId, CancellationToken cancellationToken = default) =>
-            Task.FromException<MediaAssetContent?>(new IOException("不应逃逸"));
     }
 }
