@@ -82,6 +82,8 @@ public sealed class UnifiedWpfUiStandardTests
         Assert.Contains("{DimensionText}", editorViewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("FileName", richEditor, StringComparison.Ordinal);
 
+        var batchPreview = ReadDesktopXaml("BatchPreviewWindow.xaml");
+        Assert.Contains("AutomationProperties.Name=\"{Binding AutomationName}\"", batchPreview, StringComparison.Ordinal);
     }
 
     [Fact]
