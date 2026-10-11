@@ -5,6 +5,12 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      sourceRef:
+        description: Source ref to check out for release validation
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -20,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sourceRef || github.ref }}
 
       - name: Setup Node 24.18.0
         uses: actions/setup-node@v4

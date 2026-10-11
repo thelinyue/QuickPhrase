@@ -68,8 +68,16 @@ jobs:
 
       - name: Install Inno Setup 6.7.3
         run: |
-          choco install innosetup --version=6.7.3 --yes --no-progress --force
-          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 6.7.3 安装失败。' }
+          # Chocolatey 尚无该版本；官网下载指向此官方资产，执行前核对厂商签名。
+          $setup = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          curl.exe --fail --location --silent --show-error --retry 2 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' --output $setup
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 官方下载失败。' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $setup
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Pyrsys B\.V\.') { throw 'Inno Setup 厂商签名校验失败。' }
+          $compilerRoot = Join-Path $env:RUNNER_TEMP 'inno-6.7.3'
+          $install = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/ALLUSERS', ('/DIR="' + $compilerRoot + '"'), '/TASKS=') -Wait -PassThru -WindowStyle Hidden
+          if ($install.ExitCode -ne 0) { throw 'Inno Setup 6.7.3 安装失败。' }
+          "INNOSETUP_ISCC=$(Join-Path $compilerRoot 'ISCC.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Build and package unsigned candidate
         env:
@@ -77,8 +85,7 @@ jobs:
           CONFIRM_WECOM: ${{ inputs.confirmWeComAcceptance }}
         run: |
           ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel prerelease -GitRef $env:GITHUB_REF -ConfirmWeComAcceptance:($env:CONFIRM_WECOM -eq 'true')
-          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION -InnoCompiler $compiler
+          ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION
           ./scripts/package-release.ps1 -Version $env:RELEASE_VERSION
 
       - name: Upload unsigned candidate bundle
