@@ -1,35 +1,24 @@
-# Code signing policy
+# 签名和发布政策
 
-QuickPhrase 当前不使用第三方代码签名服务，也不为 0.0.2 发布 Authenticode 签名资产。
+闪语当前不使用第三方代码签名服务，Rust/Tauri 开发构建及发布资产均未附带 Authenticode 签名。WebView2 官方引导程序的微软签名独立校验，不能称为闪语程序已签名。
 
-## 发布资产与风险提示
+## 资产与来源
 
-- GitHub Release 是正式发布资产的唯一公开来源。
-- 每次稳定版发布都必须提供 ZIP、Inno Setup 安装器、`SHA256SUMS.txt` 和 `release-manifest.json`。
-- `release-manifest.json` 必须声明 `signed: false` 与 `releaseChannel: stable`；不得将未签名资产描述为已签名或已时间戳。
-- Windows SmartScreen 可能显示未知发布者警告。使用者应在安装前核对下载资产与 `SHA256SUMS.txt` 的 SHA-256 值。
+- GitHub Release 是正式发布资产的公开来源；候选构建只上传 Actions artifact。
+- 沿用已有发布要求：提供 ZIP、Inno Setup 安装器、`SHA256SUMS.txt` 和 `release-manifest.json`。
+- manifest 如实声明 `signed: false`、版本、来源提交和发布通道；正式版通道为 `stable`，候选为 `prerelease`。
+- Windows SmartScreen 可能显示未知发布者提示。发布说明必须明确未签名状态和 SHA256 校验方式。
+- 程序嵌入实际 Tauri 前端资源；安装器可嵌入签名有效的微软 WebView2 引导程序。不能携带无关原型资源、用户数据或非预期二进制。
 
 ## 发布负责人职责
 
-发布负责人必须在创建正式 Release 前核对：
-
-1. 源标签 `v<version>` 指向预期且不可变的提交。
-2. CI、测试、Launcher smoke、企业微信人工矩阵与 Windows 11 安装矩阵均已通过。
-3. 资产不包含 WebView2、React、原型网页资源或非预期二进制文件。
-4. ProductVersion、FileVersion、文件名、发布通道和 manifest 内容正确。
-5. SHA-256 清单与公开资产一致，GitHub Actions 运行记录可追溯。
-6. Release Notes 明确说明未签名状态与 SHA-256 校验方式。
+1. 正式源标签 `v<version>` 指向预期提交，版本与源码一致；既有标签和资产不可移动或覆盖。
+2. 自动 CI、原生发送及企业微信人工矩阵、Windows 11 新装／升级／卸载矩阵通过。模拟测试和构建不能替代人工验收。
+3. 核对程序与安装器版本、ZIP 内容、发布通道、manifest、SHA256 清单及 Actions 记录。
+4. Release Notes 明确支持范围、未验证环境、未签名状态和安装依赖。
 
 ## 事件响应
 
-出现以下任一情况时立即停止发布并撤回受影响 Release：
+凭据可能泄露、发布链路被篡改、来源或校验值无法核验、存在恶意软件或安全回归时立即停止发布，撤回受影响资产并按 [SECURITY.md](SECURITY.md) 处理。
 
-- GitHub 凭据可能泄露，或工作流、发布脚本、安装器配置发生非预期变更。
-- 发布来源、资产哈希或构建产物无法核验。
-- 怀疑存在恶意软件、未授权二进制文件或安全回归。
-
-恢复发布需要完成凭据轮换、策略复核、创建新版本并重新执行完整验证。既有标签不得移动或强制推送。
-
-## 隐私
-
-项目隐私政策见 [PRIVACY.md](PRIVACY.md)，安全报告流程见 [SECURITY.md](SECURITY.md)。
+恢复发布需完成凭据和策略复核，创建新版本并重新验证；不得移动既有标签或强制推送。隐私行为见 [PRIVACY.md](PRIVACY.md)。

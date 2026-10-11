@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-10T12:32:38.393Z",
+  "scope": "window-style",
+  "results": [
+    "实际客户端置顶实心、未置顶空心，按钮尺寸位置一致",
+    "常用短语和搜索框分别切换睁眼及斜线眼图标，往返状态一致",
+    "7 个窗口已渲染元素的四角半径均为零",
+    "7 个 Windows 原生窗口 DWM 偏好均为直角，检查时保持隐藏"
+  ],
+  "windows": [
+    {
+      "Title": "闪语",
+      "Preference": 1,
+      "Result": 0,
+      "Visible": false
+    },
+    {
+      "Title": "常用短语 · 闪语",
+      "Preference": 1,
+      "Result": 0,
+      "Visible": false
+    },
+    {
+      "Title": "核对 · editor",
+      "Preference": 1,
+      "Result": 0,
+      "Visible": false
+    },
+    {
+      "Title": "核对 · settings",
+      "Preference": 1,
+      "Result": 0,
+      "Visible": false
+    },
+    {
+      "Title": "核对 · common-editor",
+      "Preference": 1,
+      "Result": 0,
+      "Visible": false
+    },
+    {
+      "Title": "核对 · common-sort",
+      "Preference": 1,
+      "Result": 0,
+      "Visible": false
+    },
+    {
+      "Title": "核对 · file-editor",
+      "Preference": 1,
+      "Result": 0,
+      "Visible": false
+    }
+  ],
+  "limits": [
+    "窗口隐藏状态下检查，不覆盖真实发送、吸附或 Windows 10 实机验收"
+  ]
+}

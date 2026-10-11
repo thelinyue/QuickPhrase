@@ -1,0 +1,94 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { CommonDockWindow, CommonPhraseBar, commonNavigationIndex } from './CommonPhrases';
+import { call } from './api';
+import type { Library, Settings } from './types';
+
+vi.mock('./api', () => ({ call: vi.fn(), closeWindow: vi.fn(), openWindow: vi.fn() }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
+function bar(mode: Settings['commonSingleClick'] = 'select', compact = false, busy = false) {
+  const onDeliver = vi.fn();
+  const library = { commonPhrases: [{ id: 'B', text: '谢谢', position: 0 }], settings: { commonSingleClick: mode, commonHeight: 144, dockCommonRows: 0 } } as Library;
+  render(<CommonPhraseBar library={library} compact={compact} busy={busy} onDeliver={onDeliver} onError={vi.fn()} />);
+  return onDeliver;
+}
+describe('常用短语的可配置点击行为', () => {
+  it.each([false, true])('左右邻项和上下最近项导航，Enter发送防长按，横条=%s', compact => {
+    const onDeliver=vi.fn(); const library={commonPhrases:[{id:'A',text:'第一项',position:0},{id:'B',text:'第二项',position:1},{id:'C',text:'下一行',position:2}],settings:{commonSingleClick:'select',commonHeight:144,dockCommonRows:0}} as Library;
+    render(<CommonPhraseBar library={library} compact={compact} busy={false} onDeliver={onDeliver} onError={vi.fn()} />);
+    const buttons=screen.getAllByRole('option'); const rects=[{left:0,top:0,width:50},{left:60,top:0,width:100},{left:50,top:30,width:70}];
+    buttons.forEach((button,i)=>vi.spyOn(button,'getBoundingClientRect').mockReturnValue(rects[i] as DOMRect));
+    buttons[0].focus(); fireEvent.keyDown(buttons[0],{key:'ArrowRight'}); expect(document.activeElement).toBe(buttons[1]);
+    fireEvent.keyDown(buttons[1],{key:'ArrowDown'}); expect(document.activeElement).toBe(buttons[2]);
+    fireEvent.keyDown(buttons[2],{key:'ArrowUp'}); expect(document.activeElement).toBe(buttons[1]);
+    fireEvent.keyDown(buttons[1],{key:'Enter'}); fireEvent.keyDown(buttons[1],{key:'Enter',repeat:true}); expect(onDeliver.mock.calls).toEqual([['B','send',13]]);
+    expect(commonNavigationIndex(rects,0,'ArrowUp')).toBe(0);
+  });
+  it('焦点切换后的旧repeat标记允许首个Enter，松键后可再次提交', () => {
+    const action=bar(); const button=screen.getByRole('option');
+    fireEvent.keyDown(button,{key:'Enter',repeat:true});fireEvent.keyDown(button,{key:'Enter',repeat:true});expect(action).toHaveBeenCalledTimes(1);
+    fireEvent.keyUp(button,{key:'Enter'});fireEvent.keyDown(button,{key:'Enter'});expect(action).toHaveBeenCalledTimes(2);
+    fireEvent.blur(window);fireEvent.keyDown(button,{key:'Enter',repeat:true});expect(action).toHaveBeenCalledTimes(3);
+  });
+  it.each([false, true])('点击栏外或焦点移出后取消短语选中，横条模式=%s', compact => {
+    bar('select', compact); const phrase = screen.getByRole('option', { name: '谢谢' });
+    fireEvent.click(phrase); expect(phrase.getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(document.body); expect(phrase.getAttribute('aria-selected')).toBe('false');
+    fireEvent.click(phrase); fireEvent.click(screen.getByRole('region', { name: '常用短语' }));
+    expect(phrase.getAttribute('aria-selected')).toBe('false');
+    fireEvent.click(phrase); fireEvent.blur(phrase, { relatedTarget: document.body });
+    expect(phrase.getAttribute('aria-selected')).toBe('false');
+  });
+  it('默认单击选中，双击插入一次', async () => {
+    const action = bar(); const phrase = screen.getByRole('option', { name: '谢谢' });
+    await userEvent.click(phrase); expect(action).not.toHaveBeenCalled();
+    expect(phrase.getAttribute('aria-selected')).toBe('true');
+    await userEvent.dblClick(phrase); expect(action.mock.calls).toEqual([['B', 'insert']]);
+  });
+  it.each(['insert', 'send'] as const)('两处面板单击配置为%s后，双击仅提交一次', async mode => {
+    for (const compact of [false, true]) {
+      const action = bar(mode, compact); await userEvent.dblClick(screen.getByRole('option', { name: '谢谢' }));
+      expect(action.mock.calls).toEqual([['B', mode]]); cleanup();
+    }
+  });
+  it('键盘Enter直接发送，发送期间不接受重复双击', async () => {
+    const action = bar('send'); screen.getByRole('option', { name: '谢谢' }).focus();
+    await userEvent.keyboard('{Enter}'); expect(action.mock.calls).toEqual([['B', 'send',13]]); cleanup();
+    const locked = bar('send', false, true); fireEvent.doubleClick(screen.getByRole('option', { name: '谢谢' }));
+    expect(locked).not.toHaveBeenCalled();
+  });
+});
+
+describe('底部短语整栏隐藏', () => {
+  it.each([false, true])('隐藏整条短语栏并保存开关，底部搜索开启=%s时保持独立', async dockSearch => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.mocked(call).mockResolvedValue(undefined);
+    const library = { commonPhrases: [{ id: 'B', text: '谢谢', position: 0 }], settings: { commonSingleClick: 'select', dockCommon: true, dockSearch, showCommon: true, commonHeight: 144, dockCommonRows: 0 } } as Library;
+    const view = render(<CommonDockWindow library={library} />);
+    await userEvent.click(screen.getByRole('button', { name: '隐藏短语' }));
+    expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...library.settings, dockCommon: false } });
+    view.rerender(<CommonDockWindow library={{ ...library, settings: { ...library.settings, dockCommon: false } }} />);
+    expect(view.container.querySelector('.common-phrases')).toBeNull();
+    expect(screen.queryByRole('button', { name: '常用短语菜单' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '新增常用短语' })).toBeNull();
+    expect(Boolean(screen.queryByRole('textbox', { name: '底部搜索话术、本地文件' }))).toBe(dockSearch);
+    view.rerender(<CommonDockWindow library={library} />);
+    expect(screen.getByRole('option', { name: '谢谢' })).toBeTruthy();
+  });
+  it('保存失败时保留短语栏并允许重试，快速连点不重复保存', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    let rejectSave: (reason: Error) => void = () => {};
+    vi.mocked(call).mockImplementation(() => new Promise((_, reject) => { rejectSave = reject; }));
+    const library = { commonPhrases: [{ id: 'B', text: '谢谢', position: 0 }], settings: { commonSingleClick: 'select', dockCommon: true, dockSearch: false, commonHeight: 144, dockCommonRows: 0 } } as Library;
+    render(<CommonDockWindow library={library} />);
+    const hide = screen.getByRole('button', { name: '隐藏短语' });
+    fireEvent.click(hide); fireEvent.click(hide);
+    expect(call).toHaveBeenCalledTimes(1);
+    rejectSave(new Error('设置保存失败'));
+    expect((await screen.findByRole('status')).textContent).toContain('设置保存失败');
+    expect(screen.getByRole('option', { name: '谢谢' })).toBeTruthy();
+    expect((hide as HTMLButtonElement).disabled).toBe(false);
+  });
+});

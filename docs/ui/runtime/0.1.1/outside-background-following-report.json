@@ -1,0 +1,2187 @@
+{
+  "date": "2026-10-11T09:46:12.058Z",
+  "results": [
+    {
+      "name": "普通启动随目标完整显示，不抢焦点且三个常驻窗口均不进入任务栏",
+      "passed": true
+    },
+    {
+      "name": "普通启动多窗口返回目标时侧栏同步层级、不被普通窗口盖住且不改写置顶设置",
+      "passed": true
+    },
+    {
+      "name": "普通启动重复运行不抢焦点，也不解除手动隐藏",
+      "passed": true
+    },
+    {
+      "name": "普通启动无目标时只驻留后台，关闭吸附的旧设置也不弹出主窗口",
+      "passed": true
+    },
+    {
+      "name": "普通启动无目标手动独立唤起，返回目标后恢复跟随并延续编辑窗口的关系",
+      "passed": true
+    },
+    {
+      "name": "普通启动目标最小化、切换其他程序及还原同步隐藏和显示，手动隐藏保持有效",
+      "passed": true
+    },
+    {
+      "name": "普通启动快捷键恢复非托盘最小化，关闭吸附恢复独立尺寸且旧设置兼容保留",
+      "passed": true
+    },
+    {
+      "name": "开机启动随目标完整显示，不抢焦点且三个常驻窗口均不进入任务栏",
+      "passed": true
+    },
+    {
+      "name": "开机启动多窗口返回目标时侧栏同步层级、不被普通窗口盖住且不改写置顶设置",
+      "passed": true
+    },
+    {
+      "name": "开机启动重复运行不抢焦点，也不解除手动隐藏",
+      "passed": true
+    },
+    {
+      "name": "开机启动无目标时只驻留后台，关闭吸附的旧设置也不弹出主窗口",
+      "passed": true
+    },
+    {
+      "name": "开机启动无目标手动独立唤起，返回目标后恢复跟随并延续编辑窗口的关系",
+      "passed": true
+    },
+    {
+      "name": "开机启动目标最小化、切换其他程序及还原同步隐藏和显示，手动隐藏保持有效",
+      "passed": true
+    },
+    {
+      "name": "开机启动快捷键恢复非托盘最小化，关闭吸附恢复独立尺寸且旧设置兼容保留",
+      "passed": true
+    }
+  ],
+  "snapshots": [
+    {
+      "name": "普通启动-active",
+      "state": {
+        "nonce": 7,
+        "hwnd": 64685986,
+        "pid": 5060,
+        "foreground": 64685986,
+        "foregroundPid": 5060,
+        "cursor": {
+          "x": 740,
+          "y": 180
+        },
+        "windowAtCursor": 64685986,
+        "probedWindow": 64685986,
+        "targetProbes": [],
+        "windows": [
+          {
+            "handle": 64685986,
+            "above": 43648944,
+            "below": 34214024,
+            "zOrder": 46,
+            "rect": {
+              "left": 700,
+              "top": 120,
+              "right": 1300,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 707,
+              "top": 120,
+              "right": 1293,
+              "bottom": 653
+            },
+            "client": {
+              "x": 708,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 48435524,
+            "above": 36966920,
+            "below": 1119084,
+            "zOrder": 65,
+            "rect": {
+              "left": 700,
+              "top": 120,
+              "right": 1300,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 707,
+              "top": 120,
+              "right": 1293,
+              "bottom": 653
+            },
+            "client": {
+              "x": 708,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 34214024,
+            "above": 64685986,
+            "below": 15995326,
+            "zOrder": 47,
+            "rect": {
+              "left": 1286,
+              "top": 120,
+              "right": 1632,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 1293,
+              "top": 120,
+              "right": 1625,
+              "bottom": 653
+            },
+            "client": {
+              "x": 1294,
+              "y": 121
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 15995326,
+            "above": 34214024,
+            "below": 50267646,
+            "zOrder": 48,
+            "rect": {
+              "left": 700,
+              "top": 653,
+              "right": 1300,
+              "bottom": 691
+            },
+            "frame": {
+              "left": 707,
+              "top": 653,
+              "right": 1293,
+              "bottom": 684
+            },
+            "client": {
+              "x": 708,
+              "y": 654
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 4720608,
+            "above": 48894206,
+            "below": 78776828,
+            "zOrder": 34,
+            "rect": {
+              "left": 234,
+              "top": 234,
+              "right": 534,
+              "bottom": 394
+            },
+            "frame": {
+              "left": 234,
+              "top": 234,
+              "right": 534,
+              "bottom": 394
+            },
+            "client": {
+              "x": 234,
+              "y": 234
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": true,
+            "topmost": true
+          }
+        ],
+        "taskbar": {
+          "handle": 41224042,
+          "above": 2491076,
+          "below": 17505010,
+          "zOrder": 40,
+          "rect": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "frame": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "client": {
+            "x": 0,
+            "y": 1032
+          },
+          "work": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1032
+          },
+          "monitor": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "dpi": 96,
+          "visible": true,
+          "iconic": false,
+          "toolWindow": true,
+          "appWindow": false,
+          "noActivate": false,
+          "topmost": true
+        }
+      }
+    },
+    {
+      "name": "普通启动-covered",
+      "state": {
+        "nonce": 22,
+        "hwnd": 64685986,
+        "pid": 5060,
+        "foreground": 48435524,
+        "foregroundPid": 43420,
+        "cursor": {
+          "x": 740,
+          "y": 180
+        },
+        "windowAtCursor": 64685986,
+        "probedWindow": 64685986,
+        "targetProbes": [],
+        "windows": [
+          {
+            "handle": 64685986,
+            "above": 43648944,
+            "below": 34214024,
+            "zOrder": 50,
+            "rect": {
+              "left": 700,
+              "top": 120,
+              "right": 1300,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 707,
+              "top": 120,
+              "right": 1293,
+              "bottom": 653
+            },
+            "client": {
+              "x": 708,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 48435524,
+            "above": 36966920,
+            "below": 1119084,
+            "zOrder": 46,
+            "rect": {
+              "left": 1273,
+              "top": 120,
+              "right": 1873,
+              "bottom": 620
+            },
+            "frame": {
+              "left": 1280,
+              "top": 120,
+              "right": 1866,
+              "bottom": 613
+            },
+            "client": {
+              "x": 1281,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 34214024,
+            "above": 64685986,
+            "below": 15995326,
+            "zOrder": 51,
+            "rect": {
+              "left": 1286,
+              "top": 120,
+              "right": 1632,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 1293,
+              "top": 120,
+              "right": 1625,
+              "bottom": 653
+            },
+            "client": {
+              "x": 1294,
+              "y": 121
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 15995326,
+            "above": 34214024,
+            "below": 50267646,
+            "zOrder": 52,
+            "rect": {
+              "left": 700,
+              "top": 653,
+              "right": 1300,
+              "bottom": 691
+            },
+            "frame": {
+              "left": 707,
+              "top": 653,
+              "right": 1293,
+              "bottom": 684
+            },
+            "client": {
+              "x": 708,
+              "y": 654
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 4720608,
+            "above": 48894206,
+            "below": 78776828,
+            "zOrder": 34,
+            "rect": {
+              "left": 234,
+              "top": 234,
+              "right": 534,
+              "bottom": 394
+            },
+            "frame": {
+              "left": 234,
+              "top": 234,
+              "right": 534,
+              "bottom": 394
+            },
+            "client": {
+              "x": 234,
+              "y": 234
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": true,
+            "topmost": true
+          }
+        ],
+        "taskbar": {
+          "handle": 41224042,
+          "above": 2491076,
+          "below": 17505010,
+          "zOrder": 40,
+          "rect": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "frame": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "client": {
+            "x": 0,
+            "y": 1032
+          },
+          "work": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1032
+          },
+          "monitor": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "dpi": 96,
+          "visible": true,
+          "iconic": false,
+          "toolWindow": true,
+          "appWindow": false,
+          "noActivate": false,
+          "topmost": true
+        }
+      }
+    },
+    {
+      "name": "普通启动-reactivated",
+      "state": {
+        "nonce": 28,
+        "hwnd": 64685986,
+        "pid": 5060,
+        "foreground": 64685986,
+        "foregroundPid": 5060,
+        "cursor": {
+          "x": 740,
+          "y": 180
+        },
+        "windowAtCursor": 64685986,
+        "probedWindow": 34214024,
+        "targetProbes": [],
+        "windows": [
+          {
+            "handle": 64685986,
+            "above": 43648944,
+            "below": 34214024,
+            "zOrder": 46,
+            "rect": {
+              "left": 700,
+              "top": 120,
+              "right": 1300,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 707,
+              "top": 120,
+              "right": 1293,
+              "bottom": 653
+            },
+            "client": {
+              "x": 708,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 48435524,
+            "above": 36966920,
+            "below": 1119084,
+            "zOrder": 52,
+            "rect": {
+              "left": 1273,
+              "top": 120,
+              "right": 1873,
+              "bottom": 620
+            },
+            "frame": {
+              "left": 1280,
+              "top": 120,
+              "right": 1866,
+              "bottom": 613
+            },
+            "client": {
+              "x": 1281,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 34214024,
+            "above": 64685986,
+            "below": 15995326,
+            "zOrder": 47,
+            "rect": {
+              "left": 1286,
+              "top": 120,
+              "right": 1632,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 1293,
+              "top": 120,
+              "right": 1625,
+              "bottom": 653
+            },
+            "client": {
+              "x": 1294,
+              "y": 121
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 15995326,
+            "above": 34214024,
+            "below": 11210500,
+            "zOrder": 48,
+            "rect": {
+              "left": 700,
+              "top": 653,
+              "right": 1300,
+              "bottom": 691
+            },
+            "frame": {
+              "left": 707,
+              "top": 653,
+              "right": 1293,
+              "bottom": 684
+            },
+            "client": {
+              "x": 708,
+              "y": 654
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 4720608,
+            "above": 48894206,
+            "below": 78776828,
+            "zOrder": 34,
+            "rect": {
+              "left": 234,
+              "top": 234,
+              "right": 534,
+              "bottom": 394
+            },
+            "frame": {
+              "left": 234,
+              "top": 234,
+              "right": 534,
+              "bottom": 394
+            },
+            "client": {
+              "x": 234,
+              "y": 234
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": true,
+            "topmost": true
+          }
+        ],
+        "taskbar": {
+          "handle": 41224042,
+          "above": 2491076,
+          "below": 17505010,
+          "zOrder": 40,
+          "rect": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "frame": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "client": {
+            "x": 0,
+            "y": 1032
+          },
+          "work": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1032
+          },
+          "monitor": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "dpi": 96,
+          "visible": true,
+          "iconic": false,
+          "toolWindow": true,
+          "appWindow": false,
+          "noActivate": false,
+          "topmost": true
+        }
+      }
+    },
+    {
+      "name": "普通启动-window-order",
+      "state": {
+        "nonce": 28,
+        "hwnd": 64685986,
+        "pid": 5060,
+        "foreground": 64685986,
+        "foregroundPid": 5060,
+        "cursor": {
+          "x": 740,
+          "y": 180
+        },
+        "windowAtCursor": 64685986,
+        "probedWindow": 34214024,
+        "targetProbes": [],
+        "windows": [
+          {
+            "handle": 64685986,
+            "above": 43648944,
+            "below": 34214024,
+            "zOrder": 46,
+            "rect": {
+              "left": 700,
+              "top": 120,
+              "right": 1300,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 707,
+              "top": 120,
+              "right": 1293,
+              "bottom": 653
+            },
+            "client": {
+              "x": 708,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 48435524,
+            "above": 36966920,
+            "below": 1119084,
+            "zOrder": 52,
+            "rect": {
+              "left": 1273,
+              "top": 120,
+              "right": 1873,
+              "bottom": 620
+            },
+            "frame": {
+              "left": 1280,
+              "top": 120,
+              "right": 1866,
+              "bottom": 613
+            },
+            "client": {
+              "x": 1281,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 34214024,
+            "above": 64685986,
+            "below": 15995326,
+            "zOrder": 47,
+            "rect": {
+              "left": 1286,
+              "top": 120,
+              "right": 1632,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 1293,
+              "top": 120,
+              "right": 1625,
+              "bottom": 653
+            },
+            "client": {
+              "x": 1294,
+              "y": 121
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 15995326,
+            "above": 34214024,
+            "below": 11210500,
+            "zOrder": 48,
+            "rect": {
+              "left": 700,
+              "top": 653,
+              "right": 1300,
+              "bottom": 691
+            },
+            "frame": {
+              "left": 707,
+              "top": 653,
+              "right": 1293,
+              "bottom": 684
+            },
+            "client": {
+              "x": 708,
+              "y": 654
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 4720608,
+            "above": 48894206,
+            "below": 78776828,
+            "zOrder": 34,
+            "rect": {
+              "left": 234,
+              "top": 234,
+              "right": 534,
+              "bottom": 394
+            },
+            "frame": {
+              "left": 234,
+              "top": 234,
+              "right": 534,
+              "bottom": 394
+            },
+            "client": {
+              "x": 234,
+              "y": 234
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": true,
+            "topmost": true
+          }
+        ],
+        "taskbar": {
+          "handle": 41224042,
+          "above": 2491076,
+          "below": 17505010,
+          "zOrder": 40,
+          "rect": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "frame": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "client": {
+            "x": 0,
+            "y": 1032
+          },
+          "work": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1032
+          },
+          "monitor": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "dpi": 96,
+          "visible": true,
+          "iconic": false,
+          "toolWindow": true,
+          "appWindow": false,
+          "noActivate": false,
+          "topmost": true
+        }
+      }
+    },
+    {
+      "name": "开机启动-active",
+      "state": {
+        "nonce": 143,
+        "hwnd": 64685986,
+        "pid": 5060,
+        "foreground": 64685986,
+        "foregroundPid": 5060,
+        "cursor": {
+          "x": 740,
+          "y": 180
+        },
+        "windowAtCursor": 64685986,
+        "probedWindow": 64685986,
+        "targetProbes": [],
+        "windows": [
+          {
+            "handle": 64685986,
+            "above": 43648944,
+            "below": 65605772,
+            "zOrder": 46,
+            "rect": {
+              "left": 700,
+              "top": 120,
+              "right": 1300,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 707,
+              "top": 120,
+              "right": 1293,
+              "bottom": 653
+            },
+            "client": {
+              "x": 708,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 48435524,
+            "above": 36966920,
+            "below": 1119084,
+            "zOrder": 65,
+            "rect": {
+              "left": 700,
+              "top": 120,
+              "right": 1300,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 707,
+              "top": 120,
+              "right": 1293,
+              "bottom": 653
+            },
+            "client": {
+              "x": 708,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 65605772,
+            "above": 64685986,
+            "below": 8192430,
+            "zOrder": 47,
+            "rect": {
+              "left": 1286,
+              "top": 120,
+              "right": 1632,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 1293,
+              "top": 120,
+              "right": 1625,
+              "bottom": 653
+            },
+            "client": {
+              "x": 1294,
+              "y": 121
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 8192430,
+            "above": 65605772,
+            "below": 72092232,
+            "zOrder": 48,
+            "rect": {
+              "left": 700,
+              "top": 653,
+              "right": 1300,
+              "bottom": 691
+            },
+            "frame": {
+              "left": 707,
+              "top": 653,
+              "right": 1293,
+              "bottom": 684
+            },
+            "client": {
+              "x": 708,
+              "y": 654
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 6817550,
+            "above": 48894206,
+            "below": 78776828,
+            "zOrder": 34,
+            "rect": {
+              "left": 156,
+              "top": 156,
+              "right": 456,
+              "bottom": 316
+            },
+            "frame": {
+              "left": 156,
+              "top": 156,
+              "right": 456,
+              "bottom": 316
+            },
+            "client": {
+              "x": 156,
+              "y": 156
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": true,
+            "topmost": true
+          }
+        ],
+        "taskbar": {
+          "handle": 41224042,
+          "above": 2491076,
+          "below": 17505010,
+          "zOrder": 40,
+          "rect": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "frame": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "client": {
+            "x": 0,
+            "y": 1032
+          },
+          "work": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1032
+          },
+          "monitor": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "dpi": 96,
+          "visible": true,
+          "iconic": false,
+          "toolWindow": true,
+          "appWindow": false,
+          "noActivate": false,
+          "topmost": true
+        }
+      }
+    },
+    {
+      "name": "开机启动-covered",
+      "state": {
+        "nonce": 158,
+        "hwnd": 64685986,
+        "pid": 5060,
+        "foreground": 48435524,
+        "foregroundPid": 43420,
+        "cursor": {
+          "x": 740,
+          "y": 180
+        },
+        "windowAtCursor": 64685986,
+        "probedWindow": 64685986,
+        "targetProbes": [],
+        "windows": [
+          {
+            "handle": 64685986,
+            "above": 43648944,
+            "below": 65605772,
+            "zOrder": 50,
+            "rect": {
+              "left": 700,
+              "top": 120,
+              "right": 1300,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 707,
+              "top": 120,
+              "right": 1293,
+              "bottom": 653
+            },
+            "client": {
+              "x": 708,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 48435524,
+            "above": 36966920,
+            "below": 1119084,
+            "zOrder": 46,
+            "rect": {
+              "left": 1273,
+              "top": 120,
+              "right": 1873,
+              "bottom": 620
+            },
+            "frame": {
+              "left": 1280,
+              "top": 120,
+              "right": 1866,
+              "bottom": 613
+            },
+            "client": {
+              "x": 1281,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 65605772,
+            "above": 64685986,
+            "below": 8192430,
+            "zOrder": 51,
+            "rect": {
+              "left": 1286,
+              "top": 120,
+              "right": 1632,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 1293,
+              "top": 120,
+              "right": 1625,
+              "bottom": 653
+            },
+            "client": {
+              "x": 1294,
+              "y": 121
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 8192430,
+            "above": 65605772,
+            "below": 72092232,
+            "zOrder": 52,
+            "rect": {
+              "left": 700,
+              "top": 653,
+              "right": 1300,
+              "bottom": 691
+            },
+            "frame": {
+              "left": 707,
+              "top": 653,
+              "right": 1293,
+              "bottom": 684
+            },
+            "client": {
+              "x": 708,
+              "y": 654
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 6817550,
+            "above": 48894206,
+            "below": 78776828,
+            "zOrder": 34,
+            "rect": {
+              "left": 156,
+              "top": 156,
+              "right": 456,
+              "bottom": 316
+            },
+            "frame": {
+              "left": 156,
+              "top": 156,
+              "right": 456,
+              "bottom": 316
+            },
+            "client": {
+              "x": 156,
+              "y": 156
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": true,
+            "topmost": true
+          }
+        ],
+        "taskbar": {
+          "handle": 41224042,
+          "above": 2491076,
+          "below": 17505010,
+          "zOrder": 40,
+          "rect": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "frame": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "client": {
+            "x": 0,
+            "y": 1032
+          },
+          "work": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1032
+          },
+          "monitor": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "dpi": 96,
+          "visible": true,
+          "iconic": false,
+          "toolWindow": true,
+          "appWindow": false,
+          "noActivate": false,
+          "topmost": true
+        }
+      }
+    },
+    {
+      "name": "开机启动-reactivated",
+      "state": {
+        "nonce": 164,
+        "hwnd": 64685986,
+        "pid": 5060,
+        "foreground": 64685986,
+        "foregroundPid": 5060,
+        "cursor": {
+          "x": 740,
+          "y": 180
+        },
+        "windowAtCursor": 64685986,
+        "probedWindow": 65605772,
+        "targetProbes": [],
+        "windows": [
+          {
+            "handle": 64685986,
+            "above": 43648944,
+            "below": 65605772,
+            "zOrder": 46,
+            "rect": {
+              "left": 700,
+              "top": 120,
+              "right": 1300,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 707,
+              "top": 120,
+              "right": 1293,
+              "bottom": 653
+            },
+            "client": {
+              "x": 708,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 48435524,
+            "above": 36966920,
+            "below": 1119084,
+            "zOrder": 52,
+            "rect": {
+              "left": 1273,
+              "top": 120,
+              "right": 1873,
+              "bottom": 620
+            },
+            "frame": {
+              "left": 1280,
+              "top": 120,
+              "right": 1866,
+              "bottom": 613
+            },
+            "client": {
+              "x": 1281,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 65605772,
+            "above": 64685986,
+            "below": 8192430,
+            "zOrder": 47,
+            "rect": {
+              "left": 1286,
+              "top": 120,
+              "right": 1632,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 1293,
+              "top": 120,
+              "right": 1625,
+              "bottom": 653
+            },
+            "client": {
+              "x": 1294,
+              "y": 121
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 8192430,
+            "above": 65605772,
+            "below": 11210500,
+            "zOrder": 48,
+            "rect": {
+              "left": 700,
+              "top": 653,
+              "right": 1300,
+              "bottom": 691
+            },
+            "frame": {
+              "left": 707,
+              "top": 653,
+              "right": 1293,
+              "bottom": 684
+            },
+            "client": {
+              "x": 708,
+              "y": 654
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 6817550,
+            "above": 48894206,
+            "below": 78776828,
+            "zOrder": 34,
+            "rect": {
+              "left": 156,
+              "top": 156,
+              "right": 456,
+              "bottom": 316
+            },
+            "frame": {
+              "left": 156,
+              "top": 156,
+              "right": 456,
+              "bottom": 316
+            },
+            "client": {
+              "x": 156,
+              "y": 156
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": true,
+            "topmost": true
+          }
+        ],
+        "taskbar": {
+          "handle": 41224042,
+          "above": 2491076,
+          "below": 17505010,
+          "zOrder": 40,
+          "rect": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "frame": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "client": {
+            "x": 0,
+            "y": 1032
+          },
+          "work": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1032
+          },
+          "monitor": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "dpi": 96,
+          "visible": true,
+          "iconic": false,
+          "toolWindow": true,
+          "appWindow": false,
+          "noActivate": false,
+          "topmost": true
+        }
+      }
+    },
+    {
+      "name": "开机启动-window-order",
+      "state": {
+        "nonce": 164,
+        "hwnd": 64685986,
+        "pid": 5060,
+        "foreground": 64685986,
+        "foregroundPid": 5060,
+        "cursor": {
+          "x": 740,
+          "y": 180
+        },
+        "windowAtCursor": 64685986,
+        "probedWindow": 65605772,
+        "targetProbes": [],
+        "windows": [
+          {
+            "handle": 64685986,
+            "above": 43648944,
+            "below": 65605772,
+            "zOrder": 46,
+            "rect": {
+              "left": 700,
+              "top": 120,
+              "right": 1300,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 707,
+              "top": 120,
+              "right": 1293,
+              "bottom": 653
+            },
+            "client": {
+              "x": 708,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 48435524,
+            "above": 36966920,
+            "below": 1119084,
+            "zOrder": 52,
+            "rect": {
+              "left": 1273,
+              "top": 120,
+              "right": 1873,
+              "bottom": 620
+            },
+            "frame": {
+              "left": 1280,
+              "top": 120,
+              "right": 1866,
+              "bottom": 613
+            },
+            "client": {
+              "x": 1281,
+              "y": 151
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": false,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 65605772,
+            "above": 64685986,
+            "below": 8192430,
+            "zOrder": 47,
+            "rect": {
+              "left": 1286,
+              "top": 120,
+              "right": 1632,
+              "bottom": 660
+            },
+            "frame": {
+              "left": 1293,
+              "top": 120,
+              "right": 1625,
+              "bottom": 653
+            },
+            "client": {
+              "x": 1294,
+              "y": 121
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 8192430,
+            "above": 65605772,
+            "below": 11210500,
+            "zOrder": 48,
+            "rect": {
+              "left": 700,
+              "top": 653,
+              "right": 1300,
+              "bottom": 691
+            },
+            "frame": {
+              "left": 707,
+              "top": 653,
+              "right": 1293,
+              "bottom": 684
+            },
+            "client": {
+              "x": 708,
+              "y": 654
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": true,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": false,
+            "topmost": false
+          },
+          {
+            "handle": 6817550,
+            "above": 48894206,
+            "below": 78776828,
+            "zOrder": 34,
+            "rect": {
+              "left": 156,
+              "top": 156,
+              "right": 456,
+              "bottom": 316
+            },
+            "frame": {
+              "left": 156,
+              "top": 156,
+              "right": 456,
+              "bottom": 316
+            },
+            "client": {
+              "x": 156,
+              "y": 156
+            },
+            "work": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1032
+            },
+            "monitor": {
+              "left": 0,
+              "top": 0,
+              "right": 1920,
+              "bottom": 1080
+            },
+            "dpi": 96,
+            "visible": false,
+            "iconic": false,
+            "toolWindow": true,
+            "appWindow": false,
+            "noActivate": true,
+            "topmost": true
+          }
+        ],
+        "taskbar": {
+          "handle": 41224042,
+          "above": 2491076,
+          "below": 17505010,
+          "zOrder": 40,
+          "rect": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "frame": {
+            "left": 0,
+            "top": 1032,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "client": {
+            "x": 0,
+            "y": 1032
+          },
+          "work": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1032
+          },
+          "monitor": {
+            "left": 0,
+            "top": 0,
+            "right": 1920,
+            "bottom": 1080
+          },
+          "dpi": 96,
+          "visible": true,
+          "iconic": false,
+          "toolWindow": true,
+          "appWindow": false,
+          "noActivate": false,
+          "topmost": true
+        }
+      }
+    }
+  ],
+  "limits": [
+    "只操作隔离客户端与原生宿主，不操作系统剪贴板或聊天发送",
+    "真实企业微信及多显示器DPI另需实机验收"
+  ]
+}

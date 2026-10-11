@@ -4,55 +4,57 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 defaults:
   run:
-    shell: powershell
+    shell: pwsh
 
 jobs:
   quality-gates:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Node 24.18.0
+        uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
+          node-version: 24.18.0
+          cache: npm
 
-      - name: Installer script tests
-        run: node --test tests/installer-shortcut.test.mjs
-
-      - name: Setup .NET 10.0.400
-        uses: actions/setup-dotnet@v4
+      - name: Setup Rust 1.99.0
+        uses: dtolnay/rust-toolchain@stable
         with:
-          dotnet-version: 10.0.400
+          toolchain: 1.99.0
+          components: rustfmt, clippy
 
-      - name: Restore
-        run: dotnet restore QuickPhrase.sln
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
 
-      - name: Debug build
-        run: dotnet build QuickPhrase.sln -c Debug --no-restore --verbosity minimal
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
 
-      - name: Debug Desktop tests
-        run: dotnet test tests/QuickPhrase.Desktop.Tests/QuickPhrase.Desktop.Tests.csproj -c Debug --no-build --verbosity minimal
+      - name: Frontend tests
+        run: npm test
 
-      - name: Debug Architecture tests
-        run: dotnet test tests/QuickPhrase.Architecture.Tests/QuickPhrase.Architecture.Tests.csproj -c Debug --no-build --verbosity minimal
+      - name: TypeScript and frontend build
+        run: npm run build
 
-      - name: Release build
-        run: dotnet build QuickPhrase.sln -c Release --no-restore --verbosity minimal
+      - name: Rust format
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 
-      - name: Release Desktop tests
-        run: dotnet test tests/QuickPhrase.Desktop.Tests/QuickPhrase.Desktop.Tests.csproj -c Release --no-build --verbosity minimal
+      - name: Rust tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
-      - name: Release Architecture tests
-        run: dotnet test tests/QuickPhrase.Architecture.Tests/QuickPhrase.Architecture.Tests.csproj -c Release --no-build --verbosity minimal
+      - name: Rust Clippy
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
-      - name: Native Launcher smoke
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-launcher-smoke.ps1 -Mode Native -Configuration Release
-
-      - name: Launcher hot-call performance gate
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-launcher-smoke.ps1 -Mode Performance -Configuration Release
+      - name: Debug client build
+        run: cargo build --locked --manifest-path src-tauri/Cargo.toml --features custom-protocol

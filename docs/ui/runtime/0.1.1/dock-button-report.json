@@ -1,0 +1,139 @@
+{
+  "date": "2026-10-10T14:57:16.623Z",
+  "scope": "dock-button-states",
+  "states": [
+    {
+      "state": "disabled",
+      "storedDock": false,
+      "windowVisible": false,
+      "buttons": [
+        {
+          "label": "吸附",
+          "pressed": "false",
+          "x": 249,
+          "y": 0.5,
+          "width": 27,
+          "height": 26,
+          "iconWidth": 18,
+          "iconHeight": 18,
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4M3 3l14 14",
+          "transform": "matrix(0, -1, 1, 0, 0, 0)"
+        },
+        {
+          "label": "置顶",
+          "pressed": "false",
+          "x": 276,
+          "y": 0.5,
+          "width": 27,
+          "height": 26,
+          "iconWidth": 25.45587158203125,
+          "iconHeight": 25.45584487915039,
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z",
+          "transform": "matrix(0.707107, 0.707107, -0.707107, 0.707107, 0, 0)"
+        },
+        {
+          "label": "最小化",
+          "pressed": null,
+          "x": 303,
+          "y": 0.5,
+          "width": 27,
+          "height": 26,
+          "iconWidth": 18,
+          "iconHeight": 18,
+          "path": "M4 10h12",
+          "transform": "none"
+        }
+      ]
+    },
+    {
+      "state": "enabled",
+      "storedDock": true,
+      "windowVisible": false,
+      "buttons": [
+        {
+          "label": "吸附",
+          "pressed": "true",
+          "x": 249,
+          "y": 0.5,
+          "width": 27,
+          "height": 26,
+          "iconWidth": 18,
+          "iconHeight": 18,
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4",
+          "transform": "matrix(0, -1, 1, 0, 0, 0)"
+        },
+        {
+          "label": "置顶",
+          "pressed": "false",
+          "x": 276,
+          "y": 0.5,
+          "width": 27,
+          "height": 26,
+          "iconWidth": 25.45587158203125,
+          "iconHeight": 25.45584487915039,
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z",
+          "transform": "matrix(0.707107, 0.707107, -0.707107, 0.707107, 0, 0)"
+        },
+        {
+          "label": "最小化",
+          "pressed": null,
+          "x": 303,
+          "y": 0.5,
+          "width": 27,
+          "height": 26,
+          "iconWidth": 18,
+          "iconHeight": 18,
+          "path": "M4 10h12",
+          "transform": "none"
+        }
+      ]
+    },
+    {
+      "state": "disabled-again",
+      "storedDock": false,
+      "windowVisible": false,
+      "buttons": [
+        {
+          "label": "吸附",
+          "pressed": "false",
+          "x": 249,
+          "y": 0.5,
+          "width": 27,
+          "height": 26,
+          "iconWidth": 18,
+          "iconHeight": 18,
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4M3 3l14 14",
+          "transform": "matrix(0, -1, 1, 0, 0, 0)"
+        },
+        {
+          "label": "置顶",
+          "pressed": "false",
+          "x": 276,
+          "y": 0.5,
+          "width": 27,
+          "height": 26,
+          "iconWidth": 25.45587158203125,
+          "iconHeight": 25.45584487915039,
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z",
+          "transform": "matrix(0.707107, 0.707107, -0.707107, 0.707107, 0, 0)"
+        },
+        {
+          "label": "最小化",
+          "pressed": null,
+          "x": 303,
+          "y": 0.5,
+          "width": 27,
+          "height": 26,
+          "iconWidth": 18,
+          "iconHeight": 18,
+          "path": "M4 10h12",
+          "transform": "none"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "实际 Tauri WebView；记录时窗口隐藏，通过 CDP 点击按钮并读取 Rust 保存的设置",
+    "未执行实体键鼠、剪贴板、发送、真实窗口吸附或安装验收"
+  ]
+}

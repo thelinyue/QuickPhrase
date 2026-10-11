@@ -1,0 +1,470 @@
+{
+  "date": "2026-10-11T08:06:34.088Z",
+  "snapshots": [
+    {
+      "theme": "default",
+      "enabled": false,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4M3 3l14 14"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "显示常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        },
+        {
+          "label": "显示搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        }
+      ]
+    },
+    {
+      "theme": "default",
+      "enabled": true,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "rgb(255, 255, 255)",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "隐藏常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        },
+        {
+          "label": "隐藏搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        }
+      ]
+    },
+    {
+      "theme": "green",
+      "enabled": false,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4M3 3l14 14"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "显示常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        },
+        {
+          "label": "显示搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        }
+      ]
+    },
+    {
+      "theme": "green",
+      "enabled": true,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "rgb(255, 255, 255)",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "隐藏常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        },
+        {
+          "label": "隐藏搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        }
+      ]
+    },
+    {
+      "theme": "blue",
+      "enabled": false,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4M3 3l14 14"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "显示常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        },
+        {
+          "label": "显示搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        }
+      ]
+    },
+    {
+      "theme": "blue",
+      "enabled": true,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "rgb(255, 255, 255)",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "隐藏常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        },
+        {
+          "label": "隐藏搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        }
+      ]
+    },
+    {
+      "theme": "black",
+      "enabled": false,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4M3 3l14 14"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "显示常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        },
+        {
+          "label": "显示搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        }
+      ]
+    },
+    {
+      "theme": "black",
+      "enabled": true,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "rgb(255, 255, 255)",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "隐藏常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        },
+        {
+          "label": "隐藏搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        }
+      ]
+    },
+    {
+      "theme": "pink",
+      "enabled": false,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4M3 3l14 14"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "显示常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        },
+        {
+          "label": "显示搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        }
+      ]
+    },
+    {
+      "theme": "pink",
+      "enabled": true,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "rgb(255, 255, 255)",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "隐藏常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        },
+        {
+          "label": "隐藏搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        }
+      ]
+    },
+    {
+      "theme": "lavender",
+      "enabled": false,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4M3 3l14 14"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "显示常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        },
+        {
+          "label": "显示搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        }
+      ]
+    },
+    {
+      "theme": "lavender",
+      "enabled": true,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "rgb(255, 255, 255)",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "隐藏常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        },
+        {
+          "label": "隐藏搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        }
+      ]
+    },
+    {
+      "theme": "orange",
+      "enabled": false,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4M3 3l14 14"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "显示常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        },
+        {
+          "label": "显示搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3"
+        }
+      ]
+    },
+    {
+      "theme": "orange",
+      "enabled": true,
+      "buttons": [
+        {
+          "label": "吸附",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4"
+        },
+        {
+          "label": "置顶",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "rgb(255, 255, 255)",
+          "path": "M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z"
+        },
+        {
+          "label": "隐藏常用短语",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        },
+        {
+          "label": "隐藏搜索框",
+          "background": "rgba(0, 0, 0, 0)",
+          "fill": "none",
+          "path": "M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"
+        }
+      ]
+    }
+  ],
+  "windows": [
+    {
+      "url": "index.html#editor?id=&afterId=&tab=&categoryId=common&groupId=",
+      "title": "话术编辑 · 闪语",
+      "width": 594,
+      "height": 620,
+      "minWidth": 480,
+      "minHeight": 480,
+      "decorations": false,
+      "resizable": true,
+      "center": true,
+      "generalAutofillEnabled": false,
+      "label": "editor"
+    },
+    {
+      "url": "index.html#settings?id=&afterId=&tab=&categoryId=&groupId=",
+      "title": "设置 · 闪语",
+      "width": 594,
+      "height": 620,
+      "minWidth": 480,
+      "minHeight": 480,
+      "decorations": false,
+      "resizable": true,
+      "center": true,
+      "generalAutofillEnabled": false,
+      "label": "settings"
+    },
+    {
+      "url": "index.html#common-editor?id=&afterId=&tab=&categoryId=&groupId=",
+      "title": "常用短语 · 闪语",
+      "width": 380,
+      "height": 160,
+      "minWidth": 360,
+      "minHeight": 160,
+      "decorations": false,
+      "resizable": false,
+      "center": true,
+      "generalAutofillEnabled": false,
+      "label": "common-editor"
+    }
+  ],
+  "limits": [
+    "使用隐藏的隔离 WebView2，未操作正式客户端、剪贴板或聊天发送",
+    "记录实际窗口创建参数；未以实体鼠标触发已有表单历史弹窗"
+  ]
+}

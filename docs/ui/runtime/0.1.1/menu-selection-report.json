@@ -1,0 +1,1141 @@
+{
+  "date": "2026-10-11T04:19:23.353Z",
+  "scope": "settings-shortcuts-blank-menu-common-dock",
+  "results": [
+    "仅剩一个一级分类时正确禁用操作，菜单方向键跳过禁用项",
+    "吸附磁铁开口朝左，保持按钮尺寸",
+    "右上角一级分类菜单11项顺序与参考一致",
+    "背景色菜单首次打开界面设置并预选分类，色板仅修改指定标签",
+    "分类栏高度保存，标签换行且正文区域仍可用",
+    "一级分类右键与右上角菜单共用11项，32像素行高、文字留白与直角对齐",
+    "一级分类右键和右上入口新增二级分类归属正确，新增同级分类仍创建一级分类",
+    "设置窗口已打开时背景色入口切换页面和分类，菜单仍绑定所点击分类",
+    "二级分类右键保持所属一级分类，新增话术预选正确分组",
+    "复制菜单动作同名分组合并，副本快捷键清空",
+    "一级与二级快速排序共用多选排序，确认持久化，取消不保存",
+    "分类导出菜单只导出当前分类及其分组",
+    "话术空白菜单新增话术和二级分类，归属当前一级分类，取消不写库",
+    "参考设置页真实开关、标签色板、显示模式及高度同步主窗口",
+    "移动菜单保留快捷键并切换到目标，删除保留话术不会丢失分段",
+    "同级一级、二级分类允许重名新增和重命名，原名称与独立ID保留",
+    "编辑器重名选择项带序号，保存使用所选分类ID而非名称",
+    "同名一级分类背景色入口按ID预选，复用设置窗口不会混淆分类",
+    "话术单击选中为图2淡黄，悬停为图1米黄，移出恢复且发送列不跳动",
+    "点击空白取消话术与短语选中，切换两处区域不残留黄色",
+    "搜索结果复用悬停与选中样式，上下选择后移出恢复正确颜色",
+    "完整备份不合并导入保留重名分类，原始分类和话术不被覆盖",
+    "原有一级分类保留话术删除在底部菜单可用，取消不变更，确认后仅迁移指定分类",
+    "列表设置双键快捷键、删除取消及冲突提示，搜索复用逗号蓝色标签",
+    "编辑器快捷键确认仅改草稿，话术保存后持久化双键序列",
+    "底部短语横条按宽度换行，隐藏整栏且不留下菜单或新增按钮，设置可恢复",
+    "常用设置默认点击规则保持，配置后话术与两处短语只按指定方式提交一次",
+    "七种主题、字体大小及标题色板保存后同步主窗口和底部面板",
+    "私人和文件默认背景色独立生效，分类自身颜色优先且恢复默认不改其他分类",
+    "面板开关、类目顺序与自由拉宽设置同步，原生窗口可调整属性实际变化",
+    "分类与侧边短语高度验证，底部短语1至3行及自适应可滚动访问全部记录",
+    "底部搜索使用真实搜索服务，匹配方式、高亮、Enter插入、发送按钮、右键及Esc正确路由",
+    "新增设置完整备份可预览和恢复，隐藏客户端与正式数据保持隔离"
+  ],
+  "menus": [
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": false
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": false
+      },
+      {
+        "text": "复制到",
+        "enabled": false
+      },
+      {
+        "text": "移动到",
+        "enabled": false
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "删除但保留话术",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "快速排序二级分类",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "删除但保留话术",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "快速排序二级分类",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "删除但保留话术",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "快速排序二级分类",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "删除但保留话术",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "快速排序二级分类",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "删除但保留话术",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "快速排序二级分类",
+        "enabled": false
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "删除但保留话术",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "快速排序二级分类",
+        "enabled": false
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "删除但保留话术",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "快速排序二级分类",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "删除但保留话术",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "快速排序二级分类",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ],
+    [
+      {
+        "text": "新增话术",
+        "enabled": true
+      },
+      {
+        "text": "新增二级分类",
+        "enabled": true
+      },
+      {
+        "text": "新增同级分类",
+        "enabled": true
+      },
+      {
+        "text": "重命名",
+        "enabled": true
+      },
+      {
+        "text": "删除",
+        "enabled": true
+      },
+      {
+        "text": "快速排序一级分类",
+        "enabled": true
+      },
+      {
+        "text": "复制到",
+        "enabled": true
+      },
+      {
+        "text": "移动到",
+        "enabled": true
+      },
+      {
+        "text": "导出该一级分类的话术",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类背景色",
+        "enabled": true
+      },
+      {
+        "text": "设置一级分类区域高度",
+        "enabled": true
+      }
+    ]
+  ],
+  "deliveries": [
+    [
+      {
+        "id": "044dfacb-5a27-46e8-99e2-8a250249c70e",
+        "kind": "phrase",
+        "mode": "send",
+        "target": {
+          "hwnd": 1,
+          "focus": 1,
+          "pid": 1
+        }
+      },
+      {
+        "id": "b6e3205a-8d8e-4a74-abd2-541cc620563d",
+        "kind": "common",
+        "mode": "send",
+        "target": {
+          "hwnd": 1,
+          "focus": 1,
+          "pid": 1
+        }
+      }
+    ],
+    [
+      {
+        "id": "b6e3205a-8d8e-4a74-abd2-541cc620563d",
+        "kind": "common",
+        "mode": "send",
+        "target": {
+          "hwnd": 1,
+          "focus": 1,
+          "pid": 1
+        }
+      },
+      {
+        "id": "b6e3205a-8d8e-4a74-abd2-541cc620563d",
+        "kind": "common",
+        "mode": "insert",
+        "target": {
+          "hwnd": 1,
+          "focus": 1,
+          "pid": 1
+        }
+      },
+      {
+        "id": "6f4fe020-c469-40c1-8cc7-7b94576b2ee4",
+        "kind": "phrase",
+        "mode": "insert",
+        "target": {
+          "hwnd": 1,
+          "focus": 1,
+          "pid": 1
+        }
+      },
+      {
+        "id": "6f4fe020-c469-40c1-8cc7-7b94576b2ee4",
+        "kind": "phrase",
+        "mode": "send",
+        "target": {
+          "hwnd": 1,
+          "focus": 1,
+          "pid": 1
+        }
+      },
+      {
+        "id": "6f4fe020-c469-40c1-8cc7-7b94576b2ee4",
+        "kind": "phrase",
+        "mode": "send",
+        "target": {
+          "hwnd": 1,
+          "focus": 1,
+          "pid": 1
+        }
+      },
+      {
+        "id": "6f4fe020-c469-40c1-8cc7-7b94576b2ee4",
+        "kind": "phrase",
+        "mode": "insert",
+        "target": {
+          "hwnd": 1,
+          "focus": 1,
+          "pid": 1
+        }
+      }
+    ]
+  ],
+  "limits": [
+    "窗口保持隐藏；一级菜单使用实际DOM点击，二级分类菜单实际创建原生对象并通过回调验证，未使用实体键鼠",
+    "点击与搜索发送仅记录统一接口参数，get_target和deliver_content使用模拟结果，未执行系统焦点、剪贴板或按键",
+    "菜单最小尺寸采用300×400页面视口，未替代真实DPI或多显示器验收",
+    "未执行真实快捷键触发、发送、吸附、新装、升级及卸载验收"
+  ]
+}

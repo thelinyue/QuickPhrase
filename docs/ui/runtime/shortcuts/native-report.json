@@ -1,0 +1,510 @@
+{
+  "root": "D:\\code\\QuickPhrase\\.build\\shortcuts-1791725237580",
+  "results": [
+    {
+      "name": "双键完整匹配只显示候选，按分类排序、无激活且不占任务栏",
+      "passed": true
+    },
+    {
+      "name": "数字1与0、空格插入；Enter直接发送；超过十项可选择且选择不限时",
+      "passed": true
+    },
+    {
+      "name": "单条也弹候选；长按触发与重复提交只执行一次",
+      "passed": true
+    },
+    {
+      "name": "双键超时在原输入区回放，焦点和外部点击取消候选",
+      "passed": true
+    },
+    {
+      "name": "提交前重新核对活动话术，改绑或删除后关闭候选且保留草稿",
+      "passed": true
+    },
+    {
+      "name": "序号按实际绘制列表、折叠连续编号、搜索文件占位、隐藏后沿用最后列表",
+      "passed": true
+    },
+    {
+      "name": "序号与自定义开关独立，冲突失败保留配置，设置关闭才恢复业务快捷键",
+      "passed": true
+    },
+    {
+      "name": "Alt搜索／侧栏与常用短语导航经过真实监听，短语Enter直接发送",
+      "passed": true
+    },
+    {
+      "name": "共同全局范围开关限制其他窗口，不向新目标回放未完成序列",
+      "passed": true
+    }
+  ],
+  "receipts": [
+    {
+      "name": "Esc取消保留草稿",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        }
+      ],
+      "draft": "已有草稿：",
+      "clipboardSequence": 22210
+    },
+    {
+      "name": "数字1插入",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        },
+        {
+          "kind": "paste-text",
+          "value": "正文1"
+        }
+      ],
+      "draft": "已有草稿：正文1",
+      "clipboardSequence": 22229
+    },
+    {
+      "name": "数字0插入",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        },
+        {
+          "kind": "paste-text",
+          "value": "正文10"
+        }
+      ],
+      "draft": "已有草稿：正文10",
+      "clipboardSequence": 22250
+    },
+    {
+      "name": "空格插入当前项",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        },
+        {
+          "kind": "paste-text",
+          "value": "正文2"
+        }
+      ],
+      "draft": "已有草稿：正文2",
+      "clipboardSequence": 22271
+    },
+    {
+      "name": "Enter直接发送",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        },
+        {
+          "kind": "paste-text",
+          "value": "正文1"
+        },
+        {
+          "kind": "send",
+          "value": {
+            "text": "已有草稿：正文1",
+            "key": "Enter"
+          }
+        }
+      ],
+      "draft": "",
+      "clipboardSequence": 22292
+    },
+    {
+      "name": "第十二候选不限时插入",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        },
+        {
+          "kind": "paste-text",
+          "value": "正文12"
+        }
+      ],
+      "draft": "已有草稿：正文12",
+      "clipboardSequence": 22313
+    },
+    {
+      "name": "长按Enter只发送一次",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        },
+        {
+          "kind": "paste-text",
+          "value": "正文单候选"
+        },
+        {
+          "kind": "send",
+          "value": {
+            "text": "已有草稿：正文单候选",
+            "key": "Enter"
+          }
+        }
+      ],
+      "draft": "",
+      "clipboardSequence": 22334
+    },
+    {
+      "name": "双键超时回放",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        }
+      ],
+      "draft": "超时：q",
+      "clipboardSequence": 22350
+    },
+    {
+      "name": "输入控件变化取消",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        },
+        {
+          "kind": "focus-changed",
+          "value": true
+        }
+      ],
+      "draft": "已有草稿：",
+      "clipboardSequence": 22359
+    },
+    {
+      "name": "点击候选外部取消",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        }
+      ],
+      "draft": "已有草稿：",
+      "clipboardSequence": 22368
+    },
+    {
+      "name": "窗口切换取消",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        }
+      ],
+      "draft": "已有草稿：",
+      "clipboardSequence": 22377
+    },
+    {
+      "name": "候选改绑后拒绝发送",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        }
+      ],
+      "draft": "已有草稿：",
+      "clipboardSequence": 22386
+    },
+    {
+      "name": "候选删除后拒绝发送",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        }
+      ],
+      "draft": "已有草稿：",
+      "clipboardSequence": 22395
+    },
+    {
+      "name": "Ctrl+1插入当前第一项",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        },
+        {
+          "kind": "paste-text",
+          "value": "正文1"
+        }
+      ],
+      "draft": "已有草稿：正文1",
+      "clipboardSequence": 22409
+    },
+    {
+      "name": "折叠后第三项",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        },
+        {
+          "kind": "paste-text",
+          "value": "正文单候选"
+        }
+      ],
+      "draft": "已有草稿：正文单候选",
+      "clipboardSequence": 22430
+    },
+    {
+      "name": "隐藏沿用最后列表",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "paste-text",
+          "value": "正文2"
+        }
+      ],
+      "draft": "隐藏：正文2",
+      "clipboardSequence": 22442
+    },
+    {
+      "name": "搜索框保持焦点时序号插入原目标",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "new-copy",
+          "value": true
+        },
+        {
+          "kind": "paste-text",
+          "value": "正文单候选"
+        }
+      ],
+      "draft": "搜索输入：正文单候选",
+      "clipboardSequence": 22463
+    },
+    {
+      "name": "搜索文件槽位不发送话术",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [],
+      "draft": "文件占位：",
+      "clipboardSequence": 22470
+    },
+    {
+      "name": "序号直接发送",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "paste-text",
+          "value": "正文1"
+        },
+        {
+          "kind": "send",
+          "value": {
+            "text": "文件占位：正文1",
+            "key": "Enter"
+          }
+        }
+      ],
+      "draft": "",
+      "clipboardSequence": 22475
+    },
+    {
+      "name": "设置关闭后序号生效",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "paste-text",
+          "value": "正文1"
+        }
+      ],
+      "draft": "设置开启：正文1",
+      "clipboardSequence": 22517
+    },
+    {
+      "name": "列表上下选择Enter插入",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "paste-text",
+          "value": "正文2"
+        }
+      ],
+      "draft": "列表：正文2",
+      "clipboardSequence": 22538
+    },
+    {
+      "name": "底部短语Enter直接发送",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "paste-text",
+          "value": "谢谢"
+        },
+        {
+          "kind": "send",
+          "value": {
+            "text": "底部短语：谢谢",
+            "key": "Enter"
+          }
+        }
+      ],
+      "draft": "",
+      "clipboardSequence": 22550
+    },
+    {
+      "name": "主窗口短语Enter直接发送",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [
+        {
+          "kind": "paste-text",
+          "value": "谢谢"
+        },
+        {
+          "kind": "send",
+          "value": {
+            "text": "主栏短语：谢谢",
+            "key": "Enter"
+          }
+        }
+      ],
+      "draft": "",
+      "clipboardSequence": 22562
+    },
+    {
+      "name": "全局序号在其他窗口插入",
+      "hwnd": 9376696,
+      "focus": 109055326,
+      "alternateFocus": 3937144,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 35336,
+      "events": [
+        {
+          "kind": "paste-text",
+          "value": "正文1"
+        }
+      ],
+      "draft": "范围：qw正文1",
+      "clipboardSequence": 22583
+    },
+    {
+      "name": "未完成序列切窗取消",
+      "hwnd": 98044554,
+      "focus": 159779490,
+      "alternateFocus": 12518000,
+      "alternateDraft": "另一输入位置（用于失焦验收）",
+      "pid": 13548,
+      "events": [],
+      "draft": "未完成：",
+      "clipboardSequence": 22590
+    }
+  ],
+  "scope": "Windows 11 独立输入桌面、标准 WinForms 及 Debug 吸附宿主；真实聊天软件未验收",
+  "scales": "WebView2 deviceScaleFactor 1/1.5/2；系统物理 DPI 与真实输入法未验收"
+}

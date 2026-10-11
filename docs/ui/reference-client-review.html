@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>闪语 · 首版界面评审</title>
+  <link rel="stylesheet" href="reference-client-review.css">
+  <script src="reference-client-review.js" defer></script>
+</head>
+<body>
+  <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-document" viewBox="0 0 20 20"><path d="M5 2.5h9l2 2v13H5zM8 6h5M8 9h5M8 12h4" /></symbol>
+    <symbol id="i-file" viewBox="0 0 20 20"><path d="M5 2.5h7l4 4v11H5zM12 2.5v4h4M8 10h5M8 13h4" /></symbol>
+    <symbol id="i-search" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="6" /><path d="m13 13 4 4" /></symbol>
+    <symbol id="i-pencil" viewBox="0 0 20 20"><path d="m4 12 9-9 3 3-9 9-4 1zM11 5l3 3" /></symbol>
+    <symbol id="i-pin" viewBox="0 0 20 20"><path d="m6 3 8 8M10 2l6 6-3 1-3 4-3-3-4 3M8 12l-4 5" /></symbol>
+    <symbol id="i-minus" viewBox="0 0 20 20"><path d="M4 10h12" /></symbol>
+    <symbol id="i-close" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15" /></symbol>
+    <symbol id="i-menu" viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h14" /></symbol>
+    <symbol id="i-settings" viewBox="0 0 20 20"><path d="m8 2 4 0 1 3 3 1 2 3-2 3-3 1-1 3H8l-1-3-3-1-2-3 2-3 3-1z" /><circle cx="10" cy="9" r="3" /></symbol>
+    <symbol id="i-eye" viewBox="0 0 20 20"><path d="M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6z" /><circle cx="10" cy="10" r="2.5" /></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 20 20"><path d="M2 10s3-6 8-6c2 0 4 1 5 2M18 10s-3 6-8 6c-2 0-4-1-5-2M3 17 17 3" /></symbol>
+    <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2 5h6l2 2h8v10H2zM2 5V3h6l2 2" /></symbol>
+    <symbol id="i-calendar" viewBox="0 0 20 20"><path d="M3 4h14v13H3zM3 8h14M6 2v4M14 2v4M6 11h2M11 11h2M6 14h2" /></symbol>
+    <symbol id="i-image" viewBox="0 0 20 20"><rect x="2.5" y="3" width="15" height="14" rx="2" /><circle cx="7" cy="7" r="1.4" /><path d="m3 15 5-5 3 3 3-5 3 7" /></symbol>
+    <symbol id="i-attachment" viewBox="0 0 20 20"><path d="m7 13 7-7a2 2 0 0 0-3-3L3 11a4 4 0 0 0 6 6l8-8a3 3 0 0 0-4-4l-7 7a1 1 0 0 0 2 2l6-6" /></symbol>
+    <symbol id="i-segment" viewBox="0 0 20 20"><path d="M2 3h16v4H2zM2 13h16v4H2zM4 10h3M10 10h2M15 10h2" /></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 20 20"><rect x="1" y="4" width="18" height="12" rx="2" /><path d="M4 7h1M8 7h1M12 7h1M16 7h1M4 10h1M8 10h1M12 10h1M16 10h1M5 13h10" /></symbol>
+  </svg>
+
+  <header class="review-header">
+    <div>
+      <p class="eyebrow">SHANYU / WINDOWS</p>
+      <h1>首版界面评审</h1>
+      <p class="review-description">对照参考图核对布局与操作。当前为独立评审稿，数据仅在本页保留；插入与发送仅记录动作。</p>
+    </div>
+    <div class="review-controls">
+      <button id="reset-review" type="button">重置样例</button>
+      <a href="reference-client-review.md">查看评审说明</a>
+    </div>
+  </header>
+
+  <main class="review-layout">
+    <nav class="review-navigation" aria-label="评审场景">
+      <button data-scene="main" class="active" type="button">主窗口</button>
+      <button data-scene="hover" type="button">悬停发送</button>
+      <button data-scene="search" type="button">搜索浮层</button>
+      <button data-scene="context" type="button">话术右键菜单</button>
+      <button data-scene="editor" type="button">新增／编辑话术</button>
+      <button data-scene="files" type="button">本地文件</button>
+      <button data-scene="file-editor" type="button">批量关联文件</button>
+      <button data-scene="settings" type="button">设置窗口</button>
+      <button data-scene="empty" type="button">空分类</button>
+      <button data-scene="error" type="button">文件失效</button>
+      <div class="review-notes">
+        <strong>操作约定</strong>
+        <p>双击行内容：添加到输入区。</p>
+        <p>点击行左侧黄色按钮：直接发送该行。</p>
+        <p>右键菜单：管理与发送。</p>
+        <p>编辑器：日期、图片、文件、添加分段。</p>
+      </div>
+    </nav>
+
+    <section class="review-stage" aria-label="客户端界面">
+      <p id="scene-caption" class="scene-caption">主窗口 · 330 × 720 DIP</p>
+
+      <section id="main-window" class="client-window main-window" aria-label="闪语 主窗口">
+        <header class="main-titlebar">
+          <nav class="content-tabs" aria-label="内容类型">
+            <button data-library="phrases" class="active" type="button">话术</button>
+            <button data-library="files" type="button">本地文件</button>
+          </nav>
+          <div class="titlebar-actions">
+            <button id="quick-add" title="新增话术" aria-label="新增话术" type="button"><svg><use href="#i-pencil" /></svg></button>
+            <button id="pin-window" title="置顶" aria-label="置顶" aria-pressed="false" type="button"><svg><use href="#i-pin" /></svg></button>
+            <button id="minimize-window" title="最小化到托盘" aria-label="最小化到托盘" type="button"><svg><use href="#i-minus" /></svg></button>
+          </div>
+        </header>
+        <div id="library-scope" class="scope-bar">
+          <span class="scope-name">私人话术</span>
+          <button id="display-menu" type="button">默认 <span class="down-triangle"></span></button>
+          <button id="top-menu" title="主菜单" aria-label="主菜单" type="button"><svg><use href="#i-menu" /></svg></button>
+        </div>
+        <nav id="category-tabs" class="category-tabs" aria-label="一级分类"></nav>
+        <div id="list-area" class="list-area">
+          <div id="content-list" class="content-list" role="listbox" aria-label="话术列表"></div>
+          <div id="search-backdrop" class="search-backdrop" hidden></div>
+          <section id="search-panel" class="search-panel" aria-label="搜索结果" hidden>
+            <header><span>搜索结果</span><button id="close-search" aria-label="关闭搜索结果" type="button">×</button></header>
+            <div id="search-results"></div>
+          </section>
+        </div>
+        <div class="search-bar">
+          <svg aria-hidden="true"><use href="#i-search" /></svg>
+          <input id="search-input" placeholder="搜索话术、本地文件" aria-label="搜索话术、本地文件" autocomplete="off">
+          <button id="clear-search" type="button" title="清空搜索" aria-label="清空搜索" hidden>×</button>
+        </div>
+        <footer class="main-footer">
+          <button id="bottom-menu" aria-label="主菜单" title="主菜单" type="button"><svg><use href="#i-menu" /></svg></button>
+          <button id="auto-hide" aria-label="自动隐藏" title="自动隐藏" aria-pressed="true" type="button"><svg><use href="#i-eye-off" /></svg></button>
+          <button id="show-window" aria-label="显示主窗口" title="显示主窗口" type="button"><svg><use href="#i-eye" /></svg></button>
+          <span class="footer-spacer"></span>
+          <span class="brand-name">闪语</span>
+          <button id="open-settings" aria-label="设置" title="设置" type="button"><svg><use href="#i-settings" /></svg></button>
+        </footer>
+      </section>
+
+      <section id="editor-window" class="client-window editor-window" aria-label="话术编辑窗口" hidden>
+        <header class="standard-titlebar"><span class="app-symbol">Q</span><span id="editor-heading">新增话术</span><span class="titlebar-spacer"></span><button data-close-window aria-label="关闭话术编辑窗口" type="button"><svg><use href="#i-close" /></svg></button></header>
+        <form id="phrase-form" class="editor-form">
+          <div class="phrase-kind">话术类型： <label><input type="checkbox" checked disabled> 私人话术</label></div>
+          <p class="field-hint">管理自己的常用话术，按分类快速查找。</p>
+          <div class="editor-categories">
+            <label>请选择一级分类<select id="editor-root" required></select></label>
+            <label>请选择二级分类（可不选）<select id="editor-group"></select></label>
+          </div>
+          <label class="title-field">话术标题（可不填）</label>
+          <div class="title-and-colors">
+            <input id="phrase-title" maxlength="200" placeholder="请输入话术标题，不超过200个字" aria-label="话术标题">
+            <div id="title-colors" class="color-palette" aria-label="标题颜色"></div>
+          </div>
+          <div class="editor-toolbar">
+            <span>话术内容</span><span class="toolbar-spacer"></span>
+            <button id="insert-date" type="button"><svg><use href="#i-calendar" /></svg>日期</button>
+            <button id="insert-image" type="button"><svg><use href="#i-image" /></svg>图片</button>
+            <button id="insert-file" type="button"><svg><use href="#i-attachment" /></svg>文件</button>
+            <button id="insert-segment" type="button"><svg><use href="#i-segment" /></svg>添加分段</button>
+          </div>
+          <div id="segment-editor" class="segment-editor"></div>
+          <input id="image-picker" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" multiple hidden>
+          <input id="attachment-picker" type="file" multiple hidden>
+          <div id="editor-error" class="validation-error" role="alert" hidden></div>
+          <footer class="editor-footer">
+            <button id="editor-shortcut" class="text-button orange" type="button"><svg><use href="#i-keyboard" /></svg>自定义快捷键</button>
+            <span class="attachment-limit">最多9张图片、9个文件</span>
+            <button data-close-window class="secondary-button" type="button">取消</button>
+            <button class="primary-button" type="submit">确定</button>
+          </footer>
+        </form>
+      </section>
+
+      <section id="file-window" class="client-window file-window" aria-label="新增文件窗口" hidden>
+        <header class="standard-titlebar"><span class="app-symbol">Q</span><span>新增文件</span><span class="titlebar-spacer"></span><button data-close-window aria-label="关闭新增文件窗口" type="button"><svg><use href="#i-close" /></svg></button></header>
+        <form id="file-form" class="file-form">
+          <label>请选择分类<select id="file-category"></select></label>
+          <button id="choose-local-files" class="primary-button add-files" type="button">＋ 添加文件</button>
+          <input id="local-file-picker" type="file" multiple hidden>
+          <div id="chosen-files" class="chosen-files"></div>
+          <div class="file-form-footer"><span>温馨提示：按住Ctrl键多选，可以批量添加文件</span><span class="toolbar-spacer"></span><button data-close-window class="secondary-button" type="button">取消</button><button class="primary-button" type="submit">确定</button></div>
+        </form>
+      </section>
+
+      <section id="settings-window" class="client-window settings-window" aria-label="设置窗口" hidden>
+        <header class="standard-titlebar"><span class="app-symbol">Q</span><span>设置</span><span class="titlebar-spacer"></span><button data-close-window aria-label="关闭设置窗口" type="button"><svg><use href="#i-close" /></svg></button></header>
+        <div class="settings-layout">
+          <aside class="settings-sidebar">
+            <nav id="settings-nav" aria-label="设置项目"></nav>
+            <div class="settings-brand"><span>闪语</span><small>本地话术工具</small></div>
+          </aside>
+          <div id="settings-content" class="settings-content"></div>
+        </div>
+      </section>
+      <p id="scene-help" class="scene-help">选中一行后，将鼠标移到另一行发送按钮，可核对发送目标。</p>
+    </section>
+
+    <aside class="review-journal" aria-label="评审操作日志">
+      <h2>操作记录</h2>
+      <p>这里只记录本页操作，不连接聊天软件、不发送消息。</p>
+      <ol id="action-log"></ol>
+      <div class="review-checkpoints">
+        <strong>本次确认内容</strong>
+        <p>① 蓝色标题栏与紧凑行高</p>
+        <p>② 左侧悬停发送按钮</p>
+        <p>③ 底部搜索浮层</p>
+        <p>④ 四按钮编辑器</p>
+        <p>⑤ 独立本地文件与设置</p>
+      </div>
+    </aside>
+  </main>
+
+  <div id="context-menu" class="context-menu" role="menu" hidden></div>
+  <dialog id="small-dialog" class="small-dialog"></dialog>
+  <div id="review-toast" class="review-toast" role="status" hidden></div>
+</body>
+</html>

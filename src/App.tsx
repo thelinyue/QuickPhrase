@@ -1,0 +1,313 @@
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { listen } from '@tauri-apps/api/event';
+import { Menu as NativeMenu, type MenuItemOptions } from '@tauri-apps/api/menu';
+import { LogicalPosition } from '@tauri-apps/api/dpi';
+import { confirm, save } from '@tauri-apps/plugin-dialog';
+import { call, openWindow, useLibrary } from './api';
+import { categoryTextColor, CategoryPicker, Feedback, FormDialog, Icon, useEnterSubmit, type DialogSpec } from './ui';
+import { PhraseRow } from './PhraseRow';
+import { dismissPhrasePreview, PhrasePreviewWindow } from './PhrasePreview';
+import { ShortcutDialog } from './ShortcutDialog';
+import { ShortcutCandidatesWindow } from './ShortcutCandidates';
+import { Editor, FileEditor } from './Editor';
+import { SettingsWindow } from './Settings';
+import { CategorySort, CommonDockWindow, CommonPhraseBar, CommonPhraseEditor, CommonPhraseSort, FileSort } from './CommonPhrases';
+import { DeletionWindow, RecycleWindow } from './RecycleBin';
+import { categoryLabel, labelOf, type Category, type DeliveryReport, type Library, type LinkedFile, type Phrase, type SearchHit, type Settings, type TargetContext } from './types';
+
+type MenuItem = { label: string; action: () => unknown; enabled?: boolean } | null;
+interface Menu { x: number; y: number; items: MenuItem[]; primary?: boolean }
+export function App() {
+  const { library, error, refresh } = useLibrary(); const route = location.hash.slice(1).split('?')[0];
+  const params = new URLSearchParams(location.hash.split('?')[1]);
+  useEffect(() => {
+    if (route === 'phrase-preview' || route === 'shortcut-candidates') return;
+    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing) dismissPhrasePreview(); };
+    document.addEventListener('pointerdown', dismissPhrasePreview);
+    document.addEventListener('scroll', dismissPhrasePreview, true);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', dismissPhrasePreview); document.removeEventListener('scroll', dismissPhrasePreview, true); document.removeEventListener('keydown', escape); };
+  }, [route]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = library?.settings.theme || 'default';
+    document.documentElement.style.setProperty('--phrase-size', `${library?.settings.fontSize || 12}px`);
+  }, [library?.settings.theme, library?.settings.fontSize]);
+  useEffect(() => {
+    if (route === 'phrase-preview' || route === 'shortcut-candidates') return;
+    // 失焦窗口保留的 DOM activeElement 不能覆盖另一窗口的输入状态；OS 切窗也重新同步。
+    const updateInput = () => { const focused = document.hasFocus(); const modal = focused && !!document.querySelector('dialog[open],.context-menu'); const input = focused ? document.activeElement?.closest('input,textarea,select,[contenteditable="true"]') : null; const search = !modal && !!input?.hasAttribute('data-shortcut-search'); void call('set_shortcut_input', { active: modal || !!input, search }).catch(() => {}); };
+    const changeFocus = () => queueMicrotask(updateInput);
+    document.addEventListener('focusin', changeFocus); document.addEventListener('focusout', changeFocus);
+    window.addEventListener('focus', changeFocus); window.addEventListener('blur', changeFocus);
+    const observer = new MutationObserver(changeFocus); observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['open'] }); updateInput();
+    return () => { observer.disconnect(); document.removeEventListener('focusin', changeFocus); document.removeEventListener('focusout', changeFocus); window.removeEventListener('focus', changeFocus); window.removeEventListener('blur', changeFocus); };
+  }, [route]);
+  if (route === 'phrase-preview') return <PhrasePreviewWindow />;
+  if (route === 'shortcut-candidates') return <ShortcutCandidatesWindow />;
+  if (!library) return <div className="loading-screen"><strong>闪语</strong><span>{error || '正在读取本地话术…'}</span>{error && <button className="secondary-button" onClick={() => void refresh()}>重试</button>}</div>;
+  if (route === 'editor') return <Editor library={library} id={params.get('id') || ''} afterId={params.get('afterId') || ''} categoryId={params.get('categoryId') || ''} groupId={params.get('groupId') || ''} />;
+  if (route === 'file-editor') return <FileEditor library={library} id={params.get('id') || ''} categoryId={params.get('categoryId') || ''} />;
+  if (route === 'settings') return <SettingsWindow library={library} initialTab={params.get('tab') || ''} initialCategoryId={params.get('categoryId') || ''} />;
+  if (route === 'common-editor') return <CommonPhraseEditor library={library} id={params.get('id') || ''} />;
+  if (route === 'common-dock') return <CommonDockWindow library={library} />;
+  if (route === 'common-sort') return <CommonPhraseSort library={library} />;
+  if (route === 'category-sort') return <CategorySort library={library} parentId={params.get('categoryId') || null} kind={params.get('tab') === 'file' ? 'file' : 'phrase'} />;
+  if (route === 'file-sort') return <FileSort library={library} categoryId={params.get('categoryId') || ''} />;
+  if (route === 'recycle-bin') return <RecycleWindow library={library} />;
+  if (route === 'delete-confirm') return <DeletionWindow library={library} id={params.get('id') || ''} kind={params.get('tab') || 'phrase'} />;
+  return <MainWindow library={library} refresh={refresh} />;
+}
+
+/** 吸附、置顶与面板开关统一保存设置；快捷键打开搜索时会先展开被隐藏的搜索栏。 */
+export function MainWindow({ library, refresh }: { library: Library; refresh: () => Promise<void> }) {
+  const [kind, setKind] = useState<'phrase' | 'file'>('phrase'); const [root, setRoot] = useState('common'); const [fileCategory, setFileCategory] = useState('local-files');
+  const [selected, setSelected] = useState(''); const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]); const fileAnchor = useRef('');
+  const [query, setQuery] = useState(''); const [results, setResults] = useState<SearchHit[]>([]); const [searchIndex, setSearchIndex] = useState(0); const [searching, setSearching] = useState(false);
+  const [searchSource, setSearchSource] = useState<{ query: string; library: Library } | null>(null);
+  const composing = useRef(false); const [compositionVersion, endComposition] = useState(0); const searchRef = useRef<HTMLInputElement>(null); const libraryRef = useRef(library); libraryRef.current = library;
+  const [menu, setMenu] = useState<Menu | null>(null); const [dialog, setDialog] = useState<DialogSpec | null>(null); const [message, setMessage] = useState('');
+  const [shortcutPhrase, setShortcutPhrase] = useState<Phrase | null>(null);
+  useEffect(() => { if (menu?.primary) document.querySelector<HTMLElement>('.category-context-menu')?.focus(); }, [menu]);
+  const nativeMenuRef = useRef<NativeMenu | null>(null);
+  useEffect(() => () => { void nativeMenuRef.current?.close().catch(() => {}); }, []);
+  const [busy, setBusy] = useState(false); const busyRef = useRef(false); const settings = library.settings;
+  const [updatingSettings, setUpdatingSettings] = useState(false); const settingsBusy = useRef(false);
+  const [focusCommon, setFocusCommon] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const enterSubmit = useEnterSubmit();
+  const roots = library.categories.filter(c => c.kind === 'phrase' && !c.parentId); const fileCats = library.categories.filter(c => c.kind === 'file');
+  useEffect(() => { setSelectedFiles([]); fileAnchor.current = ''; }, [kind, fileCategory]);
+  useEffect(() => { setSelectedFiles(previous => previous.filter(id => library.files.some(f => f.id === id))); }, [library.files]);
+  useEffect(() => { if (!roots.some(c => c.id === root)) setRoot(roots[0]?.id || ''); if (!fileCats.some(c => c.id === fileCategory)) setFileCategory(fileCats[0]?.id || ''); }, [library.categories]);
+  useEffect(() => { setCollapsed(settings.expand ? new Set() : new Set(library.categories.filter(c => c.parentId).map(c => c.id))); }, [settings.expand]);
+  const run = (action: () => unknown) => { try { Promise.resolve(action()).catch(e => setMessage(String(e))); } catch (e) { setMessage(String(e)); } };
+  const clearSearch = () => { setQuery(''); setResults([]); setSearchIndex(0); setSearching(false); };
+  async function changeSettings(patch: Partial<Settings>) {
+    if (settingsBusy.current) return;
+    settingsBusy.current = true; setUpdatingSettings(true);
+    try { await call('save_settings', { settings: { ...libraryRef.current.settings, ...patch } }); }
+    catch (e) { setMessage(String(e)); }
+    finally { settingsBusy.current = false; setUpdatingSettings(false); }
+  }
+  useEffect(() => { if (settings.showSearch) searchRef.current?.focus(); else clearSearch(); }, [settings.showSearch]);
+  useEffect(() => {
+    if (focusCommon && settings.showCommon) {
+      const selected = document.querySelector<HTMLElement>('.main-window [data-common][aria-selected="true"]');
+      (selected || document.querySelector<HTMLElement>('.main-window [data-common],.main-window .add-common'))?.focus();
+      setFocusCommon(false);
+    }
+  }, [focusCommon, settings.showCommon]);
+  const deliver = useCallback(async (id: string, kind: string, mode: 'insert' | 'send', triggerKey?: number) => {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true);
+    try {
+      const target = await call<TargetContext | null>('get_target');
+      if (!target) throw new Error('请先聚焦目标输入区，再返回闪语使用话术。');
+      const report = await call<DeliveryReport>('deliver_content', { id, kind, mode, target, ...(triggerKey ? { triggerKey } : {}) });
+      if (report.status === 'submitted') { setMessage(mode === 'send' ? `已向目标提交 ${report.completedSegments} 段话术` : '已向目标提交插入操作'); if (settings.exitSearch) clearSearch(); }
+      else setMessage(`${report.error || '操作已停止'}${report.completedSegments ? `（已执行${report.completedSegments}段）` : ''}`);
+    } catch (e) { setMessage(String(e)); } finally { busyRef.current = false; setBusy(false); }
+  }, [settings.exitSearch]);
+  useEffect(() => {
+    let disposed = false; const unlisteners: (() => void)[] = [];
+    const on = <T,>(name: string, fn: (payload: T) => void) => { void listen<T>(name, e => fn(e.payload)).then(un => disposed ? un() : unlisteners.push(un)); };
+    on<string>('ui-action', action => { if (action === 'search') { if (libraryRef.current.settings.showSearch) searchRef.current?.focus(); else void changeSettings({ showSearch: true }); } if (action === 'show') { clearSearch(); listRef.current?.focus(); } if (action === 'common') { setKind('phrase'); setFocusCommon(true); if (!libraryRef.current.settings.showCommon) void changeSettings({ showCommon: true }); } if (action === 'settings') run(() => openWindow('settings')); });
+    on<DeliveryReport>('shortcut-delivery', report => { if (report.status === 'submitted') { if (libraryRef.current.settings.exitSearch) clearSearch(); } else setMessage(report.error || '快捷键操作已停止'); });
+    on<string>('native-error', setMessage); on<boolean>('delivery-busy', value => { busyRef.current = value; setBusy(value); });
+    void call<string | null>('native_status').then(e => { if (e) setMessage(e); });
+    return () => { disposed = true; unlisteners.forEach(un => un()); };
+  }, []);
+  useEffect(() => {
+    if (!query.trim() || composing.current) { if (!query.trim()) setResults([]); return; }
+    let active = true; setSearching(true);
+    const timer = setTimeout(() => { void call<SearchHit[]>('search_content', { query }).then(found => { if (active) { setResults(found); setSearchSource({ query, library }); setSearchIndex(i => Math.min(i, Math.max(0, found.length - 1))); setSearching(false); } }).catch(e => { if (active) { setResults([]); setSearchSource({ query, library }); setMessage(String(e)); setSearching(false); } }); }, 100);
+    return () => { active = false; clearTimeout(timer); };
+  }, [query, library, compositionVersion]);
+  useEffect(() => { const close = (e: globalThis.MouseEvent) => { if (!(e.target as Element).closest('.context-menu')) setMenu(null); }; const escape = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing && !composing.current) { setMenu(null); clearSearch(); } }; document.addEventListener('pointerdown', close); document.addEventListener('keydown', escape); return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', escape); }; }, []);
+  const popup = (items: MenuItem[], x: number, y: number, primary = false) => setMenu({ items, primary, x: Math.max(2, Math.min(x, innerWidth - (primary ? 178 : 190))), y: Math.max(2, Math.min(y, innerHeight - items.reduce((n, i) => n + (i ? 32 : 7), 4))) });
+  // 原生分类菜单可展开到主窗口外，右键动作始终绑定被点击分类，而不是后来切换的选中项。
+  async function categoryPopup(items: MenuItemOptions[], e: MouseEvent) {
+    const position = new LogicalPosition(e.clientX, e.clientY); setMenu(null);
+    await nativeMenuRef.current?.close();
+    const next = await NativeMenu.new({ items }); nativeMenuRef.current = next;
+    await next.popup(position);
+  }
+  const newContent = () => openWindow(kind === 'phrase' ? 'editor' : 'file-editor', '', '', '', kind === 'phrase' ? root : fileCategory);
+  const chooseCategory = (c: Category) => c.kind === 'phrase' ? setRoot(c.parentId || c.id) : setFileCategory(c.id);
+  const newPhrase = (c: Category) => openWindow('editor', '', '', '', c.parentId || c.id, c.parentId ? c.id : '');
+  function categoryDialog(c?: Category, parentId: string | null = null, categoryKind = kind) { setDialog({ title: c ? '重命名' : parentId ? '新增二级分类' : '新增一级分类', fields: <label>分类名称<input name="name" type="text" defaultValue={c?.name || ''} maxLength={40} required autoFocus /></label>, onSubmit: async form => { const id = await call<string>('save_category', { category: c ? { ...c, name: String(form.get('name')) } : { id: '', name: String(form.get('name')), kind: categoryKind, parentId, position: 0 } }); if (!c && !parentId) { if (categoryKind === 'phrase') setRoot(id); else setFileCategory(id); } await refresh(); } }); }
+  function sortDialog(id: string, kind: string, current: number, count: number) { setDialog({ title: '排序', fields: <label>分类中的位置<input type="number" name="position" min={1} max={Math.max(1, count)} defaultValue={current} required /></label>, onSubmit: async f => { await call('sort_item', { id, kind, position: Number(f.get('position')) }); await refresh(); } }); }
+  const canDeleteCategory = (c: Category) => !!c.parentId || library.categories.filter(v => v.kind === c.kind && !v.parentId).length > 1;
+  async function deleteCategory(c: Category) {
+    if (c.kind === 'phrase') { await openWindow('delete-confirm', c.id, '', 'category'); return; }
+    if (await confirm(`删除「${c.name}」及其中的文件关联记录？原文件会保留。`, { title: '删除分类', kind: 'warning' })) {
+      await call('delete_category', { id: c.id }); await refresh();
+    }
+  }
+  function keepCategoryPhrases(c: Category) {
+    if (c.parentId) {
+      run(async () => { if (await confirm(`删除「${c.name}」，其中的话术移至原一级分类，不保留此分组。`, { title: '删除但保留话术', kind: 'warning' })) { await call('delete_category', { id: c.id, keepPhrases: true }); await refresh(); } });
+    } else {
+      const targets = roots.filter(v => v.id !== c.id);
+      setDialog({ title: '删除但保留话术', submit: '删除分类并保留话术', fields: <><p>删除「{c.name}」及二级分类，所有话术移至所选一级分类，不保留分组。</p><label>保留话术到<select name="target" required>{targets.map(v => <option key={v.id} value={v.id}>{categoryLabel(v, library.categories)}</option>)}</select></label></>, onSubmit: async f => { const targetId = String(f.get('target')); await call('delete_category', { id: c.id, keepPhrases: true, targetId }); setRoot(targetId); await refresh(); } });
+    }
+  }
+  function transferCategory(c: Category, copy: boolean) {
+    const targets = roots.filter(v => v.id !== (c.parentId || c.id));
+    setDialog({ title: copy ? '复制到' : '移动到', fields: <><p>将「{c.name}」的话术和二级分组{copy ? '复制' : '移动'}到目标一级分类，同名二级分组合并到列表中第一组。{copy ? '复制的话术不保留快捷键。' : '完成后移除来源分类，保留话术快捷键。'}</p><label>目标一级分类<select name="target" required>{targets.map(v => <option key={v.id} value={v.id}>{categoryLabel(v, library.categories)}</option>)}</select></label></>, onSubmit: async f => { const targetId = String(f.get('target')); const count = await call<number>('move_copy_category', { id: c.id, targetId, copy }); if (!copy) setRoot(targetId); await refresh(); setMessage(`已${copy ? '复制' : '移动'}${count}条话术`); } });
+  }
+  const categorySort = (parentId: string | null, categoryKind: 'phrase' | 'file' = 'phrase') => openWindow('category-sort', '', '', categoryKind, parentId || '');
+  function categoryMenu(c: Category, e: MouseEvent) {
+    e.preventDefault(); e.stopPropagation(); chooseCategory(c);
+    if (c.kind === 'phrase' && !c.parentId) { showPrimaryCategoryMenu(c, e); return; }
+    if (c.kind === 'file') { popup([
+      { label: '新增分类', action: () => categoryDialog(undefined, null, 'file') },
+      { label: '重命名', action: () => categoryDialog(c) },
+      { label: '删除', enabled: canDeleteCategory(c), action: () => deleteCategory(c) },
+      { label: '快速排序', enabled: fileCats.length > 1, action: () => categorySort(null, 'file') },
+    ], e.clientX, e.clientY); return; }
+    const targets = roots.filter(v => v.id !== (c.parentId || c.id));
+    const items: MenuItemOptions[] = [
+      { text: '新增话术', action: () => run(() => newPhrase(c)) },
+      { text: '新增同级分类', action: () => categoryDialog(undefined, c.parentId, c.kind) },
+      { text: '重命名', action: () => categoryDialog(c) },
+      { text: '删除', enabled: canDeleteCategory(c), action: () => run(() => deleteCategory(c)) },
+      { text: '删除但保留话术', enabled: canDeleteCategory(c), action: () => keepCategoryPhrases(c) },
+      { text: '复制到', enabled: targets.length > 0, action: () => transferCategory(c, true) },
+      { text: '移动到', enabled: targets.length > 0, action: () => transferCategory(c, false) },
+      { text: '快速排序二级分类', enabled: library.categories.filter(v => v.parentId === (c.parentId || c.id)).length > 1, action: () => run(() => categorySort(c.parentId || c.id)) },
+    ];
+    run(() => categoryPopup(items, e));
+  }
+  function phraseMenu(p: Phrase, e: MouseEvent) { e.preventDefault(); setSelected(p.id); popup([
+    { label: '添加到输入区（双击）', action: () => deliver(p.id, 'phrase', 'insert') }, { label: '直接发送', action: () => deliver(p.id, 'phrase', 'send') },
+    { label: '复制正文到剪贴板', action: () => call('copy_phrase_text', { id: p.id }) }, null,
+    { label: '新增话术', action: () => openWindow('editor', '', '', '', root) }, { label: '插入一条话术', action: () => openWindow('editor', '', p.id) }, { label: '编辑', action: () => openWindow('editor', p.id) },
+    { label: '标题背景色', action: () => setDialog({ title: '标题背景色', fields: <><label>选择颜色<input name="color" type="color" defaultValue={p.background || '#fff2bc'} /></label><label><span><input name="reset" type="checkbox" />恢复默认背景</span></label></>, onSubmit: async f => { await call('save_phrase', { phrase: { ...p, background: f.has('reset') ? '' : String(f.get('color')) }, afterId: null }); } }) },
+    { label: '自定义快捷键', action: () => setShortcutPhrase(p) },
+    { label: '排序', action: () => { const siblings = library.phrases.filter(v => v.rootId === p.rootId && v.groupId === p.groupId); sortDialog(p.id, 'phrase', siblings.findIndex(v => v.id === p.id) + 1, siblings.length); } },
+    ...[false, true].map(copy => ({ label: copy ? '复制到其他分类' : '移动到其他分类', action: () => setDialog({ title: copy ? '复制话术' : '移动话术', fields: <CategoryPicker categories={library.categories} rootId={p.rootId} groupId={p.groupId} />, onSubmit: async f => { await call('move_copy_phrase', { id: p.id, rootId: f.get('root'), groupId: f.get('group') || null, copy }); await refresh(); } }) })),
+    { label: '删除', action: () => openWindow('delete-confirm', p.id, '', 'phrase') },
+  ], e.clientX, e.clientY); }
+  /** 文件右键绑定点击时的主键集合；多选复制、移动与移除均由 Rust 事务处理。 */
+  function fileMenu(f: LinkedFile, e: MouseEvent) {
+    e.preventDefault(); const ids = !query && selectedFiles.includes(f.id) ? selectedFiles : [f.id]; setSelectedFiles(ids); setSelected(f.id);
+    const single = ids.length === 1; const targets = fileCats.filter(c => c.id !== f.categoryId);
+    popup([
+      { label: '发到输入区（双击）', enabled: single && !busy && !f.missing, action: () => deliver(f.id, 'file', 'insert') },
+      { label: '直接发送', enabled: single && !busy && !f.missing, action: () => deliver(f.id, 'file', 'send') },
+      { label: '复制文件', enabled: !busy, action: async () => { await call('copy_linked_files', { ids }); setMessage(`已复制${ids.length}个文件，可在目标程序粘贴`); } }, null,
+      { label: '新增', action: () => openWindow('file-editor', '', '', '', f.categoryId) },
+      { label: '修改显示名', enabled: single, action: () => setDialog({ title: '修改显示名', fields: <><label>显示名<input type="text" name="name" defaultValue={f.name} maxLength={200} required autoFocus /></label><p>只修改列表显示名，源文件名称保持不变。</p></>, onSubmit: async form => { await call('rename_linked_file', { id: f.id, name: String(form.get('name')) }); } }) },
+      { label: '移除关联', action: async () => { if (await confirm(`确定移除${ids.length > 1 ? `选中的${ids.length}个文件` : `「${f.name}」`}的关联？源文件会保留。`, { title: '移除文件关联', kind: 'warning' })) await call('remove_linked_files', { ids }); } }, null,
+      { label: '快速排序文件', enabled: library.files.filter(v => v.categoryId === f.categoryId).length > 1, action: () => openWindow('file-sort', '', '', '', f.categoryId) },
+      { label: '移动到其它分类', enabled: targets.length > 0, action: () => setDialog({ title: '移动到其它分类', fields: <><p>移动{ids.length}条文件关联，源文件路径保持不变。</p><label>目标分类<select name="target" required>{targets.map(c => <option key={c.id} value={c.id}>{categoryLabel(c, library.categories)}</option>)}</select></label></>, onSubmit: async form => { const targetId = String(form.get('target')); await call('move_linked_files', { ids, categoryId: targetId }); setFileCategory(targetId); } }) },
+      { label: '打开文件', enabled: single && !f.missing, action: () => call('open_linked_file', { id: f.id }) },
+      { label: '打开文件位置', enabled: single, action: () => call('open_linked_file', { id: f.id, reveal: true }) },
+      { label: '重新关联文件', enabled: single, action: () => openWindow('file-editor', f.id) },
+      { label: '刷新文件关联状态', action: refresh }, null,
+      { label: '如何批量操作？', action: () => setDialog({ title: '本地文件批量操作', submit: '知道了', fields: <><p>按住 Ctrl 单击可多选，Shift 单击可选择连续文件，Ctrl+A 选择当前分类全部文件。</p><p>右键可批量复制、移动分类或移除关联。发送、修改显示名和打开文件使用单项选择。</p><p>新增窗口可一次关联多个文件；快速排序支持 Ctrl 多选拖动，确定后保存。</p><p>所有关联管理操作均保留磁盘上的源文件。</p></>, onSubmit: async () => {} }) },
+    ], e.clientX, e.clientY);
+  }
+  function selectFile(f: LinkedFile, e: MouseEvent) {
+    const siblings = library.files.filter(v => v.categoryId === f.categoryId).map(v => v.id);
+    if (e.shiftKey && siblings.includes(fileAnchor.current)) { const a = siblings.indexOf(fileAnchor.current), b = siblings.indexOf(f.id); setSelectedFiles(siblings.slice(Math.min(a, b), Math.max(a, b) + 1)); }
+    else if (e.ctrlKey || e.metaKey) { setSelectedFiles(previous => previous.includes(f.id) ? previous.filter(id => id !== f.id) : [...previous, f.id]); fileAnchor.current = f.id; }
+    else { setSelectedFiles([f.id]); fileAnchor.current = f.id; }
+    setSelected(f.id);
+  }
+  function exportCategory(c: Category) {
+    setDialog({ title: '导出该一级分类的话术', submit: '选择保存位置', fields: <><p>仅导出「{c.name}」及其二级分类的话术。</p><label>导出格式<select name="format"><option value="backup">完整备份（保留图片、附件关联和分段）</option><option value="excel">Excel（仅文字）</option></select></label><p>外部文件只保存路径关联，原文件需单独备份。</p></>, onSubmit: async f => {
+      const format = String(f.get('format')); const extension = format === 'excel' ? 'xlsx' : 'zip';
+      const path = await save({ title: '导出分类话术', defaultPath: `闪语-${c.name.replace(/[<>:"/\\|?*]/g, '_')}.${extension}`, filters: [{ name: format === 'excel' ? 'Excel文字' : '闪语完整备份', extensions: [extension] }] });
+      if (path) { await call('export_data', { path, kind: format, categoryId: c.id }); setMessage('分类话术已导出'); }
+    } });
+  }
+  /** 一级分类右键与右上角入口共用参考菜单；闭包绑定点击的分类，避免选中态更新时操作错对象。
+   * 新增二级分类归属该一级分类，新增同级分类则创建新的一级分类。
+   * 在主窗口内复用直角菜单，固定行高与留白；二级分类和文件分类继续使用各自菜单。 */
+  function showPrimaryCategoryMenu(c: Category | undefined, e: MouseEvent) {
+    const transfer = roots.length > 1;
+    const anchor = e.currentTarget.getBoundingClientRect();
+    popup([
+      { label: '新增话术', enabled: !!c, action: () => c && newPhrase(c) },
+      { label: '新增二级分类', enabled: !!c, action: () => c && categoryDialog(undefined, c.id, 'phrase') },
+      { label: '新增同级分类', action: () => categoryDialog(undefined, null, 'phrase') },
+      { label: '重命名', enabled: !!c, action: () => c && categoryDialog(c) },
+      { label: '删除', enabled: !!c && canDeleteCategory(c), action: () => c && deleteCategory(c) },
+      { label: '快速排序一级分类', enabled: roots.length > 1, action: () => categorySort(null) },
+      { label: '复制到', enabled: !!c && transfer, action: () => c && transferCategory(c, true) },
+      { label: '移动到', enabled: !!c && transfer, action: () => c && transferCategory(c, false) },
+      { label: '导出该一级分类的话术', enabled: !!c, action: () => c && exportCategory(c) },
+      { label: '设置一级分类背景色', enabled: !!c, action: () => c && openWindow('settings', '', '', '界面设置', c.id) },
+      { label: '设置一级分类区域高度', action: () => setDialog({ title: '设置一级分类区域高度', fields: <><label>高度（31—200像素）<input name="height" type="number" min={31} max={200} defaultValue={settings.categoryHeight} required autoFocus /></label><p>默认31像素。增加高度后，一级分类标签自动换行；超出区域可滚动。</p></>, onSubmit: async f => { await call('save_settings', { settings: { ...libraryRef.current.settings, categoryHeight: Number(f.get('height')) } }); } }) },
+    ], e.clientX || anchor.left, e.clientY || anchor.bottom, true);
+  }
+  const topCategoryMenu = (e: MouseEvent) => showPrimaryCategoryMenu(roots.find(v => v.id === root), e);
+  function mainMenu(e: MouseEvent) { popup([
+    { label: kind === 'phrase' ? '新增话术' : '新增关联文件', action: newContent }, { label: '新增一级分类', action: () => categoryDialog() },
+    // 参考一级菜单的11项不含保留删除，此既有功能保留在底部应用菜单。
+    ...(kind === 'phrase' ? [{ label: '新增二级分类', action: () => categoryDialog(undefined, root) }, { label: '删除一级分类但保留话术', enabled: roots.length > 1, action: () => { const c = roots.find(v => v.id === root); if (c) keepCategoryPhrases(c); } }] : [{ label: '刷新文件关联状态', action: refresh }]), null,
+    ...['常用设置', '界面设置', '吸附设置', '导入数据', '导出数据', '快捷键', '缓存管理', '关于'].map(tab => ({ label: tab, action: () => openWindow('settings', '', '', tab, kind === 'phrase' ? root : fileCategory) })), null,
+    { label: '回收站', action: () => openWindow('recycle-bin') }, null,
+    { label: '退出闪语', action: () => call('window_action', { action: 'exit' }) },
+  ], e.clientX, e.clientY); }
+  const row = (p: Phrase | null, f: LinkedFile | null, index: number, isSearch = false) => {
+    const id = (p?.id || f?.id)!;
+    return <PhraseRow key={id} phrase={p || undefined} file={f || undefined} index={index} settings={settings} selected={isSearch ? index === searchIndex : f ? selectedFiles.includes(id) : selected === id} query={isSearch ? query : undefined} busy={busy}
+      onSelect={e => { if (f && !isSearch) selectFile(f, e); else setSelected(id); if (isSearch) setSearchIndex(index); }} onDeliver={(mode, triggerKey) => void deliver(id, f ? 'file' : 'phrase', mode, triggerKey)} onContext={e => p ? phraseMenu(p, e) : fileMenu(f!, e)} />;
+  };
+  let sequence = 0; const content: ReactNode[] = []; const visible: { id: string; kind: 'phrase' | 'file' }[] = [];
+  const addRow = (p: Phrase | null, f: LinkedFile | null) => { visible.push({ id: (p?.id || f?.id)!, kind: p ? 'phrase' : 'file' }); content.push(row(p, f, sequence++)); };
+  if (kind === 'phrase') {
+    library.phrases.filter(p => p.rootId === root && !p.groupId).forEach(p => addRow(p, null));
+    library.categories.filter(c => c.parentId === root).forEach(c => {
+      const isCollapsed = collapsed.has(c.id); content.push(<div className={`group-heading${isCollapsed ? ' collapsed' : ''}`} key={c.id} onContextMenu={e => categoryMenu(c, e)}><button className="group-toggle" aria-expanded={!isCollapsed} onClick={() => setCollapsed(previous => { const next = new Set(previous); if (next.has(c.id)) next.delete(c.id); else next.add(c.id); return next; })}><span className="group-arrow" />{c.name}</button><button className="group-edit" aria-label={`编辑分类 ${c.name}`} onClick={() => categoryDialog(c)}><Icon name="pencil" /></button></div>);
+      const phrases = library.phrases.filter(p => p.rootId === root && p.groupId === c.id); if (!isCollapsed) phrases.forEach(p => addRow(p, null));
+    });
+  } else library.files.filter(f => f.categoryId === fileCategory).forEach(f => addRow(null, f));
+  const sequenceIds = JSON.stringify((settings.showSearch && query.trim() ? results : visible).slice(0, 10).map(item => item.kind === 'phrase' ? item.id : null));
+  const sequenceLoading = !!(settings.showSearch && query.trim() && (searching || composing.current || searchSource?.query !== query || searchSource.library !== library));
+  useEffect(() => { void call('sync_sequence_map', { ids: JSON.parse(sequenceIds), loading: sequenceLoading }).catch(e => setMessage(String(e))); }, [sequenceIds, sequenceLoading]);
+  function listKey(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.defaultPrevented || event.nativeEvent.isComposing || event.keyCode === 229 || (event.target as Element).closest('.row-send,.group-toggle,.group-edit')) return;
+    if (kind === 'file' && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') { event.preventDefault(); setSelectedFiles(visible.map(item => item.id)); return; }
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault(); const categories = kind === 'phrase' ? roots : fileCats; const current = categories.findIndex(c => c.id === (kind === 'phrase' ? root : fileCategory)); const next = categories[Math.max(0, Math.min(categories.length - 1, current + (event.key === 'ArrowRight' ? 1 : -1)))];
+      if (next) { chooseCategory(next); setSelected(''); setSelectedFiles([]); listRef.current?.focus(); } return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault(); const current = visible.findIndex(item => item.id === selected); const next = visible[Math.max(0, Math.min(visible.length - 1, current < 0 ? event.key === 'ArrowDown' ? 0 : visible.length - 1 : current + (event.key === 'ArrowDown' ? 1 : -1)))];
+      if (next) { setSelected(next.id); if (kind === 'file') setSelectedFiles([next.id]); listRef.current?.focus(); requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>(`[data-row="${next.id}"]`)?.scrollIntoView({ block: 'nearest' })); }
+    }
+    if (event.key === 'Enter' && enterSubmit()) { event.preventDefault(); const item = visible.find(item => item.id === selected) || visible[0]; if (item) void deliver(item.id, item.kind, 'insert', 13); }
+  }
+  return <section className="client-window main-window" onClickCapture={e => { if (!(e.target as Element).closest('.content-row,.context-menu,dialog')) setSelected(''); }} onContextMenu={e => { if (!(e.target as Element).closest('input,textarea')) e.preventDefault(); }}>
+    <header className="main-titlebar"><nav className="content-tabs">{(settings.filesFirst ? ['file', 'phrase'] as const : ['phrase', 'file'] as const).map(tab => <button key={tab} className={kind === tab ? 'active' : ''} onClick={() => { setKind(tab); clearSearch(); }}>{tab === 'phrase' ? '话术' : '本地文件'}</button>)}</nav><span className="titlebar-spacer" data-tauri-drag-region /><div className="titlebar-actions"><button aria-label="吸附" title="吸附" aria-pressed={settings.dock} disabled={updatingSettings} onClick={() => void changeSettings({ dock: !settings.dock })}><Icon name={settings.dock ? 'dock' : 'dock-off'} /></button><button aria-label="置顶" title="置顶" aria-pressed={settings.pinned} disabled={updatingSettings} onClick={() => void changeSettings({ pinned: !settings.pinned })}><Icon name="pin" /></button><button aria-label="最小化" title="最小化" onClick={() => run(() => call('window_action', { action: 'minimize' }))}><Icon name="minus" /></button></div></header>
+    {kind === 'phrase' && <div className="scope-bar"><span className="scope-name">私人话术</span><button id="top-menu" aria-label="一级分类菜单" onClick={topCategoryMenu}><Icon name="menu" /></button></div>}
+    <nav className={`category-tabs${kind === 'file' ? ' files-tabs' : ''}${(kind === 'phrase' ? settings.categoryHeight : settings.fileCategoryHeight) > 31 ? ' wrapping' : ''}`} style={{ height: kind === 'phrase' ? settings.categoryHeight : settings.fileCategoryHeight }} aria-label="一级分类">{(kind === 'phrase' ? roots : fileCats).map(c => { const background = c.background || (c.kind === 'file' ? settings.fileCategoryColor : settings.phraseCategoryColor); return <button key={c.id} title={categoryLabel(c, library.categories)} className={(kind === 'phrase' ? root : fileCategory) === c.id ? 'active' : ''} style={{ backgroundColor: background || undefined, color: background ? categoryTextColor(background) : undefined }} onClick={() => chooseCategory(c)} onContextMenu={e => categoryMenu(c, e)}>{c.name}</button>; })}<button className="add-category" aria-label="新增一级分类" onClick={() => categoryDialog()}>＋</button></nav>
+    <div className="list-area"><div ref={listRef} tabIndex={0} className="content-list" role="listbox" aria-label={kind === 'phrase' ? '话术列表' : '本地文件列表'} aria-multiselectable={kind === 'file'} onKeyDown={listKey} onContextMenu={e => { if (!(e.target as Element).closest('.content-row,.group-heading')) { e.preventDefault(); popup(kind === 'phrase' ? [{ label: '新增话术', action: newContent }, { label: '新增二级分类', action: () => categoryDialog(undefined, root, 'phrase') }] : [{ label: '刷新', action: refresh }], e.clientX, e.clientY); } }}>{content.length ? content : <div className="empty-state"><img className="empty-illustration" src={`/illustrations/${kind === 'phrase' ? 'phrase' : 'files'}-empty.png`} width="96" height="96" alt="" draggable={false} /><span>{kind === 'phrase' ? '这个分类还没有话术' : '还没有关联文件'}</span><button onClick={() => run(newContent)}>{kind === 'phrase' ? '新增话术' : '新增关联文件'}</button></div>}</div>
+      {settings.showSearch && query.trim() && <><div className="search-backdrop" onClick={clearSearch} /><section className="search-panel" aria-label="搜索结果"><header><span>搜索结果</span><button aria-label="关闭搜索" onClick={clearSearch}>×</button></header><div id="search-results">{sequenceLoading ? <div className="no-results">正在搜索…</div> : results.length ? results.map((hit, i) => row(hit.phrase, hit.file, i, true)) : <div className="no-results">没有找到匹配的内容</div>}</div></section></>}
+    </div>
+    {settings.showCommon && <CommonPhraseBar library={library} busy={busy} onDeliver={(id, mode, triggerKey) => void deliver(id, 'common', mode, triggerKey)} onError={setMessage} />}
+    {settings.showSearch && <div className="search-bar" id="search-bar"><Icon name="search" /><input ref={searchRef} data-shortcut-search aria-label="搜索话术、本地文件" placeholder="搜索话术、本地文件" value={query} onChange={e => { setQuery(e.target.value); setSearchIndex(0); setSearching(!!e.target.value.trim()); }} onCompositionStart={() => { composing.current = true; setSearching(true); }} onCompositionEnd={e => { composing.current = false; setQuery(e.currentTarget.value); endComposition(v => v + 1); }} onKeyDown={e => {
+      if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setSearchIndex(i => Math.max(0, Math.min(results.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))); requestAnimationFrame(() => document.querySelector('#search-results .selected')?.scrollIntoView({ block: 'nearest' })); }
+      if (e.key === 'Enter' && query.trim() && !sequenceLoading && results[searchIndex] && enterSubmit()) { e.preventDefault(); const item = results[searchIndex]; void deliver(item.id, item.kind, 'insert', 13); }
+      if (e.key === 'Escape') { e.preventDefault(); clearSearch(); e.currentTarget.blur(); listRef.current?.focus(); }
+    }} />{query && <button aria-label="清空搜索" onClick={clearSearch}>×</button>}</div>}
+    <footer className="main-footer"><button aria-label="主菜单" onClick={mainMenu}><Icon name="menu" /></button><button aria-label={settings.showCommon ? '隐藏常用短语' : '显示常用短语'} title={settings.showCommon ? '隐藏常用短语' : '显示常用短语'} aria-pressed={settings.showCommon} disabled={updatingSettings} onClick={() => void changeSettings({ showCommon: !settings.showCommon })}><Icon name={settings.showCommon ? 'eye' : 'eye-off'} /></button><button aria-label={settings.showSearch ? '隐藏搜索框' : '显示搜索框'} title={settings.showSearch ? '隐藏搜索框' : '显示搜索框'} aria-controls="search-bar" aria-expanded={settings.showSearch} aria-pressed={settings.showSearch} disabled={updatingSettings} onClick={() => void changeSettings({ showSearch: !settings.showSearch })}><Icon name={settings.showSearch ? 'eye' : 'eye-off'} /></button>{busy && <button className="stop-delivery" onClick={() => run(() => call('cancel_delivery'))}>停止</button>}<span className="footer-spacer" data-tauri-drag-region /><span className="brand-name">闪语</span><button aria-label="设置" title="设置" className="settings-button" onClick={() => run(() => openWindow('settings'))}><Icon name="settings" /></button></footer>
+    {menu && <div className={`context-menu${menu.primary ? ' category-context-menu' : ''}`} role="menu" tabIndex={-1} style={{ left: menu.x, top: menu.y }} onKeyDown={e => {
+      if (!menu.primary) return;
+      if (e.key === 'Tab') { setMenu(null); return; }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+      e.preventDefault();
+      const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]; const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : e.key === 'ArrowDown' ? (index + 1) % buttons.length : index < 0 ? buttons.length - 1 : (index - 1 + buttons.length) % buttons.length;
+      buttons[next]?.focus();
+    }}>{menu.items.map((item, i) => item ? <button key={i} role="menuitem" disabled={item.enabled === false} onClick={() => { setMenu(null); run(item.action); }}>{item.label}</button> : <div className="menu-separator" key={i} />)}</div>}
+    {dialog && <FormDialog key={dialog.title} spec={dialog} close={() => setDialog(null)} />}{shortcutPhrase && <ShortcutDialog id={shortcutPhrase.id} value={shortcutPhrase.shortcut} onConfirm={async shortcut => { const latest = libraryRef.current.phrases.find(p => p.id === shortcutPhrase.id); if (!latest) throw new Error('话术已被删除，无法设置快捷键。'); await call('save_phrase', { phrase: { ...latest, shortcut }, afterId: null }); }} close={() => setShortcutPhrase(null)} />}<Feedback message={message} clear={() => setMessage('')} />
+  </section>;
+}

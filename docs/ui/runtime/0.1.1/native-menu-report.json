@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-10T11:45:28.254Z",
+  "results": [
+    {
+      "name": "吸附置顶开关、搜索显示持久化和空白右键菜单",
+      "passed": true
+    },
+    {
+      "name": "悬停不跳动；选中 A、双击发送 B 只提交一次",
+      "passed": true
+    },
+    {
+      "name": "双击正文插入并保留草稿；右键直接发送使用同一流程",
+      "passed": true
+    },
+    {
+      "name": "独立短语编辑16字限制、单击选中、双击插入和原生菜单发送",
+      "passed": true
+    },
+    {
+      "name": "短语原生菜单修改删除、面板开关和Ctrl多选拖动取消确认",
+      "passed": true
+    },
+    {
+      "name": "原有图片和文件剪贴板格式可以完整保留",
+      "passed": true
+    },
+    {
+      "name": "混合内容按顺序逐段发送；图片和文件使用标准格式",
+      "passed": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'interrupted'\n- 'submitted'\n",
+      "messages": []
+    }
+  ],
+  "limits": [
+    "真实企业微信吸附待实机确认；同名验收进程只验证模块行为",
+    "Windows 10、多显示器与实际 150%/200% DPI、中文输入法仍需系统验收",
+    "第三方软件粘贴支持与实际网络送达不由本宿主证明"
+  ]
+}

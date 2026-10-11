@@ -1,0 +1,250 @@
+{
+  "date": "2026-10-11T06:26:21.800Z",
+  "scope": "full",
+  "results": [
+    {
+      "name": "首次短文预览按客户区测量，正文没有空白膨胀或多余滚动条",
+      "passed": true
+    },
+    {
+      "name": "快速掠过不弹出；停留后完整显示图文分段且不激活预览窗口",
+      "passed": true
+    },
+    {
+      "name": "鼠标进入浮层可滚动查看末尾；短文自适应高度，Esc关闭且不改变选择",
+      "passed": true
+    },
+    {
+      "name": "连续移动及缩放超过隐藏延时仍保持展开；停止后隐藏，移动和悬停均恢复原宽度",
+      "passed": true
+    },
+    {
+      "name": "左右屏幕边缘保持设置的吸附侧和完整宽度，目标前台时侧栏仍可见",
+      "passed": true
+    }
+  ],
+  "snapshots": [
+    {
+      "name": "long-preview",
+      "main": {
+        "handle": 4987806,
+        "rect": {
+          "left": 80,
+          "top": 120,
+          "right": 410,
+          "bottom": 720
+        },
+        "frame": {
+          "left": 87,
+          "top": 120,
+          "right": 403,
+          "bottom": 713
+        },
+        "client": {
+          "x": 88,
+          "y": 121
+        },
+        "work": {
+          "left": 0,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1032
+        },
+        "dpi": 96,
+        "visible": true,
+        "noActivate": false,
+        "topmost": true
+      },
+      "popup": {
+        "handle": 98045824,
+        "rect": {
+          "left": 412,
+          "top": 205,
+          "right": 848,
+          "bottom": 685
+        },
+        "frame": {
+          "left": 419,
+          "top": 205,
+          "right": 841,
+          "bottom": 678
+        },
+        "client": {
+          "x": 420,
+          "y": 206
+        },
+        "work": {
+          "left": 0,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1032
+        },
+        "dpi": 96,
+        "visible": true,
+        "noActivate": true,
+        "topmost": true
+      },
+      "foreground": 9574940,
+      "foregroundPid": 44656
+    },
+    {
+      "name": "drag-resize-restore",
+      "fullWidth": 330,
+      "restored": {
+        "handle": 4987806,
+        "rect": {
+          "left": 1316,
+          "top": 140,
+          "right": 1646,
+          "bottom": 690
+        },
+        "frame": {
+          "left": 1323,
+          "top": 140,
+          "right": 1639,
+          "bottom": 683
+        },
+        "client": {
+          "x": 1324,
+          "y": 141
+        },
+        "work": {
+          "left": 0,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1032
+        },
+        "dpi": 96,
+        "visible": true,
+        "noActivate": false,
+        "topmost": false
+      }
+    },
+    {
+      "name": "edge-right",
+      "main": {
+        "handle": 4987806,
+        "rect": {
+          "left": 1597,
+          "top": 120,
+          "right": 1927,
+          "bottom": 670
+        },
+        "frame": {
+          "left": 1604,
+          "top": 120,
+          "right": 1920,
+          "bottom": 663
+        },
+        "client": {
+          "x": 1605,
+          "y": 121
+        },
+        "work": {
+          "left": 0,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1032
+        },
+        "dpi": 96,
+        "visible": true,
+        "noActivate": false,
+        "topmost": true
+      },
+      "target": {
+        "handle": 9574940,
+        "rect": {
+          "left": 1250,
+          "top": 120,
+          "right": 1890,
+          "bottom": 670
+        },
+        "frame": {
+          "left": 1257,
+          "top": 120,
+          "right": 1883,
+          "bottom": 663
+        },
+        "client": {
+          "x": 1258,
+          "y": 151
+        },
+        "work": {
+          "left": 0,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1032
+        },
+        "dpi": 96,
+        "visible": true,
+        "noActivate": false,
+        "topmost": false
+      }
+    },
+    {
+      "name": "edge-left",
+      "main": {
+        "handle": 4987806,
+        "rect": {
+          "left": -7,
+          "top": 120,
+          "right": 323,
+          "bottom": 670
+        },
+        "frame": {
+          "left": 0,
+          "top": 120,
+          "right": 316,
+          "bottom": 663
+        },
+        "client": {
+          "x": 1,
+          "y": 121
+        },
+        "work": {
+          "left": 0,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1032
+        },
+        "dpi": 96,
+        "visible": true,
+        "noActivate": false,
+        "topmost": true
+      },
+      "target": {
+        "handle": 9574940,
+        "rect": {
+          "left": 30,
+          "top": 120,
+          "right": 670,
+          "bottom": 670
+        },
+        "frame": {
+          "left": 37,
+          "top": 120,
+          "right": 663,
+          "bottom": 663
+        },
+        "client": {
+          "x": 38,
+          "y": 151
+        },
+        "work": {
+          "left": 0,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1032
+        },
+        "dpi": 96,
+        "visible": true,
+        "noActivate": false,
+        "topmost": false
+      }
+    }
+  ],
+  "limits": [
+    "实际企业微信、多显示器和150%/200%系统缩放未操作",
+    "原生窗口与鼠标检查仅操作隔离宿主和隔离客户端，无剪贴板或聊天发送"
+  ]
+}

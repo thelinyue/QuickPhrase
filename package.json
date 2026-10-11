@@ -1,24 +1,34 @@
 {
-  "name": "quickphrase",
-  "version": "0.0.1-prototype",
+  "name": "shanyu",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
+  "engines": { "node": "^22.22.2 || ^24.15.0 || >=26.0.0" },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build && node scripts/prepare-sites-build.mjs",
-    "build:management": "vite build --config vite.management.config.mjs",
-    "qa:management": "node scripts/qa-management.mjs",
-    "preview": "vite preview",
-    "test:sites": "node --test tests/sites-worker.test.mjs"
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "tauri": "tauri",
+    "test": "vitest run",
+    "test:native": "node scripts/verify-native.mjs",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@fluentui/react-icons": "^2.0.337",
-    "@vitejs/plugin-react": "5.0.4",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
-    "vite": "6.4.2"
+    "@tauri-apps/api": "^2.12.3",
+    "@tauri-apps/plugin-dialog": "^2.8.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "playwright": "^1.62.1"
+    "@tauri-apps/cli": "^2.12.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^30.1.2",
+    "playwright": "^1.64.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
   }
 }
