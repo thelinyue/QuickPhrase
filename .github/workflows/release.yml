@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v${{ inputs.version }}
+          ref: refs/tags/v${{ inputs.version }}
           fetch-depth: 0
       - name: Validate stable release requirements
         env:
@@ -47,7 +47,7 @@ jobs:
     needs: validate
     uses: ./.github/workflows/ci.yml
     with:
-      sourceRef: v${{ inputs.version }}
+      sourceRef: refs/tags/v${{ inputs.version }}
 
   publish-release:
     needs: [validate, quality]
@@ -59,7 +59,7 @@ jobs:
       - name: Checkout immutable release tag
         uses: actions/checkout@v4
         with:
-          ref: v${{ inputs.version }}
+          ref: refs/tags/v${{ inputs.version }}
           fetch-depth: 0
 
       - name: Setup Node 24.18.0
