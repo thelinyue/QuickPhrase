@@ -2,15 +2,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SettingsWindow } from './Settings';
 import { call } from './api';
+import { getVersion } from '@tauri-apps/api/app';
 import type { Library } from './types';
 
 vi.mock('./api', () => ({ call: vi.fn(async () => 0), closeWindow: vi.fn(async () => {}) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
-beforeEach(() => { vi.mocked(call).mockResolvedValue(0); HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.open = true; }); });
+vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn(async () => '0.1.1') }));
+beforeEach(() => { vi.mocked(call).mockResolvedValue(0); vi.mocked(getVersion).mockResolvedValue('0.1.1'); HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.open = true; }); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const library: Library = { categories: [], phrases: ['P1', 'P2'].map(id => ({ id, rootId: 'root', groupId: null, title: '话术', color: '', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '正文' }] }] })), commonPhrases: [{ id: 'C1', text: '您好', position: 0 }], files: [], dataDir: '', settings: {} as Library['settings'] };
 const deletions = () => vi.mocked(call).mock.calls.filter(([command]) => command === 'delete_local_content');
 const submit = () => fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
+
+describe('应用版本', () => {
+  it('关于页面与侧栏显示实际 RC 版本', async () => {
+    vi.mocked(getVersion).mockResolvedValue('0.1.1-rc.2');
+    render(<SettingsWindow library={library} initialTab="关于" />);
+    expect(await screen.findByText('Windows 本地话术工具 · v0.1.1-rc.2')).toBeTruthy();
+    expect(screen.getByText('本地话术工具 · 0.1.1-rc.2')).toBeTruthy();
+  });
+  it('读取失败不显示硬编码版本', async () => {
+    vi.mocked(getVersion).mockRejectedValue(new Error('版本服务不可用'));
+    render(<SettingsWindow library={library} initialTab="关于" />);
+    expect((await screen.findByRole('status')).textContent).toContain('无法读取应用版本');
+    expect(screen.queryByText(/v0\.1\.1| · 0\.1\.1/)).toBeNull();
+  });
+});
 
 describe('十项序号与快捷键设置', () => {
   const shortcuts = () => ({ ...library, settings: { ...library.settings, searchHotkey: 'Q', windowHotkey: 'W', commonHotkey: 'E', sequenceHotkeys: false, sequenceDirectSend: false, sequenceBindings: Array.from({ length: 10 }, (_, i) => `Ctrl+${(i+1)%10}`), customHotkeys: true, globalPhraseHotkeys: false } });

@@ -1,4 +1,4 @@
-﻿param([string]$InnoCompiler = $env:INNOSETUP_ISCC, [switch]$SkipInstall)
+﻿param([string]$InnoCompiler = $env:INNOSETUP_ISCC, [switch]$SkipInstall, [string]$Version)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $InnoCompiler) {
@@ -7,7 +7,8 @@ if (-not $InnoCompiler) {
   else { $InnoCompiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe' }
 }
 if (-not (Test-Path -LiteralPath $InnoCompiler -PathType Leaf)) { throw '未找到 Inno Setup 6 编译器，请通过 -InnoCompiler 指定 ISCC.exe 完整路径。' }
-$version = (Get-Content -Raw -LiteralPath (Join-Path $repo 'package.json') | ConvertFrom-Json).version
+$release = & (Join-Path $PSScriptRoot 'check-release.ps1') -Version $Version
+$version = $release.Version
 $deps = Join-Path $repo '.build\deps'
 $releaseRoot = Join-Path $repo 'artifacts'
 $bootstrap = Join-Path $deps 'MicrosoftEdgeWebview2Setup.exe'
@@ -24,10 +25,13 @@ if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notm
 Push-Location $repo
 try {
   if (-not $SkipInstall) { & npm.cmd ci --no-audit --no-fund; if ($LASTEXITCODE -ne 0) { throw '前端依赖安装失败。' } }
-  & npm.cmd run tauri -- build --no-bundle
+  # 临时配置让 RC 的运行时及 Windows 资源版本一致，不改写三个源码清单或锁文件。
+  $configPath = Join-Path $deps 'release-config.json'
+  [IO.File]::WriteAllText($configPath, (@{ version = $version } | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+  & npm.cmd run tauri -- build --no-bundle --config $configPath -- --locked
   if ($LASTEXITCODE -ne 0) { throw 'Tauri/Rust 程序构建失败。' }
   $sourceDir = Join-Path $repo 'src-tauri\target\release'
-  & $InnoCompiler "/DAppVersion=$version" "/DReleaseRoot=$releaseRoot" "/DSourceDir=$sourceDir" "/DWebViewBootstrap=$bootstrap" "/DChineseLanguage=$language" (Join-Path $repo 'installer\Shanyu.iss')
+  & $InnoCompiler "/DAppVersion=$version" "/DFileVersion=$($release.FileVersion)" "/DReleaseRoot=$releaseRoot" "/DSourceDir=$sourceDir" "/DWebViewBootstrap=$bootstrap" "/DChineseLanguage=$language" (Join-Path $repo 'installer\Shanyu.iss')
   if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 安装包编译失败。' }
   Write-Host "安装包已生成：$(Join-Path $releaseRoot "Shanyu-Setup-$version-x64.exe")"
 } finally { Pop-Location }

@@ -2,6 +2,9 @@
 #ifndef AppVersion
   #define AppVersion "0.1.1"
 #endif
+#ifndef FileVersion
+  #define FileVersion AppVersion
+#endif
 #ifndef AppId
   #define AppId "{{E9DBDCE4-4E86-4F88-A845-7E91B5D7726C}"
 #endif
@@ -25,6 +28,9 @@
 AppId={#AppId}
 AppName=闪语
 AppVersion={#AppVersion}
+VersionInfoVersion={#FileVersion}
+VersionInfoProductVersion={#FileVersion}
+VersionInfoProductTextVersion={#AppVersion}
 AppVerName=闪语 {#AppVersion}
 AppPublisher=闪语开源项目
 DefaultDirName={localappdata}\Programs\Shanyu

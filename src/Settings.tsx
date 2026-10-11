@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
+import { getVersion } from '@tauri-apps/api/app';
 import { call } from './api';
 import { CategoryColorPicker, Feedback, FormDialog, Titlebar, type DialogSpec } from './ui';
 import { categoryLabel, localDate, type ImportPreview, type Library, type Settings } from './types';
@@ -40,6 +41,13 @@ function DockIllustration({ settings }: { settings: Settings }) {
  * 点击行为的新字段使用旧规则作为默认值，升级或恢复旧备份不会自动启用直接发送。 */
 export function SettingsWindow({ library, initialTab, initialCategoryId = '' }: { library: Library; initialTab: string; initialCategoryId?: string }) {
   const [tab, setTab] = useState(tabs.includes(initialTab) ? initialTab : tabs[0]); const [settings, setSettings] = useState(library.settings); const [message, setMessage] = useState(''); const [saving, setSaving] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
+  // 使用 Tauri 实际版本，候选构建不会被两个设置入口误标为稳定版。
+  useEffect(() => {
+    let disposed = false;
+    void getVersion().then(version => { if (!disposed) setAppVersion(version); }).catch(error => { if (!disposed) setMessage(`无法读取应用版本：${String(error)}`); });
+    return () => { disposed = true; };
+  }, []);
   const savingRef = useRef(false);
   const [dialog, setDialog] = useState<DialogSpec | null>(null); const [preview, setPreview] = useState<ImportPreview | null>(null); const [merge, setMerge] = useState(true); const [restore, setRestore] = useState(false);
   const [exportType, setExportType] = useState('backup'); const [exportCategory, setExportCategory] = useState(''); const [cache, setCache] = useState(0);
@@ -117,6 +125,6 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '' }: 
   else if (tab === '缓存管理') content = <div className="cache-settings"><div className="setting-block"><button className="secondary-button wide-button" onClick={() => folder('cache')}>打开本地缓存文件夹</button></div>
     <div className="setting-block"><h2 className="settings-heading">一键删除（请谨慎操作）</h2><div className="setting-buttons"><button className="secondary-button" disabled={!library.phrases.length} onClick={() => deleteLocal('phrase')}>私人话术</button><button className="secondary-button" disabled={!library.commonPhrases.length} onClick={() => deleteLocal('common')}>常用短语</button></div></div>
     <div className="setting-block"><h2 className="settings-heading">清理本地缓存</h2><div className="setting-buttons"><button className="secondary-button" onClick={() => void clear('thumbnails')}>清理缩略图</button><button className="secondary-button" onClick={() => void clear('temp')}>清理临时文件</button></div><p className="settings-hint">可重新生成的缓存：{(cache / 1024 / 1024).toFixed(2)} MB</p><p className="settings-hint">清理缓存会保留话术、图片素材和关联的原文件。</p></div></div>;
-  else content = <><div className="about-brand"><img src="/shanyu.png" width="64" height="64" alt="" draggable={false} /><div><h2 className="settings-heading">闪语</h2><p>Windows 本地话术工具 · v0.1.1</p></div></div><div className="setting-block"><p>快速找到话术，添加到输入区，按需直接发送。</p><p>支持本地文件、图片附件和分段话术。</p></div><div className="setting-block"><p>本地数据目录</p><p className="data-path">{library.dataDir}</p><button className="secondary-button" onClick={() => folder('data')}>打开数据文件夹</button><p className="settings-hint">升级与卸载会保留本地数据。</p></div></>;
-  return <section className="client-window settings-window"><Titlebar title="设置" minimize /><div className="settings-layout"><aside className="settings-sidebar"><nav>{tabs.map(t => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav><div className="settings-brand"><span>闪语</span><small>本地话术工具 · 0.1.1</small></div></aside><div className="settings-content">{content}</div></div>{dialog && <FormDialog spec={dialog} close={() => setDialog(null)} />}<Feedback message={message} clear={() => setMessage('')} /></section>;
+  else content = <><div className="about-brand"><img src="/shanyu.png" width="64" height="64" alt="" draggable={false} /><div><h2 className="settings-heading">闪语</h2><p>Windows 本地话术工具{appVersion && ` · v${appVersion}`}</p></div></div><div className="setting-block"><p>快速找到话术，添加到输入区，按需直接发送。</p><p>支持本地文件、图片附件和分段话术。</p></div><div className="setting-block"><p>本地数据目录</p><p className="data-path">{library.dataDir}</p><button className="secondary-button" onClick={() => folder('data')}>打开数据文件夹</button><p className="settings-hint">升级与卸载会保留本地数据。</p></div></>;
+  return <section className="client-window settings-window"><Titlebar title="设置" minimize /><div className="settings-layout"><aside className="settings-sidebar"><nav>{tabs.map(t => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav><div className="settings-brand"><span>闪语</span><small>本地话术工具{appVersion && ` · ${appVersion}`}</small></div></aside><div className="settings-content">{content}</div></div>{dialog && <FormDialog spec={dialog} close={() => setDialog(null)} />}<Feedback message={message} clear={() => setMessage('')} /></section>;
 }

@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:release": "node --test tests/release-scripts.test.mjs",
     "test:native": "node scripts/verify-native.mjs",
     "check": "tsc --noEmit"
   },

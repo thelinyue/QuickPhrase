@@ -92,3 +92,5 @@ Insert 按顺序粘贴，在分段之间添加换行，不发送。Send 每段�
 稳定安装 AppId 为 `{E9DBDCE4-4E86-4F88-A845-7E91B5D7726C}`，数据标识为 `com.quickphrase.desktop`。Inno 安装器只写应用目录和入口；用户数据库、图片及设置在其外。WebView2 缺失时运行官方引导程序，失败停止并提示退出码。
 
 仅 Debug 构建允许 `SHANYU_TEST_DATA_DIR` 隔离验收数据，此环境使用 `.qa` 单实例标识，也不修改真实开机启动项。Release 始终使用正常用户数据目录和产品单实例标识。
+
+自动 CI 复用前端、Rust 单测和 Debug 构建。`check-release.ps1` 统一校验源码版本与手动发布条件；安装器构建使用临时 Tauri 配置传入 RC 版本，设置页通过 Tauri 读取实际版本。`package-release.ps1` 只打包明确指定的当前程序、安装器和许可政策文件，并沿用已有 SHA256 清单与来源 manifest。候选仅上传 Actions artifact，正式发布保留已有标签、人工验收确认和未签名声明；构建或打包不会发布、安装程序或改写用户数据。

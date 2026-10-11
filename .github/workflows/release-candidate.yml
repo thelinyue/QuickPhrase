@@ -1,4 +1,4 @@
-# 仅允许发布负责人从默认分支手动触发；本工作流不创建 tag 或 GitHub Release。
+# 候选只保存 Actions artifact，不创建标签或 GitHub Release。
 name: release-candidate-build
 
 on:
@@ -7,7 +7,7 @@ on:
       version:
         description: Candidate SemVer
         required: true
-        default: 0.0.2-rc.1
+        default: 0.1.1-rc.1
       confirmWeComAcceptance:
         description: Confirm current WeCom manual matrix
         required: true
@@ -22,50 +22,73 @@ defaults:
     shell: pwsh
 
 jobs:
-  build-unsigned-candidate:
+  validate:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate candidate requirements
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          CONFIRM_WECOM: ${{ inputs.confirmWeComAcceptance }}
+        run: |
+          ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel prerelease -GitRef $env:GITHUB_REF -ConfirmWeComAcceptance:($env:CONFIRM_WECOM -eq 'true')
+
+  quality:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  build-unsigned-candidate:
+    needs: [validate, quality]
+    runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup .NET 10.0.400
-        uses: actions/setup-dotnet@v4
+      - name: Setup Node 24.18.0
+        uses: actions/setup-node@v4
         with:
-          dotnet-version: 10.0.400
+          node-version: 24.18.0
+          cache: npm
 
-      - name: Restore
-        run: dotnet restore QuickPhrase.sln
+      - name: Setup Rust 1.99.0
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.0
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
 
       - name: Install Inno Setup 6.7.3
         run: |
-          $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path -LiteralPath $iscc)) {
-            winget install --id JRSoftware.InnoSetup --version 6.7.3 --exact --silent --accept-package-agreements --accept-source-agreements
-            if ($LASTEXITCODE -ne 0) { throw "Inno Setup 6.7.3 安装失败，退出码 $LASTEXITCODE。" }
-          }
-          $listing = winget list --id JRSoftware.InnoSetup --exact --accept-source-agreements | Out-String
-          if ($listing -notmatch '6\.7\.3') { throw "未检测到 Inno Setup 6.7.3：$listing" }
+          choco install innosetup --version=6.7.3 --yes --no-progress --force
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 6.7.3 安装失败。' }
 
-      - name: Validate gate and build unsigned candidate
+      - name: Build and package unsigned candidate
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          CONFIRM_WECOM: ${{ inputs.confirmWeComAcceptance }}
         run: |
-          $version = '${{ inputs.version }}'
-          if ($version -notmatch '^0\.0\.2-rc\.[1-9]\d*$') { throw "候选版本必须匹配 0.0.2-rc.N：$version" }
-          if ('${{ inputs.confirmWeComAcceptance }}' -ne 'true') { throw '尚未确认企业微信人工矩阵。' }
-          $env:QUICKPHRASE_WECOM_ACCEPTANCE = 'passed'
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Version $version -UnsignedCandidate -Stage All
-          if ($LASTEXITCODE -ne 0) { throw "候选构建失败，退出码 $LASTEXITCODE。" }
+          ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel prerelease -GitRef $env:GITHUB_REF -ConfirmWeComAcceptance:($env:CONFIRM_WECOM -eq 'true')
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION -InnoCompiler $compiler
+          ./scripts/package-release.ps1 -Version $env:RELEASE_VERSION
 
       - name: Upload unsigned candidate bundle
         uses: actions/upload-artifact@v4
         with:
-          name: QuickPhrase-${{ inputs.version }}-unsigned
+          name: Shanyu-${{ inputs.version }}-unsigned
           if-no-files-found: error
           retention-days: 14
           path: |
-            artifacts/release/${{ inputs.version }}/QuickPhrase-${{ inputs.version }}-win-x64-unsigned.zip
-            artifacts/release/${{ inputs.version }}/installers/QuickPhrase-Setup-${{ inputs.version }}-unsigned.exe
+            artifacts/release/${{ inputs.version }}/Shanyu-${{ inputs.version }}-win-x64.zip
+            artifacts/release/${{ inputs.version }}/Shanyu-Setup-${{ inputs.version }}-x64.exe
             artifacts/release/${{ inputs.version }}/SHA256SUMS.txt
             artifacts/release/${{ inputs.version }}/release-manifest.json
