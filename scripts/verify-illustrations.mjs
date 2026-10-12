@@ -66,11 +66,16 @@ try {
     await click(page.getByRole('button', { name: '新增话术', exact: true }));
   });
   const editor = await view('editor', '.editor-window');
-  await check('快捷键教程展开显示两种按键顺序，收起与取消不保存', async () => {
+  await check('快捷键说明展开显示两种按键顺序，收起与取消不保存', async () => {
     await click(editor.getByRole('button', { name: '自定义快捷键', exact: true }));
-    const tutorial = editor.getByRole('button', { name: '自定义快捷键使用教程', exact: true }); assert.equal(await tutorial.getAttribute('aria-expanded'), 'false');
+    const tutorial = editor.getByRole('button', { name: '自定义快捷键使用说明', exact: true }); assert.equal(await tutorial.getAttribute('aria-expanded'), 'false');
     await click(tutorial); assert.equal(await tutorial.getAttribute('aria-expanded'), 'true'); assert.equal(await editor.locator('.shortcut-examples figure').count(), 2);
-    await screenshot(editor, 'shortcut-tutorial'); await editor.setViewportSize({ width: 480, height: 480 }); await within(editor.locator('dialog').getByRole('button', { name: '确定', exact: true })); await screenshot(editor, 'shortcut-small');
+    assert.equal(await editor.getByRole('button', { name: '打开视频教程', exact: true }).count(), 0);
+    await screenshot(editor, 'shortcut-help'); await editor.setViewportSize({ width: 360, height: 360 });
+    const dialog = editor.locator('dialog');
+    assert.ok(await dialog.evaluate(el => el.scrollHeight > el.clientHeight), '窄窗口说明应可滚动');
+    await dialog.locator('.shortcut-help p').last().scrollIntoViewIfNeeded(); await within(dialog.locator('.shortcut-help p').last());
+    await dialog.getByRole('button', { name: '确定', exact: true }).scrollIntoViewIfNeeded(); await within(dialog.getByRole('button', { name: '确定', exact: true })); await screenshot(editor, 'shortcut-small');
     await click(tutorial); assert.equal(await editor.locator('.shortcut-examples').count(), 0); assert.equal(await tutorial.getAttribute('aria-expanded'), 'false');
     await click(editor.locator('dialog').getByRole('button', { name: '取消', exact: true })); await click(editor.getByRole('button', { name: '取消', exact: true }));
     assert.equal((await invoke('get_library')).phrases.length, 0);
@@ -83,6 +88,16 @@ try {
   });
   await click(page.getByRole('button', { name: '主菜单', exact: true })); await click(page.getByRole('menuitem', { name: '吸附设置', exact: true }));
   const settings = await view('settings', '.settings-window');
+  await check('快捷键设置移除视频入口，生效范围与全局开关对齐且提示完整可见', async () => {
+    await click(settings.getByRole('button', { name: '快捷键', exact: true }));
+    assert.equal(await settings.getByRole('button', { name: '使用教程', exact: true }).count(), 0);
+    const scope = settings.getByText('生效范围', { exact: true }), global = settings.getByRole('checkbox', { name: '全局生效', exact: true });
+    await within(scope); await within(global);
+    const heading = await scope.boundingBox(), checkbox = await global.boundingBox(); assert.ok(checkbox.x > heading.x + heading.width);
+    await within(settings.getByText('默认仅在闪语或目标窗口生效；勾选“全局生效”后可用于其他窗口。', { exact: true }));
+    await screenshot(settings, 'shortcut-settings');
+    await click(settings.getByRole('button', { name: '吸附设置', exact: true }));
+  });
   await check('左右吸附示意随设置切换，侧栏与聊天窗口真实交换位置', async () => {
     for (const side of ['left', 'right']) {
       await click(settings.getByLabel(side === 'left' ? '聊天窗口左侧' : '聊天窗口右侧', { exact: true })); await settings.waitForFunction(side => document.querySelector('.dock-preview')?.dataset.side === side, side);
@@ -116,7 +131,7 @@ try {
   });
   await check('七种主题下六处界面没有横向溢出，较小窗口内新增按钮可达', async () => {
     await click(page.locator('.content-tabs').getByRole('button', { name: '话术', exact: true })); await click(page.getByRole('button', { name: '新增话术', exact: true }));
-    const themedEditor = await view('editor', '.editor-window'); await click(themedEditor.getByRole('button', { name: '自定义快捷键', exact: true })); await click(themedEditor.getByRole('button', { name: '自定义快捷键使用教程', exact: true }));
+    const themedEditor = await view('editor', '.editor-window'); await click(themedEditor.getByRole('button', { name: '自定义快捷键', exact: true })); await click(themedEditor.getByRole('button', { name: '自定义快捷键使用说明', exact: true }));
     for (const theme of ['default', 'green', 'blue', 'black', 'pink', 'lavender', 'orange']) {
       await patchSettings({ theme }); await settings.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
       for (const target of [page, recycle, themedEditor]) await target.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);

@@ -63,10 +63,11 @@ try {
   await page.evaluate(() => {
     const original = window.fetch.bind(window); window.__hoverQA = []; window.__hoverEvents = [];
     window.fetch = (input, init) => { const url = new URL(typeof input === 'string' ? input : input.url); if (url.hostname === 'ipc.localhost' && url.pathname.includes('phrase_preview')) window.__hoverQA.push({ command: url.pathname, args: JSON.parse(init.body), time: performance.now() }); return original(input, init); };
-    for (const type of ['pointermove', 'pointerdown', 'scroll', 'keydown']) window.addEventListener(type, event => {
-      window.__hoverEvents.push({ type, x: event.clientX, y: event.clientY, key: event.key, target: event.target.className, time: performance.now() });
+    for (const type of ['pointermove', 'pointerdown', 'mousedown', 'scroll', 'keydown']) window.addEventListener(type, event => {
+      window.__hoverEvents.push({ type, x: event.clientX, y: event.clientY, key: event.key, detail: event.detail, target: event.target.className, time: performance.now() });
       if (window.__hoverEvents.length > 30) window.__hoverEvents.shift();
     }, true);
+    window.addEventListener('resize', () => { window.__hoverEvents.push({ type: 'resize', width: innerWidth, height: innerHeight, time: performance.now() }); });
   });
   // 句柄只通过指定进程和固定标题读取，不查找或操作正式客户端。
   const nativeHandle = async title => JSON.parse((await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(repo, 'tests/native-driver.ps1'), '-ProcessId', String(app.pid), '-Title', title], { windowsHide: true, encoding: 'utf8' })).stdout).handle;
@@ -78,7 +79,147 @@ try {
   await page.locator('.category-tabs button:not(.add-category)').first().waitFor();
   const settings = { ...initial.settings, startup: false, dock: false, autoHide: false, pinned: false, dockCommon: false, dockSearch: false, customHotkeys: false, searchHotkey: '8', windowHotkey: '9', commonHotkey: '0' };
   await poll(async () => { try { await invoke('save_settings', { settings }); return true; } catch (error) { if (!String(error).includes('服务尚未启动')) throw error; return false; } }, '原生设置服务');
-  await check('吸附侧栏和底栏跟随目标层级，独立置顶设置不让它们覆盖任务栏', async () => {
+  await check('Alt+Q松键后上下键导航搜索结果，不误唤起Windows系统菜单', async () => {
+    const nativeKey = async (key, args = []) => JSON.parse((await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(repo, 'tests/native-driver.ps1'), '-Action', 'key', '-Handle', String(mainHandle), '-Key', String(key), ...args], { windowsHide: true, encoding: 'utf8' })).stdout);
+    await invoke('save_settings', { settings: { ...settings, dock: true, showSearch: true, searchHotkey: 'Q', windowHotkey: 'W', commonHotkey: 'E' } });
+    await focusHost(); await delay(180);
+    for (const from of ['host', 'main']) {
+      await nativeKey(81, ['-Alt', '-HoldMilliseconds', '350']);
+      if (from === 'main') await control('alt-menu', { handle: mainHandle });
+      for (const key of [40, 38]) {
+        const native = await nativeKey(key); snapshots.push({ name: 'alt-q-' + from + '-arrow-' + key, native });
+        // 系统菜单会进入原生模态循环，失败前取消菜单，避免阻塞 WebView 诊断与退出。
+        if (native.menuMode) { await nativeKey(27); await control('cancel-move', { handle: mainHandle }); }
+        assert.equal(native.menuMode, false, 'Alt+Q之后的上下键不能打开系统菜单');
+      }
+    }
+    const search = page.getByRole('textbox', { name: '搜索话术、本地文件', exact: true });
+    assert.equal(await search.evaluate(e => e === document.activeElement), true);
+    const ids = [];
+    for (const title of ['搜索甲', '搜索乙']) ids.push(await invoke('save_phrase', { phrase: { id: '', title, rootId: phraseRoot, groupId: null, shortcut: '', color: '', background: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '隔离验证' }] }] }, afterId: null }));
+    await search.fill('搜索'); await poll(async () => await page.locator('#search-results .content-row').count() === 2, '两条搜索结果');
+    const rows = await page.locator('#search-results .content-row').evaluateAll(elements => elements.map(e => e.dataset.row));
+    for (const [key, index] of [[40, 1], [38, 0]]) {
+      const native = await nativeKey(key); if (native.menuMode) await nativeKey(27);
+      assert.equal(native.menuMode, false);
+      assert.equal(await page.locator('#search-results .selected').getAttribute('data-row'), rows[index]);
+    }
+    await nativeKey(27);
+    const menu = await nativeKey(32, ['-Alt']); await nativeKey(27); await control('cancel-move', { handle: mainHandle });
+    assert.equal(menu.menuMode, true, '主动按Alt+空格仍可打开系统菜单');
+    for (const id of ids) await invoke('delete_item', { id, kind: 'phrase' });
+    await invoke('save_settings', { settings });
+  });
+  await check('吸附标题栏与底栏双击不会最大化，窗口尺寸与内容绘制保持正常', async () => {
+    await invoke('save_settings', { settings: { ...settings, dock: true, freeResize: true } });
+    const work = windowOf(await inspect(), hostHandle).work;
+    await control('move', { x: work.left + 200, y: work.top + 120, width: 600, height: 540 });
+    await focusHost(); await delay(220);
+    for (const freeResize of [true, false]) {
+      await invoke('save_settings', { settings: { ...settings, dock: true, freeResize } }); await delay(180);
+      for (const [name, selector] of [['titlebar', '.main-titlebar .titlebar-spacer'], ['footer', '.main-footer .footer-spacer']]) {
+        const before = windowOf(await inspect(), mainHandle), box = await page.locator(selector).boundingBox(), scale = before.dpi / 96;
+        await page.evaluate(() => { window.__hoverEvents = []; });
+        await control('double-click', { x: Math.round(before.client.x + (box.x + box.width / 2) * scale), y: Math.round(before.client.y + (box.y + box.height / 2) * scale) });
+        await delay(250);
+        const after = windowOf(await inspect(), mainHandle), viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+        const events = await page.evaluate(() => window.__hoverEvents);
+        snapshots.push({ name: 'double-click-' + name + '-' + freeResize, before, after, viewport, events });
+        await page.screenshot({ path: path.join(evidence, 'double-click-' + name + '-' + freeResize + '.png') });
+        assert.equal(after.zoomed, false, '吸附窗口不能进入最大化状态');
+        assert.deepEqual(after.frame, before.frame, '双击不能改变吸附尺寸和位置');
+        assert.ok(viewport.width > 0 && viewport.height > 0, 'WebView不能缩为零尺寸');
+        assert.ok(Math.abs(viewport.width * scale - after.clientRect.right) <= 1, '内容宽度与吸附窗口一致');
+        assert.ok(Math.abs(viewport.height * scale - after.clientRect.bottom) <= 1, '内容高度与吸附窗口一致');
+        await control('cancel-move', { handle: mainHandle }); await delay(80);
+        await page.getByRole('button', { name: '本地文件', exact: true }).click();
+        await page.getByRole('button', { name: '话术', exact: true }).click();
+      }
+    }
+    await invoke('save_settings', { settings }); await delay(180);
+  });
+  await check('吸附和独立主窗口双击底栏品牌不选中文字，尺寸与内容保持正常', async () => {
+    for (const dock of [true, false]) {
+      await invoke('save_settings', { settings: { ...settings, dock, freeResize: true } });
+      if (dock) await focusHost(); else await invoke('window_action', { action: 'show' });
+      await delay(180);
+      const before = windowOf(await inspect(), mainHandle), box = await page.locator('.main-footer .brand-name').boundingBox(), scale = before.dpi / 96;
+      await page.evaluate(() => window.getSelection()?.removeAllRanges());
+      await control('double-click', { x: Math.round(before.client.x + (box.x + box.width / 2) * scale), y: Math.round(before.client.y + (box.y + box.height / 2) * scale) });
+      await delay(200);
+      const after = windowOf(await inspect(), mainHandle), content = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, selected: !!window.getSelection()?.toString() }));
+      snapshots.push({ name: 'double-click-brand-' + dock, before, after, content });
+      await page.screenshot({ path: path.join(evidence, 'double-click-brand-' + dock + '.png') });
+      assert.equal(content.selected, false, '双击底栏品牌不能选中文字');
+      assert.equal(after.zoomed, false);
+      assert.deepEqual(after.frame, before.frame);
+      assert.ok(Math.abs(content.width * scale - after.clientRect.right) <= 1);
+      assert.ok(Math.abs(content.height * scale - after.clientRect.bottom) <= 1);
+    }
+    await invoke('save_settings', { settings });
+  });
+  await check('双击主窗口和吸附横条的短语栏不选中加号，新增短语仍可打开', async () => {
+    await invoke('save_settings', { settings: { ...settings, dock: true, showCommon: true, dockCommon: true } });
+    await focusHost(); await delay(180);
+    const common = context.pages().find(p => p.url().includes('#common-dock'));
+    for (const [name, view, handle] of [['main', page, mainHandle], ['dock', common, barHandle]]) {
+      const before = windowOf(await inspect(), handle), bar = await view.locator('.common-phrases').boundingBox(), add = await view.locator('.add-common').boundingBox(), scale = before.dpi / 96;
+      await view.evaluate(() => window.getSelection()?.removeAllRanges());
+      await control('double-click', { x: Math.round(before.client.x + Math.min(add.x + add.width + 12, bar.x + bar.width - 10) * scale), y: Math.round(before.client.y + (add.y + add.height / 2) * scale) });
+      await delay(180);
+      const selected = await view.evaluate(() => !!window.getSelection()?.toString());
+      snapshots.push({ name: 'double-click-common-' + name, selected, native: await inspect() });
+      await view.screenshot({ path: path.join(evidence, 'double-click-common-' + name + '.png') });
+      assert.equal(selected, false, '短语栏双击空白不能选中加号或文字');
+      await view.getByRole('button', { name: '新增常用短语', exact: true }).click();
+      const editor = await poll(() => context.pages().find(p => p.url().includes('#common-editor')), '新增短语编辑窗口');
+      await editor.locator('.common-editor').waitFor();
+      await editor.getByRole('button', { name: '关闭窗口', exact: true }).click();
+      await focusHost(); await delay(120);
+    }
+    await invoke('save_settings', { settings });
+  });
+  await check('主窗口关闭吸附后仍保持窄窗，已最大化窗口恢复正常尺寸再吸附且不抢焦点', async () => {
+    await invoke('save_settings', { settings: { ...settings, freeResize: true } });
+    await invoke('window_action', { action: 'show' }); await delay(180);
+    assert.equal(await invoke('plugin:window|is_maximizable'), false, '主窗口最大化始终关闭，避免反复改原生样式');
+    const before = windowOf(await inspect(), mainHandle), box = await page.locator('.main-titlebar .titlebar-spacer').boundingBox(), scale = before.dpi / 96;
+    await control('double-click', { x: Math.round(before.client.x + (box.x + box.width / 2) * scale), y: Math.round(before.client.y + (box.y + box.height / 2) * scale) });
+    await delay(200);
+    assert.equal(windowOf(await inspect(), mainHandle).zoomed, false, '独立主窗口双击保持窄窗');
+    await control('cancel-move', { handle: mainHandle }); await delay(80);
+    // 原生强制最大化模拟已有最大化状态，不能当作主窗口支持最大化的用户入口。
+    await control('maximize', { handle: mainHandle });
+    await poll(async () => windowOf(await inspect(), mainHandle).zoomed, '强制最大化隔离主窗口');
+    await focusHost();
+    await invoke('save_settings', { settings: { ...settings, dock: true, freeResize: true } });
+    const restored = await poll(async () => {
+      const state = await inspect(), main = windowOf(state, mainHandle), target = windowOf(state, hostHandle);
+      return !main.zoomed && main.visible && main.frame.left === target.frame.right && main.frame.bottom === target.frame.bottom && state;
+    }, '最大化主窗口还原后吸附');
+    const main = windowOf(restored, mainHandle), viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    assert.equal(restored.foreground, hostHandle, '还原并跟随不能抢走目标焦点');
+    assert.equal(main.rect.right - main.rect.left, before.rect.right - before.rect.left, '最大化宽度不能污染侧栏宽度');
+    assert.ok(Math.abs(viewport.width * scale - main.clientRect.right) <= 1);
+    assert.ok(Math.abs(viewport.height * scale - main.clientRect.bottom) <= 1);
+    snapshots.push({ name: 'maximized-to-docked', before, restored, viewport });
+    await invoke('save_settings', { settings });
+  });
+  await check('主窗口最大化限制不影响独立排序窗口的最大化和还原', async () => {
+    await invoke('save_category', { category: { id: '', name: '最大化验收', kind: 'phrase', parentId: null, position: 1, background: '' } });
+    await page.getByRole('button', { name: '一级分类菜单', exact: true }).click();
+    await page.getByRole('menuitem', { name: '快速排序一级分类', exact: true }).click();
+    const sort = await poll(() => context.pages().find(p => p.url().includes('#category-sort')), '独立排序窗口');
+    await sort.locator('.common-sort').waitFor();
+    assert.equal(await invoke('plugin:window|is_maximizable', {}, sort), true);
+    const maximize = sort.getByRole('button', { name: '最大化或还原窗口', exact: true });
+    await maximize.click(); await poll(() => invoke('plugin:window|is_maximized', {}, sort), '独立排序窗口最大化');
+    await sort.screenshot({ path: path.join(evidence, 'sort-maximized.png') });
+    await maximize.click(); await poll(async () => !await invoke('plugin:window|is_maximized', {}, sort), '独立排序窗口还原');
+    await sort.getByRole('button', { name: '关闭窗口', exact: true }).click();
+    await focusHost();
+  });
+  await check('吸附侧栏和底栏跟随目标层级，任务栏遮挡关系与目标一致', async () => {
     const original = windowOf(await inspect(), hostHandle).rect, work = windowOf(await inspect(), hostHandle).work;
     for (const pinned of [true, false]) {
       await invoke('save_settings', { settings: { ...settings, dock: true, pinned, dockCommon: true } });
@@ -95,16 +236,21 @@ try {
       assert.ok(taskbar.visible && taskbar.frame.bottom > taskbar.frame.top, '读取实际可见系统任务栏');
       const pointY = taskbar.frame.top + 4;
       assert.ok(pointY < main.frame.bottom && pointY < target.frame.bottom, '目标和侧栏都延伸到任务栏下面');
-      for (const pointX of [target.frame.left + 40, main.frame.left + 12]) {
+      // Windows 可让普通超高目标覆盖任务栏；以目标实际遮挡结果检查侧栏和底栏，
+      // 不能假设任务栏始终覆盖目标，也不能允许面板单独改变层级。
+      const targetProbe = await control('probe', { pointX: target.frame.left + 40, pointY });
+      assert.ok([taskbar.handle, target.handle].includes(targetProbe.probedWindow), '目标探测点不能被其他窗口覆盖');
+      const targetCoversTaskbar = targetProbe.probedWindow === target.handle;
+      for (const [pointX, expected] of [[target.frame.left + 40, targetCoversTaskbar ? target.handle : taskbar.handle], [main.frame.left + 12, targetCoversTaskbar ? mainHandle : taskbar.handle]]) {
         const probed = await control('probe', { pointX, pointY });
         snapshots.push({ name: 'taskbar-covers-' + pointX, pointX, pointY, state: probed });
-        assert.equal(probed.probedWindow, taskbar.handle, '任务栏对目标和侧栏保持相同遮挡关系');
+        assert.equal(probed.probedWindow, expected, '任务栏对目标和侧栏保持相同遮挡关系');
       }
       await control('move', { x: work.left + 600, y: work.bottom - 540 + 4, width: 640, height: 540 }); await delay(180);
       const nearTaskbar = await inspect(), bottom = windowOf(nearTaskbar, barHandle);
       assert.equal(bottom.frame.top, windowOf(nearTaskbar, hostHandle).frame.bottom);
       const bottomProbe = await control('probe', { pointX: bottom.frame.left + 40, pointY });
-      assert.equal(bottomProbe.probedWindow, taskbar.handle, '底栏进入任务栏范围时正常被遮挡');
+      assert.equal(bottomProbe.probedWindow, targetCoversTaskbar ? barHandle : taskbar.handle, '底栏与目标保持相同任务栏遮挡关系');
       snapshots.push({ name: 'taskbar-covers-bottom-' + pinned, state: bottomProbe });
       await invoke('save_settings', { settings: { ...settings, dock: false, pinned, dockCommon: true } }); await delay(180);
       assert.equal(windowOf(await inspect(), mainHandle).topmost, pinned, '退出吸附后恢复用户独立窗口的置顶选择');

@@ -1,6 +1,6 @@
 ; 闪语 Rust/Tauri 安装器。AppId 在各版本保持一致，数据由应用保存在用户目录。
 #ifndef AppVersion
-  #define AppVersion "0.1.2"
+  #define AppVersion "0.1.3"
 #endif
 #ifndef FileVersion
   #define FileVersion AppVersion

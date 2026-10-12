@@ -104,13 +104,13 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .search-kind { height: 24px; color: #9babb8; padding: 3px 14px; }
 mark { background: transparent; color: #f36c21; }
 .no-results { color: #8b9aaa; padding: 24px 14px; }
-.main-footer { display: flex; align-items: center; height: 27px; background: var(--blue); color: white; flex-shrink: 0; }
+.main-footer { display: flex; align-items: center; height: 27px; background: var(--blue); color: white; flex-shrink: 0; user-select: none; }
 .main-footer button { display: grid; place-items: center; width: 32px; height: 26px; border: 0; background: transparent; color: white; padding: 0; }
 .main-footer button:hover { background: #ffffff20; }
 .main-footer button svg { width: 18px; height: 18px; }
 .main-footer .settings-button svg { width: 20px; height: 20px; stroke-width: 1.5; }
 /* 短语和新增按钮共用换行布局，空列表仅一行；设置限制最大高度，超出后整栏滚动。 */
-.common-phrases { display: flex; flex-wrap: wrap; align-items: center; align-content: start; gap: 4px; flex-shrink: 0; background: #f0f1f3; border-top: 1px solid #dbe3e9; padding: 1px 3px; overflow-y: auto; scrollbar-width: thin; }
+.common-phrases { display: flex; flex-wrap: wrap; align-items: center; align-content: start; gap: 4px; flex-shrink: 0; background: #f0f1f3; border-top: 1px solid #dbe3e9; padding: 1px 3px; overflow-y: auto; scrollbar-width: thin; user-select: none; }
 .common-phrase-list { display: contents; }
 .common-phrase-list button { flex-shrink: 0; border: 1px solid #dde4ec; background: #fff; color: #315470; padding: 3px 7px; height: 25px; max-width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .common-phrase-list button:hover, .common-phrase-list button[aria-selected="true"] { background: #fff2bc; border-color: #e4c568; }
@@ -205,8 +205,7 @@ select, input[type="text"], input[type="number"], #phrase-title { border: 1px so
 .shortcut-hint { text-align: center; margin: 8px 0 7px; color: #99aabb; font-size: 12px; }
 .shortcut-footer { display: flex; align-items: center; gap: 16px; }
 .shortcut-footer .primary-button, .shortcut-footer .secondary-button { padding: 3px 10px; height: 24px; }
-.shortcut-tutorial { margin-right: auto; padding: 0; border: 0; background: transparent; color: #0078ff; white-space: nowrap; font-size: 12px; }
-.shortcut-tutorial span { display: inline-block; background: #899bdd; color: white; clip-path: circle(50%); width: 16px; line-height: 16px; font-size: 9px; margin-right: 4px; }
+.shortcut-help-toggle { margin-right: auto; padding: 0; border: 0; background: transparent; color: #0078ff; white-space: nowrap; font-size: 12px; }
 .shortcut-help { margin-top: 12px; color: #6e8091; line-height: 1.8; }
 .shortcut-help p { margin: 0 0 8px; }
 .shortcut-help p:last-child { margin-bottom: 0; }
@@ -219,7 +218,7 @@ select, input[type="text"], input[type="number"], #phrase-title { border: 1px so
 .shortcut-sequence > span { color: var(--blue); line-height: 28px; }
 .shortcut-sequence small { font-size: 11px; text-align: center; }
 .shortcut-timing { color: #405a70; }
-@media (max-width: 420px) { .shortcut-fields { gap: 10px; } .shortcut-body { padding: 20px 10px 12px; } .shortcut-footer { flex-wrap: wrap; gap: 10px; } .shortcut-tutorial { flex-basis: 100%; text-align: left; } .shortcut-footer .secondary-button { margin-left: auto; } }
+@media (max-width: 420px) { .shortcut-fields { gap: 10px; } .shortcut-body { padding: 20px 10px 12px; } .shortcut-footer { flex-wrap: wrap; gap: 10px; } .shortcut-help-toggle { flex-basis: 100%; text-align: left; } .shortcut-footer .secondary-button { margin-left: auto; } }
 .file-window { width: 510px; min-height: 198px; background: #f5f5f5; }
 .file-form { padding: 16px; }
 .file-form > label { display: flex; flex-direction: column; gap: 4px; }
@@ -323,7 +322,7 @@ select, input[type="text"], input[type="number"], #phrase-title { border: 1px so
 .hotkey-settings .hotkey-row { padding: 8px 0 10px; }
 .hotkey-settings .settings-hint { color: #8599ab; }
 .hotkey-section-title { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
-.hotkey-section-title > strong, .hotkey-section-title > .shortcut-tutorial { width: 126px; flex-shrink: 0; font-size: 12px; }
+.hotkey-section-title > strong { width: 126px; flex-shrink: 0; font-size: 12px; }
 .hotkey-section-title > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; flex: 1; }
 .hotkey-section-title .settings-hint { width: auto; }
 .hotkey-section-title label, .sequence-send-option label { display: inline-flex; align-items: center; white-space: nowrap; }

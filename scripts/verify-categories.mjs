@@ -461,7 +461,7 @@ try {
     await editor.getByLabel('第一个按键', { exact: true }).press('1'); await editor.getByLabel('第二个按键', { exact: true }).press('1');
     await editor.locator('dialog form').evaluate(form => form.requestSubmit()); await editor.locator('dialog').waitFor({ state: 'detached' });
     assert.ok(!(await invoke('get_library')).phrases.some(p => p.shortcut === '1+1'));
-    await click(editor.getByRole('button', { name: '1+1', exact: true })); await click(editor.getByRole('button', { name: '自定义快捷键使用教程', exact: true }));
+    await click(editor.getByRole('button', { name: '1+1', exact: true })); await click(editor.getByRole('button', { name: '自定义快捷键使用说明', exact: true }));
     await editor.screenshot({ path: path.join(evidence, 'shortcut-editor-help.png') }); await click(editor.locator('dialog').getByRole('button', { name: '取消', exact: true }));
     await setInput(editor, '#phrase-title', '双键序列保存验证'); await editor.locator('.rich-segment').evaluate(el => { el.textContent = '双键话术'; el.dispatchEvent(new InputEvent('input', { bubbles: true })); });
     await editor.locator('.editor-form').evaluate(form => form.requestSubmit()); for (let i = 0; i < 40 && !editor.isClosed(); i++) await delay(50); assert.ok(editor.isClosed());

@@ -8,7 +8,7 @@
 
 2026-10-10 用户确认本稿，并将产品名称由 QuickPhrase 改为“闪语”，授权进入开发。当前客户端实现与系统验证见 [验收记录](../acceptance.md)。
 
-此交互稿保留首版评审状态。后续确认的按钮调整、空白刷新菜单、常用短语编辑／原生右键／快速排序和底部横条以 0.1.1 客户端为准：[主窗口](runtime/0.1.1/main-common.png)、[快速排序](runtime/0.1.1/common-sort.png)、[底部横条](runtime/0.1.1/common-dock.png)。
+此交互稿保留首版评审状态。后续确认的按钮调整、空白刷新菜单、常用短语编辑／原生右键／快速排序和底部横条以 0.1.1 客户端为准：主窗口、快速排序、底部横条。
 
 ## 已覆盖的界面
 
@@ -19,20 +19,6 @@
 - 仅含日期、图片、文件、添加分段四项工具的编辑器。
 - 本地文件列表、分类、批量选择、失效记录和重新关联界面。
 - 常用、界面、吸附、导入、导出、快捷键、缓存及关于设置。
-
-## 页面预览
-
-下列为名称确认前的历史评审截图；当前客户端见 [运行截图](runtime/0.1.1/main-common.png)，交互稿及客户端的界面文字已使用“闪语”。
-
-| 场景 | 截图 |
-|---|---|
-| 主窗口／悬停发送 | [主窗口](previews/main.png) · [选中A、悬停B](previews/hover.png) |
-| 搜索／右键菜单 | [搜索浮层](previews/search.png) · [右键菜单](previews/context.png) |
-| 编辑器 | [空白编辑器](previews/editor.png) · [图片、附件与分段](previews/editor-filled.png) |
-| 文件库 | [本地文件](previews/files.png) · [批量关联](previews/file-editor.png) · [失效文件](previews/file-missing.png) |
-| 设置 | [常用](previews/settings-常用设置.png) · [界面](previews/settings-界面设置.png) · [吸附](previews/settings-吸附设置.png) |
-| 设置 | [导入](previews/settings-导入数据.png) · [导出](previews/settings-导出数据.png) · [快捷键](previews/settings-快捷键.png) |
-| 设置／空态 | [缓存](previews/settings-缓存管理.png) · [关于](previews/settings-关于.png) · [空分类](previews/empty.png) |
 
 ## 评审操作
 

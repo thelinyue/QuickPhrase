@@ -12,18 +12,21 @@ public static class ShanyuHoverDockHost {
     [StructLayout(LayoutKind.Sequential)] public struct Point { public int x, y; }
     [StructLayout(LayoutKind.Sequential)] public struct MonitorInfo { public int size; public Rect monitor, work; public int flags; }
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Rect r);
+    [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr h, out Rect r);
     [DllImport("user32.dll")] static extern bool GetCursorPos(out Point p);
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
     [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref Point p);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int command);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string className, string title);
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint command);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint process);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint message, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr h);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point p);
@@ -33,6 +36,7 @@ public static class ShanyuHoverDockHost {
     delegate bool MonitorCallback(IntPtr monitor, IntPtr dc, ref Rect rect, IntPtr data);
     [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorCallback callback, IntPtr data);
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int index);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h, System.Text.StringBuilder name, int count);
     [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
     [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr h, ref MonitorInfo info);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, uint attribute, out Rect r, int size);
@@ -49,9 +53,11 @@ public static class ShanyuHoverDockHost {
     static Dictionary<string, object> Inspect(IntPtr h) {
         Rect rect, frame; GetWindowRect(h, out rect); if (DwmGetWindowAttribute(h, 9, out frame, 16) != 0) frame = rect;
         var client = new Point(); ClientToScreen(h, ref client);
+        Rect clientRect; GetClientRect(h, out clientRect);
         var monitor = new MonitorInfo { size = Marshal.SizeOf(typeof(MonitorInfo)) }; GetMonitorInfo(MonitorFromWindow(h, 2), ref monitor);
         var style = GetWindowLong(h, -20);
-        return new Dictionary<string, object> { {"handle", h.ToInt64()}, {"above", GetWindow(h, 3).ToInt64()}, {"below", GetWindow(h, 2).ToInt64()}, {"zOrder", ZOrder(h)}, {"rect", rect}, {"frame", frame}, {"client", client}, {"work", monitor.work}, {"monitor", monitor.monitor}, {"dpi", GetDpiForWindow(h)}, {"visible", IsWindowVisible(h)}, {"iconic", IsIconic(h)}, {"toolWindow", (style & 0x80) != 0}, {"appWindow", (style & 0x40000) != 0}, {"noActivate", (style & 0x08000000) != 0}, {"topmost", (style & 8) != 0} };
+        var className = new System.Text.StringBuilder(256); GetClassName(h, className, className.Capacity);
+        return new Dictionary<string, object> { {"className", className.ToString()}, {"handle", h.ToInt64()}, {"above", GetWindow(h, 3).ToInt64()}, {"below", GetWindow(h, 2).ToInt64()}, {"zOrder", ZOrder(h)}, {"rect", rect}, {"frame", frame}, {"client", client}, {"clientRect", clientRect}, {"work", monitor.work}, {"monitor", monitor.monitor}, {"dpi", GetDpiForWindow(h)}, {"visible", IsWindowVisible(h)}, {"iconic", IsIconic(h)}, {"zoomed", IsZoomed(h)}, {"toolWindow", (style & 0x80) != 0}, {"appWindow", (style & 0x40000) != 0}, {"noActivate", (style & 0x08000000) != 0}, {"topmost", (style & 8) != 0} };
     }
     static long Number(Dictionary<string, object> value, string name, long fallback) { return value.ContainsKey(name) ? Convert.ToInt64(value[name]) : fallback; }
     [STAThread] public static void Main(string[] args) {
@@ -66,14 +72,14 @@ public static class ShanyuHoverDockHost {
         originalForeground = GetForegroundWindow(); GetCursorPos(out originalCursor);
         Application.EnableVisualStyles();
         var inspectionContext = dpiTest ? SetThreadDpiAwarenessContext(new IntPtr(-1)) : IntPtr.Zero;
-        var form = new Form { Text = "吸附隔离验收宿主", StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(700, 120, 600, 540), ShowInTaskbar = false };
+        var form = new ShanyuDockForm { Text = "吸附隔离验收宿主", StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(700, 120, 600, 540), ShowInTaskbar = false };
         form.Controls.Add(new Label { Text = "仅验证窗口跟随、边缘可见性与正文悬停", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter });
-        // 使用真实 UI Automation 元数据区分消息编辑器与搜索框，不绕过产品的输入框检测。
-        var input = new ShanyuChatInputBox { Name = "ShanyuChatInput", Multiline = true, Dock = DockStyle.Bottom, Height = 100 };
-        var search = new ShanyuChatInputBox { Name = "ShanyuSearchInput", Dock = DockStyle.Top, Visible = false };
+        // 输入框只是页面状态，吸附判定使用窗口类型；搜索、通讯录及无输入框页面仍跟随主窗口。
+        var input = new TextBox { Multiline = true, Dock = DockStyle.Bottom, Height = 100 };
+        var search = new TextBox { Dock = DockStyle.Top, Visible = false };
         form.Controls.Add(input); form.Controls.Add(search);
         if (dpiTest) { form.Handle.ToInt64(); SetThreadDpiAwarenessContext(inspectionContext); }
-        Form viewer = null, secondChat = null;
+        Form viewer = null, secondChat = null; string viewerClass = null;
         var timer = new Timer { Interval = 30 }; long nonce = 0;
         timer.Tick += delegate {
             Dictionary<string, object> command = null;
@@ -84,36 +90,48 @@ public static class ShanyuHoverDockHost {
                 if (action == "focus") SetForegroundWindow(handle);
                 if (action == "focus-list") { form.ActiveControl = null; SetFocus(form.Handle); }
                 if (action == "minimize") ShowWindow(handle, 6);
+                if (action == "maximize") ShowWindow(handle, 3);
+                // 自动鼠标抬键可能早于 WebView 异步 start_dragging；仅清理指定隔离窗口的原生拖动状态。
+                if (action == "cancel-move") PostMessage(handle, 0x001F, IntPtr.Zero, IntPtr.Zero);
                 if (action == "restore") ShowWindow(handle, 4);
                 if (action == "raise") SetWindowPos(handle, new IntPtr(-1), 0, 0, 0, 0, 0x0013);
                 if (action == "unpin") SetWindowPos(handle, new IntPtr(-2), 0, 0, 0, 0, 0x0013);
                 if (action == "page") {
                     var page = (string)command["page"];
-                    input.Visible = page != "none" && page != "search" && page != "hidden";
+                    input.Visible = page != "none" && page != "search" && page != "contacts" && page != "hidden";
                     input.Enabled = page != "disabled"; input.ReadOnly = page == "readonly"; input.UseSystemPasswordChar = page == "password";
-                    input.ValuePatternAvailable = page != "unsupported";
                     search.Visible = page == "search";
                 }
                 if (action == "viewer") {
-                    if (viewer == null || viewer.IsDisposed) {
-                        viewer = new Form { Text = "图片", Bounds = new Rectangle(180, 150, 700, 500), StartPosition = FormStartPosition.Manual, ShowInTaskbar = false };
-                        viewer.Controls.Add(new Label { Text = "同进程图片查看页面：没有消息输入框", Dock = DockStyle.Fill });
+                    var requestedClass = command.ContainsKey("className") ? (string)command["className"] : "ImagePreviewWnd";
+                    if (viewer == null || viewer.IsDisposed || viewerClass != requestedClass) {
+                        if (viewer != null) viewer.Dispose(); viewerClass = requestedClass;
+                        viewer = new ShanyuDockForm(requestedClass) { Text = "非吸附窗口", Bounds = new Rectangle(180, 150, 700, 500), StartPosition = FormStartPosition.Manual, ShowInTaskbar = false };
+                        viewer.Controls.Add(new Label { Text = "同进程窗口类型排除验收", Dock = DockStyle.Fill });
                         viewer.Show(form);
                     }
                     SetForegroundWindow(viewer.Handle);
                 }
                 if (action == "second-chat") {
-                    if (secondChat == null || secondChat.IsDisposed) {
-                        secondChat = new Form { Text = "独立聊天", Bounds = new Rectangle(200, 100, 620, 500), StartPosition = FormStartPosition.Manual, ShowInTaskbar = false };
-                        secondChat.Controls.Add(new ShanyuChatInputBox { Name = "ShanyuChatInput", Multiline = true, Dock = DockStyle.Bottom, Height = 100 });
-                        secondChat.Show();
-                    }
+                    var requestedClass = command.ContainsKey("className") ? (string)command["className"] : "WwStandaloneConversationWnd";
+                    if (secondChat != null) secondChat.Dispose();
+                    secondChat = new ShanyuDockForm(requestedClass) { Text = "独立聊天", Bounds = new Rectangle(200, 100, 620, 500), StartPosition = FormStartPosition.Manual, ShowInTaskbar = false };
+                    secondChat.Controls.Add(new TextBox { Multiline = true, Dock = DockStyle.Bottom, Height = 100 });
+                    secondChat.Show();
                     SetForegroundWindow(secondChat.Handle);
                 }
-                if (action == "pointer" || action == "click") {
+                // 重放 Alt 松键产生的隐式菜单激活消息，只操作脚本指定的隔离客户端。
+                if (action == "alt-menu") PostMessage(new IntPtr(Number(command, "handle", 0)), 0x0112, new IntPtr(0xF100), IntPtr.Zero);
+                if (action == "pointer" || action == "click" || action == "double-click") {
                     lastPointer = new Point { x = (int)Number(command, "x", 0), y = (int)Number(command, "y", 0) }; SetCursorPos(lastPointer.x, lastPointer.y); movedPointer = true;
                     // 真实鼠标点击不临时修改被点窗口的置顶属性，避免验收本身改变待验证的层级。
-                    if (action == "click") { mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero); }
+                    for (int click = 0; click < (action == "double-click" ? 2 : action == "click" ? 1 : 0); click++) {
+                        mouse_event(2, 0, 0, 0, UIntPtr.Zero);
+                        // 留出 WebView IPC 启动原生拖动的时间，避免抬键早于 start_dragging 而残留拖动状态。
+                        if (action == "double-click") System.Threading.Thread.Sleep(50);
+                        mouse_event(4, 0, 0, 0, UIntPtr.Zero);
+                        if (action == "double-click" && click == 0) System.Threading.Thread.Sleep(60);
+                    }
                 }
                 if (action == "close") { form.Close(); return; }
             }

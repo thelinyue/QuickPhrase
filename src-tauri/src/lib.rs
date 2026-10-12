@@ -216,34 +216,6 @@ fn shortcut_delivery_result(app: &tauri::AppHandle, result: Result<DeliveryRepor
     }
 }
 #[tauri::command]
-fn open_shortcut_tutorial() -> Result<()> {
-    use windows::{
-        core::PCWSTR,
-        Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
-    };
-    let url = "https://p0xayf3yelk.feishu.cn/docx/TT6IdJyhaoem5UxWH3qcCJl3nwh"
-        .encode_utf16()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    let result = unsafe {
-        ShellExecuteW(
-            None,
-            PCWSTR::null(),
-            PCWSTR(url.as_ptr()),
-            PCWSTR::null(),
-            PCWSTR::null(),
-            SW_SHOWNORMAL,
-        )
-    };
-    if result.0 as isize <= 32 {
-        return Err(format!(
-            "无法打开快捷键视频教程，Windows错误码：{}。",
-            result.0 as isize
-        ));
-    }
-    Ok(())
-}
-#[tauri::command]
 fn set_common_dock_height(
     state: State<AppState>,
     window: tauri::Window,
@@ -1052,6 +1024,8 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 window.set_always_on_top(settings.pinned)?;
                 window.set_resizable(settings.free_resize)?;
+                // 主窗口为窄侧栏，配置中禁用最大化，避免标题栏双击与吸附定位分离外框和 WebView 尺寸。
+                // 保留独立编辑／排序窗口的最大化能力，以及主窗口的拖动、拉宽和最小化。
                 // 普通启动和开机启动均由跟随线程决定可见性，无目标时常驻托盘。
             }
             log::info!("闪语已启动，用户数据目录：{}", dir.display());
@@ -1104,7 +1078,6 @@ pub fn run() {
             submit_shortcut_candidate,
             cancel_shortcut_candidates,
             resize_shortcut_candidates,
-            open_shortcut_tutorial,
             set_common_dock_height,
             show_phrase_preview,
             get_phrase_preview,

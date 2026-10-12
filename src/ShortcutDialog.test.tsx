@@ -15,6 +15,21 @@ async function open(value = '') {
 const key = (label: string, value: string, code = `Key${value}`) => fireEvent.keyDown(screen.getByLabelText(label), { key: value, code });
 
 describe('自定义快捷键录入', () => {
+  it('使用说明展开保留两种按键示例，收起与取消不保存且无视频入口', async () => {
+    const { onConfirm, close } = await open('Ctrl+Y+C');
+    const help = screen.getByRole('button', { name: '自定义快捷键使用说明' });
+    expect(help.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(help);
+    expect(help.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('Ctrl+Y+C')).toBeTruthy();
+    expect(screen.getByText('1+1（无功能键）')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '打开视频教程' })).toBeNull();
+    fireEvent.click(help);
+    expect(help.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('1+1（无功能键）')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(onConfirm).not.toHaveBeenCalled(); expect(close).toHaveBeenCalledOnce();
+  });
   it('直接录入两键，确认只提交规范值，Enter录入不会意外提交', async () => {
     const { onConfirm, close } = await open();
     fireEvent.change(screen.getByLabelText('功能键'), { target: { value: 'Ctrl' } });

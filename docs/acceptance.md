@@ -1,10 +1,80 @@
-# 闪语 0.1.2 验收记录
+# 闪语 0.1.3 验收记录
+
+## 0.1.3 正式发布人工确认（2026-10-12）
+
+发布负责人在本次发布会话中明确确认：本次修复版的真实企业微信人工验收，以及 Windows 11 新装／升级／卸载保留数据矩阵，两项均已完成并通过。此为负责人提供的人工结果，未提供逐项实机报告；本机自动化和隔离宿主不替代该确认。
+
+本次发布包含下述企业微信窗口级吸附、全局鼠标卡顿、双击白窗、Alt导航和快捷键帮助修复。下文“尚未发布”“未提交”等表述记录各专项当时状态；当前发布检查及结果以本节为准。历史评审与运行截图已清理，JSON验收报告及应用图标、插画保留。Windows 10、多显示器与跨屏系统DPI、真实中文输入法及不同权限目标等未验证项仍保留。
+
+本次发布检查：前端60项、Rust71项、发布脚本14项测试，以及TypeScript、Rust格式、Clippy、前端与Debug构建、actionlint全部通过。[吸附／悬停17组](ui/runtime/0.1.3/hover-docking-report.json)、[后台跟随20组](ui/runtime/0.1.3/background-following-report.json)、[鼠标延迟4项](ui/runtime/0.1.3/mouse-latency-report.json)、[完整原生17组](ui/runtime/0.1.3/native-report.json)全部通过。原生回归覆盖剪贴板恢复、用户新复制与焦点变化中断、分段发送、防重复、文件关联、备份事务和吸附。运行中的客户端占用Alt+Q，原脚本首次尝试因热键冲突退出；本轮使用临时脚本把隔离配置与测试按键一起改为Alt+8验证同一导航链路，未修改产品默认值或用户设置。这不计为本轮Alt+Q复验，先前用户数据Release的Alt+Q三次检查见下文。鼠标P95：基线0.465、关闭吸附0.636、正在吸附0.612、连续移动缩放1.833、退出后0.454毫秒；每种状态120次。Release及Inno Setup 6.7.3构建通过，程序／安装器产品版本均为0.1.3，均未签名；在独立编译目录复用缓存完成构建，本机未运行安装器。临时构建脚本的编码与编译器路径准备失败不计为产品检查通过。
+
+## Alt导航误触系统菜单与短语栏文字选中修复（2026-10-12，尚未发布）
+
+用户反馈Alt+Q后上下键出现Windows系统菜单，以及双击常用短语栏空白会选中加号。原生按键未稳定重现原始菜单时序；使用Alt松键对应的无字符`SC_KEYMENU`消息[复现旧版菜单模式](../.build/hover-docking-1791809507655/report.json)，与普通Alt+Q导航分开记录，不把消息重放当作用户物理按键验收。[短语栏旧版失败记录](../.build/hover-docking-1791809356278/report.json)确认原生双击空白会产生文字选择。
+
+主窗口和短语横条在所属UI线程安装小型窗口子类，只拦截`WM_SYSCOMMAND/SC_KEYMENU`且字符参数为零的隐式菜单激活，窗口销毁时移除；Alt+空格和其他显式系统命令继续交给原处理器。原有快捷键匹配、焦点与发送保护没有修改，不补发按键或调整全局Alt状态。常用短语栏仅增加`user-select: none`，覆盖主窗口和吸附横条；选中短语、导航和新增按钮行为保留。
+
+[17组原生吸附／悬停回归](../.build/hover-docking-1791809664290/report.json)全部通过，新增Alt+Q从宿主及主窗口进入搜索、上下键切换两条真实搜索结果、隐式菜单消息拒绝、Alt+空格主动打开系统菜单，以及两种短语栏双击空白不选中加号和新增编辑器正常打开的检查。系统菜单测试结束后明确取消本次隔离窗口的菜单模式，防止菜单模态循环阻塞后续WebView检查。隔离截图已检查；该专项不操作真实聊天、系统剪贴板或发送。
+
+前端60项、Rust71项、TypeScript、Rust格式、Clippy、前端及Debug／Release构建通过。正常退出本线程先前启动的Release实例后重建，保留工作区已有改动。新程序使用用户数据完成[3项Release检查](../.build/alt-navigation-fix/release-report.json)：连续三次Alt+Q后分别按下／上，搜索保持焦点且无系统菜单；双击短语栏无文字选择；Alt+F4仍关闭主窗口到托盘。仅向本次客户端输入按键，未按Enter、未读取或截图正文、未发送消息，未修改用户设置或数据。检查实例退出后重新启动普通修复版。
+
+最初的独立输入桌面快捷键尝试因焦点／调试连接阻塞中断，不计为通过；已恢复原桌面并关闭本轮隔离进程和宿主，该尝试的测试剪贴板按宿主已有序列检查恢复。本轮没有完成全套快捷键发送专项。用户物理按键原始时序、多显示器／系统DPI和本轮安装升级仍未验收；未提交、推送或正式发布。
+
+## 快捷键帮助精简（2026-10-12，尚未发布）
+
+移除快捷键录入弹窗与设置页的视频入口、README链接及专用原生命令。弹窗保留可展开的“使用说明”和两种按键图示，按设置、触发、选择、取消、保存组织文案；明确数字0对应第10项、空格插入当前项、Enter直接发送。设置页改为“生效范围”，保留全局开关并精简提示。快捷键匹配、候选与发送实现未改；下文的视频接入描述为历史验收记录。
+
+前端60项、Rust71项、TypeScript、Rust格式检查、Clippy、前端及Debug构建全部通过。[隔离WebView2验收11组](../.build/illustrations-1791800580703/report.json)通过，包含说明展开／收起与取消不保存、两种按键图示、视频入口移除、360×360视口滚动与确定按钮可达、设置页生效范围／全局开关对齐，以及七种主题无横向溢出；截图已检查。
+
+本轮使用隔离数据和隐藏客户端，系统发送被禁用；未重验实体快捷键、真实企业微信发送、系统DPI、多显示器或安装升级。未提交、推送或发布，保留此前工作区改动。
+
+## 双击吸附栏白窗与底栏文字选中修复（2026-10-12，尚未发布）
+
+已用真实原生双击复现：主窗口进入最大化后，WebView视口变为1920×1032，跟随线程却将外框重新定位为窄侧栏，导致内容尺寸与可见窗口分离。[旧版失败记录](../.build/hover-docking-1791798860876/report.json)不计为通过。
+
+主窗口在Tauri配置中统一禁用最大化，包括独立显示时；保留单击拖动、自由调整和最小化，独立编辑／排序窗口不受此限制。原生跟随在定位前检查最大化状态，先异步、不激活地还原，下一轮再读取正常尺寸，防止最大化宽度污染侧栏宽度。没有新增设置、数据迁移或更改发送流程。
+
+[吸附／悬停14组](../.build/hover-docking-1791800058982/report.json)全部通过，新增标题栏与底栏双击、允许／禁止调整大小、独立主窗口保持窄窗、强制最大化后重新吸附且不抢焦点，以及通过实际菜单打开独立排序窗口并最大化／还原的检查。双击使用Windows鼠标事件，视口与实际客户区尺寸核对；自动抬键可能早于WebView异步拖动，宿主只取消指定隔离窗口残留的拖动状态，不操作真实聊天内容。
+
+[真实企业微信4项检查](../.build/titlebar-white-fix/real-titlebar-report-1791800357227.json)全部通过：主窗口`WeWorkWindow`和客户独立聊天`CRMCustomerStandaloneWindow`旁的隔离客户端分别双击标题栏／底栏后，外框不变、未最大化、WebView与客户区尺寸一致，目标关系保留。只读取窗口元数据并操作隔离客户端空白栏，不读取、截图、输入或发送聊天内容。
+
+[鼠标延迟复测](../.build/mouse-latency-1791800172024/report.json)4项通过，每种状态120次移动；未启动、关闭吸附、正在吸附、连续移动缩放、退出后的P95分别为0.474、0.643、0.633、1.678、0.448毫秒。Rust71项、前端59项、TypeScript／前端构建、格式、Clippy和Debug／Release构建通过。真实多屏DPI、用户物理拖动手感和本轮安装升级仍未验证；本轮未正式发布。
+
+用户退出旧实例后，重建并启动同一路径Release程序。[Release窗口元数据](../.build/titlebar-white-fix/release-window.json)确认主窗口禁用最大化、允许调整大小；[120次鼠标移动](../.build/titlebar-white-fix/release-latency.json)的P95为0.572毫秒。本轮构建与验收后工作区另出现设置页、快捷键相关源码及样式／测试改动，原样保留，未纳入此修复版或上述前端验收结论。
+
+最后使用用户数据Release实例完成[真实客户独立聊天旁的2项双击检查](../.build/titlebar-white-fix/release-titlebar-report.json)，吸附对齐、标题栏／底栏双击、WebView与客户区尺寸均通过，只操作客户端空白栏并读取元数据。启动时企业微信已被最小化，面板按设计隐藏；检查时还原目标，结束后恢复原来的最小化状态，关闭带本地调试端口的检查实例，再启动普通修复版。未将最小化目标被拒绝误记为产品失败。
+
+补充处理用户反馈的底栏品牌文字选中：先用Windows原生双击[复现旧版选择状态](../.build/hover-docking-1791801771362/report.json)，再只为主窗口底栏增加`user-select: none`。未更改拖动区域、话术或输入框样式。[修复后15组吸附／悬停回归](../.build/hover-docking-1791801844906/report.json)全部通过，新增吸附和独立显示两种状态下双击品牌不选中文字、外框不变且WebView与客户区一致的检查；隔离截图已检查。
+
+此次前端60项、Rust71项、TypeScript、Rust格式、Clippy、前端及Debug／Release构建通过。通过托盘正常退出本线程先前启动的Release实例后，重建程序，包含当前工作区原样保留的快捷键帮助改动。新Release使用用户数据完成[真实企业微信6项双击检查](../.build/titlebar-white-fix/release-footer-report.json)：主窗口和客户独立聊天旁各检查标题栏、底栏空白与品牌，尺寸、客户区、目标关系和无文字选择均通过，不读取、截图、输入或发送聊天内容。第一次检查切换第二个目标后等待超时，[该尝试](../.build/titlebar-white-fix/release-footer-report-first-attempt.json)不计为完整通过；脚本补齐前台焦点确认，在程序激活被拒绝时仅单击已核实的目标标题栏中部，再完整执行6项。结束后恢复目标原来的最小化状态与前台窗口，退出调试实例并重新启动普通修复版；多屏DPI、用户物理拖动手感与本轮安装升级仍未验证，未提交、推送或正式发布。
+
+## 全局鼠标卡顿修复（2026-10-12，尚未发布）
+
+用户运行前一轮修复版后反馈整个系统鼠标移动变慢，关闭程序后正常。已复现：低级鼠标钩子安装在30毫秒轮询、窗口跟随线程中；Windows同步调用安装钩子的线程，即使鼠标移动直接放行，也须等轮询休眠结束。旧程序[延迟复现记录](../.build/mouse-latency-1791797261665/report.json)中，未启动客户端P95为0.47毫秒，关闭吸附、正在吸附和目标移动时分别为20.23、21.32和21.03毫秒，三个场景均未通过；这不是某个吸附位置的几何错误。
+
+鼠标钩子改由独立消息线程安装，通过消息等待立即唤醒，50毫秒超时仅用于退出检查；保留原有外部点击取消候选和焦点／目标验证。窗口跟随仍以30毫秒轮询，发送、快捷键匹配、剪贴板和几何计算未改。退出时卸载鼠标钩子并结束线程。
+
+[修复后延迟专项](../.build/mouse-latency-1791797875660/report.json)4个检查全部通过，每种状态采样120次左右1像素往返移动，不点击、不按键、不访问剪贴板。P95分别为未启动0.65、关闭吸附0.83、正在吸附0.78、目标连续移动缩放2.44、退出后0.62毫秒。使用同次运行的未启动结果比较，不将旧失败记录计为通过；测试事件经过真实Windows钩子链，目标移动缩放由隔离宿主执行，不能代替用户物理拖动、系统DPI或真实聊天发送验收。
+
+Rust71项、格式、Clippy及Debug／Release构建通过。[吸附／悬停11组](../.build/hover-docking-1791797965087/report.json)通过，覆盖连续移动缩放、鼠标点击侧栏与底栏、层级、预览和完整尺寸。[候选外部点击专项](../.build/mouse-hook-fix/outside-click-report.json)1组通过，实际覆盖双键超时回放、输入控件变化取消、点击候选外部取消及窗口切换取消，保留原草稿。使用独立Windows输入桌面和隔离客户端，不操作真实企业微信。首次测试编译因磁盘空间不足中断，通过Cargo清理本项目可重建产物后重新通过；该失败尝试不计为通过。本轮未发布或替换安装版。
+
+用户退出旧修复版后，重新启动同一路径重建的Release程序；[Release实测120次移动](../.build/mouse-hook-fix/release-latency.json)的中位数为0.20毫秒、P95为0.50毫秒、最大为1.71毫秒。隔离验收进程均已退出，重新启动的用户Release实例保留运行。此项验证全局鼠标钩子链响应，不读取用户话术、聊天正文或剪贴板，也不发送消息；用户物理拖动手感仍需用户反馈。
+
+## 企业微信窗口级吸附修复（2026-10-12，尚未发布）
+
+已发布v0.1.2按UIA消息输入框判断吸附，但本机企业微信5.0.10.6015没有暴露可核实的输入框标识，源码因此明确拒绝真实企业微信。此次按用户确认的客服宝窗口级行为修复：仅接受`WXWork.exe`中的主窗口`WeWorkWindow`、普通独立聊天`WwStandaloneConversationWnd`和客户独立聊天`CRMCustomerStandaloneWindow`。主窗口和客户独立聊天类已实机核实，普通独立聊天类来自客服宝识别表；没有放行整个进程。主窗口内通讯录、搜索和无输入框页面继续吸附，其他窗口类型不继承目标。保留目标失效、旧异步结果拒绝、跟随和发送安全措施，没有新增设置或数据迁移。
+
+前端59项、Rust71项、发布脚本14项、TypeScript、Rust格式、Clippy、前端及Debug／Release构建通过。Release下另验证吸附识别4项，正式配置拒绝调试宿主。[后台跟随20组](../.build/background-following-1791796384425/report.json)、[吸附／悬停11组](../.build/hover-docking-1791795183553/report.json)、[通用宿主吸附2组](../.build/native-1791795339271/report.json)通过；后台专项覆盖普通及开机启动下两种独立聊天类型和实际图片类`ImagePreview`的排除。任务栏检查按目标窗口实际遮挡结果要求侧栏和底栏保持一致，用普通Form与新宿主对照确认本机允许目标覆盖任务栏；未将原先失败的固定任务栏假设计为通过。
+
+真实企业微信的[8项吸附记录](../.build/wecom-docking-fix/real-report-1791796106112.json)和[2项图片排除记录](../.build/wecom-docking-fix/real-report-1791796361698.json)全部通过，覆盖主窗口和客户独立聊天窗口各自的左右侧栏／底栏对齐、不抢焦点、最小化隐藏及还原恢复，以及真实`ImagePreview`窗口不吸附和返回聊天后恢复。使用隔离Debug客户端和数据库，只读取窗口类型、身份、几何和焦点状态，不读正文或剪贴板，不输入、粘贴或发送消息。检查结束退出隔离客户端，并恢复企业微信原来的最小化状态和前台窗口。前期脚本准备或程序化焦点切换失败不计为通过；最终最小化检查先收起其他可接续目标，避免把转而吸附另一个有效窗口误判为不隐藏。
+
+普通独立聊天`WwStandaloneConversationWnd`仅有客服宝识别表和隔离宿主证据，未提供同类型真实窗口。登录、视频、搜索结果窗口的排除由隔离宿主验证，尚未实机验证。通讯录／搜索页面仅验证窗口级规则，未读取实机页面内容；系统前台锁拒绝程序激活闪语，进入闪语后保留目标的检查仅由隔离宿主完成。实际多显示器、150%／200%系统DPI、真实发送及本轮安装升级仍未验证。本轮未提交、推送、发布或替换用户安装版，已发布v0.1.2及其资产保留原样。
 
 ## 0.1.2 正式发布人工确认（2026-10-12）
 
 发布负责人在本次发布会话中明确确认：当前版本的真实企业微信人工矩阵，以及 Windows 11 新装／升级／卸载矩阵，两项均已完成并要求正式发布。此为负责人提供的人工结果，不是本机自动化执行结果；未提供逐项实机报告。
 
-当前源码仍缺少真实企业微信已核实的消息输入控件标识，因此真实企业微信聊天页暂不自动吸附，可通过托盘或快捷键独立打开。人工确认不改变这一实现限制，也不代表实际多显示器或 150%／200% 系统 DPI 已通过。下文保留各轮历史验收范围与未验证项。
+v0.1.2发布时源码仍缺少真实企业微信已核实的消息输入控件标识，因此该版本真实企业微信聊天页不自动吸附，可通过托盘或快捷键独立打开。人工确认不改变该版本的实现限制，也不代表实际多显示器或 150%／200% 系统 DPI 已通过。后续源码修复见上节，下文保留各轮历史验收范围与未验证项。
 
 本次发布检查通过前端59项、Rust70项、发布脚本14项、TypeScript、Rust格式、Clippy、前端／Debug构建及actionlint。最新[吸附／悬停11组](../.build/hover-docking-1791781650327/report.json)与[后台跟随18组](../.build/background-following-1791781713024/report.json)全部通过；单显示器环境中的双屏DPI专项明确跳过。Release程序和Inno Setup 6.7.3安装器构建成功，产品版本均为0.1.2，大小分别为21,987,328和11,861,660字节，均未签名。本机构建未运行安装器或替换用户安装版；安装人工结论来自上述负责人确认。
 
@@ -110,7 +180,7 @@ Rust65项、格式检查、Clippy和包含`custom-protocol`的Debug构建通过�
 
 宿主记录包含数字／空格插入后的原草稿、Enter／序号／常用短语直接发送时的完整草稿及发送次数、超时回放、取消后的内容、候选删除／改绑后的拒绝提交、设置关闭后的生效和其他窗口的全局序号。每次常规发送后均核对测试剪贴板恢复；长按候选Enter和两处短语Enter均只提交一次。复现用标准WinForms宿主和Debug专用吸附宿主，不操作真实聊天软件；隔离Debug实例接受`dwExtraInfo=0x53595141`的测试按键，正式实例继续忽略合成事件。因原桌面已有热键占用，隔离验收的Alt键为8／9／0，产品默认仍为Q／W／E。
 
-截图：[设置100%](ui/runtime/shortcuts/settings-100.png) · [150%](ui/runtime/shortcuts/settings-150.png) · [200%](ui/runtime/shortcuts/settings-200.png)；[候选100%](ui/runtime/shortcuts/candidates-100.png) · [150%](ui/runtime/shortcuts/candidates-150.png) · [200%](ui/runtime/shortcuts/candidates-200.png)。这里改变的是WebView2渲染倍率，未改变Windows系统DPI。真实聊天软件、物理按键／中文输入法、系统150%／200%及跨屏DPI仍待实机验收，不能据本机宿主宣称聊天软件支持。
+历史截图已清理，验收报告保留。
 
 复现（原生脚本需顺序执行）：
 
@@ -159,15 +229,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/shortcut-desktop.p
 
 最新依赖升级后的52组分别来自 `.build/category-menus-1791678068388` 和 `.build/library-ui-1791678112526`，使用最新依赖、最新源码构建的Debug客户端顺序执行。正式客户端 `D:\Shanyu\shanyu.exe`（PID37816）保持运行，两个隔离实例均已退出。设置页与主窗口读取实际Rust保存结果；原生可调整属性也实际核对。所有发送交互仅记录内容ID／模式并模拟提交结果，未操作系统焦点、剪贴板或输入队列；Rust匹配器及吸附几何的单元测试通过，不能替代真实双键触发、企业微信吸附、多屏DPI及本次安装／升级／卸载验收。
 
-最新界面截图：[常用设置](ui/runtime/0.1.1/settings-general-aligned.png)、[界面设置](ui/runtime/0.1.1/settings-interface-aligned.png)、[标题字体色板](ui/runtime/0.1.1/settings-title-color-palette.png)、[底部搜索](ui/runtime/0.1.1/bottom-search-results.png)、[快捷键录入](ui/runtime/0.1.1/shortcut-recorder.png)、[快捷键教程](ui/runtime/0.1.1/shortcut-editor-help.png)、[底部短语换行](ui/runtime/0.1.1/common-dock-wrapped.png)。
+最新界面历史截图已清理，验收报告保留。
 
 本次底部修正专项来自 `.build/category-menus-1791679620839`，31组全部通过，隔离客户端已退出。正式客户端 `D:\Shanyu\shanyu.exe` 保持运行。只读查询到其底部窗口外框为(473,922)-(1353,953)、可见边框为(480,922)-(1346,946)，左右各7像素的不可见边框重现了宽度差异；该查询未移动窗口、切换焦点或写剪贴板。几何补偿通过Rust单元测试，整栏隐藏通过真实WebView／SQLite验证；此次未执行真实企业微信吸附、实体发送或新装／升级／卸载验收，不将隐藏界面检查视为原生几何实机验收。
 
-本地缓存管理追加专项来自 `.build/library-ui-1791693806254`（[29项记录](ui/runtime/0.1.1/local-cache-library-report.json)），并顺序运行 `.build/category-menus-1791693818515`（[33项记录](ui/runtime/0.1.1/categories-after-cache-report.json)），最新两组共62项全部通过。40项前端、54项Rust测试、前端构建、Rust格式及Clippy检查通过。缓存页按参考图分区，仅展示本地可用的私人话术、常用短语删除与缩略图、临时文件清理；公司、小组、表情库及云同步入口不展示。两种删除均确认数量、取消不写入；私人话术默认回收，常用短语明确提示不可恢复。跨窗口新增后的旧确认被实际Rust服务拒绝；模拟数据库删除失败验证整批活动内容与回收快照回滚。缓存清理及两种永久删除均保留分类、设置、文件关联和旧回收记录，图片素材和源文件逐项读取核对。批量话术倒序还原的排序位置问题已重现并修复，实际客户端完整还原后主键、分段、配色、快捷键及排序位置一致。截图：[缓存页](ui/runtime/0.1.1/cache-management-aligned.png) · [话术删除确认](ui/runtime/0.1.1/cache-delete-phrases-confirm.png) · [常用短语删除确认](ui/runtime/0.1.1/cache-delete-common-confirm.png) · [最小尺寸空库状态](ui/runtime/0.1.1/cache-management-empty-compact.png)。两次隔离客户端均已退出，正式客户端未被替换；粘贴使用实际ClipboardEvent和File数据，未读写系统剪贴板或执行实体Ctrl+V。本次未重新验收实体发送、新装、运行中升级或卸载。
+本地缓存管理追加专项来自 `.build/library-ui-1791693806254`（[29项记录](ui/runtime/0.1.1/local-cache-library-report.json)），并顺序运行 `.build/category-menus-1791693818515`（[33项记录](ui/runtime/0.1.1/categories-after-cache-report.json)），最新两组共62项全部通过。40项前端、54项Rust测试、前端构建、Rust格式及Clippy检查通过。缓存页按参考图分区，仅展示本地可用的私人话术、常用短语删除与缩略图、临时文件清理；公司、小组、表情库及云同步入口不展示。两种删除均确认数量、取消不写入；私人话术默认回收，常用短语明确提示不可恢复。跨窗口新增后的旧确认被实际Rust服务拒绝；模拟数据库删除失败验证整批活动内容与回收快照回滚。缓存清理及两种永久删除均保留分类、设置、文件关联和旧回收记录，图片素材和源文件逐项读取核对。批量话术倒序还原的排序位置问题已重现并修复，实际客户端完整还原后主键、分段、配色、快捷键及排序位置一致。历史截图已清理，验收报告保留。
 
-前一轮正文悬停预览与吸附移动修正于2026-10-11完成。正文停留350毫秒后以无激活的独立窗口显示，保留换行、图片、文件名和有序分段；短文按客户区内容收紧，长文最多480逻辑像素高，标题与关闭入口固定，正文可滚动。优先放在源窗口旁边并限制在显示器工作区内。点击、源列表滚动、Esc与离开关闭，切换话术重置阅读位置。该轮的闲置自动隐藏和边缘临时置顶行为已由下述后台跟随优化取代，原始报告与截图保留。
+前一轮正文悬停预览与吸附移动修正于2026-10-11完成。正文停留350毫秒后以无激活的独立窗口显示，保留换行、图片、文件名和有序分段；短文按客户区内容收紧，长文最多480逻辑像素高，标题与关闭入口固定，正文可滚动。优先放在源窗口旁边并限制在显示器工作区内。点击、源列表滚动、Esc与离开关闭，切换话术重置阅读位置。该轮的闲置自动隐藏和边缘临时置顶行为已由下述后台跟随优化取代，原始报告保留，历史截图已清理。
 
-本轮完整悬停与吸附专项来自 `.build/hover-docking-1791699957448`：[5组全部通过](ui/runtime/0.1.1/hover-docking-report.json)，覆盖首次短文测量、快速掠过、长文图文分段、无激活、跨入滚动末尾、短文切换／Esc／阅读位置、连续移动缩放、闲置隐藏与恢复原宽度，以及左右屏幕边缘宽度、遮挡和置顶设置恢复。专用宿主 `ShanyuDockHost.exe` 仅由设置了隔离数据目录的 Debug 客户端识别，正式客户端不会跟随测试窗口；没有操作真实企业微信、系统剪贴板或聊天发送。本轮前期因前台／鼠标状态变化中断的尝试不计入通过结果。截图：[长文预览](ui/runtime/0.1.1/hover-preview-long.png) · [长文末尾](ui/runtime/0.1.1/hover-preview-end.png) · [短文预览](ui/runtime/0.1.1/hover-preview-short.png) · [右侧边缘](ui/runtime/0.1.1/hover-docking-right.png) · [左侧边缘](ui/runtime/0.1.1/hover-docking-left.png)。这是悬停与吸附专项完整通过，前述完整原生发送回归仍待验收。
+本轮完整悬停与吸附专项来自 `.build/hover-docking-1791699957448`：[5组全部通过](ui/runtime/0.1.1/hover-docking-report.json)，覆盖首次短文测量、快速掠过、长文图文分段、无激活、跨入滚动末尾、短文切换／Esc／阅读位置、连续移动缩放、闲置隐藏与恢复原宽度，以及左右屏幕边缘宽度、遮挡和置顶设置恢复。专用宿主 `ShanyuDockHost.exe` 仅由设置了隔离数据目录的 Debug 客户端识别，正式客户端不会跟随测试窗口；没有操作真实企业微信、系统剪贴板或聊天发送。本轮前期因前台／鼠标状态变化中断的尝试不计入通过结果。历史截图已清理，验收报告保留。
 
 前一轮代码另外顺序完成隐藏实际客户端回归：[本地库29项](ui/runtime/0.1.1/hover-library-regression-report.json)和[分类／设置33项](ui/runtime/0.1.1/hover-category-regression-report.json)，合计62项。检查抑制真实发送、系统剪贴板、系统对话框和窗口聚焦。新增常驻预览页面后，既有验收脚本按无路由的页面定位主窗口。Rust57项、前端45项、格式与Clippy通过，Release及Inno安装包构建通过。当时正式客户端 `D:\Shanyu\shanyu.exe`（PID44956）保持原进程；真实企业微信、多屏DPI与安装升级未验收。
 
@@ -175,9 +245,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/shortcut-desktop.p
 
 最新源码顺序完成四项专项：[后台跟随14组](ui/runtime/0.1.1/background-following-report.json)、[正文悬停与稳定宽度5组](ui/runtime/0.1.1/stable-width-layering-report.json)、[原生侧栏／底栏2组](ui/runtime/0.1.1/background-following-native-dock-report.json)、[隐藏设置界面33组](ui/runtime/0.1.1/background-following-settings-report.json)，分别来自`.build/background-following-1791703400853`、`.build/hover-docking-1791703470542`、`.build/native-1791703552194`和`.build/category-menus-1791703591703`。层级验收在闪语尚未获得前台焦点时执行，用WindowFromPoint核对侧栏实际可见，并检查目标保留焦点及目标置顶／取消置顶；仅检查窗口visible属性不足以证明没有遮挡。前期失败尝试只保留诊断记录，不计入通过结果。设置专项再次确认两项旧选项已移除、保存及备份恢复继续兼容。所有隔离客户端和宿主均已退出，未替换用户安装版。真实企业微信、多屏150%／200% DPI、实际登录开机启动、托盘实体点击和本次安装升级尚未实机验收；原生侧栏／底栏通过也不代表本次完整发送回归通过。
 
-本次取消吸附、置顶、常用短语和搜索四个开关的开启态浅色底块，只保留图标的开关区别。[开关与自动填充记录](ui/runtime/0.1.1/toolbar-autofill-report.json)来自`.build/toolbar-autofill-1791705991526`，实际隐藏WebView2检查七种主题的开启／关闭共14种组合，每组四个开关的背景均透明，磁铁斜线、置顶填充及两个眼睛图标与设置一致。截图：[开启](ui/runtime/0.1.1/toolbar-switches-enabled.png) · [关闭](ui/runtime/0.1.1/toolbar-switches-disabled.png)。主窗口配置、Rust创建的底栏／预览及共享动态窗口创建入口均关闭通用自动填充；实际编辑、设置和常用短语窗口创建参数均为`generalAutofillEnabled=false`。此项检查真实创建参数，未用实体鼠标触发已有用户表单历史，隐藏截图不作为原生建议弹窗从未出现的证明。[编辑窗口](ui/runtime/0.1.1/editor-autofill-disabled.png)。本轮前期的[分类／设置33组](ui/runtime/0.1.1/categories-after-autofill-report.json)和[本地库29组](ui/runtime/0.1.1/library-after-autofill-report.json)也全部通过。
+本次取消吸附、置顶、常用短语和搜索四个开关的开启态浅色底块，只保留图标的开关区别。[开关与自动填充记录](ui/runtime/0.1.1/toolbar-autofill-report.json)来自`.build/toolbar-autofill-1791705991526`，实际隐藏WebView2检查七种主题的开启／关闭共14种组合，每组四个开关的背景均透明，磁铁斜线、置顶填充及两个眼睛图标与设置一致。历史截图已清理，验收报告保留。
 
-预览按最后确认的参考图改为鼠标右下12逻辑像素、300逻辑像素宽的白底细边框提示，移除窗口阴影、独立标题栏、关闭按钮和底部提示。固定方向，屏幕边缘也不翻转或反向平移，超出部分由系统裁切；这取代前述源窗口旁定位及工作区内翻转的旧布局。保留350毫秒停留、图文分段、短文自适应、长文滚动、无激活及移开／点击／滚动／Esc关闭。[最新实机6组记录](ui/runtime/0.1.1/pointer-preview-report.json)来自`.build/hover-docking-1791705887472`，核对真实鼠标与原生窗口间距、300像素客户区、右下边缘不换向、正文滚动和短文高度；既有移动缩放、稳定宽度及左右吸附层级同时通过。首轮末项被仍在运行的安装版置顶窗口覆盖测试点，预览相关检查均通过；只读确认后将层级探测点改到靠目标的可见边缘，未移动或关闭安装版。截图：[长文](ui/runtime/0.1.1/pointer-preview-long.png) · [末尾](ui/runtime/0.1.1/pointer-preview-end.png) · [短文](ui/runtime/0.1.1/pointer-preview-short.png)。Rust定位回归覆盖负坐标显示器以及100%／150%／200%的坐标计算，实际多屏与系统DPI仍未验收。
+预览按最后确认的参考图改为鼠标右下12逻辑像素、300逻辑像素宽的白底细边框提示，移除窗口阴影、独立标题栏、关闭按钮和底部提示。固定方向，屏幕边缘也不翻转或反向平移，超出部分由系统裁切；这取代前述源窗口旁定位及工作区内翻转的旧布局。保留350毫秒停留、图文分段、短文自适应、长文滚动、无激活及移开／点击／滚动／Esc关闭。[最新实机6组记录](ui/runtime/0.1.1/pointer-preview-report.json)来自`.build/hover-docking-1791705887472`，核对真实鼠标与原生窗口间距、300像素客户区、右下边缘不换向、正文滚动和短文高度；既有移动缩放、稳定宽度及左右吸附层级同时通过。首轮末项被仍在运行的安装版置顶窗口覆盖测试点，预览相关检查均通过；只读确认后将层级探测点改到靠目标的可见边缘，未移动或关闭安装版。历史截图已清理，验收报告保留。
 
 本次修正吸附尺寸与点击后的底栏遮挡：侧栏上下始终与目标窗口对齐，保留用户宽度，不再按工作区裁小；底部横条两端跟随目标，即使目标跨出屏幕或宽于工作区也保留全宽及内容高度。原生点击普通／置顶侧栏分类后，底栏保留聊天目标，并在前台切换后重新抬高，避免被置顶侧栏覆盖。[完整尺寸与点击9组](ui/runtime/0.1.1/full-size-docking-report.json)来自`.build/hover-docking-1791707437718`，覆盖上下越界、任务栏、超高目标、左右越界、超宽目标、窗口实际覆盖关系及既有正文预览；[后台跟随14组](ui/runtime/0.1.1/full-size-background-following-report.json)来自`.build/background-following-1791707516764`，确认切换其他程序、目标最小化、手动隐藏、独立唤起和重复启动的行为。Rust59项、格式、Clippy和前端构建通过。早期复现和诊断尝试不计入通过结果；真实企业微信及多显示器系统DPI仍未实机验收。
 
@@ -191,9 +261,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/shortcut-desktop.p
 
 ## 历史验证（0.1.0）
 
-以下结果来自本轮修改之前，原始报告与截图保留：[13 组完整原生记录](ui/runtime/native-report.json)、[安装验收记录](ui/runtime/installer-report.json)。这些结果不作为 0.1.1 的完整回归或安装验收结果。
+以下结果来自本轮修改之前，原始报告保留，历史截图已清理：[13 组完整原生记录](ui/runtime/native-report.json)、[安装验收记录](ui/runtime/installer-report.json)。这些结果不作为 0.1.1 的完整回归或安装验收结果。
 
-本轮菜单、图片粘贴及选择状态检查来自 `.build/category-menus-1791692353750`（[33项记录](ui/runtime/0.1.1/menu-selection-report.json)）和 `.build/library-ui-1791692310344`（[22项记录](ui/runtime/0.1.1/image-paste-report.json)），合计55项通过；35项前端、50项Rust单元测试、前端构建、Rust格式及Clippy检查通过。一级菜单第二项改为“新增二级分类”，两处入口均验证分类归属，新增同级仍创建一级分类。新增和编辑窗口通过实际ClipboardEvent及File数据粘贴图片，Rust解码、PNG落盘、缩略图、SQLite保存和重开均实际执行；图片数量上限、失败保留正文及整批素材清理由单元测试覆盖。窗口保持隐藏，不读写系统剪贴板，本轮未执行实体Ctrl+V、真实发送或安装升级验收。截图：[修正后的一级菜单](ui/runtime/0.1.1/primary-category-menu-corrected.png) · [默认色勾](ui/runtime/0.1.1/title-color-default.png) · [灰色勾](ui/runtime/0.1.1/title-color-gray.png) · [新增粘贴图片和软件图标](ui/runtime/0.1.1/new-editor-pasted-image.png) · [编辑分段粘贴图片](ui/runtime/0.1.1/edit-editor-pasted-image.png) · [话术与短语取消选中](ui/runtime/0.1.1/phrase-and-common-unselected.png)。
+本轮菜单、图片粘贴及选择状态检查来自 `.build/category-menus-1791692353750`（[33项记录](ui/runtime/0.1.1/menu-selection-report.json)）和 `.build/library-ui-1791692310344`（[22项记录](ui/runtime/0.1.1/image-paste-report.json)），合计55项通过；35项前端、50项Rust单元测试、前端构建、Rust格式及Clippy检查通过。一级菜单第二项改为“新增二级分类”，两处入口均验证分类归属，新增同级仍创建一级分类。新增和编辑窗口通过实际ClipboardEvent及File数据粘贴图片，Rust解码、PNG落盘、缩略图、SQLite保存和重开均实际执行；图片数量上限、失败保留正文及整批素材清理由单元测试覆盖。窗口保持隐藏，不读写系统剪贴板，本轮未执行实体Ctrl+V、真实发送或安装升级验收。历史截图已清理，验收报告保留。
 
 0.1.0 的安装验收使用独立 AppId、目录与开始菜单组，验证了普通用户／HKCU／64 位安装、Release 客户端启动、安装目录之外的数据保存及卸载保留用户数据。运行中升级使用标记为 0.1.0 和 0.1.1 的测试安装器，两者程序二进制相同，只验证关闭客户端、更新安装版本与数据保留，未验证本轮实际版本升级或未来数据库迁移。真实中文安装界面与当前用户默认目录已查看，WebView2 引导程序微软签名有效。
 
@@ -202,26 +272,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/shortcut-desktop.p
 剪贴板验收覆盖原有文字、图片和文件格式恢复，新复制保留与中断、剪贴板占用。目标输入焦点变化和显式取消停止剩余段，已执行段不自动重发；并发入口由 Rust 拒绝。
 
 文件库验收覆盖系统图标、双击插入、失效记录、重新关联、删除关联保留源文件。搜索覆盖附件名高亮、上下选择、Enter 插入、Esc 关闭。编辑器覆盖独立窗口、四项工具栏、图片素材加载、日期和分段；201 字标题由实际 Rust 服务拒绝。完整备份实际导入、同名分类合并、无效批次回滚及图片清理通过；缓存清理保留素材和源文件。
-
-## 运行截图
-
-本次新增：[连续图文编辑](ui/runtime/0.1.1/inline-image-editor.png) · [列表图片图标](ui/runtime/0.1.1/phrase-image-icons.png) · [话术删除确认](ui/runtime/0.1.1/delete-phrase.png) · [分类删除确认](ui/runtime/0.1.1/delete-category.png) · [回收话术详情](ui/runtime/0.1.1/recycle-phrase-detail.png) · [回收分类详情](ui/runtime/0.1.1/recycle-category-detail.png) · [还原窗口](ui/runtime/0.1.1/restore-dialog.png) · [快捷键冲突](ui/runtime/0.1.1/restore-shortcut-conflict.png) · [文件菜单](ui/runtime/0.1.1/file-context-menu.png) · [小窗口滚动菜单](ui/runtime/0.1.1/file-menu-small-window.png) · [文件排序](ui/runtime/0.1.1/file-sort.png)。
-
-| 界面 | 截图 |
-|---|---|
-| 0.1.1 主窗口／悬停发送 | [常用短语面板](ui/runtime/0.1.1/main-common.png) · [悬停发送](ui/runtime/0.1.1/main-hover.png) |
-| 0.1.1 短语编辑／右键／排序 | [新增短语](ui/runtime/0.1.1/common-editor.png) · [原生右键](ui/runtime/0.1.1/common-menu.png) · [快速排序](ui/runtime/0.1.1/common-sort.png) |
-| 0.1.1 底部横条／空白右键 | [底部横条](ui/runtime/0.1.1/common-dock.png) · [横条菜单](ui/runtime/0.1.1/common-dock-menu.png) · [空白刷新菜单](ui/runtime/0.1.1/blank-menu.png) |
-| 0.1.1 置顶与显示／隐藏状态 | [图标对照](ui/runtime/0.1.1/controls-states.png) · [置顶、面板显示](ui/runtime/0.1.1/controls-visible.png) · [未置顶、面板隐藏](ui/runtime/0.1.1/controls-hidden.png) |
-| 0.1.1 吸附按钮开关状态 | [未开启吸附](ui/runtime/0.1.1/dock-disabled-titlebar.png) · [开启吸附](ui/runtime/0.1.1/dock-enabled-titlebar.png) |
-| 0.1.1 最新设置与标签色板 | [设置页](ui/runtime/0.1.1/settings-updated.png) · [设置色板](ui/runtime/0.1.1/settings-color-palette.png) · [分类菜单色板](ui/runtime/0.1.1/category-color-palette.png) · [分类标签](ui/runtime/0.1.1/category-tabs-updated.png) |
-| 0.1.1 重名分类与话术行状态 | [重名编辑器](ui/runtime/0.1.1/duplicate-category-editor.png) · [选中色](ui/runtime/0.1.1/phrase-selected.png) · [选中与悬停](ui/runtime/0.1.1/phrase-selected-and-hovered.png) · [搜索选中与悬停](ui/runtime/0.1.1/search-selected-and-hovered.png) |
-| 0.1.1 一级菜单对齐与设置跳转 | [一级右键菜单](ui/runtime/0.1.1/primary-category-menu.png) · [小窗口边缘菜单](ui/runtime/0.1.1/primary-category-menu-compact.png) · [背景色设置页](ui/runtime/0.1.1/category-color-settings.png) · [同名分类预选](ui/runtime/0.1.1/primary-category-settings-navigation.png) |
-| 0.1.0 历史搜索／话术右键 | [搜索](ui/runtime/search.png) · [右键菜单](ui/runtime/context-menu.png) |
-| 0.1.0 历史编辑器／文件库 | [混合内容编辑](ui/runtime/editor.png) · [独立文件库](ui/runtime/files.png) |
-| 0.1.0 历史设置／安装 | [设置](ui/runtime/settings.png) · [中文安装界面](ui/runtime/installer.png) |
-
-截图来自实际客户端的隔离验收数据。本轮记录来自 `.build/native-1791632056219`、`.build/native-1791632689546` 与 `.build/native-1791633101901`，已复制到 `ui/runtime/0.1.1`。历史 0.1.0 的完整验证来自 `.build/native-1791614803994` 与 `.build/installer-1791614883860`；安装日志保留在对应 `.build` 目录。
 
 ## 待实机验收
 

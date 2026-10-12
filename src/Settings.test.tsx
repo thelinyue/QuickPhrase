@@ -52,12 +52,16 @@ describe('十项序号与快捷键设置', () => {
     const alt=screen.getByLabelText('定位到搜索快捷键'); fireEvent.change(alt,{target:{value:'W'}});fireEvent.blur(alt);
     await waitFor(()=>expect((alt as HTMLInputElement).value).toBe('Q'));
   });
-  it('拒绝裸键，教程打开给定视频', async () => {
+  it('拒绝裸键，生效范围保留全局开关且不提供视频入口', async () => {
     render(<SettingsWindow library={shortcuts()} initialTab="快捷键" />);
     fireEvent.keyDown(screen.getByLabelText('发送序号1'),{key:'a',code:'KeyA'});
     expect(screen.getByRole('status').textContent).toContain('单个组合键');
     expect(vi.mocked(call).mock.calls.filter(([name])=>name==='save_settings')).toHaveLength(0);
-    fireEvent.click(screen.getByRole('button',{name:'使用教程'})); expect(call).toHaveBeenCalledWith('open_shortcut_tutorial');
+    expect(screen.queryByRole('button',{name:'使用教程'})).toBeNull();
+    expect(screen.getByText('生效范围')).toBeTruthy();
+    fireEvent.click(screen.getByRole('checkbox',{name:'全局生效'}));
+    await waitFor(()=>expect((screen.getByRole('checkbox',{name:'全局生效'}) as HTMLInputElement).checked).toBe(true));
+    expect(call).toHaveBeenCalledWith('save_settings', { settings: expect.objectContaining({ globalPhraseHotkeys: true }) });
   });
 });
 

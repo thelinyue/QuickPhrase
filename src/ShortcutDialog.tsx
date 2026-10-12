@@ -9,7 +9,7 @@ export function ShortcutDialog({ id, value, onConfirm, close }: { id: string; va
   const [modifier, setModifier] = useState(parts.filter(p => p && !keys.includes(p)).join('+'));
   const [first, setFirst] = useState(keys[0] || ''); const [second, setSecond] = useState(keys[1] || '');
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const busyRef = useRef(false);
-  const [ready, setReady] = useState(false); const [tutorial, setTutorial] = useState(false);
+  const [ready, setReady] = useState(false); const [help, setHelp] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null); const inputs = useRef<(HTMLInputElement | null)[]>([]);
   useEffect(() => {
     dialog.current?.showModal(); let disposed = false;
@@ -41,13 +41,14 @@ export function ShortcutDialog({ id, value, onConfirm, close }: { id: string; va
     <div className="shortcut-body"><div className="shortcut-fields"><select aria-label="功能键" value={modifier} disabled={!ready || busy} onChange={e => { setModifier(e.target.value); setError(''); }}>{modifiers.map(m => <option key={m} value={m}>{m || '功能键（无）'}</option>)}{modifier && !modifiers.includes(modifier) && <option value={modifier}>{modifier}</option>}</select>
       {[first, second].map((key, index) => <input key={index} type="text" ref={el => { inputs.current[index] = el; }} aria-label={index ? '第二个按键' : '第一个按键'} value={key} readOnly disabled={!ready || busy} onKeyDown={event => record(event, index)} />)}
       <button type="button" className="delete-shortcut" title="删除话术快捷键" aria-label="删除话术快捷键" disabled={!ready || busy} onClick={() => { setModifier(''); setFirst(''); setSecond(''); setError(''); }}><Icon name="trash" /></button></div>
-      <p className="shortcut-hint">点击按键框，直接按键录入</p>{error && <p className="validation-error" role="alert">{error}</p>}
-      <div className="shortcut-footer"><button type="button" className="shortcut-tutorial" aria-label="自定义快捷键使用教程" aria-expanded={tutorial} onClick={() => setTutorial(v => !v)}><span aria-hidden="true">▶</span>使用说明</button><button type="button" className="secondary-button" disabled={busy} onClick={close}>取消</button><button type="submit" className="primary-button" disabled={!ready || busy}>{busy ? '保存中' : '确定'}</button></div>
-      {tutorial && <div className="shortcut-help"><p>单组合键只填第一键；顺序双键填两键。</p>
+      <p className="shortcut-hint">点击按键框，按键录入。</p>{error && <p className="validation-error" role="alert">{error}</p>}
+      <div className="shortcut-footer"><button type="button" className="shortcut-help-toggle" aria-label="自定义快捷键使用说明" aria-expanded={help} onClick={() => setHelp(v => !v)}>使用说明</button><button type="button" className="secondary-button" disabled={busy} onClick={close}>取消</button><button type="submit" className="primary-button" disabled={!ready || busy}>{busy ? '保存中' : '确定'}</button></div>
+      {help && <div className="shortcut-help"><p><strong>设置：</strong>组合键只填第一键；无功能键时需填两键。</p>
+        <p className="shortcut-timing"><strong>触发：</strong>双键依次按，两键间隔不超过 1 秒；使用功能键时保持按住。</p>
         {/* 按住修饰键与依次按下普通键分别展示，避免把顺序双键误读为同时按下。 */}
         <div className="shortcut-examples"><figure><figcaption>Ctrl+Y+C</figcaption><div className="shortcut-sequence"><div><kbd>Ctrl</kbd><small>按住</small></div><span aria-hidden="true">＋</span><div><kbd>Y</kbd><small>按下 · 松开</small></div><span aria-hidden="true">→</span><div><kbd>C</kbd><small>按下 · 松开</small></div></div></figure>
           <figure><figcaption>1+1（无功能键）</figcaption><div className="shortcut-sequence"><div><kbd>1</kbd><small>按下 · 松开</small></div><span aria-hidden="true">→</span><div><kbd>1</kbd><small>再按一次</small></div></div></figure></div>
-        <p className="shortcut-timing">两键间隔 ≤ 1 秒；匹配后的候选选择不限时。</p><p>同键可绑定多条话术，单条也显示候选。上下键选择，数字 1—9、0 或空格插入，Enter 直接发送，Esc 取消。</p><p>默认在闪语或目标窗口生效。搜索允许序号组合键；编辑、录入和模态输入暂停业务快捷键。</p><p>未完成时还原首键；切换窗口、输入区或点击候选外部即取消。</p><p>设置或删除后点“确定”；编辑器内还需保存话术。</p><button type="button" className="shortcut-tutorial" onClick={() => void call('open_shortcut_tutorial').catch(e => setError(String(e)))}>打开视频教程</button>
+        <p><strong>选择：</strong>触发后显示候选，同键可绑定多条。↑↓ 选择，空格插入当前项，数字 1—9、0 插入对应项（0 为第 10 项）；Enter 直接发送，Esc 取消。</p><p><strong>取消：</strong>切换窗口、输入区或点击候选外部即取消。</p><p><strong>保存：</strong>设置或删除后点“确定”；编辑器内还需保存话术。</p>
       </div>}
     </div></form></dialog>;
 }

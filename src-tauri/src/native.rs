@@ -13,8 +13,8 @@ pub use shortcuts::{parse_shortcut, Shortcut};
 mod candidates;
 pub use candidates::CandidatePayload;
 #[cfg(windows)]
-#[path = "native/chat_input.rs"]
-mod chat_input;
+#[path = "native/dock_target.rs"]
+mod dock_target;
 #[cfg(windows)]
 #[path = "native/docking.rs"]
 mod docking;
@@ -102,6 +102,7 @@ impl DisplayMode {
     }
 }
 /// 焦点记录、全局快捷键和吸附共享一个轻量后台线程；发送另用独立线程，避免分段等待阻塞窗口跟随。
+/// 全局鼠标钩子使用独立消息线程，不能等吸附轮询休眠或窗口查询完成后才放行系统鼠标事件。
 /// target 只在外部窗口进入闪语时冻结；切到其他软件不会扩大话术快捷键的默认生效范围。
 pub struct NativeState {
     pub target: Mutex<Option<TargetContext>>,
@@ -613,6 +614,27 @@ mod platform {
             }
         }
     }
+    /// Alt 导航键由 RegisterHotKey 消费，窗口仍可能收到 Alt 松键并进入隐式系统菜单状态。
+    /// 只拦截无字符的键盘菜单激活；Alt+空格、Alt+F4、移动、调整大小等显式系统操作继续放行。
+    /// 此子类只安装在主窗口和短语横条的所属 UI 线程，窗口销毁时移除，不修改全局键盘状态。
+    unsafe extern "system" fn navigation_system_menu(
+        window: HWND,
+        message: u32,
+        w: WPARAM,
+        l: LPARAM,
+        id: usize,
+        _: usize,
+    ) -> LRESULT {
+        use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
+        if message == WM_SYSCOMMAND && w.0 & 0xFFF0 == SC_KEYMENU as usize && l.0 == 0 {
+            return LRESULT(0);
+        }
+        if message == WM_NCDESTROY {
+            let _ = RemoveWindowSubclass(window, Some(navigation_system_menu), id);
+        }
+        DefSubclassProc(window, message, w, l)
+    }
+
     /// WebView2 的组合键回调也走原生匹配器，搜索输入不依赖全局钩子是否转发客户端按键。
     /// 已被全局钩子消费的键不会进入 WebView；普通键的重复通知仍由匹配器的按住状态处理。
     pub fn install_webview_shortcuts(
@@ -620,8 +642,22 @@ mod platform {
         state: Arc<NativeState>,
     ) -> Result<()> {
         use webview2_com::{AcceleratorKeyPressedEventHandler, Microsoft::Web::WebView2::Win32::*};
+        let handle = window
+            .hwnd()
+            .map_err(|e| format!("无法获取导航窗口句柄：{e}"))?
+            .0 as i64;
         window
             .with_webview(move |webview| unsafe {
+                if !windows::Win32::UI::Shell::SetWindowSubclass(
+                    hwnd(handle),
+                    Some(navigation_system_menu),
+                    0,
+                    0,
+                )
+                .as_bool()
+                {
+                    log::error!("无法接入窗口导航保护，Alt键可能唤起系统菜单。");
+                }
                 let mut token = 0;
                 let result = webview.controller().add_AcceleratorKeyPressed(
                     &AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
@@ -770,6 +806,27 @@ mod platform {
         }
         CallNextHookEx(None, code, w, l)
     }
+    /// 低级鼠标钩子会同步调用安装它的线程，即使移动事件直接放行也必须及时泵消息。
+    /// 单独等待输入消息，消息到达即唤醒；50ms超时只用于退出检查，不是鼠标处理间隔。
+    /// 点击取消候选仍走原有检查，不能为了响应速度去掉外部交互的发送保护。
+    fn listen_mouse(state: Arc<NativeState>) {
+        unsafe {
+            let module = GetModuleHandleW(None).ok().map(|m| HINSTANCE(m.0));
+            let Ok(mouse) = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module, 0) else {
+                state.notify_error("无法安装候选外部点击监听，请检查系统权限。".into());
+                return;
+            };
+            let mut msg = MSG::default();
+            while state.running.load(Ordering::Acquire) {
+                while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+                MsgWaitForMultipleObjectsEx(None, 50, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+            }
+            let _ = UnhookWindowsHookEx(mouse);
+        }
+    }
     pub fn monitor(state: Arc<NativeState>, rx: mpsc::Receiver<Control>) {
         unsafe {
             let _ = HOOK_STATE.set(state.clone());
@@ -787,12 +844,10 @@ mod platform {
             }
             let module = GetModuleHandleW(None).ok().map(|m| HINSTANCE(m.0));
             let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0).ok();
-            let mouse = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module, 0).ok();
+            let mouse_state = state.clone();
+            let mouse = std::thread::spawn(move || listen_mouse(mouse_state));
             if hook.is_none() {
                 state.notify_error("无法安装话术快捷键监听，请检查系统权限。".into());
-            }
-            if mouse.is_none() {
-                state.notify_error("无法安装候选外部点击监听，请检查系统权限。".into());
             }
             let mut dock = Dock::default();
             while state.running.load(Ordering::Acquire) {
@@ -916,9 +971,7 @@ mod platform {
             if let Some(hook) = hook {
                 let _ = UnhookWindowsHookEx(hook);
             }
-            if let Some(mouse) = mouse {
-                let _ = UnhookWindowsHookEx(mouse);
-            }
+            let _ = mouse.join();
             for id in 1..=3 {
                 let _ = UnregisterHotKey(None, id);
             }
@@ -930,7 +983,7 @@ mod platform {
     #[derive(Default)]
     struct Dock {
         target: Option<HWND>,
-        input: super::chat_input::ChatInputProbe,
+        probe: super::dock_target::DockTargetProbe,
         /// 闪语窗口只能延续刚才正在使用的目标，不能让独立窗口吸附到后台的旧目标。
         target_context: bool,
         original_rect: Option<RECT>,
@@ -940,12 +993,12 @@ mod platform {
         common_foreground: i64,
     }
     impl Dock {
-        /// 两处面板共用输入框结论；同进程图片／视频等窗口不能借用后台聊天关系。
+        /// 两处面板共用进程及窗口类型结论；同进程图片／视频窗口不能借用后台聊天关系。
         unsafe fn refresh_target(&mut self, foreground: HWND) {
             let extend = self.target_context
                 && (foreground.0.is_null() || pid(foreground) == std::process::id());
-            self.input.observe(foreground, extend);
-            self.target = self.input.confirmed().map(hwnd);
+            self.probe.observe(foreground, extend);
+            self.target = self.probe.confirmed().map(hwnd);
         }
         /// 仅跟随可见、未最小化且当前正在使用的目标。编辑闪语时保持目标关系，切换其他程序隐藏。
         unsafe fn visible_target(&self, foreground: HWND) -> Option<HWND> {
@@ -1176,6 +1229,12 @@ mod platform {
             }
             // 非托盘最小化保持最小化状态，自动跟随不擅自还原；明确唤起时由 show 恢复。
             if IsIconic(main).as_bool() {
+                return;
+            }
+            // 主窗口若被系统或外部操作最大化，先异步还原且不激活，下一轮再读取正常尺寸。
+            // 不能用 SetWindowPos 直接缩小最大化窗口，否则 WebView 仍保留全屏尺寸而显示空白。
+            if IsZoomed(main).as_bool() {
+                let _ = ShowWindowAsync(main, SW_SHOWNOACTIVATE);
                 return;
             }
             if self.original_rect.is_none() {

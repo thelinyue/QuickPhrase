@@ -19,19 +19,6 @@
 
 回收站读取中、读取失败和搜索无结果均不显示空态插画。读取失败继续使用原有错误反馈，避免把失败显示成空回收站。
 
-## 界面截图
-
-截图来自使用独立数据库的隐藏 Debug 客户端和真实 WebView2，未操作正式客户端。
-
-| 场景 | 默认尺寸 | 较小尺寸／补充状态 |
-|---|---|---|
-| 话术空态 | [预览](runtime/0.1.1/illustrations/phrase-empty.png) | [300×400](runtime/0.1.1/illustrations/phrase-small.png) |
-| 文件空态 | [预览](runtime/0.1.1/illustrations/files-empty.png) | [300×400](runtime/0.1.1/illustrations/files-small.png) |
-| 回收站空态 | [预览](runtime/0.1.1/illustrations/recycle-empty.png) | [640×400](runtime/0.1.1/illustrations/recycle-small.png) |
-| 吸附位置 | [右侧与底部](runtime/0.1.1/illustrations/dock-bottom.png) · [左侧](runtime/0.1.1/illustrations/dock-left.png) | [480×480](runtime/0.1.1/illustrations/dock-small.png) |
-| 快捷键使用说明 | [预览](runtime/0.1.1/illustrations/shortcut-tutorial.png) | [480×480](runtime/0.1.1/illustrations/shortcut-small.png) |
-| 关于页 | [预览](runtime/0.1.1/illustrations/about.png) | [480×480](runtime/0.1.1/illustrations/about-small.png) |
-
 ## 验证
 
 执行方式：
@@ -57,7 +44,7 @@ node scripts/verify-library.mjs
 | 分类、设置与快捷键回归 | [31项通过](runtime/0.1.1/illustrations/category-report.json) |
 | 回收站、图片与文件库回归 | [21项通过](runtime/0.1.1/illustrations/library-report.json) |
 
-隔离验收覆盖六处界面、七种主题、较小窗口、新增入口、左右切换、底部面板四种组合、教程展开／收起和空态／内容状态切换。回收站还模拟延迟读取与读取失败，确认插画不会掩盖错误。主要截图及报告保存在同目录的 runtime/0.1.1/illustrations；完整主题截图及临时数据保存在本轮 .build/illustrations-* 目录。
+隔离验收覆盖六处界面、七种主题、较小窗口、新增入口、左右切换、底部面板四种组合、教程展开／收起和空态／内容状态切换。回收站还模拟延迟读取与读取失败，确认插画不会掩盖错误。验收报告保存在同目录的 runtime/0.1.1/illustrations；历史截图已清理，临时截图和数据位于 .build/illustrations-* 目录。
 
 较小窗口通过 CDP 视口检查，未重验系统 DPI、多显示器、实体按键、真实发送及安装流程。
 

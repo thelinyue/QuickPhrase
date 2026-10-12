@@ -76,7 +76,8 @@ try {
     await focus(hostHandle);
     let settings = await startApp(args);
     await check(name + '随目标完整显示，不抢焦点且三个常驻窗口均不进入任务栏', async () => {
-      const state = await poll(async () => { const state = await inspect(); return windowOf(state, 'main').visible && windowOf(state, 'bar').visible && state; }, '输入框确认后自动跟随');
+      const state = await poll(async () => { const state = await inspect(); return windowOf(state, 'main').visible && windowOf(state, 'bar').visible && state; }, '窗口类型确认后自动跟随');
+      assert.match(state.windows[0].className, /^WindowsForms10\.WeWorkWindow\.app\./);
       assert.equal(windowOf(state, 'main').visible, true); assert.equal(windowOf(state, 'bar').visible, true);
       assert.equal(windowOf(state, 'main').frame.left, state.windows[0].frame.right);
       assert.equal(windowOf(state, 'bar').frame.top, state.windows[0].frame.bottom);
@@ -86,32 +87,51 @@ try {
       for (const key of ['main', 'bar', 'preview']) { assert.equal(windowOf(state, key).toolWindow, true); assert.equal(windowOf(state, key).appWindow, false); }
       snapshots.push({ name: name + '-active', state });
     });
-    await check(name + '同一窗口只有消息输入框可用时才吸附，不要求输入框获得焦点', async () => {
+    await check(name + '主窗口内通讯录、搜索及无可用输入框页面持续吸附，不要求输入焦点', async () => {
       await control('focus-list');
       const unfocused = await inspect(); assert.equal(unfocused.inputFocused, false);
       assert.equal(windowOf(unfocused, 'main').visible, true); assert.equal(windowOf(unfocused, 'bar').visible, true);
-      for (const pageState of ['none', 'search', 'hidden', 'disabled', 'readonly', 'password', 'unsupported']) {
+      for (const pageState of ['none', 'contacts', 'search', 'hidden', 'disabled', 'readonly', 'password']) {
         await control('page', { page: pageState });
-        const hidden = await poll(async () => { const state = await inspect(); return !windowOf(state, 'main').visible && !windowOf(state, 'bar').visible && state; }, pageState + ' 页面隐藏两处面板');
-        assert.equal(hidden.foreground, hostHandle, '检测不能改变目标焦点');
-        snapshots.push({ name: name + '-input-' + pageState, state: hidden });
-        await control('page', { page: 'chat' });
-        await poll(async () => { const state = await inspect(); return windowOf(state, 'main').visible && windowOf(state, 'bar').visible; }, '同窗口返回聊天页面恢复');
+        // 跨过原检测结论的 750ms 生命周期，确保不是暂时沿用旧结果。
+        await delay(800);
+        const state = await inspect();
+        assert.equal(windowOf(state, 'main').visible, true, pageState + ' 页面保留侧栏');
+        assert.equal(windowOf(state, 'bar').visible, true, pageState + ' 页面保留底栏');
+        assert.equal(state.foreground, hostHandle, '检测不能改变目标焦点');
+        snapshots.push({ name: name + '-page-' + pageState, state });
+      }
+      await control('page', { page: 'chat' });
+    });
+    await check(name + '同进程登录、视频、搜索结果和未知窗口类型不吸附', async () => {
+      for (const className of ['WeChatLogin', 'VideoPlayerWnd', 'SearchResultWindow2', 'WeWorkWindowExtra']) {
+        const rejectedHandle = (await control('viewer', { className })).viewer;
+        await focus(rejectedHandle);
+        const state = await poll(async () => { const state = await inspect(); return !windowOf(state, 'main').visible && !windowOf(state, 'bar').visible && state; }, className + ' 类型隐藏两处面板');
+        assert.equal(state.foregroundPid, host.pid);
+        assert.ok(state.windows.find(window => window.handle === rejectedHandle).className.startsWith('WindowsForms10.' + className + '.app.'));
+        snapshots.push({ name: name + '-rejected-' + className, state });
+        await focus(hostHandle);
+        await poll(async () => { const state = await inspect(); return windowOf(state, 'main').visible && windowOf(state, 'bar').visible; }, '返回主窗口恢复吸附');
       }
     });
     await check(name + '同进程图片窗口不吸附，独立聊天窗口和返回聊天时恢复', async () => {
-      const viewerHandle = (await control('viewer')).viewer;
+      const viewerHandle = (await control('viewer', { className: 'ImagePreview' })).viewer;
       await focus(viewerHandle);
       const hidden = await poll(async () => { const state = await inspect(); return !windowOf(state, 'main').visible && !windowOf(state, 'bar').visible && state; }, '图片页面不借用后台聊天目标');
       assert.equal(hidden.foregroundPid, host.pid); snapshots.push({ name: name + '-viewer', state: hidden });
       await invoke('window_action', { action: 'show' });
       await poll(async () => windowOf(await inspect(), 'main').visible, '图片页仍可独立唤起闪语');
       assert.equal(windowOf(await inspect(), 'bar').visible, false);
-      const secondHandle = (await control('second-chat')).secondChat;
-      await focus(secondHandle);
-      const second = await poll(async () => { const state = await inspect(); const target = state.windows.find(w => w.handle === secondHandle); return windowOf(state, 'bar').visible && windowOf(state, 'main').frame.left === target.frame.right && state; }, '独立聊天输入框确认后跟随新窗口');
-      assert.equal(windowOf(second, 'bar').frame.top, second.windows.find(w => w.handle === secondHandle).frame.bottom);
-      await focus(handles.main); assert.equal(windowOf(await inspect(), 'bar').visible, true, '使用闪语保留已确认的独立聊天关系');
+      for (const className of ['WwStandaloneConversationWnd', 'CRMCustomerStandaloneWindow']) {
+        const secondHandle = (await control('second-chat', { className })).secondChat;
+        await focus(secondHandle);
+        const second = await poll(async () => { const state = await inspect(); const target = state.windows.find(w => w.handle === secondHandle); return windowOf(state, 'bar').visible && windowOf(state, 'main').frame.left === target.frame.right && state; }, '独立聊天窗口类型确认后跟随新窗口');
+        assert.ok(second.windows.find(window => window.handle === secondHandle).className.startsWith('WindowsForms10.' + className + '.app.'));
+        assert.equal(windowOf(second, 'bar').frame.top, second.windows.find(w => w.handle === secondHandle).frame.bottom);
+        await focus(handles.main); assert.equal(windowOf(await inspect(), 'bar').visible, true, '使用闪语保留已确认的独立聊天关系');
+        snapshots.push({ name: name + '-standalone-' + className, state: second });
+      }
       await focus(viewerHandle);
       await poll(async () => !windowOf(await inspect(), 'main').visible && !windowOf(await inspect(), 'bar').visible, '再次查看图片隐藏');
       await focus(hostHandle);

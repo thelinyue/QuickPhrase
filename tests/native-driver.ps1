@@ -24,6 +24,7 @@ public static class ShanyuQaWindows {
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+ [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint thread,ref GuiThreadInfo info);
  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out Rect r);
  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h,uint attribute,out Rect r,int size);
  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
@@ -56,6 +57,7 @@ public static class ShanyuQaWindows {
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern bool GetUserObjectInformation(IntPtr handle,int index,System.Text.StringBuilder name,int length,out int needed);
  public static string DesktopName(IntPtr handle) {int needed;var name=new System.Text.StringBuilder(256);GetUserObjectInformation(handle,2,name,512,out needed);return name.ToString();}
  [StructLayout(LayoutKind.Sequential)] public struct Rect { public int left,top,right,bottom; }
+ [StructLayout(LayoutKind.Sequential)] public struct GuiThreadInfo { public int size; public uint flags; public IntPtr active,focus,capture,menuOwner,moveSize,caret; public Rect caretRect; }
  [StructLayout(LayoutKind.Sequential)] public struct MonitorInfo { public int size; public Rect monitor,work; public uint flags; }
 }
 '@
@@ -128,6 +130,16 @@ $monitorInfo.size = [Runtime.InteropServices.Marshal]::SizeOf($monitorInfo)
 $result = @{ handle=$nativeHandle.ToInt64(); topmost=($extendedStyle -band 8) -ne 0; toolWindow=($extendedStyle -band 128) -ne 0; appWindow=($extendedStyle -band 262144) -ne 0; noActivate=($extendedStyle -band 134217728) -ne 0; foreground=$foreground.ToInt64(); pid=$owner; visible=[ShanyuQaWindows]::IsWindowVisible($nativeHandle); rect=$rect; frame=$frame; workArea=$monitorInfo.work; clipboardSequence=[ShanyuQaWindows]::GetClipboardSequenceNumber() }
 $result.desktop = [ShanyuQaWindows]::DesktopName([ShanyuQaWindows]::GetThreadDesktop([ShanyuQaWindows]::GetCurrentThreadId()))
 $result.enterDown = [ShanyuQaWindows]::GetAsyncKeyState(13) -lt 0
+# 只读指定窗口线程的菜单状态，区分 WebView 导航与 Windows 系统菜单抢走方向键。
+$guiInfo = New-Object ShanyuQaWindows+GuiThreadInfo
+$guiInfo.size = [Runtime.InteropServices.Marshal]::SizeOf($guiInfo)
+$guiProcess = [uint32]0
+$guiWindow = if ($nativeHandle -ne [IntPtr]::Zero) { $nativeHandle } else { $foreground }
+$guiThread = [ShanyuQaWindows]::GetWindowThreadProcessId($guiWindow,[ref]$guiProcess)
+if ([ShanyuQaWindows]::GetGUIThreadInfo($guiThread,[ref]$guiInfo)) {
+  $result.menuMode = ($guiInfo.flags -band 28) -ne 0
+  $result.menuOwner = $guiInfo.menuOwner.ToInt64()
+}
 $inputDesktop = [ShanyuQaWindows]::OpenInputDesktop(0,$false,1)
 try { $result.inputDesktop = [ShanyuQaWindows]::DesktopName($inputDesktop) } finally { [ShanyuQaWindows]::CloseDesktop($inputDesktop) | Out-Null }
 if ($PSBoundParameters.ContainsKey('ClipboardExpected')) {
