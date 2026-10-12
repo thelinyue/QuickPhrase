@@ -1,4 +1,4 @@
-﻿param([ValidateSet('focus','inspect','move','minimize','restore','key','menu')][string]$Action = 'inspect', [long]$Handle = 0, [int]$X = 0, [int]$Y = 0, [int]$Width = 0, [int]$Height = 0, [int]$Key = 0, [switch]$Ctrl, [switch]$Alt, [switch]$Shift, [int]$Repeats = 1, [int]$HoldMilliseconds = 0, [string]$Keys, [string]$ClipboardExpected, [string]$ClipboardImageExpected, [string]$ClipboardFileExpected, [int]$ProcessId = 0, [string]$Title, [string]$WindowClass, [string]$Screenshot, [int]$MenuIndex = -1)
+﻿param([ValidateSet('focus','inspect','move','minimize','restore','key','menu')][string]$Action = 'inspect', [long]$Handle = 0, [int]$X = 0, [int]$Y = 0, [int]$Width = 0, [int]$Height = 0, [int]$Key = 0, [switch]$Ctrl, [switch]$Alt, [switch]$Shift, [int]$Repeats = 1, [int]$HoldMilliseconds = 0, [string]$Keys, [string]$ClipboardExpected, [string]$ClipboardImageExpected, [string]$ClipboardImageSnapshot, [string]$ClipboardFileExpected, [int]$ProcessId = 0, [string]$Title, [string]$WindowClass, [string]$Screenshot, [int]$MenuIndex = -1)
 $ErrorActionPreference = 'Stop'
 # 仅用于本机验收：原生鼠标和按键确保焦点流程经过真实 Windows 输入队列。
 Add-Type -TypeDefinition @'
@@ -133,6 +133,14 @@ try { $result.inputDesktop = [ShanyuQaWindows]::DesktopName($inputDesktop) } fin
 if ($PSBoundParameters.ContainsKey('ClipboardExpected')) {
   Add-Type -AssemblyName System.Windows.Forms
   $result.clipboardMatches = [Windows.Forms.Clipboard]::ContainsText() -and [Windows.Forms.Clipboard]::GetText() -ceq $ClipboardExpected
+}
+if ($PSBoundParameters.ContainsKey('ClipboardImageSnapshot')) {
+  # 在独立进程记录系统提供的测试图片；WinForms 跨进程转换后可能不再具有源 PNG 的透明度。
+  Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+  if (-not [Windows.Forms.Clipboard]::ContainsImage()) { throw '测试剪贴板中没有图片，无法记录投递前的内容。' }
+  $image = [Drawing.Bitmap]::new([Windows.Forms.Clipboard]::GetImage())
+  try { $image.Save($ClipboardImageSnapshot, [Drawing.Imaging.ImageFormat]::Png); $result.clipboardImageRecorded = $true }
+  finally { $image.Dispose() }
 }
 if ($PSBoundParameters.ContainsKey('ClipboardImageExpected')) {
   Add-Type -AssemblyName System.Windows.Forms,System.Drawing

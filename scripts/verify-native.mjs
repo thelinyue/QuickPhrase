@@ -237,8 +237,10 @@ try {
   const mixed = await savePhrase({ title: '混合内容', segments: [{ blocks: [{ kind: 'text', text: '开头' }, images[0], { kind: 'text', text: '图片之后' }, { kind: 'file', path: filePath, name: '发送验收.txt' }] }, { blocks: [{ kind: 'text', text: '第二段' }] }] });
   const multi = await savePhrase({ title: '中断验收', segments: [{ blocks: [{ kind: 'text', text: '第一段' }] }, { blocks: [{ kind: 'text', text: '第二段' }] }] });
   await test('原有图片和文件剪贴板格式可以完整保留', async () => {
-    const image = path.join(repo, 'src-tauri', 'icons', 'icon.png'); let target = await prepare(); await control('copy-image', { path: image });
-    assert.equal((await deliver(b, 'insert', target)).status, 'submitted'); assert.equal((await native(['-ClipboardImageExpected', image])).clipboardImageMatches, true);
+    const image = path.join(repo, 'src-tauri', 'icons', 'icon.png'), snapshot = path.join(root, 'original-clipboard.png'); let target = await prepare(); await control('copy-image', { path: image });
+    assert.equal((await native(['-ClipboardImageSnapshot', snapshot])).clipboardImageRecorded, true);
+    assert.equal((await native(['-ClipboardImageExpected', snapshot])).clipboardImageMatches, true, '投递前的剪贴板图片已记录');
+    assert.equal((await deliver(b, 'insert', target)).status, 'submitted'); assert.equal((await native(['-ClipboardImageExpected', snapshot])).clipboardImageMatches, true);
     target = await prepare(); await control('copy-files', { path: filePath });
     assert.equal((await deliver(b, 'insert', target)).status, 'submitted'); assert.equal((await native(['-ClipboardFileExpected', filePath])).clipboardFileMatches, true);
   });
@@ -296,8 +298,8 @@ try {
     await poll(async () => editor.locator('.media-block img').evaluate(img => img.naturalWidth > 0), '素材预览');
     await editor.screenshot({ path: path.join(root, 'editor.png') }); await editor.locator('#phrase-title').fill('字'.repeat(201)); await editor.getByRole('button', { name: '确定', exact: true }).click();
     await editor.getByRole('alert').waitFor(); assert.match(await editor.getByRole('alert').innerText(), /200/);
-    await editor.locator('#phrase-title').fill('混合内容'); const text = editor.getByRole('textbox', { name: '第1段文字', exact: true }); await text.fill('开头'); await text.focus(); await text.evaluate(input => { const range = document.createRange(); range.setStart(input.firstChild, 2); range.collapse(true); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); });
-    await editor.getByRole('button', { name: '日期', exact: true }).click(); assert.match(await text.inputValue(), /\d{4}-\d{2}-\d{2}/);
+    await editor.locator('#phrase-title').fill('混合内容'); const text = editor.getByRole('textbox', { name: '第1段文字', exact: true }); await text.focus(); await text.evaluate(input => { const range = document.createRange(); range.setStart(input.firstChild, 2); range.collapse(true); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true })); });
+    await editor.getByRole('button', { name: '日期', exact: true }).click(); assert.match(await text.innerText(), /\d{4}-\d{2}-\d{2}/);
     await editor.getByRole('button', { name: '添加分段', exact: true }).click(); await editor.getByRole('textbox', { name: '第2段文字', exact: true }).fill('新增段');
     await editor.getByRole('button', { name: '确定', exact: true }).click(); await poll(async () => !context.pages().includes(editor), '保存并关闭');
     assert.equal((await invoke('get_library')).phrases.find(p => p.id === mixed).segments.length, 3);
