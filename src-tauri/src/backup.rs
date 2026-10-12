@@ -602,7 +602,7 @@ mod tests {
     #[test]
     fn invalid_recycle_context_rolls_back_import_and_removes_new_images() {
         let dir = tempfile::tempdir().unwrap();
-        let mut source = Store::open(&dir.path().join("source")).unwrap();
+        let mut source = crate::store::test_store(&dir.path().join("source")).unwrap();
         let group = source
             .save_category(Category {
                 id: String::new(),
@@ -636,7 +636,7 @@ mod tests {
         let package = dir.path().join("backup.zip");
         export(&source, &package, "backup", None).unwrap();
         let pending = preview(&package).unwrap();
-        let mut target = Store::open(&dir.path().join("target")).unwrap();
+        let mut target = crate::store::test_store(&dir.path().join("target")).unwrap();
         let before = serde_json::to_value(target.library().unwrap()).unwrap();
         for case in 0..6 {
             let mut invalid = pending.clone();
@@ -672,7 +672,7 @@ mod tests {
     #[test]
     fn backup_includes_recycled_images_and_keeps_restoration_inactive_until_requested() {
         let dir = tempfile::tempdir().unwrap();
-        let mut original = Store::open(&dir.path().join("original")).unwrap();
+        let mut original = crate::store::test_store(&dir.path().join("original")).unwrap();
         let image = original.dir.join("images/recycled.png");
         image::RgbaImage::new(2, 2).save(&image).unwrap();
         let p = Phrase {
@@ -698,7 +698,7 @@ mod tests {
         let pending = preview(&backup).unwrap();
         assert_eq!(pending.preview.recycled, 1);
         assert_eq!(pending.preview.images, 1);
-        let mut imported = Store::open(&dir.path().join("imported")).unwrap();
+        let mut imported = crate::store::test_store(&dir.path().join("imported")).unwrap();
         apply(&mut imported, &pending, true, false).unwrap();
         assert!(imported.library().unwrap().phrases.is_empty());
         let record = imported.recycle_records().unwrap().remove(0);
@@ -738,7 +738,7 @@ mod tests {
     #[test]
     fn full_backup_roundtrip_preserves_order_images_and_external_paths() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(&dir.path().join("original")).unwrap();
+        let mut store = crate::store::test_store(&dir.path().join("original")).unwrap();
         let source = dir.path().join("截图.png");
         image::RgbaImage::from_pixel(2, 2, image::Rgba([40, 80, 120, 255]))
             .save(&source)
@@ -804,14 +804,19 @@ mod tests {
         export(&store, &package, "backup", None).unwrap();
         let pending = preview(&package).unwrap();
         let mut restored = Store::open(&dir.path().join("restored")).unwrap();
+        assert!(restored.categories().unwrap().is_empty());
         apply(&mut restored, &pending, true, true).unwrap();
+        assert_eq!(
+            restored.categories().unwrap().len(),
+            pending.library.categories.len()
+        );
         assert_eq!(pending.preview.common_phrases, 1);
         assert_eq!(
             restored
                 .categories()
                 .unwrap()
                 .iter()
-                .find(|c| c.id == "common")
+                .find(|c| c.name == "常用")
                 .unwrap()
                 .background,
             "#356fa1"
@@ -845,7 +850,7 @@ mod tests {
         let template = dir.path().join("模板.xlsx");
         excel_template(&template).unwrap();
         let library = preview(&template).unwrap().library;
-        let mut store = Store::open(&dir.path().join("data")).unwrap();
+        let mut store = crate::store::test_store(&dir.path().join("data")).unwrap();
         store.import(&library, true, false, &[]).unwrap();
         store
             .save_common_phrase(CommonPhrase {
@@ -892,7 +897,7 @@ mod tests {
             }],
         }];
         library.phrases.push(media);
-        let mut store = Store::open(&dir.path().join("data")).unwrap();
+        let mut store = crate::store::test_store(&dir.path().join("data")).unwrap();
         store.import(&library, true, false, &[]).unwrap();
         let output = dir.path().join("文字.xlsx");
         export(&store, &output, "excel", None).unwrap();

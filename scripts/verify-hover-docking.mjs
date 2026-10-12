@@ -71,6 +71,10 @@ try {
   const nativeHandle = async title => JSON.parse((await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(repo, 'tests/native-driver.ps1'), '-ProcessId', String(app.pid), '-Title', title], { windowsHide: true, encoding: 'utf8' })).stdout).handle;
   mainHandle = await nativeHandle('闪语'); barHandle = await nativeHandle('常用短语 · 闪语'); previewHandle = await nativeHandle('话术预览 · 闪语');
   const initial = await invoke('get_library'); assert.equal(initial.dataDir, path.join(evidence, 'data'));
+  // 点击分类的原生验收也需要真实分类，必须在几何专项开始前准备，避免点到新增按钮。
+  const phraseRoot = initial.categories.find(category => category.kind === 'phrase' && !category.parentId)?.id
+    ?? await invoke('save_category', { category: { id: '', name: '常用', kind: 'phrase', parentId: null, position: 0, background: '' } });
+  await page.locator('.category-tabs button:not(.add-category)').first().waitFor();
   const settings = { ...initial.settings, startup: false, dock: false, autoHide: false, pinned: false, dockCommon: false, dockSearch: false, customHotkeys: false, searchHotkey: '8', windowHotkey: '9', commonHotkey: '0' };
   await poll(async () => { try { await invoke('save_settings', { settings }); return true; } catch (error) { if (!String(error).includes('服务尚未启动')) throw error; return false; } }, '原生设置服务');
   await check('吸附侧栏和底栏跟随目标层级，独立置顶设置不让它们覆盖任务栏', async () => {
@@ -121,7 +125,7 @@ try {
       await control(pinned ? 'raise' : 'unpin');
       await control('move', { x: work.left + 360, y: work.top + 120, width: 640, height: 540 }); await focusHost(); await delay(180);
       await poll(async () => windowOf(await inspect(), barHandle).visible, '目标底部短语显示');
-      const box = await page.locator('.category-tabs button').first().boundingBox(), main = windowOf(await inspect(), mainHandle), scale = main.dpi / 96;
+      const box = await page.locator('.category-tabs button:not(.add-category)').first().boundingBox(), main = windowOf(await inspect(), mainHandle), scale = main.dpi / 96;
       // 直接连续点击分类：既覆盖从聊天窗口进入侧栏，也覆盖前台句柄未变化的再次点击。
       for (let click = 0; click < 3; click++) {
         await control('click', { x: Math.round(main.client.x + (box.x + box.width / 2) * scale), y: Math.round(main.client.y + (box.y + box.height / 2) * scale) }); await delay(180);
@@ -227,7 +231,7 @@ try {
   });
   const images = await invoke('import_images', { paths: [path.join(repo, 'public/shanyu.png')] });
   const steps = '1、创建临时管理员账户，保留现有账户和数据。\n2、打开SSH服务，记录问题发生时间。\n3、提供识别码，保持网络连接。\n4、处理完成后删除临时账户并关闭SSH。\n';
-  const savePhrase = (title, segments) => invoke('save_phrase', { phrase: { id: '', rootId: 'common', groupId: null, title, color: '', background: '', shortcut: '', position: 0, segments }, afterId: null });
+  const savePhrase = (title, segments) => invoke('save_phrase', { phrase: { id: '', rootId: phraseRoot, groupId: null, title, color: '', background: '', shortcut: '', position: 0, segments }, afterId: null });
   const longId = await savePhrase('PRO-远程排查', [{ blocks: [{ kind: 'text', text: '您好，请按以下步骤准备远程排查：\n' }, ...images, { kind: 'text', text: steps.repeat(7) }, { kind: 'file', path: 'C:/仅作预览.txt', name: '排查说明.txt' }] }, { blocks: [{ kind: 'text', text: '第二段：问题处理完成后，请及时关闭临时访问。' }] }]);
   const shortId = await savePhrase('简短回复', [{ blocks: [{ kind: 'text', text: '您好，已收到您的反馈。\n我们会继续跟进。' }] }]);
   await row(shortId).waitFor(); await invoke('window_action', { action: 'show' });

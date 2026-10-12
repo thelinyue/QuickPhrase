@@ -13,6 +13,9 @@ pub use shortcuts::{parse_shortcut, Shortcut};
 mod candidates;
 pub use candidates::CandidatePayload;
 #[cfg(windows)]
+#[path = "native/chat_input.rs"]
+mod chat_input;
+#[cfg(windows)]
 #[path = "native/docking.rs"]
 mod docking;
 #[path = "native/preview.rs"]
@@ -361,14 +364,14 @@ mod platform {
         time::{Duration, Instant},
     };
     use windows::{
-        core::{PCWSTR, PWSTR},
+        core::PCWSTR,
         Win32::{
             Foundation::*,
             Graphics::{
                 Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
                 Gdi::*,
             },
-            System::{LibraryLoader::GetModuleHandleW, Registry::*, Threading::*},
+            System::{LibraryLoader::GetModuleHandleW, Registry::*},
             UI::{
                 HiDpi::GetDpiForWindow,
                 Input::{
@@ -461,37 +464,6 @@ mod platform {
             focus: focus.0 as i64,
             pid: pid(window),
         })
-    }
-    unsafe fn is_enterprise_wechat(window: HWND) -> bool {
-        let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid(window)) else {
-            return false;
-        };
-        let mut text = [0u16; 4096];
-        let mut len = text.len() as u32;
-        let ok = QueryFullProcessImageNameW(
-            process,
-            PROCESS_NAME_WIN32,
-            PWSTR(text.as_mut_ptr()),
-            &mut len,
-        )
-        .is_ok();
-        let _ = CloseHandle(process);
-        if !ok {
-            return false;
-        }
-        let path = String::from_utf16_lossy(&text[..len as usize]);
-        let Some(name) = Path::new(&path).file_name() else {
-            return false;
-        };
-        let name = name.to_string_lossy();
-        // 专用宿主只对隔离 Debug 客户端生效，避免正式客户端把验收窗口当作企业微信一起跟随。
-        #[cfg(debug_assertions)]
-        if std::env::var_os("SHANYU_TEST_DATA_DIR").is_some()
-            && name.eq_ignore_ascii_case("ShanyuDockHost.exe")
-        {
-            return true;
-        }
-        name.eq_ignore_ascii_case("WXWork.exe")
     }
     unsafe fn register(settings: &Settings, keep_available: bool) -> Result<()> {
         let mut failure = None;
@@ -823,12 +795,6 @@ mod platform {
                 state.notify_error("无法安装候选外部点击监听，请检查系统权限。".into());
             }
             let mut dock = Dock::default();
-            if let Some(target) = &last_external {
-                if is_enterprise_wechat(hwnd(target.hwnd)) {
-                    dock.target = Some(hwnd(target.hwnd));
-                }
-            }
-            let mut cached_external = 0i64;
             while state.running.load(Ordering::Acquire) {
                 while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
                     if msg.message == WM_HOTKEY {
@@ -857,12 +823,10 @@ mod platform {
                                 }
                             } else {
                                 if let Some(external) = capture() {
-                                    if is_enterprise_wechat(hwnd(external.hwnd)) {
-                                        dock.target = Some(hwnd(external.hwnd));
-                                    }
                                     *state.target.lock().unwrap() = Some(external.clone());
                                     last_external = Some(external);
                                 }
+                                dock.refresh_target(GetForegroundWindow());
                                 dock.show(&state, &action);
                             }
                             continue;
@@ -934,12 +898,6 @@ mod platform {
                     *state.target.lock().unwrap() = last_external.clone();
                 }
                 if let Some(external) = capture() {
-                    if cached_external != external.hwnd {
-                        cached_external = external.hwnd;
-                        if is_enterprise_wechat(hwnd(external.hwnd)) {
-                            dock.target = Some(hwnd(external.hwnd));
-                        }
-                    }
                     last_external = Some(external);
                 }
                 was_owned = owned;
@@ -950,6 +908,7 @@ mod platform {
                         .unwrap()
                         .update(hwnd(windows.2), foreground);
                 }
+                dock.refresh_target(foreground);
                 dock.update(&state, foreground);
                 dock.update_common(&state, foreground);
                 std::thread::sleep(Duration::from_millis(30));
@@ -970,6 +929,7 @@ mod platform {
     #[derive(Default)]
     struct Dock {
         target: Option<HWND>,
+        input: super::chat_input::ChatInputProbe,
         /// 闪语窗口只能延续刚才正在使用的目标，不能让独立窗口吸附到后台的旧目标。
         target_context: bool,
         original_rect: Option<RECT>,
@@ -979,6 +939,13 @@ mod platform {
         common_foreground: i64,
     }
     impl Dock {
+        /// 两处面板共用输入框结论；同进程图片／视频等窗口不能借用后台聊天关系。
+        unsafe fn refresh_target(&mut self, foreground: HWND) {
+            let extend = self.target_context
+                && (foreground.0.is_null() || pid(foreground) == std::process::id());
+            self.input.observe(foreground, extend);
+            self.target = self.input.confirmed().map(hwnd);
+        }
         /// 仅跟随可见、未最小化且当前正在使用的目标。编辑闪语时保持目标关系，切换其他程序隐藏。
         unsafe fn visible_target(&self, foreground: HWND) -> Option<HWND> {
             self.target.filter(|target| {
@@ -986,7 +953,7 @@ mod platform {
                     && IsWindowVisible(*target).as_bool()
                     && !IsIconic(*target).as_bool()
                     // 激活切换期间前台句柄可短暂为空；保留已建立的关系，避免点击侧栏时反向隐藏窗口。
-                    && (pid(foreground) == pid(*target)
+                    && (foreground == *target
                         || (self.target_context
                             && (foreground.0.is_null()
                                 || pid(foreground) == std::process::id())))
@@ -1165,7 +1132,7 @@ mod platform {
                 if !settings.dock && self.original_rect.is_some() && *mode != DisplayMode::Hidden {
                     *mode = DisplayMode::Standalone;
                 }
-                let target_active = target.is_some_and(|target| pid(foreground) == pid(target));
+                let target_active = target.is_some_and(|target| foreground == target);
                 let show = mode.update(settings.dock, target.is_some(), target_active);
                 (show, *mode)
             };

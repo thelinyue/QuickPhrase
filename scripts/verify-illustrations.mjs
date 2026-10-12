@@ -57,6 +57,9 @@ try {
     catch (error) { if (i >= 30 || !String(error).includes('服务尚未启动')) throw error; await delay(100); }
   }
   await dismiss(page);
+  // 隔离验收显式准备分类，不依赖产品自动初始化。
+  const phraseRoot = await invoke('save_category', { category: { id: '', name: '常用', kind: 'phrase', parentId: null, position: 0, background: '' } });
+  const fileRoot = await invoke('save_category', { category: { id: '', name: '默认', kind: 'file', parentId: null, position: 0, background: '' } });
   await check('话术空态加载96像素插画，新增入口仍打开正确编辑窗口', async () => {
     await page.setViewportSize({ width: 330, height: 720 }); await page.locator('.empty-illustration').waitFor(); await screenshot(page, 'phrase-empty');
     assert.equal(await page.locator('.empty-illustration').evaluate(el => el.clientWidth), 96); await within(page.getByRole('button', { name: '新增话术', exact: true }));
@@ -134,10 +137,10 @@ try {
   });
   await check('话术、文件与回收站有内容时隐藏插画；普通搜索无结果保持文字提示', async () => {
     await page.setViewportSize({ width: 330, height: 720 });
-    const id = await invoke('save_phrase', { phrase: { id: '', rootId: 'common', groupId: null, title: '插画状态验证', color: '#ff5100', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '仅用于隔离界面验收' }] }] }, afterId: null });
+    const id = await invoke('save_phrase', { phrase: { id: '', rootId: phraseRoot, groupId: null, title: '插画状态验证', color: '#ff5100', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '仅用于隔离界面验收' }] }] }, afterId: null });
     await page.locator('.content-row').waitFor(); assert.equal(await page.locator('.content-list .empty-illustration').count(), 0);
     await page.getByRole('textbox', { name: '搜索话术、本地文件', exact: true }).fill('不存在的话术'); await page.getByText('没有找到匹配的内容', { exact: true }).waitFor(); assert.equal(await page.locator('.search-panel img').count(), 0); await click(page.getByRole('button', { name: '清空搜索', exact: true }));
-    const source = path.join(evidence, '文件关联验证.txt'); await fs.writeFile(source, '隔离验收文件'); await invoke('add_files', { paths: [source], categoryId: 'local-files' }); await click(page.locator('.content-tabs').getByRole('button', { name: '本地文件', exact: true })); await page.locator('.file-row').waitFor(); assert.equal(await page.locator('.content-list .empty-illustration').count(), 0);
+    const source = path.join(evidence, '文件关联验证.txt'); await fs.writeFile(source, '隔离验收文件'); await invoke('add_files', { paths: [source], categoryId: fileRoot }); await click(page.locator('.content-tabs').getByRole('button', { name: '本地文件', exact: true })); await page.locator('.file-row').waitFor(); assert.equal(await page.locator('.content-list .empty-illustration').count(), 0);
     await invoke('delete_item', { id, kind: 'phrase', recycle: true }); await recycle.locator('.recycle-list [role="option"]').waitFor(); assert.equal(await recycle.locator('.empty-illustration').count(), 0);
     for (const target of views) if (!target.isClosed()) assert.equal(await invoke('plugin:window|is_visible', {}, target), false);
   });

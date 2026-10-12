@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { MainWindow } from './App';
-import { call } from './api';
+import { call, openWindow } from './api';
 import type { Library, Phrase, SearchHit } from './types';
 
 const callbacks = vi.hoisted(() => new Map<string, (event: { payload: unknown }) => void>());
@@ -9,6 +9,7 @@ vi.mock('./api', () => ({ call: vi.fn(), closeWindow: vi.fn(), openWindow: vi.fn
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async (name: string, callback: (event: {payload: unknown}) => void) => { callbacks.set(name, callback); return () => callbacks.delete(name); }) }));
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
+  HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.open = true; });
   vi.mocked(call).mockImplementation(async name => name === 'get_target' ? { hwnd: 1, focus: 2, pid: 3 } : name === 'deliver_content' ? { status: 'submitted', completedSegments: 1, completedBlocks: 1, error: null } : name === 'search_content' ? [] : null);
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); callbacks.clear(); });
@@ -20,6 +21,43 @@ const library: Library = {
 };
 const mapping = () => vi.mocked(call).mock.calls.filter(([name]) => name === 'sync_sequence_map').at(-1)?.[1];
 const view = () => render(<MainWindow library={library} refresh={vi.fn(async () => {})} />);
+describe('用户自行创建分类与空库', () => {
+  it('空库只引导创建一级分类，话术和文件均不会打开无归属的编辑器', async () => {
+    render(<MainWindow library={{ ...library, categories: [], phrases: [], files: [] }} refresh={vi.fn(async () => {})} />);
+    expect(screen.getByText('还没有一级分类')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '新增话术' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '主菜单' }));
+    expect((screen.getByRole('menuitem', { name: '新增话术' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('menuitem', { name: '新增二级分类' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('menuitem', { name: '新增一级分类' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '分类名称' }), { target: { value: '自己创建' } });
+    fireEvent.submit(document.querySelector('dialog form')!);
+    await waitFor(() => expect(call).toHaveBeenCalledWith('save_category', { category: { id: '', name: '自己创建', kind: 'phrase', parentId: null, position: 0 } }));
+    await waitFor(() => expect(document.querySelector('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: '本地文件' }));
+    expect(screen.getByText('还没有一级分类')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '新增关联文件' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '主菜单' }));
+    expect((screen.getByRole('menuitem', { name: '新增关联文件' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('menuitem', { name: '新增一级分类' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '分类名称' }), { target: { value: '我的文件' } });
+    fireEvent.submit(document.querySelector('dialog form')!);
+    await waitFor(() => expect(call).toHaveBeenCalledWith('save_category', { category: { id: '', name: '我的文件', kind: 'file', parentId: null, position: 0 } }));
+    expect(openWindow).not.toHaveBeenCalled();
+  });
+  it('最后一个一级分类可删除，保留话术删除仍需要其他目标', () => {
+    render(<MainWindow library={{ ...library, categories: library.categories.filter(c => c.id !== 'other') }} refresh={vi.fn(async () => {})} />);
+    fireEvent.click(screen.getByRole('button', { name: '一级分类菜单' }));
+    expect((screen.getByRole('menuitem', { name: '删除' }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除' }));
+    expect(openWindow).toHaveBeenCalledWith('delete-confirm', 'common', '', 'category');
+    fireEvent.click(screen.getByRole('button', { name: '主菜单' }));
+    expect((screen.getByRole('menuitem', { name: '删除一级分类但保留话术' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '本地文件' }));
+    fireEvent.contextMenu(screen.getByRole('button', { name: '文件' }));
+    expect((screen.getByRole('menuitem', { name: '删除' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
 describe('主窗口实际编号、搜索映射与列表导航', () => {
   it('折叠后连续编号，切换分类重建映射，文件槽位为空', async () => {
     const rendered = view(); await waitFor(() => expect(mapping()).toEqual({ ids: ['A','B','C'], loading: false }));

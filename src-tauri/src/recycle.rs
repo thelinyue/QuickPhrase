@@ -475,7 +475,7 @@ mod tests {
     #[test]
     fn phrase_recycling_survives_reopen_and_restores_media_and_current_category() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let group = category(&store, "同名", Some("common"));
         let image = store.dir.join("images/测试.png");
         image::RgbaImage::new(1, 1).save(&image).unwrap();
@@ -532,7 +532,7 @@ mod tests {
     #[test]
     fn separately_recycled_phrase_and_category_restore_shared_ids_without_merging_names() {
         let dir = tempfile::tempdir().unwrap();
-        let mut s = Store::open(dir.path()).unwrap();
+        let mut s = crate::store::test_store(dir.path()).unwrap();
         let root = category(&s, "重复", None);
         let other = category(&s, "重复", None);
         let a = category(&s, "分组", Some(&root));
@@ -570,7 +570,7 @@ mod tests {
     #[test]
     fn restoring_after_group_move_preserves_active_group_and_reuses_recreated_context() {
         let dir = tempfile::tempdir().unwrap();
-        let mut s = Store::open(dir.path()).unwrap();
+        let mut s = crate::store::test_store(dir.path()).unwrap();
         let root = category(&s, "原分类", None);
         let target = category(&s, "移动目标", None);
         let group = category(&s, "通用", Some(&root));
@@ -607,7 +607,7 @@ mod tests {
     #[test]
     fn restore_conflicts_roll_back_all_changes_and_explicitly_omit_shortcuts() {
         let dir = tempfile::tempdir().unwrap();
-        let mut s = Store::open(dir.path()).unwrap();
+        let mut s = crate::store::test_store(dir.path()).unwrap();
         let root = category(&s, "待恢复", None);
         let mut original = phrase(&root, None);
         original.shortcut = "Ctrl+Alt+1".into();
@@ -636,7 +636,7 @@ mod tests {
     #[test]
     fn delete_transaction_failure_and_permanent_removal_never_touch_source_files() {
         let dir = tempfile::tempdir().unwrap();
-        let mut s = Store::open(dir.path()).unwrap();
+        let mut s = crate::store::test_store(dir.path()).unwrap();
         let id = s.save_phrase(phrase("common", None), None).unwrap();
         s.conn.execute_batch("CREATE TRIGGER reject_delete BEFORE DELETE ON phrases BEGIN SELECT RAISE(ABORT,'模拟失败'); END;").unwrap();
         assert!(s.delete_item(&id, "phrase", true).is_err());

@@ -24,6 +24,7 @@ public static class ShanyuHoverDockHost {
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint command);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint process);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr h);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point p);
     [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
@@ -55,6 +56,11 @@ public static class ShanyuHoverDockHost {
         Application.EnableVisualStyles();
         var form = new Form { Text = "吸附隔离验收宿主", StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(700, 120, 600, 540), ShowInTaskbar = false };
         form.Controls.Add(new Label { Text = "仅验证窗口跟随、边缘可见性与正文悬停", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter });
+        // 使用真实 UI Automation 元数据区分消息编辑器与搜索框，不绕过产品的输入框检测。
+        var input = new ShanyuChatInputBox { Name = "ShanyuChatInput", Multiline = true, Dock = DockStyle.Bottom, Height = 100 };
+        var search = new ShanyuChatInputBox { Name = "ShanyuSearchInput", Dock = DockStyle.Top, Visible = false };
+        form.Controls.Add(input); form.Controls.Add(search);
+        Form viewer = null, secondChat = null;
         var timer = new Timer { Interval = 30 }; long nonce = 0;
         timer.Tick += delegate {
             Dictionary<string, object> command = null;
@@ -63,10 +69,34 @@ public static class ShanyuHoverDockHost {
                 nonce = Number(command, "nonce", 0); var action = (string)command["command"]; var handle = new IntPtr(Number(command, "handle", form.Handle.ToInt64()));
                 if (action == "move") SetWindowPos(handle, IntPtr.Zero, (int)Number(command, "x", 0), (int)Number(command, "y", 0), (int)Number(command, "width", 330), (int)Number(command, "height", 550), 0x0014);
                 if (action == "focus") SetForegroundWindow(handle);
+                if (action == "focus-list") { form.ActiveControl = null; SetFocus(form.Handle); }
                 if (action == "minimize") ShowWindow(handle, 6);
                 if (action == "restore") ShowWindow(handle, 4);
                 if (action == "raise") SetWindowPos(handle, new IntPtr(-1), 0, 0, 0, 0, 0x0013);
                 if (action == "unpin") SetWindowPos(handle, new IntPtr(-2), 0, 0, 0, 0, 0x0013);
+                if (action == "page") {
+                    var page = (string)command["page"];
+                    input.Visible = page != "none" && page != "search" && page != "hidden";
+                    input.Enabled = page != "disabled"; input.ReadOnly = page == "readonly"; input.UseSystemPasswordChar = page == "password";
+                    input.ValuePatternAvailable = page != "unsupported";
+                    search.Visible = page == "search";
+                }
+                if (action == "viewer") {
+                    if (viewer == null || viewer.IsDisposed) {
+                        viewer = new Form { Text = "图片", Bounds = new Rectangle(180, 150, 700, 500), StartPosition = FormStartPosition.Manual, ShowInTaskbar = false };
+                        viewer.Controls.Add(new Label { Text = "同进程图片查看页面：没有消息输入框", Dock = DockStyle.Fill });
+                        viewer.Show(form);
+                    }
+                    SetForegroundWindow(viewer.Handle);
+                }
+                if (action == "second-chat") {
+                    if (secondChat == null || secondChat.IsDisposed) {
+                        secondChat = new Form { Text = "独立聊天", Bounds = new Rectangle(200, 100, 620, 500), StartPosition = FormStartPosition.Manual, ShowInTaskbar = false };
+                        secondChat.Controls.Add(new ShanyuChatInputBox { Name = "ShanyuChatInput", Multiline = true, Dock = DockStyle.Bottom, Height = 100 });
+                        secondChat.Show();
+                    }
+                    SetForegroundWindow(secondChat.Handle);
+                }
                 if (action == "pointer" || action == "click") {
                     lastPointer = new Point { x = (int)Number(command, "x", 0), y = (int)Number(command, "y", 0) }; SetCursorPos(lastPointer.x, lastPointer.y); movedPointer = true;
                     // 真实鼠标点击不临时修改被点窗口的置顶属性，避免验收本身改变待验证的层级。
@@ -75,6 +105,8 @@ public static class ShanyuHoverDockHost {
                 if (action == "close") { form.Close(); return; }
             }
             var windows = new List<object> { Inspect(form.Handle) };
+            if (viewer != null && !viewer.IsDisposed) windows.Add(Inspect(viewer.Handle));
+            if (secondChat != null && !secondChat.IsDisposed) windows.Add(Inspect(secondChat.Handle));
             if (command != null && command.ContainsKey("handles")) foreach (var value in (System.Collections.IEnumerable)command["handles"]) windows.Add(Inspect(new IntPtr(Convert.ToInt64(value))));
             Point cursor; GetCursorPos(out cursor);
             var foreground = GetForegroundWindow(); uint foregroundPid; GetWindowThreadProcessId(foreground, out foregroundPid);
@@ -93,9 +125,10 @@ public static class ShanyuHoverDockHost {
             }
             // 只读实际系统任务栏的范围与层级，验证遮挡关系；不移动、置顶或激活任务栏。
             var taskbar = FindWindow("Shell_TrayWnd", null);
-            File.WriteAllText(args[0], json.Serialize(new Dictionary<string, object> { {"nonce", nonce}, {"hwnd", form.Handle.ToInt64()}, {"pid", System.Diagnostics.Process.GetCurrentProcess().Id}, {"foreground", foreground.ToInt64()}, {"foregroundPid", foregroundPid}, {"cursor", cursor}, {"windowAtCursor", GetAncestor(WindowFromPoint(cursor), 2).ToInt64()}, {"probedWindow", GetAncestor(WindowFromPoint(probe), 2).ToInt64()}, {"targetProbes", targetProbes}, {"windows", windows}, {"taskbar", Inspect(taskbar)} }), new System.Text.UTF8Encoding(false));
+            File.WriteAllText(args[0], json.Serialize(new Dictionary<string, object> { {"nonce", nonce}, {"hwnd", form.Handle.ToInt64()}, {"inputFocused", input.Focused}, {"viewer", viewer == null || viewer.IsDisposed ? 0 : viewer.Handle.ToInt64()}, {"secondChat", secondChat == null || secondChat.IsDisposed ? 0 : secondChat.Handle.ToInt64()}, {"pid", System.Diagnostics.Process.GetCurrentProcess().Id}, {"foreground", foreground.ToInt64()}, {"foregroundPid", foregroundPid}, {"cursor", cursor}, {"windowAtCursor", GetAncestor(WindowFromPoint(cursor), 2).ToInt64()}, {"probedWindow", GetAncestor(WindowFromPoint(probe), 2).ToInt64()}, {"targetProbes", targetProbes}, {"windows", windows}, {"taskbar", Inspect(taskbar)} }), new System.Text.UTF8Encoding(false));
         };
         form.FormClosed += delegate {
+            if (viewer != null) viewer.Dispose(); if (secondChat != null) secondChat.Dispose();
             timer.Stop(); Point cursor; GetCursorPos(out cursor);
             if (movedPointer && cursor.x == lastPointer.x && cursor.y == lastPointer.y) SetCursorPos(originalCursor.x, originalCursor.y);
             if (GetForegroundWindow() == form.Handle) SetForegroundWindow(originalForeground);

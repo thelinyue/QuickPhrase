@@ -79,7 +79,9 @@ try {
   assert.ok(browser); context = browser.contexts()[0]; context.setDefaultTimeout(8000);
   page = context.pages().find(p => !new URL(p.url()).hash); await page.locator('.main-window').waitFor(); await hook(page); views.add(page);
   const initial = await invoke('get_library'); assert.equal(initial.dataDir, path.join(evidence, 'data'));
-  const fileCategoryName = initial.categories.find(c => c.id === 'local-files').name;
+  assert.deepEqual(initial.categories, []);
+  const fileCategoryName = '默认';
+  const fileRoot = await category(fileCategoryName, 'file');
   for (let i = 0; ; i++) {
     try { await invoke('save_settings', { settings: { ...initial.settings, dock: false, dockCommon: false, pinned: false, customHotkeys: false, searchHotkey: '8', windowHotkey: '9', commonHotkey: '0' } }); break; }
     catch (error) { if (i >= 30 || !String(error).includes('服务尚未启动')) throw error; await delay(100); }
@@ -224,7 +226,7 @@ try {
     await searchRecycle(recycle, '分页10'); if (!(await recycleIds(recycle)).length) await searchRecycle(recycle, '分页9');
     await click(recycle.getByRole('button', { name: '清空回收站', exact: true })); assert.ok((await recycle.locator('dialog').textContent()).includes('搜索结果以外')); await form(recycle); assert.equal((await invoke('get_recycle_bin')).length, 0);
   });
-  await click(page.getByRole('button', { name: '本地文件', exact: true })); await invoke('add_files', { categoryId: 'local-files', paths: sourceFiles });
+  await click(page.getByRole('button', { name: '本地文件', exact: true })); await invoke('add_files', { categoryId: fileRoot, paths: sourceFiles });
   const targetCategory = await category('目标文件', 'file'); let files = (await invoke('get_library')).files; const fileIds = files.map(f => f.id);
   await check('本地文件和分类菜单完整，显示名修改保留源文件', async () => {
     await right(page.locator('.category-tabs button').first());
@@ -248,7 +250,7 @@ try {
     await right(page.locator('.category-tabs button').first()); await menu('快速排序'); let sorting = await view('category-sort', '.common-sort'); await moveFirst(sorting); await finish(sorting, '取消');
     assert.deepEqual((await invoke('get_library')).categories.filter(c => c.kind === 'file').map(c => c.id), before);
     await right(page.locator('.category-tabs button').first()); await menu('快速排序'); sorting = await view('category-sort', '.common-sort'); await moveFirst(sorting); await finish(sorting);
-    const lib = await invoke('get_library'); assert.deepEqual(lib.categories.filter(c => c.kind === 'file').map(c => c.id), [before[1], before[0]]); assert.ok(lib.files.every(f => f.categoryId === 'local-files'));
+    const lib = await invoke('get_library'); assert.deepEqual(lib.categories.filter(c => c.kind === 'file').map(c => c.id), [before[1], before[0]]); assert.ok(lib.files.every(f => f.categoryId === fileRoot));
   });
   await check('文件新增窗口批量关联，取消不写库；批量操作说明可正常打开', async () => {
     const added = ['新增 E.txt', '新增 F.txt'].map(name => path.join(evidence, name)); for (const file of added) await fs.writeFile(file, '批量新增');

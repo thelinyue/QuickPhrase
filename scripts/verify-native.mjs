@@ -134,7 +134,10 @@ try {
     if (window?.visible) mainHandle = String(window.handle);
     return window?.visible;
   }, '主窗口启动完成');
-  const phrase = { id: '', rootId: 'common', groupId: null, title: '', color: '#ff5100', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '文字' }] }] };
+  // 隔离验收显式准备分类，不依赖产品自动初始化。
+  const phraseRoot = await invoke('save_category', { category: { id: '', name: '常用', kind: 'phrase', parentId: null, position: 0, background: '' } });
+  const fileRoot = await invoke('save_category', { category: { id: '', name: '默认', kind: 'file', parentId: null, position: 0, background: '' } });
+  const phrase = { id: '', rootId: phraseRoot, groupId: null, title: '', color: '#ff5100', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '文字' }] }] };
   const savePhrase = changes => invoke('save_phrase', { phrase: { ...phrase, ...changes }, afterId: null });
   const a = await savePhrase({ title: '选中项 A', segments: [{ blocks: [{ kind: 'text', text: '这是 A' }] }] });
   const b = await savePhrase({ title: '发送项 B', segments: [{ blocks: [{ kind: 'text', text: '这是 B' }] }] });
@@ -267,16 +270,16 @@ try {
     assert.equal(report.status, 'interrupted'); assert.equal(report.completedSegments, 1);
   });
   await test('文件库原生图标、双击文件、失效保留和重新关联', async () => {
-    await invoke('add_files', { categoryId: 'local-files', paths: [filePath] }); const linked = (await invoke('get_library')).files[0];
+    await invoke('add_files', { categoryId: fileRoot, paths: [filePath] }); const linked = (await invoke('get_library')).files[0];
     await page.getByRole('button', { name: '本地文件', exact: true }).click(); await row(linked.id).locator('img').waitFor();
     await poll(async () => row(linked.id).locator('img').evaluate(img => img.naturalWidth > 0), '文件系统图标');
     await row(linked.id).click(); await page.screenshot({ path: path.join(root, 'files.png') });
     await prepare(); await row(linked.id).locator('.row-title').dblclick(); await poll(async () => (await receipt()).events.some(e => e.kind === 'paste-files'), '文件粘贴'); assert.equal((await sent()).length, 0);
     await fs.rename(filePath, `${filePath}.moved`); assert.equal((await invoke('get_library')).files[0].missing, true);
     const report = await deliver(linked.id, 'insert', await prepare(), 'file'); assert.equal(report.status, 'failed'); assert.match(report.error, /失效/);
-    await invoke('relink_file', { id: linked.id, path: `${filePath}.moved`, categoryId: 'local-files' }); assert.equal((await invoke('get_library')).files[0].missing, false);
+    await invoke('relink_file', { id: linked.id, path: `${filePath}.moved`, categoryId: fileRoot }); assert.equal((await invoke('get_library')).files[0].missing, false);
     await invoke('delete_item', { id: linked.id, kind: 'file' }); await fs.access(`${filePath}.moved`); await fs.rename(`${filePath}.moved`, filePath);
-    await invoke('add_files', { categoryId: 'local-files', paths: [filePath] }); await page.getByRole('button', { name: '话术', exact: true }).click();
+    await invoke('add_files', { categoryId: fileRoot, paths: [filePath] }); await page.getByRole('button', { name: '话术', exact: true }).click();
   });
   await test('搜索附件名高亮、上下选择、Enter 插入和 Esc 关闭', async () => {
     await prepare(); const search = page.getByRole('textbox', { name: '搜索话术、本地文件' }); await search.fill('发送验收');

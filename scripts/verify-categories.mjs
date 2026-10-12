@@ -89,21 +89,49 @@ try {
   }
   const top = page.getByRole('button', { name: '一级分类菜单', exact: true });
   const primaryLabels = ['新增话术', '新增二级分类', '新增同级分类', '重命名', '删除', '快速排序一级分类', '复制到', '移动到', '导出该一级分类的话术', '设置一级分类背景色', '设置一级分类区域高度'];
-  await check('仅剩一个一级分类时正确禁用操作，菜单方向键跳过禁用项', async () => {
+  await check('新库没有预设分类，空态可创建首个分类，最后一个分类仍可删除', async () => {
+    assert.deepEqual(initial.categories, []);
+    await page.getByText('还没有一级分类', { exact: true }).waitFor();
+    await page.screenshot({ path: path.join(evidence, 'phrase-no-categories.png') });
+    await click(page.locator('.empty-state button'));
+    await setInput(page, 'dialog input[name=name]', '首个分类验证'); await submit();
+    const first = (await invoke('get_library')).categories[0];
+    const items = await openMenu(top); assert.equal(items.find(i => i.text === '删除').enabled, true);
+    await page.keyboard.press('Escape');
+    await invoke('delete_category', { id: first.id });
+    assert.deepEqual((await invoke('get_library')).categories, []);
+    await page.getByText('还没有一级分类', { exact: true }).waitFor();
+    await click(page.getByRole('button', { name: '本地文件', exact: true }));
+    await page.getByText('还没有一级分类', { exact: true }).waitFor();
+    await page.screenshot({ path: path.join(evidence, 'files-no-categories.png') });
+    await click(page.locator('.empty-state button'));
+    await setInput(page, 'dialog input[name=name]', '首个文件分类验证'); await submit();
+    assert.equal((await invoke('get_library')).categories[0].kind, 'file');
+    await page.getByRole('button', { name: '首个文件分类验证', exact: true }).evaluate(el => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })));
+    await click(page.getByRole('menuitem', { name: '删除', exact: true }));
+    await page.getByText('还没有一级分类', { exact: true }).waitFor();
+    assert.deepEqual((await invoke('get_library')).categories, []);
+    await click(page.getByRole('button', { name: '话术', exact: true }));
+  });
+  // 后续业务验收显式创建夹具，产品空库不生成这些分类。
+  const phraseRoot = await invoke('save_category', { category: { id: '', name: '常用', kind: 'phrase', parentId: null, position: 0, background: '' } });
+  await invoke('save_category', { category: { id: '', name: '默认', kind: 'file', parentId: null, position: 0, background: '' } });
+  await page.getByRole('button', { name: '常用', exact: true }).waitFor();
+  await check('仅剩一个一级分类时允许删除，排序和迁移禁用，菜单方向键跳过禁用项', async () => {
     const menu = await openMenu(top); assert.deepEqual(menu.map(i => i.text), primaryLabels);
-    for (const label of ['删除', '快速排序一级分类', '复制到', '移动到']) assert.equal(menu.find(i => i.text === label).enabled, false);
+    for (const label of ['快速排序一级分类', '复制到', '移动到']) assert.equal(menu.find(i => i.text === label).enabled, false);
     await page.keyboard.press('ArrowDown'); assert.equal(await page.evaluate(() => document.activeElement.textContent), '新增话术');
     await page.keyboard.press('End'); assert.equal(await page.evaluate(() => document.activeElement.textContent), '设置一级分类区域高度');
     await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
-    assert.equal(await page.evaluate(() => document.activeElement.textContent), '重命名');
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), '删除');
     await page.keyboard.press('Escape'); await page.locator('.context-menu').waitFor({ state: 'detached' });
   });
   const category = (name, parentId = null) => invoke('save_category', { category: { id: '', name, kind: 'phrase', parentId, position: 0, background: '' } });
   const target = await category('目标分类'); const second = await category('另一分类');
-  const pro = await category('PRO', 'common'); const other = await category('通用', 'common');
+  const pro = await category('PRO', phraseRoot); const other = await category('通用', phraseRoot);
   const merged = await category('pro', target);
   const phrase = (title, rootId, groupId, shortcut = '') => invoke('save_phrase', { phrase: { id: '', title, rootId, groupId, shortcut, position: 0, color: '#ff5100', background: '', segments: [{ blocks: [{ kind: 'text', text: title + '正文' }] }] } });
-  const original = await phrase('示例话术', 'common', pro, 'Ctrl+Alt+1'); await phrase('未分组话术', 'common', null);
+  const original = await phrase('示例话术', phraseRoot, pro, 'Ctrl+Alt+1'); await phrase('未分组话术', phraseRoot, null);
   await invoke('save_common_phrase', { phrase: { id: '', text: '谢谢', position: 0 } });
   await page.getByRole('button', { name: '常用', exact: true }).waitFor();
   await check('吸附磁铁开口朝左，保持按钮尺寸', async () => {
@@ -118,7 +146,7 @@ try {
     await action('设置一级分类背景色');
     for (let i = 0; i < 30 && !settings; i++) { settings = context.pages().find(p => p.url().includes('#settings')); if (!settings) await delay(100); }
     assert.ok(settings); await hook(settings); await settings.locator('.interface-settings').waitFor();
-    assert.equal(await settings.getByLabel('背景色所属分类', { exact: true }).inputValue(), 'common'); assert.equal(await page.locator('dialog').count(), 0);
+    assert.equal(await settings.getByLabel('背景色所属分类', { exact: true }).inputValue(), phraseRoot); assert.equal(await page.locator('dialog').count(), 0);
     await click(settings.getByRole('button', { name: '设置 常用 背景色', exact: true }));
     assert.equal(await settings.getByRole('group', { name: '分类背景色色板' }).getByRole('button').count(), 12);
     await settings.screenshot({ path: path.join(evidence, 'category-color-settings.png') });
@@ -127,7 +155,7 @@ try {
     await click(settings.getByRole('button', { name: '设置 常用 背景色', exact: true }));
     await click(settings.getByRole('button', { name: '颜色 #84c394', exact: true }));
     await page.waitForFunction(() => document.querySelector('.category-tabs .active').style.backgroundColor === 'rgb(132, 195, 148)');
-    const lib = await invoke('get_library'); assert.equal(lib.categories.find(c => c.id === 'common').background, '#84c394'); assert.equal(lib.categories.find(c => c.id === target).background, '');
+    const lib = await invoke('get_library'); assert.equal(lib.categories.find(c => c.id === phraseRoot).background, '#84c394'); assert.equal(lib.categories.find(c => c.id === target).background, '');
   });
   await check('分类栏高度保存，标签换行且正文区域仍可用', async () => {
     await openMenu(top); await action('设置一级分类区域高度'); await setInput(page, 'dialog input[name="height"]', '87'); await submit();
@@ -180,7 +208,7 @@ try {
     await openMenu(page.getByRole('button', { name: '常用', exact: true }), true);
     await click(page.getByRole('button', { name: '目标分类', exact: true })); await action('设置一级分类背景色');
     await settings.locator('.interface-settings').waitFor();
-    await settings.waitForFunction(() => document.querySelector('select[aria-label="背景色所属分类"]').value === 'common');
+    await settings.waitForFunction(id => document.querySelector('select[aria-label="背景色所属分类"]').value === id, phraseRoot);
     assert.equal(await page.locator('.category-tabs .active').textContent(), '目标分类'); assert.equal(context.pages().filter(p => p.url().includes('#settings')).length, 1);
     await click(page.getByRole('button', { name: '常用', exact: true }));
   });
@@ -194,7 +222,7 @@ try {
     let editor;
     for (let i = 0; i < 30 && !editor; i++) { editor = context.pages().find(p => p.url().includes('#editor')); if (!editor) await delay(100); }
     assert.ok(editor); await editor.locator('.editor-form').waitFor(); await hook(editor);
-    assert.equal(await editor.locator('.editor-categories select').nth(0).inputValue(), 'common');
+    assert.equal(await editor.locator('.editor-categories select').nth(0).inputValue(), phraseRoot);
     assert.equal(await editor.locator('.editor-categories select').nth(1).inputValue(), pro);
     await editor.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|close', {})).catch(error => { if (!String(error).includes('has been closed')) throw error; });
   });
@@ -203,7 +231,7 @@ try {
     await page.locator('dialog select[name="target"]').selectOption(target); await submit();
     const lib = await invoke('get_library'); const copied = lib.phrases.find(p => p.rootId === target && p.title === '示例话术');
     assert.ok(copied); assert.equal(copied.groupId, merged); assert.equal(copied.shortcut, ''); assert.notEqual(copied.id, original);
-    assert.ok(lib.phrases.some(p => p.id === original && p.rootId === 'common'));
+    assert.ok(lib.phrases.some(p => p.id === original && p.rootId === phraseRoot));
   });
   await check('一级与二级快速排序共用多选排序，确认持久化，取消不保存', async () => {
     await openMenu(top); await action('快速排序一级分类');
@@ -220,7 +248,7 @@ try {
     assert.ok(sort); await hook(sort); await sort.locator('.common-sort-list').waitFor();
     assert.equal(await sort.getByRole('listbox', { name: '分类排序列表' }).getByRole('option').count(), 2);
     await click(sort.getByRole('button', { name: '取消', exact: true }));
-    assert.deepEqual((await invoke('get_library')).categories.filter(c => c.parentId === 'common').map(c => c.id), [pro, other]);
+    assert.deepEqual((await invoke('get_library')).categories.filter(c => c.parentId === phraseRoot).map(c => c.id), [pro, other]);
   });
   await check('分类导出菜单只导出当前分类及其分组', async () => {
     const output = path.join(evidence, '分类导出.zip'); await page.evaluate(output => { window.__categoryQA.savePath = output; }, output);
@@ -260,7 +288,7 @@ try {
   assert.ok(settings); await hook(settings); await settings.locator('.interface-settings').waitFor();
   await check('参考设置页真实开关、标签色板、显示模式及高度同步主窗口', async () => {
     assert.equal(await settings.locator('.settings-sidebar nav button').count(), 8);
-    await settings.getByLabel('背景色所属分类', { exact: true }).selectOption('common');
+    await settings.getByLabel('背景色所属分类', { exact: true }).selectOption(phraseRoot);
     await click(settings.getByRole('button', { name: '设置 常用 背景色', exact: true }));
     await settings.screenshot({ path: path.join(evidence, 'settings-palette.png') });
     await click(settings.getByRole('button', { name: '颜色 #88b3fa', exact: true }));

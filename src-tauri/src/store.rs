@@ -72,12 +72,7 @@ impl Store {
         schema.execute_batch("DROP INDEX IF EXISTS category_names; CREATE INDEX IF NOT EXISTS phrase_shortcuts ON phrases(shortcut COLLATE NOCASE) WHERE shortcut<>''; PRAGMA user_version=1;")
             .map_err(db_error)?;
         schema.commit().map_err(db_error)?;
-        let count: i64 = conn
-            .query_row("SELECT count(*) FROM categories", [], |r| r.get(0))
-            .map_err(db_error)?;
-        if count == 0 {
-            conn.execute("INSERT INTO categories(id,name,kind,parent_id,position) VALUES('common','常用','phrase',NULL,0),('local-files','默认','file',NULL,0)", []).map_err(db_error)?;
-        }
+        // 分类由用户创建；新库和删除全部分类后的库都保持为空，不自动补默认分类。
         let store = Self {
             conn,
             dir: dir.to_path_buf(),
@@ -460,16 +455,6 @@ impl Store {
             .into_iter()
             .find(|c| c.id == category_id)
             .ok_or("分类已不存在。")?;
-        if c.parent_id.is_none()
-            && self
-                .categories()?
-                .iter()
-                .filter(|other| other.kind == c.kind && other.parent_id.is_none())
-                .count()
-                <= 1
-        {
-            return Err("请至少保留一个一级分类。".into());
-        }
         let mut phrases = if keep_phrases && c.kind == "phrase" {
             self.library()?
                 .phrases
@@ -1165,8 +1150,77 @@ pub struct SearchHit {
 }
 
 #[cfg(test)]
+/// 既有业务测试显式准备分类夹具，避免把测试数据当成产品首次启动的默认内容。
+pub(crate) fn test_store(dir: &Path) -> Result<Store> {
+    let store = Store::open(dir)?;
+    store.conn.execute("INSERT INTO categories(id,name,kind,parent_id,position) VALUES('common','常用','phrase',NULL,0),('local-files','默认','file',NULL,0)", []).map_err(db_error)?;
+    Ok(store)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn new_library_stays_empty_across_reopens() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let library = store.library().unwrap();
+        assert!(library.categories.is_empty());
+        assert!(library.phrases.is_empty());
+        assert!(library.files.is_empty());
+        drop(store);
+        assert!(Store::open(dir.path())
+            .unwrap()
+            .categories()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn last_categories_can_be_deleted_and_recycled_phrases_restored() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let root = category(&store, "自己创建", None);
+        let mut phrase = sample();
+        phrase.root_id = root.clone();
+        let phrase_id = store.save_phrase(phrase, None).unwrap();
+        let source = dir.path().join("源文件.txt");
+        std::fs::write(&source, "保留源文件").unwrap();
+        let files = store
+            .save_category(Category {
+                id: String::new(),
+                name: "我的文件".into(),
+                kind: "file".into(),
+                parent_id: None,
+                position: 0,
+                background: String::new(),
+            })
+            .unwrap();
+        store
+            .add_files(&files, vec![source.to_string_lossy().into()])
+            .unwrap();
+        assert!(store.delete_category(&root, true, None, false).is_err());
+        assert!(store.phrase(&phrase_id).is_ok());
+        store.delete_category(&root, false, None, true).unwrap();
+        store.delete_category(&files, false, None, false).unwrap();
+        assert!(store.categories().unwrap().is_empty());
+        assert_eq!(std::fs::read_to_string(&source).unwrap(), "保留源文件");
+        let record = store.recycle_records().unwrap()[0].id.clone();
+        drop(store);
+        let mut reopened = Store::open(dir.path()).unwrap();
+        assert!(reopened.categories().unwrap().is_empty());
+        reopened.restore_recycled(&[record], false).unwrap();
+        assert_eq!(reopened.phrase(&phrase_id).unwrap().root_id, root);
+        assert_eq!(reopened.categories().unwrap().len(), 1);
+        reopened.delete_category(&root, false, None, false).unwrap();
+        drop(reopened);
+        assert!(Store::open(dir.path())
+            .unwrap()
+            .categories()
+            .unwrap()
+            .is_empty());
+    }
+
     pub fn sample() -> Phrase {
         Phrase {
             id: String::new(),
@@ -1187,7 +1241,7 @@ mod tests {
     #[test]
     fn persistence_and_unicode_limit() {
         let dir = tempfile::tempdir().unwrap();
-        let mut s = Store::open(dir.path()).unwrap();
+        let mut s = crate::store::test_store(dir.path()).unwrap();
         assert_eq!(
             s.conn
                 .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
@@ -1206,7 +1260,7 @@ mod tests {
     #[test]
     fn bulk_delete_preserves_local_assets_and_supports_phrase_restore() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let old = store.save_phrase(sample(), None).unwrap();
         store.delete_item(&old, "phrase", true).unwrap();
         let old_record = store.recycle_records().unwrap()[0].id.clone();
@@ -1309,7 +1363,7 @@ mod tests {
     #[test]
     fn bulk_delete_rejects_stale_duplicate_missing_or_wrong_scope_ids() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let first = store.save_phrase(sample(), None).unwrap();
         let second = store.save_phrase(sample(), None).unwrap();
         for ids in [
@@ -1338,7 +1392,7 @@ mod tests {
     #[test]
     fn bulk_phrase_restore_preserves_order_for_reversed_selection() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         for title in ["第一", "第二", "第三"] {
             let mut p = sample();
             p.title = title.into();
@@ -1365,7 +1419,7 @@ mod tests {
     fn bulk_delete_failure_rolls_back_all_content_and_recycle_records() {
         for kind in ["phrase", "common"] {
             let dir = tempfile::tempdir().unwrap();
-            let mut store = Store::open(dir.path()).unwrap();
+            let mut store = crate::store::test_store(dir.path()).unwrap();
             let (ids, table) = if kind == "phrase" {
                 (
                     vec![
@@ -1418,7 +1472,7 @@ mod tests {
     #[test]
     fn common_phrases_preserve_data_and_reorder_atomically() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         store.save_phrase(sample(), None).unwrap();
         let make = |text: &str| CommonPhrase {
             id: String::new(),
@@ -1581,7 +1635,7 @@ mod tests {
     #[test]
     fn invalid_batch_rolls_back_and_copy_does_not_duplicate_shortcut() {
         let dir = tempfile::tempdir().unwrap();
-        let mut s = Store::open(dir.path()).unwrap();
+        let mut s = crate::store::test_store(dir.path()).unwrap();
         let mut p = sample();
         p.shortcut = "Ctrl+Alt+1".into();
         let id = s.save_phrase(p, None).unwrap();
@@ -1606,7 +1660,7 @@ mod tests {
     #[test]
     fn deleting_association_preserves_original_and_missing_record() {
         let dir = tempfile::tempdir().unwrap();
-        let mut s = Store::open(dir.path()).unwrap();
+        let mut s = crate::store::test_store(dir.path()).unwrap();
         let source = dir.path().join("源文件.txt");
         std::fs::write(&source, "保留").unwrap();
         s.add_files("local-files", vec![source.to_string_lossy().into()])
@@ -1622,7 +1676,7 @@ mod tests {
     #[test]
     fn search_includes_attachment_names_and_rejects_wrong_group() {
         let dir = tempfile::tempdir().unwrap();
-        let mut s = Store::open(dir.path()).unwrap();
+        let mut s = crate::store::test_store(dir.path()).unwrap();
         let mut p = sample();
         p.segments[0].blocks.push(Block::File {
             path: dir.path().join("abc.pdf").to_string_lossy().into(),
@@ -1636,7 +1690,7 @@ mod tests {
     #[test]
     fn development_shortcut_index_normalizes_and_shared_bindings_save_import_and_restore() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let mut phrase = sample();
         phrase.shortcut = "Ctrl+1".into();
         let first = store.save_phrase(phrase.clone(), None).unwrap();
@@ -1699,7 +1753,7 @@ mod tests {
     #[test]
     fn sequence_settings_validate_conflicts_without_changing_saved_configuration() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let mut phrase = sample();
         phrase.shortcut = "Ctrl+1".into();
         store.save_phrase(phrase, None).unwrap();
@@ -1732,7 +1786,7 @@ mod tests {
     #[test]
     fn equivalent_shortcuts_share_candidates_and_stale_editor_preserves_sort_order() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let mut first = sample();
         first.shortcut = "Alt+Control+1".into();
         let a = store.save_phrase(first.clone(), None).unwrap();
@@ -1771,7 +1825,7 @@ mod tests {
     #[test]
     fn sequence_prefix_conflicts_are_transactional_in_save_import_and_restore() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let mut p = sample();
         p.shortcut = "Ctrl+Y".into();
         let a = store.save_phrase(p.clone(), None).unwrap();
@@ -1843,7 +1897,7 @@ mod tests {
     #[test]
     fn duplicate_category_names_keep_independent_ids_and_contents() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let first = category(&store, "重复", None);
         let second = category(&store, "重复", None);
         let a = category(&store, "重复", Some(&first));
@@ -1891,7 +1945,7 @@ mod tests {
     #[test]
     fn old_name_index_is_removed_without_changing_existing_data() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let group = category(&store, "重复", Some("common"));
         let mut root = store
             .categories()
@@ -1943,7 +1997,7 @@ mod tests {
     #[test]
     fn category_transfer_merges_into_first_duplicate_group_in_list_order() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let target = category(&store, "常用", None);
         let a = category(&store, "PRO", Some("common"));
         let b = category(&store, "pro", Some("common"));
@@ -2003,7 +2057,7 @@ mod tests {
     #[test]
     fn backup_without_merge_preserves_duplicate_names_and_distinct_groups() {
         let dir = tempfile::tempdir().unwrap();
-        let mut source = Store::open(&dir.path().join("source")).unwrap();
+        let mut source = crate::store::test_store(&dir.path().join("source")).unwrap();
         let first = category(&source, "重复", None);
         let second = category(&source, "重复", None);
         let a = category(&source, "重复", Some(&first));
@@ -2020,7 +2074,7 @@ mod tests {
         let backup = dir.path().join("重名备份.zip");
         crate::backup::export(&source, &backup, "backup", None).unwrap();
         let pending = crate::backup::preview(&backup).unwrap();
-        let mut restored = Store::open(&dir.path().join("restored")).unwrap();
+        let mut restored = crate::store::test_store(&dir.path().join("restored")).unwrap();
         crate::backup::apply(&mut restored, &pending, false, false).unwrap();
         let library = restored.library().unwrap();
         assert_eq!(
@@ -2069,14 +2123,14 @@ mod tests {
     #[test]
     fn merged_import_uses_list_order_and_duplicate_ids_still_roll_back() {
         let dir = tempfile::tempdir().unwrap();
-        let mut source = Store::open(&dir.path().join("source")).unwrap();
+        let mut source = crate::store::test_store(&dir.path().join("source")).unwrap();
         let source_root = category(&source, "目标", None);
         let source_group = category(&source, "PRO", Some(&source_root));
         let mut p = sample();
         p.root_id = source_root;
         p.group_id = Some(source_group);
         source.save_phrase(p, None).unwrap();
-        let mut target = Store::open(&dir.path().join("target")).unwrap();
+        let mut target = crate::store::test_store(&dir.path().join("target")).unwrap();
         let old_first = category(&target, "目标", None);
         let first = category(&target, "目标", None);
         let old_group = category(&target, "pro", Some(&first));
@@ -2113,7 +2167,7 @@ mod tests {
     #[test]
     fn category_copy_and_move_merge_groups_preserve_media_and_shortcuts() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let target = category(&store, "目标", None);
         let group = category(&store, "PRO", Some("common"));
         let merged = category(&store, "pro", Some(&target));
@@ -2209,7 +2263,7 @@ mod tests {
     #[test]
     fn category_transfer_rolls_back_partial_group_and_phrase_updates() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let target = category(&store, "目标", None);
         let group = category(&store, "分组", Some("common"));
         for title in ["先处理", "故障"] {
@@ -2249,7 +2303,7 @@ mod tests {
     #[test]
     fn deleting_categories_can_retain_phrases_without_cascade_loss() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let target = category(&store, "目标", None);
         let group = category(&store, "分组", Some("common"));
         let root_phrase = store.save_phrase(sample(), None).unwrap();
@@ -2283,12 +2337,13 @@ mod tests {
         assert_eq!(store.phrase(&grouped).unwrap().root_id, target);
         assert_eq!(store.phrase(&grouped).unwrap().shortcut, "Ctrl+Alt+2");
         assert_eq!(store.library().unwrap().phrases.len(), 2);
-        assert!(store.delete_category(&target, false, None, false).is_err());
+        store.delete_category(&target, false, None, false).unwrap();
+        assert!(store.library().unwrap().phrases.is_empty());
     }
     #[test]
     fn category_sort_rejects_stale_or_cross_scope_lists_atomically() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let target = category(&store, "目标", None);
         let a = category(&store, "甲", Some("common"));
         let b = category(&store, "乙", Some("common"));
@@ -2328,7 +2383,7 @@ mod tests {
     #[test]
     fn moving_one_group_keeps_siblings_and_reparents_original_group() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let target = category(&store, "目标", None);
         let group = category(&store, "迁移分组", Some("common"));
         let sibling = category(&store, "保留分组", Some("common"));
@@ -2364,7 +2419,7 @@ mod tests {
     #[test]
     fn development_categories_retain_existing_data_and_reopen() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path()).unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
         let id = store.save_phrase(sample(), None).unwrap();
         let before = serde_json::to_value(store.phrase(&id).unwrap()).unwrap();
         store

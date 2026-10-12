@@ -67,11 +67,14 @@ try {
   dockPage=context.pages().find(p=>p.url().includes('#common-dock'));
   for(const window of [page,dockPage])await window.evaluate(()=>{window.__shortcutQaKeys=[];for(const name of ['keydown','keyup'])document.addEventListener(name,e=>{window.__shortcutQaKeys.push({type:name,key:e.key,code:e.code,repeat:e.repeat,composing:e.isComposing,prevented:e.defaultPrevented,target:e.target.dataset.common||e.target.className});if(window.__shortcutQaKeys.length>50)window.__shortcutQaKeys.shift();});});
   candidateHandle=(await native(['-ProcessId',String(app.pid),'-Title','快捷键候选 · 闪语'])).handle;
-  const group=await invoke('save_category',{category:{id:'',name:'二级分组',kind:'phrase',parentId:'common',position:0,background:''}});
+  // 隔离验收显式准备分类，不依赖产品自动初始化。
+  const phraseRoot = await invoke('save_category', { category: { id: '', name: '常用', kind: 'phrase', parentId: null, position: 0, background: '' } });
+  const fileRoot = await invoke('save_category', { category: { id: '', name: '默认', kind: 'file', parentId: null, position: 0, background: '' } });
+  const group=await invoke('save_category',{category:{id:'',name:'二级分组',kind:'phrase',parentId:phraseRoot,position:0,background:''}});
   const otherRoot=await invoke('save_category',{category:{id:'',name:'另一个分类',kind:'phrase',parentId:null,position:0,background:''}});
-  const savePhrase=async (title,shortcut='Q+W',rootId='common',groupId=null) => invoke('save_phrase',{phrase:{id:'',title,rootId,groupId,shortcut,color:'',background:'',position:0,segments:[{blocks:[{kind:'text',text:`正文${title}`}]}]},afterId:null});
+  const savePhrase=async (title,shortcut='Q+W',rootId=phraseRoot,groupId=null) => invoke('save_phrase',{phrase:{id:'',title,rootId,groupId,shortcut,color:'',background:'',position:0,segments:[{blocks:[{kind:'text',text:`正文${title}`}]}]},afterId:null});
   const ids=[];
-  for(let i=0;i<12;i++)ids.push(await savePhrase(String(i+1),'Q+W',i<4?'common':otherRoot,i===2||i===3?group:null));
+  for(let i=0;i<12;i++)ids.push(await savePhrase(String(i+1),'Q+W',i<4?phraseRoot:otherRoot,i===2||i===3?group:null));
   const solo=await savePhrase('单候选','Ctrl+Shift+F11');await delay(250);
   const targetContext={hwnd:hostInfo.hwnd,focus:hostInfo.focus,pid:hostInfo.pid};
 
@@ -118,7 +121,7 @@ try {
     const searchBox=await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).boundingBox();await native(['-Action','focus','-Handle',String(main),'-X',String(Math.round(searchBox.x+12)),'-Y',String(Math.round(searchBox.y+12))]);
     assert.equal(await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).evaluate(e=>e===document.activeElement),true);
     await key(49,['-Ctrl']);await submitted('搜索输入：正文单候选');await record('搜索框保持焦点时序号插入原目标');
-    const attachment=path.join(root,'序号搜索文件.txt');await fs.writeFile(attachment,'隔离验收');await invoke('add_files',{categoryId:'local-files',paths:[attachment]});
+    const attachment=path.join(root,'序号搜索文件.txt');await fs.writeFile(attachment,'隔离验收');await invoke('add_files',{categoryId:fileRoot,paths:[attachment]});
     await showMain();await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).fill('序号搜索文件');await page.locator('#search-results [data-row]').waitFor();
     await control('reset',{draft:'文件占位：'});await focusHost();await key(49,['-Ctrl']);await delay(200);await submitted('文件占位：');await record('搜索文件槽位不发送话术');
     await invoke('sync_sequence_map',{ids:[ids[0]],loading:true});await key(49,['-Ctrl']);await delay(100);await submitted('文件占位：');

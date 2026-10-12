@@ -43,7 +43,7 @@ public static class ShanyuTestHost {
         form=new Form{Text="闪语通用发送验收",Width=600,Height=450,StartPosition=FormStartPosition.CenterScreen};
         var label=new Label{Text="仅用于本机文字、图片、文件与发送按键验收",Dock=DockStyle.Top,Height=32};
         // 仅在宿主内禁用输入法：普通按键回放立即形成文字，不把输入法候选误判为没有回放。
-        input=new InputBox{Multiline=true,Dock=DockStyle.Fill,Font=new Font("Microsoft YaHei UI",12),Text="已有草稿：",ImeMode=ImeMode.Disable};
+        input=new InputBox{Name="ShanyuChatInput",Multiline=true,Dock=DockStyle.Fill,Font=new Font("Microsoft YaHei UI",12),Text="已有草稿：",ImeMode=ImeMode.Disable};
         alternate=new TextBox{Dock=DockStyle.Bottom,Text="另一输入位置（用于失焦验收）",Height=32,ImeMode=ImeMode.Disable};
         form.Controls.Add(input);form.Controls.Add(alternate);form.Controls.Add(label);
         // 快捷键回放和取消验收也记录普通输入，不能只观察剪贴板粘贴事件。
@@ -74,7 +74,7 @@ public static class ShanyuTestHost {
         };
         Application.Run(form);timer.Dispose();
     }
-    sealed class InputBox:TextBox {
+    sealed class InputBox:ShanyuChatInputBox {
         protected override bool ProcessCmdKey(ref Message msg,Keys key) {
             if(key==(Keys.Control|Keys.V)) {
                 if(Clipboard.ContainsFileDropList()) {var paths=Clipboard.GetFileDropList();var values=new string[paths.Count];paths.CopyTo(values,0);Record("paste-files",values);}

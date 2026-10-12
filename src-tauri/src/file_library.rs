@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn file_management_preserves_sources_and_rolls_back_invalid_batches() {
         let dir = tempfile::tempdir().unwrap();
-        let mut s = Store::open(dir.path()).unwrap();
+        let mut s = crate::store::test_store(dir.path()).unwrap();
         let a = dir.path().join("原始 A.txt");
         let b = dir.path().join("原始 B.txt");
         std::fs::write(&a, "A").unwrap();

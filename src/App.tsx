@@ -60,7 +60,7 @@ export function App() {
 
 /** 吸附、置顶与面板开关统一保存设置；快捷键打开搜索时会先展开被隐藏的搜索栏。 */
 export function MainWindow({ library, refresh }: { library: Library; refresh: () => Promise<void> }) {
-  const [kind, setKind] = useState<'phrase' | 'file'>('phrase'); const [root, setRoot] = useState('common'); const [fileCategory, setFileCategory] = useState('local-files');
+  const [kind, setKind] = useState<'phrase' | 'file'>('phrase'); const [root, setRoot] = useState(() => library.categories.find(c => c.kind === 'phrase' && !c.parentId)?.id || ''); const [fileCategory, setFileCategory] = useState(() => library.categories.find(c => c.kind === 'file')?.id || '');
   const [selected, setSelected] = useState(''); const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]); const fileAnchor = useRef('');
   const [query, setQuery] = useState(''); const [results, setResults] = useState<SearchHit[]>([]); const [searchIndex, setSearchIndex] = useState(0); const [searching, setSearching] = useState(false);
@@ -77,6 +77,7 @@ export function MainWindow({ library, refresh }: { library: Library; refresh: ()
   const listRef = useRef<HTMLDivElement>(null);
   const enterSubmit = useEnterSubmit();
   const roots = library.categories.filter(c => c.kind === 'phrase' && !c.parentId); const fileCats = library.categories.filter(c => c.kind === 'file');
+  const hasCategory = kind === 'phrase' ? roots.some(c => c.id === root) : fileCats.some(c => c.id === fileCategory);
   useEffect(() => { setSelectedFiles([]); fileAnchor.current = ''; }, [kind, fileCategory]);
   useEffect(() => { setSelectedFiles(previous => previous.filter(id => library.files.some(f => f.id === id))); }, [library.files]);
   useEffect(() => { if (!roots.some(c => c.id === root)) setRoot(roots[0]?.id || ''); if (!fileCats.some(c => c.id === fileCategory)) setFileCategory(fileCats[0]?.id || ''); }, [library.categories]);
@@ -138,7 +139,6 @@ export function MainWindow({ library, refresh }: { library: Library; refresh: ()
   const newPhrase = (c: Category) => openWindow('editor', '', '', '', c.parentId || c.id, c.parentId ? c.id : '');
   function categoryDialog(c?: Category, parentId: string | null = null, categoryKind = kind) { setDialog({ title: c ? '重命名' : parentId ? '新增二级分类' : '新增一级分类', fields: <label>分类名称<input name="name" type="text" defaultValue={c?.name || ''} maxLength={40} required autoFocus /></label>, onSubmit: async form => { const id = await call<string>('save_category', { category: c ? { ...c, name: String(form.get('name')) } : { id: '', name: String(form.get('name')), kind: categoryKind, parentId, position: 0 } }); if (!c && !parentId) { if (categoryKind === 'phrase') setRoot(id); else setFileCategory(id); } await refresh(); } }); }
   function sortDialog(id: string, kind: string, current: number, count: number) { setDialog({ title: '排序', fields: <label>分类中的位置<input type="number" name="position" min={1} max={Math.max(1, count)} defaultValue={current} required /></label>, onSubmit: async f => { await call('sort_item', { id, kind, position: Number(f.get('position')) }); await refresh(); } }); }
-  const canDeleteCategory = (c: Category) => !!c.parentId || library.categories.filter(v => v.kind === c.kind && !v.parentId).length > 1;
   async function deleteCategory(c: Category) {
     if (c.kind === 'phrase') { await openWindow('delete-confirm', c.id, '', 'category'); return; }
     if (await confirm(`删除「${c.name}」及其中的文件关联记录？原文件会保留。`, { title: '删除分类', kind: 'warning' })) {
@@ -164,7 +164,7 @@ export function MainWindow({ library, refresh }: { library: Library; refresh: ()
     if (c.kind === 'file') { popup([
       { label: '新增分类', action: () => categoryDialog(undefined, null, 'file') },
       { label: '重命名', action: () => categoryDialog(c) },
-      { label: '删除', enabled: canDeleteCategory(c), action: () => deleteCategory(c) },
+      { label: '删除', action: () => deleteCategory(c) },
       { label: '快速排序', enabled: fileCats.length > 1, action: () => categorySort(null, 'file') },
     ], e.clientX, e.clientY); return; }
     const targets = roots.filter(v => v.id !== (c.parentId || c.id));
@@ -172,8 +172,8 @@ export function MainWindow({ library, refresh }: { library: Library; refresh: ()
       { text: '新增话术', action: () => run(() => newPhrase(c)) },
       { text: '新增同级分类', action: () => categoryDialog(undefined, c.parentId, c.kind) },
       { text: '重命名', action: () => categoryDialog(c) },
-      { text: '删除', enabled: canDeleteCategory(c), action: () => run(() => deleteCategory(c)) },
-      { text: '删除但保留话术', enabled: canDeleteCategory(c), action: () => keepCategoryPhrases(c) },
+      { text: '删除', action: () => run(() => deleteCategory(c)) },
+      { text: '删除但保留话术', action: () => keepCategoryPhrases(c) },
       { text: '复制到', enabled: targets.length > 0, action: () => transferCategory(c, true) },
       { text: '移动到', enabled: targets.length > 0, action: () => transferCategory(c, false) },
       { text: '快速排序二级分类', enabled: library.categories.filter(v => v.parentId === (c.parentId || c.id)).length > 1, action: () => run(() => categorySort(c.parentId || c.id)) },
@@ -235,7 +235,7 @@ export function MainWindow({ library, refresh }: { library: Library; refresh: ()
       { label: '新增二级分类', enabled: !!c, action: () => c && categoryDialog(undefined, c.id, 'phrase') },
       { label: '新增同级分类', action: () => categoryDialog(undefined, null, 'phrase') },
       { label: '重命名', enabled: !!c, action: () => c && categoryDialog(c) },
-      { label: '删除', enabled: !!c && canDeleteCategory(c), action: () => c && deleteCategory(c) },
+      { label: '删除', enabled: !!c, action: () => c && deleteCategory(c) },
       { label: '快速排序一级分类', enabled: roots.length > 1, action: () => categorySort(null) },
       { label: '复制到', enabled: !!c && transfer, action: () => c && transferCategory(c, true) },
       { label: '移动到', enabled: !!c && transfer, action: () => c && transferCategory(c, false) },
@@ -246,9 +246,9 @@ export function MainWindow({ library, refresh }: { library: Library; refresh: ()
   }
   const topCategoryMenu = (e: MouseEvent) => showPrimaryCategoryMenu(roots.find(v => v.id === root), e);
   function mainMenu(e: MouseEvent) { popup([
-    { label: kind === 'phrase' ? '新增话术' : '新增关联文件', action: newContent }, { label: '新增一级分类', action: () => categoryDialog() },
+    { label: kind === 'phrase' ? '新增话术' : '新增关联文件', enabled: hasCategory, action: newContent }, { label: '新增一级分类', action: () => categoryDialog() },
     // 参考一级菜单的11项不含保留删除，此既有功能保留在底部应用菜单。
-    ...(kind === 'phrase' ? [{ label: '新增二级分类', action: () => categoryDialog(undefined, root) }, { label: '删除一级分类但保留话术', enabled: roots.length > 1, action: () => { const c = roots.find(v => v.id === root); if (c) keepCategoryPhrases(c); } }] : [{ label: '刷新文件关联状态', action: refresh }]), null,
+    ...(kind === 'phrase' ? [{ label: '新增二级分类', enabled: hasCategory, action: () => categoryDialog(undefined, root) }, { label: '删除一级分类但保留话术', enabled: roots.length > 1, action: () => { const c = roots.find(v => v.id === root); if (c) keepCategoryPhrases(c); } }] : [{ label: '刷新文件关联状态', action: refresh }]), null,
     ...['常用设置', '界面设置', '吸附设置', '导入数据', '导出数据', '快捷键', '缓存管理', '关于'].map(tab => ({ label: tab, action: () => openWindow('settings', '', '', tab, kind === 'phrase' ? root : fileCategory) })), null,
     { label: '回收站', action: () => openWindow('recycle-bin') }, null,
     { label: '退出闪语', action: () => call('window_action', { action: 'exit' }) },
@@ -288,7 +288,7 @@ export function MainWindow({ library, refresh }: { library: Library; refresh: ()
     <header className="main-titlebar"><nav className="content-tabs">{(settings.filesFirst ? ['file', 'phrase'] as const : ['phrase', 'file'] as const).map(tab => <button key={tab} className={kind === tab ? 'active' : ''} onClick={() => { setKind(tab); clearSearch(); }}>{tab === 'phrase' ? '话术' : '本地文件'}</button>)}</nav><span className="titlebar-spacer" data-tauri-drag-region /><div className="titlebar-actions"><button aria-label="吸附" title="吸附" aria-pressed={settings.dock} disabled={updatingSettings} onClick={() => void changeSettings({ dock: !settings.dock })}><Icon name={settings.dock ? 'dock' : 'dock-off'} /></button><button aria-label="置顶" title="置顶" aria-pressed={settings.pinned} disabled={updatingSettings} onClick={() => void changeSettings({ pinned: !settings.pinned })}><Icon name="pin" /></button><button aria-label="最小化" title="最小化" onClick={() => run(() => call('window_action', { action: 'minimize' }))}><Icon name="minus" /></button></div></header>
     {kind === 'phrase' && <div className="scope-bar"><span className="scope-name">私人话术</span><button id="top-menu" aria-label="一级分类菜单" onClick={topCategoryMenu}><Icon name="menu" /></button></div>}
     <nav className={`category-tabs${kind === 'file' ? ' files-tabs' : ''}${(kind === 'phrase' ? settings.categoryHeight : settings.fileCategoryHeight) > 31 ? ' wrapping' : ''}`} style={{ height: kind === 'phrase' ? settings.categoryHeight : settings.fileCategoryHeight }} aria-label="一级分类">{(kind === 'phrase' ? roots : fileCats).map(c => { const background = c.background || (c.kind === 'file' ? settings.fileCategoryColor : settings.phraseCategoryColor); return <button key={c.id} title={categoryLabel(c, library.categories)} className={(kind === 'phrase' ? root : fileCategory) === c.id ? 'active' : ''} style={{ backgroundColor: background || undefined, color: background ? categoryTextColor(background) : undefined }} onClick={() => chooseCategory(c)} onContextMenu={e => categoryMenu(c, e)}>{c.name}</button>; })}<button className="add-category" aria-label="新增一级分类" onClick={() => categoryDialog()}>＋</button></nav>
-    <div className="list-area"><div ref={listRef} tabIndex={0} className="content-list" role="listbox" aria-label={kind === 'phrase' ? '话术列表' : '本地文件列表'} aria-multiselectable={kind === 'file'} onKeyDown={listKey} onContextMenu={e => { if (!(e.target as Element).closest('.content-row,.group-heading')) { e.preventDefault(); popup(kind === 'phrase' ? [{ label: '新增话术', action: newContent }, { label: '新增二级分类', action: () => categoryDialog(undefined, root, 'phrase') }] : [{ label: '刷新', action: refresh }], e.clientX, e.clientY); } }}>{content.length ? content : <div className="empty-state"><img className="empty-illustration" src={`/illustrations/${kind === 'phrase' ? 'phrase' : 'files'}-empty.png`} width="96" height="96" alt="" draggable={false} /><span>{kind === 'phrase' ? '这个分类还没有话术' : '还没有关联文件'}</span><button onClick={() => run(newContent)}>{kind === 'phrase' ? '新增话术' : '新增关联文件'}</button></div>}</div>
+    <div className="list-area"><div ref={listRef} tabIndex={0} className="content-list" role="listbox" aria-label={kind === 'phrase' ? '话术列表' : '本地文件列表'} aria-multiselectable={kind === 'file'} onKeyDown={listKey} onContextMenu={e => { if (!(e.target as Element).closest('.content-row,.group-heading')) { e.preventDefault(); popup(kind === 'phrase' ? [{ label: '新增话术', enabled: hasCategory, action: newContent }, { label: '新增二级分类', enabled: hasCategory, action: () => categoryDialog(undefined, root, 'phrase') }] : [{ label: '刷新', action: refresh }], e.clientX, e.clientY); } }}>{content.length ? content : <div className="empty-state"><img className="empty-illustration" src={`/illustrations/${kind === 'phrase' ? 'phrase' : 'files'}-empty.png`} width="96" height="96" alt="" draggable={false} /><span>{!hasCategory ? '还没有一级分类' : kind === 'phrase' ? '这个分类还没有话术' : '还没有关联文件'}</span><button onClick={() => hasCategory ? run(newContent) : categoryDialog()}>{!hasCategory ? '新增一级分类' : kind === 'phrase' ? '新增话术' : '新增关联文件'}</button></div>}</div>
       {settings.showSearch && query.trim() && <><div className="search-backdrop" onClick={clearSearch} /><section className="search-panel" aria-label="搜索结果"><header><span>搜索结果</span><button aria-label="关闭搜索" onClick={clearSearch}>×</button></header><div id="search-results">{sequenceLoading ? <div className="no-results">正在搜索…</div> : results.length ? results.map((hit, i) => row(hit.phrase, hit.file, i, true)) : <div className="no-results">没有找到匹配的内容</div>}</div></section></>}
     </div>
     {settings.showCommon && <CommonPhraseBar library={library} busy={busy} onDeliver={(id, mode, triggerKey) => void deliver(id, 'common', mode, triggerKey)} onError={setMessage} />}
