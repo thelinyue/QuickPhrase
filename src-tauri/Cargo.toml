@@ -1,6 +1,6 @@
 [package]
 name = "shanyu"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "闪语 Windows 本地话术工具"
 

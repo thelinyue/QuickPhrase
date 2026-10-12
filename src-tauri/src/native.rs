@@ -925,7 +925,8 @@ mod platform {
         }
     }
 
-    /// 企业微信识别仅出现在吸附模块。使用物理像素和目标 DPI 固定贴在外侧，不按工作区回挪或裁小。
+    /// 企业微信识别仅出现在吸附模块。位置使用物理像素，内容尺寸按各面板自身 DPI 换算。
+    /// 目标与面板可分处不同显示器；始终固定贴在外侧，不按工作区回挪或裁小。
     #[derive(Default)]
     struct Dock {
         target: Option<HWND>,
@@ -1038,9 +1039,12 @@ mod platform {
             if GetWindowRect(bar, &mut current).is_err() {
                 return;
             }
-            let height =
-                (state.common_height.load(Ordering::Acquire) * GetDpiForWindow(target) as i32 / 96)
-                    .max(1);
+            // 内容高度来自底栏 WebView 的 DIP，必须使用底栏自身 DPI，避免目标 DPI 模式不同而裁短内容。
+            // 跨屏后下一轮重新读取 DPI 和边框，沿用异步定位，不重复处理系统的 DPI 通知。
+            let height = (state.common_height.load(Ordering::Acquire)
+                * GetDpiForWindow(bar).max(96) as i32
+                / 96)
+                .max(1);
             let y = target_rect.bottom;
             let Ok(frame) = Self::frame(bar) else {
                 return;
@@ -1186,13 +1190,12 @@ mod platform {
             };
             let resizing = GetGUIThreadInfo(GetWindowThreadProcessId(main, None), &mut gui).is_ok()
                 && gui.flags.0 & GUI_INMOVESIZE.0 != 0;
-            self.width.observe(
-                m.right - m.left,
-                GetDpiForWindow(main),
-                settings.free_resize && resizing,
-            );
-            // 逻辑外框宽度按目标 DPI 换算；边框补偿不反写宽度，连续移动不会越变越窄或越变越宽。
-            let width = (self.width.physical(GetDpiForWindow(target))
+            let dpi = GetDpiForWindow(main).max(96);
+            self.width
+                .observe(m.right - m.left, dpi, settings.free_resize && resizing);
+            // 逻辑外框宽度与侧栏自身的界面缩放一致；目标窗口 DPI 可能固定，或目标与侧栏分处不同屏幕。
+            // DPI 通知完成后下一轮自动校正，边框补偿和跟随定位不反写用户宽度。
+            let width = (self.width.physical(dpi)
                 - ((m.right - m.left) - (frame.right - frame.left)))
                 .max(1);
             let bounds = super::docking::sidebar_bounds(&r, width, settings.dock_side == "left");

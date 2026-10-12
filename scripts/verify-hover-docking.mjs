@@ -8,6 +8,7 @@ import { chromium } from 'playwright';
 
 // 真实 WebView 和 Win32 窗口使用隔离数据库。宿主不访问剪贴板，发送回调仅记录身份。
 const repo = process.cwd(), evidence = path.join(repo, '.build', 'hover-docking-' + Date.now());
+const dpiTest = process.argv.includes('--dpi');
 await fs.mkdir(evidence, { recursive: true });
 const run = promisify(execFile), results = [], snapshots = [];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -51,7 +52,7 @@ async function focusHost() {
 try {
   const fixture = path.join(evidence, 'ShanyuDockHost.exe');
   await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(repo, 'tests/build-hover-dock-host.ps1'), '-OutputPath', fixture], { windowsHide: true });
-  host = spawn(fixture, [output, controls], { windowsHide: true, stdio: 'ignore' });
+  host = spawn(fixture, [output, controls, ...(dpiTest ? ['--dpi-unaware-target'] : [])], { windowsHide: true, stdio: 'ignore' });
   hostHandle = (await poll(read, '验收宿主')).hwnd;
   app = spawn(path.join(repo, 'src-tauri/target/debug/shanyu.exe'), ['--autostart'], { cwd: repo, windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_TEST_DATA_DIR: path.join(evidence, 'data'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=' + port } });
   browser = await poll(async () => { try { return await chromium.connectOverCDP('http://127.0.0.1:' + port); } catch { if (app.exitCode !== null) throw new Error('隔离客户端提前退出'); return null; } }, '实际WebView');
@@ -324,6 +325,58 @@ try {
     await invoke('save_settings', { settings });
     await delay(150); assert.equal(windowOf(await inspect(), mainHandle).topmost, false, '关闭吸附恢复非置顶');
   });
+  if (dpiTest) {
+    const monitors = (await inspect()).monitors;
+    const dpiName = '固定目标 DPI 时，100%／150% 双屏往返保持用户逻辑宽度和底栏内容高度';
+    if (monitors.length < 2) {
+      results.push({ name: dpiName, skipped: true, reason: '只有一个显示器，未执行真实跨屏 DPI 验收' });
+      console.log('跳过：' + dpiName + '（只有一个显示器）');
+    } else {
+      await check(dpiName, async () => {
+        const original = windowOf(await inspect(), hostHandle).rect, observedDpi = new Set();
+        const barPage = context.pages().find(p => p.url().includes('#common-dock'));
+        for (let i = 0; i < 6; i++) await invoke('save_common_phrase', { phrase: { id: '', text: '跨屏换行验证短语' + i, position: i + 1 } });
+        const assertSize = async (side, label) => poll(async () => {
+          const state = await inspect(), main = windowOf(state, mainHandle), bar = windowOf(state, barHandle), target = windowOf(state, hostHandle);
+          const contentHeight = await barPage.locator('.common-dock-content').evaluate(element => Math.max(28, Math.min(420, Math.ceil(element.getBoundingClientRect().height))));
+          if (!main.visible || !bar.visible || Math.abs((main.rect.right - main.rect.left) * 96 / main.dpi - 380) > 1
+            || side === 'right' && main.frame.left !== target.frame.right || side === 'left' && main.frame.right !== target.frame.left
+            || main.frame.top !== target.frame.top || main.frame.bottom !== target.frame.bottom
+            || bar.frame.left !== target.frame.left || bar.frame.right !== target.frame.right || bar.frame.top !== target.frame.bottom
+            || bar.frame.bottom - bar.frame.top !== Math.max(1, Math.floor(contentHeight * bar.dpi / 96))) return false;
+          assert.equal(target.dpi, 96, '目标保持固定 DPI，不能借用其值换算闪语尺寸');
+          assert.equal(state.foreground, hostHandle, '跨屏跟随不抢焦点');
+          assertDockOrder(state); observedDpi.add(main.dpi);
+          snapshots.push({ name: label, state, contentHeight }); return state;
+        }, label);
+        for (const side of ['right', 'left']) {
+          await invoke('save_settings', { settings }); await delay(180);
+          const main = windowOf(await inspect(), mainHandle);
+          await control('move', { handle: mainHandle, x: main.rect.left, y: main.rect.top, width: Math.round(380 * main.dpi / 96), height: main.rect.bottom - main.rect.top }); await delay(180);
+          await invoke('save_settings', { settings: { ...settings, dock: true, dockSide: side, dockCommon: true, dockSearch: true } }); await focusHost();
+          for (let round = 0; round < 10; round++) for (const [index, monitor] of monitors.entries()) {
+            const work = monitor.work, width = Math.min(600, Math.floor((work.right - work.left) / 3));
+            await control('move', { x: side === 'right' ? work.left + 40 : work.right - width - 40, y: work.top + 80, width, height: Math.min(400, work.bottom - work.top - 160) });
+            await assertSize(side, 'dpi-' + side + '-' + round + '-' + index);
+          }
+        }
+        assert.ok(observedDpi.has(96) && observedDpi.has(144), '专项要求实际覆盖 100% 和 150% 显示器');
+        // 目标留在一屏、侧栏进入相邻另一屏，验证两者不能共用目标的缩放来源。
+        const pair = monitors.flatMap(a => monitors.filter(b => a.monitor.right === b.monitor.left && Math.min(a.work.bottom, b.work.bottom) - Math.max(a.work.top, b.work.top) >= 560).map(b => [a, b]))[0];
+        if (pair) for (const side of ['right', 'left']) {
+          await invoke('save_settings', { settings: { ...settings, dock: true, dockSide: side, dockCommon: true, dockSearch: true } });
+          const boundary = pair[0].monitor.right;
+          await control('move', { x: side === 'right' ? boundary - 600 : boundary, y: Math.max(pair[0].work.top, pair[1].work.top) + 80, width: 600, height: 400 });
+          const state = await assertSize(side, 'different-monitors-' + side);
+          assert.notDeepEqual(windowOf(state, mainHandle).monitor, windowOf(state, hostHandle).monitor, '侧栏与目标实际分处不同显示器');
+        } else {
+          results.push({ name: '侧栏与目标分处不同显示器', skipped: true, reason: '未找到可容纳宿主的水平相邻显示器' });
+        }
+        await invoke('save_settings', { settings });
+        await control('move', { x: original.left, y: original.top, width: original.right - original.left, height: original.bottom - original.top });
+      });
+    }
+  }
 } catch (error) {
   console.error(error); results.push({ name: 'failure', passed: false, error: String(error) }); process.exitCode = 1;
   snapshots.push({ name: 'failure-state', native: await inspect().catch(() => lastNative), requests: await page?.evaluate(() => window.__hoverQA).catch(() => null), events: await page?.evaluate(() => window.__hoverEvents).catch(() => null), previewText: await preview?.locator('body').innerText().catch(() => null) });
@@ -333,6 +386,7 @@ try {
   if (host && host.exitCode === null) await control('focus').then(() => control('close')).catch(() => {});
   if (browser) await browser.close().catch(() => {});
   for (const process of [app, host]) if (process && process.exitCode === null) { await delay(150); if (process.exitCode === null) process.kill(); }
-  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ date: new Date().toISOString(), scope: 'full', results, snapshots, limits: ['实际企业微信、多显示器和150%/200%系统缩放未操作', '原生窗口与鼠标检查仅操作隔离宿主和隔离客户端，无剪贴板或聊天发送'] }, null, 2));
+  const dpiPassed = results.some(result => result.passed && result.name.startsWith('固定目标 DPI'));
+  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ date: new Date().toISOString(), scope: 'full', results, snapshots, limits: [dpiPassed ? '实际企业微信和200%系统缩放未操作；分屏场景是否执行以专项结果为准' : '实际企业微信、多显示器和150%/200%系统缩放未操作', '原生窗口与鼠标检查仅操作隔离宿主和隔离客户端，无剪贴板或聊天发送'] }, null, 2));
   console.log('悬停与吸附记录：' + path.join(evidence, 'report.json'));
 }

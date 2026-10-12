@@ -1,6 +1,6 @@
 # 闪语
 
-Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.1.1。
+Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.1.2。
 
 ## 使用
 
@@ -28,7 +28,7 @@ Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、Reac
 
 底部短语栏的可见左右边缘与目标窗口对齐，侧栏紧贴目标可见边缘；闪语自身不可见边框按当前窗口动态补偿。底部“隐藏短语”关闭整个短语栏，菜单及新增按钮一起隐藏；可在“设置→界面设置→显示底部吸附常用短语”重新打开。底部搜索若已开启会独立保留。
 
-侧栏移动、缩放和闲置时始终完整展开，旧“吸附时自动隐藏”“贴边显示防误触”选项已移除，旧库对应设置仍可读取。用户宽度按逻辑像素保存、按目标显示器DPI换算，跟随定位与屏幕裁剪不覆盖宽度。侧栏跟随目标可见顶部与高度，底栏跟随底边，目标部分移出屏幕时按显示器工作区裁剪。原吸附侧空间不足时，保持设置的侧边在屏幕内完整显示，必要时覆盖目标边缘。激活目标时同步侧栏层级，避免被其他普通窗口遮挡；普通目标保持普通窗口层，目标置顶时跟随置顶，关闭吸附后恢复用户置顶设置。
+侧栏移动、缩放和闲置时始终完整展开，旧“吸附时自动隐藏”“贴边显示防误触”选项已移除，旧库对应设置仍可读取。用户宽度按逻辑像素保存、按侧栏自身DPI换算，底栏内容高度按底栏自身DPI换算，跟随定位与屏幕裁剪不覆盖宽度。侧栏跟随目标可见顶部与高度，底栏跟随底边，目标部分移出屏幕时按显示器工作区裁剪。原吸附侧空间不足时，保持设置的侧边在屏幕内完整显示，必要时覆盖目标边缘。激活目标时同步侧栏层级，避免被其他普通窗口遮挡；普通目标保持普通窗口层，目标置顶时跟随置顶，关闭吸附后恢复用户置顶设置。
 
 吸附图标开口朝左，关闭吸附时带左下至右上的斜线，开启时显示普通磁铁。置顶图标开启时实心、关闭时空心；常用短语和搜索框显示时为睁眼图标、隐藏时为斜线眼图标。这四个开关只通过图标区分状态，不叠加开启态浅色底块。界面使用直角，Windows 11 的客户端窗口外框也禁用系统圆角。
 
@@ -83,11 +83,11 @@ npm run tauri -- dev
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -InnoCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
-脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。产物为 `artifacts/Shanyu-Setup-0.1.1-x64.exe`，默认安装到当前用户的 `Programs\Shanyu`，无需管理员权限。
+脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。产物为 `artifacts/Shanyu-Setup-0.1.2-x64.exe`，默认安装到当前用户的 `Programs\Shanyu`，无需管理员权限。
 
-默认仍只生成安装器。候选构建可加 `-Version 0.1.1-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.1.1`，从当前对应版本的程序和安装器生成 `artifacts/release/0.1.1` 下的 ZIP、安装器、原有 SHA256 清单及 manifest。ZIP 需要本机已安装 WebView2。
+默认仍只生成安装器。候选构建可加 `-Version 0.1.2-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.1.2`，从当前对应版本的程序和安装器生成 `artifacts/release/0.1.2` 下的 ZIP、安装器、原有 SHA256 清单及 manifest。ZIP 需要本机已安装 WebView2。
 
-GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.1.1-rc.N`，保留企业微信人工验收确认，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出已有 `v0.1.1` 标签，源码版本、标签与提交必须一致，并确认企业微信及 Windows 11 安装矩阵。当前实机缺口见验收记录，不能勾选确认来代替实际验证。工作流不会覆盖既有标签或 Release。
+GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.1.2-rc.N`，保留企业微信人工验收确认，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出已有 `v0.1.2` 标签，源码版本、标签与提交必须一致，并确认企业微信及 Windows 11 安装矩阵。当前实机缺口见验收记录，不能勾选确认来代替实际验证。工作流不会覆盖既有标签或 Release。
 
 ## 验证
 
@@ -106,6 +106,8 @@ npm run build
 cargo build --manifest-path src-tauri/Cargo.toml --features custom-protocol
 node scripts/verify-background-following.mjs
 node scripts/verify-hover-docking.mjs
+# 可选双屏专项：目标固定96 DPI，实际覆盖100%和150%显示器；单屏会明确跳过
+node scripts/verify-hover-docking.mjs --dpi
 node scripts/verify-categories.mjs
 node scripts/verify-library.mjs
 npm run test:native

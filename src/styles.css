@@ -1,7 +1,5 @@
 :root {
-  /* 保持中文字体，表情显式回退到 Windows 彩色 Emoji；只改变显示，不改写正文中的 Unicode。 */
-  font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Segoe UI Emoji", sans-serif;
-  font-variant-emoji: emoji;
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif;
   color: #151515;
   font-size: 12px;
   --blue: #68a1cc;

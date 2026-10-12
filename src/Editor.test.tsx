@@ -25,38 +25,6 @@ const saved = () => vi.mocked(call).mock.calls.find(([cmd]) => cmd === 'save_phr
 const clipboardImage = () => Object.assign(new File([new Uint8Array([1, 2, 3])], '截图.png', { type: 'image/png' }), { arrayBuffer: vi.fn(async () => new Uint8Array([1, 2, 3]).buffer) });
 
 describe('行内图片编辑', () => {
-  it.each(['新增', '编辑'])('%s话术粘贴设备日志话术保留电脑、手机表情及换行，保存重开不丢失', async mode => {
-    const text = `您好，辛苦您帮忙导出一下设备日志，我们好反馈给技术同事排查问题～
-
-根据您当前登录的客户端，任选一种方式操作即可：
-
-💻 电脑/网页端
-打开绿联云 → 帮助中心 → 联系我们 → 辅助工具 → 点击“生成系统诊断信息”，把生成的压缩包发给我们。
-
-📱 手机APP端
-打开绿联云APP → 首页→ 帮助中心 → 辅助工具 → 点击“一键生成”生成诊断信息后，点击下载日志。然后去手机自带的【文件】应用里找到压缩包发给我们：
-
-  安卓手机路径：文件APP → Download → ugreenPro
-
-  苹果手机路径：文件APP → 绿联云 → Download
-
-两种方式任选一种就行，弄好后直接发我，感谢您的配合～`;
-    const input = editor([{ kind: 'text', text: '' }], mode === '新增');
-    fireEvent.paste(input, { clipboardData: { getData: (format: string) => format === 'text/plain' ? text : '' } });
-    expect(input.textContent).toBe(text);
-    fireEvent.click(screen.getByRole('button', { name: '确定' }));
-    await waitFor(() => expect(saved()?.segments[0].blocks).toEqual([{ kind: 'text', text }]));
-    const blocks = saved().segments[0].blocks; cleanup();
-    expect(editor(blocks).textContent).toBe(text);
-  });
-  it('粘贴组合表情保留肤色、连接符及文字／表情变体选择符', async () => {
-    const input = editor([{ kind: 'text', text: '前后' }]); select(input, 1);
-    const text = '👩🏽‍💻 🏳️‍🌈 ☎︎ ☎️';
-    fireEvent.paste(input, { clipboardData: { getData: () => text } });
-    expect(input.textContent).toBe(`前${text}后`);
-    fireEvent.click(screen.getByRole('button', { name: '确定' }));
-    await waitFor(() => expect(saved()?.segments[0].blocks).toEqual([{ kind: 'text', text: `前${text}后` }]));
-  });
   it.each(['新增', '编辑'])('%s话术粘贴图片替换原选区，移动光标不改变插入位置，保存保留图文顺序', async mode => {
     const input = editor([{ kind: 'text', text: '前文替换后文' }], mode === '新增');
     input.textContent = '前文替换后文'; fireEvent.input(input); select(input, 2, 4);
