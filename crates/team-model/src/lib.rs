@@ -58,6 +58,9 @@ pub struct Team {
     pub membership_version: u64,
     #[serde(default = "initial_lifecycle")]
     pub lifecycle_version: u64,
+    /// 旧服务端和旧缓存缺少人数时保留未知，不能把未知显示为零人。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_count: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -433,4 +436,22 @@ pub fn validate_phrase(p: &Phrase) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod team_tests {
+    use super::Team;
+
+    #[test]
+    fn missing_member_count_remains_unknown_and_zero_is_preserved() {
+        let legacy = serde_json::json!({"teamId":"A","name":"小组","version":1,"editable":false});
+        let mut team: Team = serde_json::from_value(legacy).unwrap();
+        assert_eq!(team.member_count, None);
+        assert!(serde_json::to_value(&team)
+            .unwrap()
+            .get("memberCount")
+            .is_none());
+        team.member_count = Some(0);
+        assert_eq!(serde_json::to_value(&team).unwrap()["memberCount"], 0);
+    }
 }
