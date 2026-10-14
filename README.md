@@ -1,10 +1,10 @@
 # 闪语 QuickPhrase
 
-Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.0。
+Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.1。
 
-正式下载：[v0.2.0 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.0) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.0/Shanyu-Setup-0.2.0-x64.exe) · [便携 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.0/Shanyu-0.2.0-win-x64.zip)。安装器和程序未代码签名；[Hub 公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
+正式下载：[v0.2.1 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.1) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.1/QuickPhrase-Setup-0.2.1-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.1/QuickPhrase-0.2.1-win-x64.zip)。安装器和程序未代码签名；[Hub 公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
 
-当前源码为尚未发布的0.2.1，统一英文名称 QuickPhrase。0.2.0的下载链接与文件保持原名；新名称将在后续发布中提供。
+0.2.1统一英文名称 QuickPhrase。普通用户使用安装器安装和升级；ZIP供免安装启动，需预装WebView2，用户数据仍保存于用户目录。0.2.0的历史下载文件保留原名。
 
 ## 使用
 
@@ -130,7 +130,7 @@ npm run tauri -- dev
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -InnoCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
-脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前源码为尚未发布的0.2.1，产物为 `artifacts/QuickPhrase-Setup-0.2.1-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
+脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.1，产物为 `artifacts/QuickPhrase-Setup-0.2.1-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
 
 默认仍只生成安装器。候选构建可加 `-Version 0.2.1-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.1`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.1` 下的 ZIP、安装器、原有 SHA256 清单及 manifest。ZIP 需要本机已安装 WebView2。
 

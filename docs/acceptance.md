@@ -1,8 +1,8 @@
 # 闪语验收记录
 
-## 0.2.1 英文命名与启动分组检查（2026-10-14，未发布）
+## 0.2.1 英文命名与启动分组检查（2026-10-14）
 
-主程序、安装器和ZIP统一使用QuickPhrase，关于页与Windows程序属性含英文名。新安装使用 `Programs\QuickPhrase`；升级保持原AppId和目录，更新快捷方式、迁移开机启动项并清理旧程序本体。数据目录、数据库、凭据、ZIP格式和固定协议保持既有标识。Hub源码程序为 `quickphrase-hub`，新增 `QUICKPHRASE_*` 并兼容原变量；公开Compose已准备为0.2.1镜像和新变量，旧变量继续兼容，服务改名提供图形界面停服及保留数据步骤。
+主程序、安装器和ZIP统一使用QuickPhrase，关于页与Windows程序属性含英文名。新安装使用 `Programs\QuickPhrase`；升级保持原AppId和目录，更新快捷方式、迁移开机启动项并清理旧程序本体。数据目录、数据库、凭据、ZIP格式和固定协议保持既有标识。Hub源码程序为 `quickphrase-hub`，新增 `QUICKPHRASE_*` 并兼容原变量；公开Compose使用已发布的0.2.1镜像和新变量，旧变量继续兼容，服务改名提供图形界面停服及保留数据步骤。
 
 实时只读检查确认用户运行 `D:\Shanyu\shanyu.exe`，产品版本0.2.0-rc.5，PID39516，父进程为uTools PID14704。主窗口及底栏为后台工具窗口，顶层窗口没有uTools所有者。当前任务管理器分组符合uTools直接启动后的父子关系；新源码增加显式Shell应用身份，并在快捷方式保持 `com.quickphrase.desktop`，不以进程重启或修改既有任务栏行为强行改变系统分组。新版本通过uTools启动的实际显示尚未验证；直接启动核对需先退出旧单实例。
 
@@ -10,7 +10,11 @@
 
 [安装4组](../.build/installer-1791958355952/report.json)通过新装、0.2.0旧安装器夹具改名升级、沿用原目录、唯一启动项、快捷方式更新、卸载及数据哨兵保留。最初验收沿用旧脚本的 `/GROUP`，在禁用菜单选择页时未隔离菜单，影响两个真实开始菜单入口；已按原0.2.0-rc.5注册记录恢复，测试改为编译时独立菜单组后四组完整通过。失败尝试保留报告，不计为通过。安装检查未启动已安装程序，不能替代完整人工安装矩阵。
 
-WSL隔离镜像 `quickphrase-hub:branding-local` 构建及7组root容器、旧数据接入、持久化与备份恢复通过，记录于Hub `.build/branding-container-check.log`。本地程序与安装器为0.2.1，未签名；本轮本地构建和打包通过，正式发布结果将在发布后补入。负责人在本会话明确确认0.2.1真实企业微信及Windows 11安装／升级均验收通过；不编造逐项人工日志。uTools新版本分组、Windows 10、系统DPI及真实局域网／HTTPS代理仍未完成本轮实测。按负责人要求移除候选及正式发布的人工确认门禁，保留手动发布、自动CI和版本／标签一致校验，更新后的发布脚本12项通过；前述14项为改动前的检查结果。
+WSL隔离镜像 `quickphrase-hub:branding-local` 构建及7组root容器、旧数据接入、持久化与备份恢复通过，记录于Hub `.build/branding-container-check.log`。本地程序与安装器为0.2.1，未签名；本轮本地构建和打包通过，正式发布结果如下。负责人在本会话明确确认0.2.1真实企业微信及Windows 11安装／升级均验收通过；不编造逐项人工日志。uTools新版本分组、Windows 10、系统DPI及真实局域网／HTTPS代理仍未完成本轮实测。按负责人要求移除候选及正式发布的人工确认门禁，保留手动发布、自动CI和版本／标签一致校验，更新后的发布脚本12项通过；前述14项为改动前的检查结果。
+
+0.2.1已按先Hub、后客户端的顺序正式发布。Hub标签指向 `9a7342c90554faecef19d6bea1151e5e841fb7c9`，[镜像发布及独立匿名容器验收](https://github.com/thelinyue/QuickPhrase-Hub/actions/runs/38523690476)通过；另以空Docker配置匿名拉取，核对Linux amd64、root及改名入口。镜像digest为 `sha256:7b2e796a3a447e3424b06806c1af67a9a8b8f7b605ff2b20c6ff76a435f56b26`。
+
+客户端正式标签指向[源码3a347c6](https://github.com/thelinyue/QuickPhrase/commit/3a347c6dfe57d03f4a9a861041e36b613698baf0)，[主分支CI](https://github.com/thelinyue/QuickPhrase/actions/runs/38523537018)、[标签CI](https://github.com/thelinyue/QuickPhrase/actions/runs/38524082403)及[正式发布流程](https://github.com/thelinyue/QuickPhrase/actions/runs/38524086605)全部通过。[正式Release](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.1)非草稿、非预发布，latest指向本版。四项资产匿名下载成功，安装器13,566,442字节、ZIP12,854,001字节；既有SHA256清单及manifest核验通过，来源提交精确匹配。程序与安装器产品版本0.2.1、数值版本0.2.1.0、未签名；ZIP包含QuickPhrase.exe及四份许可政策文档，程序为x64且产品属性含QuickPhrase。[实际下载核验报告](../.build/public-release-0.2.1-1791960941879/report.json)已保存，本轮发布动作未执行安装或替换用户WSL部署，旧标签和资产保留。
 
 ## 0.2.0 普通账号、共享库与 root 部署（2026-10-14）
 
