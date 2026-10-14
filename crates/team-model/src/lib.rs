@@ -393,6 +393,15 @@ pub struct RecycleRecord {
     pub phrases: Vec<Phrase>,
 }
 
+/// 清空仅删除用户确认清单中的记录；已还原/删除的记录跳过，新增回收记录保留。
+/// 生命周期防止整组删除、恢复后的旧请求继续生效。素材本体不在此请求范围内。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearRecycleRequest {
+    pub ids: Vec<String>,
+    pub expected_lifecycle_version: u64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteRequest {
