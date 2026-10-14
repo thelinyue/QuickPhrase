@@ -1,0 +1,180 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import net from 'node:net';
+import { spawn } from 'node:child_process';
+import { chromium } from 'playwright';
+
+// 使用隐藏的实际 Windows 客户端及独立数据库。搜索、记录、事件和高度 IPC 实际执行，
+// 投递只模拟回执，绝不操作真实聊天、系统剪贴板、输入焦点或实体按键。
+const repo = process.cwd(), evidence = path.join(repo, '.build', 'search-history-' + Date.now());
+await fs.mkdir(evidence, { recursive: true });
+const data = path.join(evidence, 'data'), checks = [];
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+let app, browser, page, dock, libraryId;
+const invoke = (cmd, args = {}, target = page) => target.evaluate(({ cmd, args }) => window.__TAURI_INTERNALS__.invoke(cmd, args), { cmd, args });
+const click = async locator => { await locator.waitFor({ state: 'attached' }); assert.ok(await locator.isEnabled()); await locator.evaluate(el => el.click()); };
+const setInput = (target, value) => target.locator('.search-bar input').evaluate((el, value) => {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}, value);
+const check = async (label, fn) => { await fn(); checks.push(label); console.log('通过：' + label); };
+const record = query => invoke('record_search_history', { libraryId, query });
+const read = () => invoke('get_search_history', { libraryId });
+const clear = () => invoke('clear_search_history', { libraryId });
+
+async function hook(target) {
+  await target.evaluate(() => {
+    const original = window.fetch.bind(window);
+    window.__historyQA = { requests: [], heights: [], deliveries: [], status: 'submitted' };
+    window.fetch = async (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input.url);
+      if (url.hostname !== 'ipc.localhost') return original(input, init);
+      const cmd = decodeURIComponent(url.pathname.slice(1)); const args = JSON.parse(init.body), qa = window.__historyQA;
+      qa.requests.push({ cmd, args });
+      const response = value => new Response(JSON.stringify(value), { headers: { 'Tauri-Response': 'ok', 'Content-Type': 'application/json' } });
+      if (cmd === 'get_target') return response({ hwnd: 1, focus: 2, pid: 3 });
+      if (cmd === 'deliver_content') { qa.deliveries.push(args); return response({ status: qa.status, completedSegments: qa.status === 'submitted' ? 1 : 0, completedBlocks: qa.status === 'submitted' ? 1 : 0, error: qa.status === 'submitted' ? null : '隔离验证：操作已停止' }); }
+      if (['copy_phrase_text', 'copy_linked_files', 'open_linked_file'].includes(cmd)) throw new Error('隔离验证禁止系统复制或打开文件');
+      if (['plugin:window|show', 'plugin:window|set_focus', 'plugin:menu|popup', 'show_phrase_preview'].includes(cmd)) return response(null);
+      if (cmd === 'set_common_dock_height') qa.heights.push(args.height);
+      return original(input, init);
+    };
+  });
+}
+async function start() {
+  const server = net.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port; await new Promise(resolve => server.close(resolve));
+  app = spawn(path.join(repo, 'src-tauri/target/debug/QuickPhrase.exe'), ['--autostart'], {
+    cwd: repo, windowsHide: true, stdio: 'ignore',
+    env: { ...process.env, SHANYU_TEST_DATA_DIR: data, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=' + port },
+  });
+  browser = null;
+  for (let i = 0; i < 80; i++) {
+    try { browser = await chromium.connectOverCDP('http://127.0.0.1:' + port); break; }
+    catch { if (app.exitCode !== null) throw new Error('隔离客户端提前退出'); await delay(150); }
+  }
+  assert.ok(browser, 'WebView2 调试连接超时');
+  const context = browser.contexts()[0]; context.setDefaultTimeout(7000);
+  page = context.pages().find(p => !new URL(p.url()).hash);
+  assert.ok(page); await page.locator('.main-window').waitFor();
+  for (let i = 0; i < 80; i++) { dock = context.pages().find(p => new URL(p.url()).hash === '#common-dock'); if (dock) break; await delay(100); }
+  assert.ok(dock); await dock.locator('.common-dock').waitFor();
+  await hook(page); await hook(dock);
+  const initial = await invoke('get_library'); assert.equal(initial.dataDir, data); libraryId = initial.libraryId;
+  for (let i = 0; ; i++) {
+    try {
+      await invoke('save_settings', { libraryId, settings: { ...initial.settings, showSearch: true, showCommon: true, dockSearch: true, dockCommon: false, dock: false, pinned: false, exitSearch: false, customHotkeys: false, sequenceHotkeys: false, searchHotkey: '8', windowHotkey: '9', commonHotkey: '0' } }); break;
+    } catch (error) { if (i >= 30 || !String(error).includes('服务尚未启动')) throw error; await delay(100); }
+  }
+  await invoke('mark_usage_guide_shown');
+  await page.locator('.search-bar input').waitFor(); await dock.locator('.search-bar input').waitFor();
+}
+async function stop() {
+  if (page && !page.isClosed()) await invoke('window_action', { action: 'exit' }).catch(() => {});
+  if (browser) await browser.close().catch(() => {});
+  if (app) { for (let i = 0; i < 30 && app.exitCode === null; i++) await delay(40); if (app.exitCode === null) app.kill(); }
+}
+async function waitResults(target) { await target.locator('.search-panel .content-row,.dock-search-results .content-row').first().waitFor(); }
+
+try {
+  await start();
+  await check('首次记录为空，不占显示空间；两处搜索均可用', async () => {
+    assert.deepEqual(await read(), []); assert.equal(await page.locator('.search-history').count(), 0); assert.equal(await dock.locator('.search-history').count(), 0);
+    const root = await invoke('save_category', { libraryId, category: { id: '', name: '验证分类', kind: 'phrase', parentId: null, position: 0, background: '' } });
+    for (const title of ['OS支持UPS型号', 'pro-ups型号', 'OS如何连接UPS', 'OS管理员权限', 'OS恢复出厂设置', 'UGOS重置系统']) await invoke('save_phrase', { libraryId, phrase: { id: '', rootId: root, groupId: null, title, color: '', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '您好，这边为您提供 UPS SSH DNS 故障检查说明及连接方式。' }] }] }, afterId: null });
+    await setInput(page, 'UPS'); await waitResults(page); assert.deepEqual(await read(), []);
+  });
+  await check('主窗口使用成功后记录；跨窗口事件自动刷新；失败与中断不记录', async () => {
+    await click(page.locator('.search-panel .row-send').first());
+    await click(page.getByRole('button', { name: '清空搜索', exact: true }));
+    await page.getByRole('region', { name: '搜索记录' }).getByRole('button', { name: 'UPS', exact: true }).waitFor();
+    await dock.getByRole('region', { name: '搜索记录' }).getByRole('button', { name: 'UPS', exact: true }).waitFor();
+    assert.deepEqual(await read(), ['UPS']);
+    for (const status of ['failed', 'interrupted']) {
+      await page.evaluate(status => { window.__historyQA.status = status; }, status);
+      await setInput(page, 'SSH'); await waitResults(page); await click(page.locator('.search-panel .row-send').first());
+      await page.getByRole('status').filter({ hasText: '操作已停止' }).waitFor();
+      assert.deepEqual(await read(), ['UPS']); await click(page.getByRole('status'));
+    }
+    await page.evaluate(() => { window.__historyQA.status = 'submitted'; });
+    await click(page.getByRole('button', { name: '清空搜索', exact: true }));
+  });
+  await check('历史去空白、重复置顶和最多10条；超宽自动换行且长词可查看全文', async () => {
+    const terms = ['SSH', 'DNS', '网络检查', '存储检查', '日志分析', '文件传输', '设备配置', '供电状态', '连接状态', '非常长的搜索关键词用于验证省略显示并保留完整内容'.repeat(3)];
+    for (const term of terms) await record(term);
+    await record(' UPS '); const items = await read(); assert.equal(items.length, 10); assert.equal(items[0], 'UPS'); assert.equal(items.filter(x => x === 'UPS').length, 1);
+    await page.waitForFunction(() => document.querySelectorAll('.search-history-items button').length === 10);
+    await page.setViewportSize({ width: 300, height: 400 }); await dock.setViewportSize({ width: 300, height: 420 });
+    for (const target of [page, dock]) {
+      const geometry = await target.locator('.search-history').evaluate(el => {
+        const items = el.querySelector('.search-history-items'), buttons = [...items.querySelectorAll('button')];
+        const long = buttons.find(b => b.title.length > 50);
+        return { height: el.getBoundingClientRect().height, wrap: getComputedStyle(items).flexWrap, rows: new Set(buttons.map(b => b.offsetTop)).size, scroll: items.scrollHeight > items.clientHeight, horizontalOverflow: items.scrollWidth > items.clientWidth, long: { title: long.title, textOverflow: getComputedStyle(long).textOverflow, clipped: long.scrollWidth > long.clientWidth } };
+      });
+      assert.ok(geometry.height <= 84); assert.equal(geometry.wrap, 'wrap'); assert.ok(geometry.rows > 1); assert.ok(geometry.scroll); assert.equal(geometry.horizontalOverflow, false); assert.equal(geometry.long.textOverflow, 'ellipsis'); assert.ok(geometry.long.clipped);
+    }
+    await page.screenshot({ path: path.join(evidence, 'main-wrapping.png') }); await dock.screenshot({ path: path.join(evidence, 'dock-wrapping.png') });
+  });
+  await check('历史点击切换结果浮层，关闭恢复记录，再点同词重新查询，首条选中且不投递', async () => {
+    for (const target of [page, dock]) {
+      const before = await target.evaluate(() => ({ searches: window.__historyQA.requests.filter(r => r.cmd === 'search_scoped_content').length, deliveries: window.__historyQA.deliveries.length }));
+      const history = target.getByRole('region', { name: '搜索记录' }).getByRole('button', { name: 'UPS', exact: true });
+      for (let i = 0; i < 2; i++) {
+        if (i > 0) await click(target.getByRole('button', { name: target === page ? '清空搜索' : '清空底部搜索', exact: true }));
+        await click(history); await waitResults(target);
+        assert.equal(await target.locator('.search-history').count(), 0, '搜索结果状态不显示历史');
+        await target.waitForFunction(n => window.__historyQA.requests.filter(r => r.cmd === 'search_scoped_content').length === n, before.searches + i + 1);
+        assert.equal(await target.locator('.search-bar input').inputValue(), 'UPS');
+        assert.equal(await target.locator('.search-bar input').evaluate(el => document.activeElement === el), true);
+        assert.equal(await target.locator('.search-panel .content-row,.dock-search-results .content-row').first().getAttribute('aria-selected'), 'true');
+      }
+      const after = await target.evaluate(() => ({ deliveries: window.__historyQA.deliveries.length, search: window.__historyQA.requests.filter(r => r.cmd === 'search_scoped_content').at(-1).args }));
+      assert.equal(after.deliveries, before.deliveries); assert.equal(after.search.scope, target === page ? 'private' : 'all');
+    }
+    const search = await page.locator('.search-bar').boundingBox(), panel = await page.locator('.search-panel').boundingBox(), backdrop = await page.locator('.search-backdrop').boundingBox();
+    assert.ok(panel.y + panel.height <= search.y && search.y - panel.y - panel.height <= 12, '结果浮层直接指向搜索框');
+    assert.equal(backdrop.y, 27); assert.equal(backdrop.y + backdrop.height, search.y);
+    assert.equal(await page.locator('.common-phrases').count(), 0); assert.equal(await page.locator('.search-kind').textContent(), '话术');
+    await page.screenshot({ path: path.join(evidence, 'main-results-compact.png') });
+    await page.setViewportSize({ width: 300, height: 720 });
+    await page.screenshot({ path: path.join(evidence, 'main-results.png') });
+  });
+  await check('底部使用结果更新两处记录，内容高度变化通过实际Rust IPC提交', async () => {
+    await setInput(dock, 'DNS'); await waitResults(dock); await click(dock.locator('.dock-search-results .row-send').first());
+    await click(page.getByRole('button', { name: '清空搜索', exact: true }));
+    await click(dock.getByRole('button', { name: '清空底部搜索', exact: true }));
+    await page.waitForFunction(() => document.querySelector('.search-history-items button').textContent === 'DNS');
+    await dock.waitForFunction(() => document.querySelector('.search-history-items button').textContent === 'DNS');
+    await dock.waitForFunction(() => window.__historyQA.heights.at(-1) === Math.ceil(document.querySelector('.common-dock-content').getBoundingClientRect().height));
+    const heights = await dock.evaluate(() => window.__historyQA.heights);
+    assert.ok(heights.length > 1); assert.ok(new Set(heights).size > 1); assert.ok(heights.every(h => h >= 28 && h <= 420));
+  });
+  await check('退出并重启实际客户端，记录持久保留并在两处恢复', async () => {
+    const before = await read(), id = libraryId;
+    await stop(); await start(); assert.equal(libraryId, id); assert.deepEqual(await read(), before);
+    for (const target of [page, dock]) await target.waitForFunction(() => document.querySelector('.search-history-items button')?.textContent === 'DNS');
+  });
+  await check('清空搜索不删记录；清空记录不改当前输入结果，两窗口立即刷新', async () => {
+    await setInput(page, 'UPS'); await waitResults(page);
+    await click(page.getByRole('button', { name: '清空搜索', exact: true }));
+    assert.equal(await page.locator('.search-bar input').inputValue(), ''); assert.equal((await read()).length, 10);
+    await setInput(page, 'UPS'); await waitResults(page); const count = await page.locator('.search-panel .content-row').count();
+    await click(dock.getByRole('button', { name: '清空搜索记录', exact: true }));
+    await page.locator('.search-history').waitFor({ state: 'detached' }); await dock.locator('.search-history').waitFor({ state: 'detached' });
+    assert.deepEqual(await read(), []); assert.equal(await page.locator('.search-bar input').inputValue(), 'UPS'); assert.equal(await page.locator('.search-panel .content-row').count(), count);
+    await invoke('clear_search_history', { libraryId: '错误个人库' }).then(() => assert.fail('旧库操作必须拒绝'), error => assert.match(String(error), /个人库已切换/));
+  });
+  await check('隐藏搜索同时隐藏记录，不影响保存；客户端窗口始终隐藏', async () => {
+    await record('UPS'); const current = await invoke('get_library');
+    await invoke('save_settings', { libraryId, settings: { ...current.settings, showSearch: false, dockSearch: false } });
+    for (const target of [page, dock]) { await target.locator('.search-history').waitFor({ state: 'detached' }); assert.equal(await invoke('plugin:window|is_visible', {}, target), false); }
+    assert.deepEqual(await read(), ['UPS']); await clear();
+  });
+  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ date: new Date().toISOString(), checks, limits: ['真实WebView2、SQLite、IPC和窗口间事件；投递仅模拟成功／失败／中断回执', '300 DIP窄视口和默认视口布局检查，不替代真实系统DPI、企业微信、吸附及安装升级验收'] }, null, 2));
+  console.log(JSON.stringify({ evidence, checks: checks.length }, null, 2));
+} catch (error) {
+  if (page && !page.isClosed()) await page.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});
+  await fs.writeFile(path.join(evidence, 'failure.json'), JSON.stringify({ checks, error: String(error), stack: error.stack }, null, 2));
+  throw error;
+} finally { await stop(); }

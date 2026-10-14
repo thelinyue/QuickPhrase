@@ -28,6 +28,8 @@ pub enum Target {
     Private {
         library_id: String,
         session_epoch: u64,
+        #[serde(default)]
+        device_part: bool,
     },
     Team {
         team_id: String,
@@ -37,9 +39,29 @@ pub enum Target {
     },
 }
 impl Target {
+    fn device_part(&self) -> bool {
+        matches!(
+            self,
+            Self::Private {
+                device_part: true,
+                ..
+            }
+        )
+    }
     fn same_library(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Private { library_id: a, .. }, Self::Private { library_id: b, .. }) => a == b,
+            (
+                Self::Private {
+                    library_id: a,
+                    device_part: ad,
+                    ..
+                },
+                Self::Private {
+                    library_id: b,
+                    device_part: bd,
+                    ..
+                },
+            ) => a == b && ad == bd,
             (
                 Self::Team {
                     team_id: a,
@@ -69,6 +91,8 @@ struct Batch {
     merge: bool,
     restore_settings: bool,
     pending: PendingImport,
+    #[serde(default)]
+    device_settings: Option<Settings>,
     base: Option<wire::Snapshot>,
     request: Option<wire::Publish>,
     state: String,
@@ -112,6 +136,7 @@ pub struct TransferState {
     operation: Mutex<Option<(String, CancellationToken)>>,
 }
 struct Operation<'a> {
+    _activity: crate::update_activity::Activity,
     state: &'a TransferState,
     id: String,
     cancel: CancellationToken,
@@ -134,7 +159,10 @@ impl Drop for Operation<'_> {
     }
 }
 impl TransferState {
-    /// 注销清理共享库批次内的快照和素材；私人批次仍按库身份保留，原导入文件不删除。
+    pub fn is_active(&self) -> bool {
+        self.operation.lock().unwrap().is_some()
+    }
+    /// 注销清理共享话术批次内的快照和素材；私人批次仍按库身份保留，原导入文件不删除。
     pub fn invalidate_groups(&self, root: &Path) {
         if let Some((_, cancel)) = &*self.operation.lock().unwrap() {
             cancel.cancel();
@@ -156,7 +184,7 @@ impl TransferState {
                     .is_ok_and(|b| matches!(b.target, Target::Team { .. }))
                 {
                     if let Err(e) = remove_batch_dir(root, &entry.file_name().to_string_lossy()) {
-                        log::warn!("共享库导入缓存清理失败：{e}");
+                        log::warn!("共享话术导入缓存清理失败：{e}");
                     }
                 }
             }
@@ -181,12 +209,13 @@ impl TransferState {
                 if let Err(e) = remove_index(root, &batch)
                     .and_then(|_| remove_batch_dir(root, &batch.pending.preview.id))
                 {
-                    log::warn!("共享库导入缓存清理失败：{e}");
+                    log::warn!("共享话术导入缓存清理失败：{e}");
                 }
             }
         }
     }
     fn begin(&self, id: String) -> Result<Operation<'_>> {
+        let activity = crate::update_activity::Activity::enter()?;
         if uuid::Uuid::parse_str(&id).is_err() {
             return Err("操作编号无效。".into());
         }
@@ -197,6 +226,7 @@ impl TransferState {
         let cancel = CancellationToken::new();
         *active = Some((id.clone(), cancel.clone()));
         Ok(Operation {
+            _activity: activity,
             state: self,
             id,
             cancel,
@@ -212,7 +242,14 @@ fn index_name(state: &AppState, target: &Target) -> Result<String> {
             if uuid::Uuid::parse_str(library_id).is_err() {
                 return Err("个人库编号无效。".into());
             }
-            format!("private-{library_id}.json")
+            format!(
+                "{}-{library_id}.json",
+                if target.device_part() {
+                    "device"
+                } else {
+                    "private"
+                }
+            )
         }
         Target::Team { .. } => format!("team-{}.json", state.teams.transfer_namespace()?),
     })
@@ -353,23 +390,50 @@ fn clock(store: &crate::store::Store) -> Result<u64> {
         })
         .map_err(db_error)
 }
+/// 设备部分独立提交，但仍绑定发起预览的个人库和会话，切号后的旧确认不能落盘。
+fn with_import_store<T>(
+    state: &AppState,
+    target: &Target,
+    work: impl FnOnce(&mut crate::store::Store) -> Result<T>,
+) -> Result<T> {
+    let Target::Private {
+        library_id,
+        device_part,
+        ..
+    } = target
+    else {
+        return Err("请选择个人内容。".into());
+    };
+    let mut active = state.store.lock().unwrap();
+    local::scope(&active, Some(library_id))?;
+    if *device_part {
+        work(&mut state.device_store.lock().unwrap())
+    } else {
+        work(&mut active)
+    }
+}
+
 fn check(state: &AppState, batch: &Batch, edit: bool) -> Result<()> {
     if state.teams.transfer_epoch() != batch.epoch {
         return Err("会话已变化，请重新预览。".into());
     }
     match &batch.target {
-        Target::Private { library_id, .. } => {
-            let store = state.store.lock().unwrap();
-            local::scope(&store, Some(library_id))?;
-            if local::meta(&store, "generation")? != batch.generation {
+        Target::Private { .. } => with_import_store(state, &batch.target, |store| {
+            if local::meta(store, "generation")? != batch.generation {
                 return Err("个人库已恢复，请重新预览。".into());
             }
-            if edit && !store.imported(&batch.pending.preview.id)? && clock(&store)? != batch.clock
+            if edit
+                && !store.imported(&batch.pending.preview.id)?
+                && (clock(store)? != batch.clock
+                    || batch
+                        .device_settings
+                        .as_ref()
+                        .is_some_and(|old| store.settings().as_ref().ok() != Some(old)))
             {
-                return Err("个人库已更新，请重新预览。".into());
+                return Err("内容或设置已更新，请重新预览。".into());
             }
             Ok(())
-        }
+        }),
         Target::Team {
             team_id,
             lifecycle_version,
@@ -430,6 +494,135 @@ pub async fn preview_import(
     restore_settings: bool,
     operation_id: String,
 ) -> Result<Preview> {
+    let pending = backup::preview(Path::new(&path))?;
+    prepare_import(
+        app,
+        state,
+        pending,
+        target,
+        merge,
+        restore_settings,
+        operation_id,
+    )
+    .await
+}
+
+/// 旧完整备份明确分两次提交，个人内容不会携带设备文件或设置跨账号同步。
+fn select_import_part(pending: &mut PendingImport, device: bool) -> Result<()> {
+    if device {
+        if pending.settings_scope != SettingsScope::Device
+            && pending.library.files.is_empty()
+            && !pending.library.categories.iter().any(|c| c.kind == "file")
+        {
+            return Err("此备份不含本机文件或设备设置，请选择个人内容。".into());
+        }
+        pending.preview.notes.push(format!("本次仅导入本机文件与设备设置。{}条话术、{}条短语及{}条回收记录请另选个人内容导入。两部分分别提交。",
+            pending.library.phrases.len(), pending.library.common_phrases.len(), pending.recycle_bin.len()));
+        pending.library.categories.retain(|c| c.kind == "file");
+        pending.library.phrases.clear();
+        pending.library.common_phrases.clear();
+        pending.recycle_bin.clear();
+        pending.images.clear();
+        pending.materials.clear();
+    } else {
+        if pending.settings_scope == SettingsScope::Device || !pending.library.files.is_empty() {
+            pending.preview.notes.push(format!("本次导入个人内容；{}个文件关联及设备设置请另选“本机文件与设备设置”导入。两部分分别提交。", pending.library.files.len()));
+        }
+        pending.library.categories.retain(|c| c.kind == "phrase");
+        pending.library.files.clear();
+        if pending.settings_scope == SettingsScope::Device {
+            pending.settings_scope = SettingsScope::Portable;
+        }
+    }
+    Ok(())
+}
+
+fn import_settings(pending: &mut PendingImport, current: &Settings, device: bool) -> Result<()> {
+    let mut next = serde_json::to_value(current).map_err(db_error)?;
+    let incoming = serde_json::to_value(&pending.library.settings).map_err(db_error)?;
+    for (key, value) in incoming.as_object().ok_or("备份设置格式无效。")? {
+        if wire::private::SETTINGS.contains(&key.as_str()) != device {
+            next[key] = value.clone();
+        }
+    }
+    pending.library.settings = serde_json::from_value(next).map_err(db_error)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn has_legacy_private_content(state: State<AppState>, library_id: String) -> Result<bool> {
+    let store = state.store.lock().unwrap();
+    local::scope(&store, Some(&library_id))?;
+    let device = state.device_store.lock().unwrap();
+    if store.dir == device.dir {
+        return Ok(false);
+    }
+    device.conn.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE kind='phrase') OR EXISTS(SELECT 1 FROM common_phrases) OR EXISTS(SELECT 1 FROM recycle_bin)", [], |r| r.get(0)).map_err(db_error)
+}
+
+/// 恢复入口只读取旧本机内容，随后复用普通导入的素材冻结、事务和批次回执。
+#[tauri::command]
+pub async fn preview_legacy_private_content(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    target: Target,
+    operation_id: String,
+) -> Result<Preview> {
+    let Target::Private {
+        library_id,
+        device_part: false,
+        ..
+    } = &target
+    else {
+        return Err("旧本机内容只能找回到个人话术。".into());
+    };
+    check_target_epoch(&state, &target)?;
+    let pending = {
+        let store = state.store.lock().unwrap();
+        local::scope(&store, Some(library_id))?;
+        let device = state.device_store.lock().unwrap();
+        if store.dir == device.dir {
+            return Err("当前正在使用本机内容，无需重复找回。".into());
+        }
+        let mut library = device.library()?;
+        library.categories.retain(|c| c.kind == "phrase");
+        library.files.clear();
+        PendingImport {
+            preview: backup::ImportPreview {
+                id: id(),
+                kind: "backup".into(),
+                filename: "旧本机内容".into(),
+                categories: 0,
+                phrases: 0,
+                common_phrases: 0,
+                files: 0,
+                images: 0,
+                recycled: 0,
+                rows: vec![],
+                notes: vec![
+                    "原数据保留；重复发起找回可能产生副本。本机文件关联及设备设置保持原样。".into(),
+                ],
+            },
+            library,
+            recycle_bin: device.recycle_records()?,
+            images: HashMap::new(),
+            materials: HashMap::new(),
+            material_dir: None,
+            settings_scope: SettingsScope::None,
+        }
+    };
+    prepare_import(app, state, pending, target, false, false, operation_id).await
+}
+
+async fn prepare_import(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    mut pending: PendingImport,
+    target: Target,
+    merge: bool,
+    restore_settings: bool,
+    operation_id: String,
+) -> Result<Preview> {
     let operation = state.transfer.begin(operation_id)?;
     check_target_epoch(&state, &target)?;
     let previous = load_target(&state, &target)?;
@@ -439,7 +632,6 @@ pub async fn preview_import(
     if matches!(target, Target::Team { .. }) {
         let _ = state.teams.refresh_authorization(&app).await;
     }
-    let mut pending = backup::preview(Path::new(&path))?;
     let mut batch = Batch {
         target: target.clone(),
         index_name: index_name(&state, &target)?,
@@ -452,40 +644,41 @@ pub async fn preview_import(
         merge,
         restore_settings,
         pending: pending.clone(),
+        device_settings: None,
         base: None,
         request: None,
         state: "ready".into(),
     };
     match &target {
-        Target::Private { library_id, .. } => {
-            let store = state.store.lock().unwrap();
-            local::scope(&store, Some(library_id))?;
-            let bound = local::bound(&store);
-            if bound
-                && (!pending.library.files.is_empty()
-                    || pending.library.categories.iter().any(|c| c.kind == "file"))
-            {
-                return Err("此备份含本机文件关联，请切回本机个人库导入。".into());
-            }
-            batch.label = if bound {
-                format!("我的话术 · {}", local::meta(&store, "username")?)
-            } else {
-                "本机个人库".into()
-            };
-            batch.generation = local::meta(&store, "generation")?;
-            batch.clock = clock(&store)?;
-            backup::note_merge_ambiguity(&mut pending, &store.categories()?, merge);
-            if bound || pending.settings_scope == SettingsScope::Portable {
-                let mut settings = serde_json::to_value(store.settings()?).map_err(db_error)?;
-                let incoming = serde_json::to_value(&pending.library.settings).map_err(db_error)?;
-                for key in wire::private::SETTINGS {
-                    settings[*key] = incoming[*key].clone();
+        Target::Private { .. } => {
+            with_import_store(&state, &target, |store| {
+                let device = target.device_part();
+                select_import_part(&mut pending, device)?;
+                batch.label = if device {
+                    "本机文件与设备设置".into()
+                } else if local::bound(store) {
+                    format!("个人话术 · {}", local::meta(store, "username")?)
+                } else {
+                    "个人话术".into()
+                };
+                batch.generation = local::meta(store, "generation")?;
+                batch.clock = clock(store)?;
+                if device {
+                    batch.device_settings = Some(store.settings()?);
                 }
-                pending.library.settings = serde_json::from_value(settings).map_err(db_error)?;
-            }
-            if pending.settings_scope == SettingsScope::None {
-                batch.restore_settings = false;
-            }
+                backup::note_merge_ambiguity(&mut pending, &store.categories()?, merge);
+                import_settings(&mut pending, &store.settings()?, device)?;
+                if pending.settings_scope == SettingsScope::None {
+                    batch.restore_settings = false;
+                }
+                if !device && local::meta(store, "enabled")? == "1" {
+                    pending.preview.notes.push(format!(
+                        "导入后将同步到账号 {}。",
+                        local::meta(store, "username")?
+                    ));
+                }
+                Ok(())
+            })?;
         }
         Target::Team {
             team_id,
@@ -504,7 +697,7 @@ pub async fn preview_import(
             )?;
             let snapshot = state.teams.cached_snapshot(team_id)?;
             if snapshot.version != *version {
-                return Err("共享库已更新，请刷新后预览。".into());
+                return Err("共享话术已更新，请刷新后预览。".into());
             }
             let categories = snapshot
                 .categories
@@ -519,7 +712,7 @@ pub async fn preview_import(
                 })
                 .collect::<Vec<_>>();
             backup::note_merge_ambiguity(&mut pending, &categories, merge);
-            batch.label = format!("共享库话术 · {}", state.teams.view(team_id)?.team.name);
+            batch.label = format!("共享话术 · {}", state.teams.view(team_id)?.team.name);
             batch.server = server;
             batch.owner = owner;
             batch.epoch = epoch;
@@ -596,12 +789,9 @@ async fn resolve(
 ) -> Result<ImportResult> {
     check(state, batch, false)?;
     let Target::Team { team_id, .. } = &batch.target else {
-        if state
-            .store
-            .lock()
-            .unwrap()
-            .imported(&batch.pending.preview.id)?
-        {
+        if with_import_store(state, &batch.target, |store| {
+            store.imported(&batch.pending.preview.id)
+        })? {
             return Ok(complete(state, batch));
         }
         return Ok(ImportResult {
@@ -648,7 +838,7 @@ async fn resolve(
         save(state, batch)?;
         return Ok(ImportResult {
             state: "invalid".into(),
-            message: "共享库已更新，请重新预览。".into(),
+            message: "共享话术已更新，请重新预览。".into(),
         });
     }
     Err("结果待确认，请稍后核对。".into())
@@ -694,16 +884,29 @@ pub async fn refresh_import_preview(
         }
         batch.request = None;
     }
+    let import_target = batch.target.clone();
     match &mut batch.target {
-        Target::Private { library_id, .. } => {
-            let store = state.store.lock().unwrap();
-            local::scope(&store, Some(library_id))?;
-            if store.imported(&batch.pending.preview.id)? {
+        Target::Private { .. } => {
+            let completed = with_import_store(&state, &import_target, |store| {
+                if store.imported(&batch.pending.preview.id)? {
+                    return Ok(true);
+                }
+                batch.clock = clock(store)?;
+                if import_target.device_part() {
+                    batch.device_settings = Some(store.settings()?);
+                }
+                import_settings(
+                    &mut batch.pending,
+                    &store.settings()?,
+                    import_target.device_part(),
+                )?;
+                backup::note_merge_ambiguity(&mut batch.pending, &store.categories()?, batch.merge);
+                Ok(false)
+            })?;
+            if completed {
                 finish(&state, &batch)?;
                 return Ok(None);
             }
-            batch.clock = clock(&store)?;
-            backup::note_merge_ambiguity(&mut batch.pending, &store.categories()?, batch.merge);
         }
         Target::Team {
             team_id, version, ..
@@ -752,28 +955,35 @@ pub async fn confirm_import(
         return resolve(&app, &state, &mut batch).await;
     }
     if batch.state == "invalid" {
-        return Err("共享库已更新，请重新预览。".into());
+        return Err("共享话术已更新，请重新预览。".into());
     }
     match &batch.target {
-        Target::Private { library_id, .. } => {
-            {
-                let mut store = state.store.lock().unwrap();
-                local::scope(&store, Some(library_id))?;
-                if local::meta(&store, "generation")? != batch.generation {
+        Target::Private { .. } => {
+            with_import_store(&state, &batch.target, |store| {
+                if local::meta(store, "generation")? != batch.generation {
                     return Err("个人库已恢复，请重新预览。".into());
                 }
-                if !store.imported(&batch.pending.preview.id)? && clock(&store)? != batch.clock {
-                    return Err("个人库已更新，请重新预览。".into());
+                if !store.imported(&batch.pending.preview.id)?
+                    && (clock(store)? != batch.clock
+                        || batch
+                            .device_settings
+                            .as_ref()
+                            .is_some_and(|old| store.settings().as_ref().ok() != Some(old)))
+                {
+                    return Err("内容或设置已更新，请重新预览。".into());
                 }
+                let mut pending = batch.pending.clone();
+                import_settings(&mut pending, &store.settings()?, batch.target.device_part())?;
                 state.teams.with_transfer_epoch(batch.epoch, || {
                     backup::apply_prepared(
-                        &mut store,
-                        &batch.pending,
+                        store,
+                        &pending,
                         batch.merge,
                         batch.restore_settings,
+                        batch.target.device_part(),
                     )
-                })?;
-            }
+                })
+            })?;
             let mut result = complete(&state, &batch);
             if let Err(e) = crate::changed(&app, &state) {
                 result.message = format!("导入完成，设置未生效：{e}");
@@ -787,7 +997,7 @@ pub async fn confirm_import(
             if batch.request.is_none() {
                 let base = batch.base.clone().ok_or("导入基准缺失。")?;
                 if state.teams.cached_snapshot(&team_id)?.version != *version {
-                    return Err("共享库已更新，请重新预览。".into());
+                    return Err("共享话术已更新，请重新预览。".into());
                 }
                 let request = state
                     .teams
@@ -843,6 +1053,9 @@ pub async fn export_data(
     target: Target,
     operation_id: String,
 ) -> Result<()> {
+    if target.device_part() {
+        return Err("设备部分仅用于分类导入，请选择个人话术导出。".into());
+    }
     let operation = state.transfer.begin(operation_id)?;
     check_target_epoch(&state, &target)?;
     if matches!(target, Target::Team { .. }) {
@@ -917,13 +1130,13 @@ pub async fn export_data(
             )?;
             let raw = state.teams.cached_snapshot(team_id)?;
             if raw.version != *version {
-                return Err("共享库已更新，请刷新后导出。".into());
+                return Err("共享话术已更新，请刷新后导出。".into());
             }
             let mut view = state.teams.view(team_id)?;
             if view.team.version != raw.version
                 || view.team.lifecycle_version != raw.lifecycle_version
             {
-                return Err("共享库已更新，请刷新后导出。".into());
+                return Err("共享话术已更新，请刷新后导出。".into());
             }
             for p in &raw.phrases {
                 // 按ID匹配而不依赖缓存排序，素材引用固定在这次导出的版本。
@@ -931,7 +1144,7 @@ pub async fn export_data(
                     .phrases
                     .iter_mut()
                     .find(|v| v.content_ref.id == p.id)
-                    .ok_or("共享库话术引用已变化。")?;
+                    .ok_or("共享话术引用已变化。")?;
                 for (block, local_block) in p
                     .segments
                     .iter()
@@ -1068,7 +1281,7 @@ pub async fn export_data(
                             return Err("素材未缓存，请联网后导出。".into());
                         }
                         let (id, name, image) =
-                            group_assets.get(path).ok_or("共享库素材引用无效。")?;
+                            group_assets.get(path).ok_or("共享话术素材引用无效。")?;
                         tokio::select! { _ = operation.cancel.cancelled() => return Err("操作已取消。".into()), result = state.teams.transfer_download(&app, team_id, id, name, *image) => result? };
                         check_scope()?;
                         backup::copy_material(Path::new(path), &target_file, &check_scope)?;
@@ -1124,5 +1337,86 @@ pub async fn export_data(
                 },
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn split_backup_keeps_personal_and_device_content_and_settings_separate() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = crate::store::Store::open(dir.path()).unwrap();
+        let mut library = store.library().unwrap();
+        library.settings.theme = "blue".into();
+        library.settings.teams_first = true;
+        library.categories = vec![Category {
+            id: id(),
+            name: "文件".into(),
+            kind: "file".into(),
+            parent_id: None,
+            position: 0,
+            background: String::new(),
+        }];
+        let pending = PendingImport {
+            library,
+            recycle_bin: vec![],
+            images: HashMap::new(),
+            materials: HashMap::new(),
+            material_dir: None,
+            settings_scope: SettingsScope::Device,
+            preview: backup::ImportPreview {
+                id: id(),
+                kind: "backup".into(),
+                filename: "完整备份".into(),
+                categories: 0,
+                phrases: 0,
+                common_phrases: 0,
+                files: 0,
+                images: 0,
+                recycled: 0,
+                rows: vec![],
+                notes: vec![],
+            },
+        };
+        let mut personal = pending.clone();
+        select_import_part(&mut personal, false).unwrap();
+        import_settings(&mut personal, &store.settings().unwrap(), false).unwrap();
+        assert!(personal.library.categories.is_empty());
+        assert_eq!(personal.library.settings.theme, "blue");
+        assert!(!personal.library.settings.teams_first);
+        assert_eq!(personal.preview.notes.len(), 1);
+        let mut device = pending;
+        select_import_part(&mut device, true).unwrap();
+        import_settings(&mut device, &store.settings().unwrap(), true).unwrap();
+        assert_eq!(device.library.categories.len(), 1);
+        assert_eq!(
+            device.library.settings.theme,
+            store.settings().unwrap().theme
+        );
+        assert!(device.library.settings.teams_first);
+        assert_eq!(device.preview.notes.len(), 1);
+        store
+            .conn
+            .execute(
+                "INSERT INTO sync_desired_settings VALUES('enter', ?1)",
+                ["\"ctrl-enter\""],
+            )
+            .unwrap();
+        let mut store = store;
+        backup::prepare_ids(&mut device).unwrap();
+        backup::apply_prepared(&mut store, &device, false, true, true).unwrap();
+        let desired: String = store
+            .conn
+            .query_row(
+                "SELECT value FROM sync_desired_settings WHERE id='enter'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(desired, "\"ctrl-enter\"");
+        assert_eq!(store.settings().unwrap().enter, "enter");
+        assert!(store.settings().unwrap().teams_first);
+        assert!(select_import_part(&mut personal, true).is_err());
     }
 }

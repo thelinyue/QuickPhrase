@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { call } from './api';
-import type { TeamStatus } from './types';
+import { syncTime, type TeamStatus } from './types';
 import { AccountModal } from './AccountControls';
 
-interface Status { libraryId: string; username: string; enabled: boolean; state: string; pending: number; conflicts: number; settingsPending: number; message: string; sameAccount: boolean }
+interface Status { libraryId: string; username: string; enabled: boolean; state: string; pending: number; conflicts: number; settingsPending: number; message: string; sameAccount: boolean; initialized: boolean; lastSuccessfulSyncAt: number | null }
 interface Choice { key: string; label: string; local: string; server: string; setting: boolean }
 interface Preview { id: string; categories: number; phrases: number; commonPhrases: number; conflicts: Choice[]; resume: boolean; restore: boolean }
 interface Conflict { kind: string; id: string; label: string; local: string; server: string; serverVersion: number; localRevision: number }
@@ -31,15 +31,18 @@ export function PrivateSyncSettings({ account }: { account: TeamStatus }) {
   useEffect(() => { sequence.current++; setStatus(null); setPreview(null); setConflicts(null); setSettings(null); setMessage(''); void refresh(); }, [owner]);
   useEffect(() => { if (panelLibrary && status?.libraryId !== panelLibrary) { setConflicts(null); setSettings(null); } setPreview(null); }, [status?.libraryId]);
   const online = !!account.user && !account.offline && !account.user.mustChangePassword && account.privateSync === true;
-  return <section className="account-section private-sync-settings"><div className="account-line"><strong>个人同步</strong><span>{status?.username ? `个人库 · ${status.username}` : '本机个人库'}</span><span role="status" className="account-status">{status?.enabled ? status.state : status?.username ? '已暂停' : '未开启'}</span></div>
+  const bound = !!status?.username;
+  const label = !bound ? '仅保存在本机' : !account.user ? '未登录，内容保留在本机' : !status.sameAccount ? '内容属于其他账号' : !status.initialized ? '未开启' : !status.enabled ? '已暂停' : status.state;
+  return <section className="account-section private-sync-settings"><div className="account-line"><strong>个人同步</strong><span role="status" className="account-status">{label}</span></div>
+    {bound && <p className="account-hint">所属账号：{status.username}</p>}
+    <p className="account-hint">最近同步：<time dateTime={status?.lastSuccessfulSyncAt != null ? new Date(status.lastSuccessfulSyncAt).toISOString() : undefined}>{syncTime(status?.lastSuccessfulSyncAt)}</time></p>
     <div className="setting-buttons">
-      {status?.enabled && status.sameAccount ? <button className="secondary-button" disabled={busy} onClick={() => void run(() => call('pause_private_sync'))}>暂停同步</button> : <button className="secondary-button" disabled={busy || !online} onClick={() => void run(() => readPanel<Preview>('preview_private_sync', value => { setPreview(value); setChoices({}); setPage(0); }))}>{status?.username && status.sameAccount ? '继续同步' : '开启同步'}</button>}
-      {status?.username && <button className="secondary-button" disabled={busy} onClick={() => void run(() => call('use_local_private_library'))}>本机个人库</button>}
+      {status?.enabled ? <button className="secondary-button" disabled={busy} onClick={() => void run(() => call('pause_private_sync'))}>暂停同步</button> : <button className="secondary-button" disabled={busy || !status || !online || (bound && !status.sameAccount)} onClick={() => void run(() => readPanel<Preview>('preview_private_sync', value => { setPreview(value); setChoices({}); setPage(0); }))}>{status?.initialized ? '继续同步' : '开启同步'}</button>}
       {status?.conflicts ? <button className="secondary-button" disabled={busy} onClick={() => void run(() => readPanel<Conflict[]>('get_private_conflicts', value => { setPanelLibrary(status!.libraryId); setConflicts(value); }))}>处理冲突（{status.conflicts}）</button> : null}
       {status?.settingsPending ? <button className="secondary-button" disabled={busy} onClick={() => void run(() => readPanel<SettingChange[]>('get_private_settings', value => { setPanelLibrary(status!.libraryId); setSettings(value); }))}>设置待确认（{status.settingsPending}）</button> : null}
     </div>
-    <p className="account-hint">同步话术、素材、短语和个人偏好。</p>
-    {account.user && account.privateSync === false && <p className="settings-hint">服务端需升级后才能同步我的话术。</p>}
+    <p className="account-hint">暂停后仍可查看和编辑，恢复后继续同步。</p>
+    {account.user && account.privateSync === false && <p className="settings-hint">服务端需升级后才能同步个人话术。</p>}
     {preview && <AccountModal title={preview.restore ? '恢复后核对' : preview.resume ? '继续同步' : '首次合并'} busy={busy} close={() => { void run(async () => { await call('cancel_private_sync_preview'); setPreview(null); setMessage(''); }); }} footer={<><button className="secondary-button" disabled={busy} onClick={() => void run(async () => { await call('cancel_private_sync_preview'); setPreview(null); setMessage(''); })}>取消</button><button className="primary-button" disabled={busy || !online} onClick={() => void run(async () => { await call('confirm_private_sync', { request: { previewId: preview.id, choices } }); setPreview(null); })}>{busy ? '提交中…' : '确认同步'}</button></>}><p>{preview.resume ? '保留离线改动，继续同步。' : `${preview.categories} 个分类 · ${preview.phrases} 条话术 · ${preview.commonPhrases} 条常用短语`}</p>
       {preview.conflicts.length > 0 && <><p>相同记录请选择版本，默认使用服务器版。</p>{preview.conflicts.slice(page * 20, page * 20 + 20).map(item => <div className="private-choice" key={item.key}><strong>{item.setting ? names[item.key.slice(8)] || '个人设置' : item.label}</strong><p>本机：{item.local}</p><p>服务器：{item.server}</p><select aria-label={`合并 ${item.label}`} value={choices[item.key] || 'server'} onChange={e => setChoices(c => ({ ...c, [item.key]: e.target.value }))}><option value="server">使用服务器</option><option value="local">使用本机</option>{!item.setting && <option value="both">保留两份</option>}</select></div>)}{preview.conflicts.length > 20 && <div className="setting-buttons"><button disabled={page === 0} onClick={() => setPage(p => p - 1)}>上一页</button><span>{page + 1} / {Math.ceil(preview.conflicts.length / 20)}</span><button disabled={(page + 1) * 20 >= preview.conflicts.length} onClick={() => setPage(p => p + 1)}>下一页</button></div>}</>}
       {message && <p role="alert" className="validation-error">{message}</p>}</AccountModal>}

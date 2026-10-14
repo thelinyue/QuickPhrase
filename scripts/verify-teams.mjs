@@ -62,14 +62,14 @@ async function startClient() {
 try {
   await until(async () => (await fetch(base + '/health')).ok);
   await startClient();
-  let teamA, teamB, privateId, shared, externalAsset, employee, recipient, ownTeam, ownSnapshot, managementView, userView;
+  let teamA, teamB, privateId, employeePrivateId, shared, externalAsset, employee, recipient, ownTeam, ownSnapshot, managementView, userView;
   await check('HTTP登录、环境变量管理员首次改密和字符串账号管理', async () => {
     await click(page.getByRole('button', { name: '设置', exact: true })); const accountView = await view('settings'); await accountView.locator('.settings-sidebar').waitFor(); await hideDynamicWindows(accountView); await click(accountView.getByRole('button', { name: '账号与同步', exact: true }));
     await accountView.getByLabel('服务器地址', { exact: true }).fill(base); await accountView.getByLabel('用户名', { exact: true }).fill('qa-admin');
     await accountView.screenshot({ path: path.join(evidence, 'account-login.png') });
     await accountView.getByLabel('密码', { exact: true }).fill(initialPassword); await accountView.locator('.team-connection').evaluate(el => el.requestSubmit());
     await accountView.getByRole('dialog', { name: '修改初始密码', exact: true }).waitFor();
-    const status = await invoke('get_team_status'); assert.ok(status.user.mustChangePassword); assert.equal(status.teams.length, 0); assert.ok(await accountView.getByRole('button', { name: '共享库管理', exact: true }).isDisabled());
+    const status = await invoke('get_team_status'); assert.ok(status.user.mustChangePassword); assert.equal(status.teams.length, 0); assert.ok(await accountView.getByRole('button', { name: '共享话术管理', exact: true }).isDisabled());
     await accountView.screenshot({ path: path.join(evidence, 'first-password.png') });
     await accountView.getByLabel('当前密码', { exact: true }).fill(initialPassword); await accountView.getByLabel('新密码', { exact: true }).fill(password); await accountView.getByLabel('确认新密码', { exact: true }).fill(password); await accountView.locator('dialog form').evaluate(el => el.requestSubmit());
     await until(() => invoke('get_team_status'), value => value.user && !value.user.mustChangePassword);
@@ -81,8 +81,8 @@ try {
     assert.equal((await invoke('team_admin', { action: 'users' })).find(u => u.id === employee).username, '0001');
     await until(() => invoke('get_team_view', { teamId: teamA }));
   });
-  await check('用户名和共享库窗口右上角关闭实际销毁，可重新打开', async () => {
-    for (const [label, title, width, height] of [['user-management', '账号管理', 620, 620], ['team-management', '共享库管理', 680, 600]]) {
+  await check('用户名和共享话术窗口右上角关闭实际销毁，可重新打开', async () => {
+    for (const [label, title, width, height] of [['user-management', '账号管理', 620, 620], ['team-management', '共享话术管理', 680, 600]]) {
       await invoke('plugin:webview|create_webview_window', { options: { label, title: title + ' · 闪语', url: 'index.html#' + label, width, height, decorations: false } });
       const target = await view(label); await target.locator(label === 'user-management' ? '.user-card' : '.management-groups').first().waitFor();
       const failures = []; target.on('pageerror', error => { if (String(error).includes('destroy')) failures.push(String(error)); });
@@ -90,7 +90,7 @@ try {
       await until(() => target.isClosed()).catch(() => { throw new Error(title + '关闭失败：' + failures.join('；')); });
       await invoke('plugin:webview|create_webview_window', { options: { label, title: title + ' · 闪语', url: 'index.html#' + label, width, height, decorations: false } });
       const reopened = await view(label); await reopened.locator(label === 'user-management' ? '.user-card' : '.management-groups').first().waitFor(); await hideDynamicWindows(reopened);
-      await click(reopened.getByRole('button', { name: label === 'user-management' ? '新建账号' : '新建共享库', exact: true }));
+      await click(reopened.getByRole('button', { name: label === 'user-management' ? '新建账号' : '新建共享话术', exact: true }));
       const input = reopened.locator('dialog input').first(); await input.fill('窗口关闭验收'); await input.focus();
       assert.equal(await input.evaluate(el => getComputedStyle(el).outlineStyle), 'none');
       const closeBox = await reopened.locator('.dialog-window-close').boundingBox(); assert.ok(closeBox.x + closeBox.width === width && closeBox.y === 0);
@@ -98,37 +98,37 @@ try {
       await reopened.locator('.dialog-window-close').click({ timeout: 4000 }); await until(() => reopened.isClosed());
     }
   });
-  await check('私人分类发布到共享库只复制指定话术和实际图文附件', async () => {
+  await check('私人分类发布到共享话术只复制指定话术和实际图文附件', async () => {
     const rootId = await invoke('save_category', { category: { id: '', name: '私人QA', kind: 'phrase', parentId: null, position: 0, background: '' } });
     const [image] = await invoke('import_images', { paths: [path.join(repo, 'src-tauri/icons/icon.png')] });
-    externalAsset = path.join(evidence, '外部文件.txt'); await fs.writeFile(externalAsset, '共享库附件QA');
+    externalAsset = path.join(evidence, '外部文件.txt'); await fs.writeFile(externalAsset, '共享话术附件QA');
     privateId = await invoke('save_phrase', { phrase: { id: '', rootId, groupId: null, title: 'QA图文附件', color: '', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: 'QA正文' }, image, { kind: 'file', path: externalAsset, name: '外部文件.txt' }] }] } });
     await invoke('publish_private_to_team', { teamId: teamA, id: rootId, kind: 'category' });
     shared = await until(() => invoke('get_team_view', { teamId: teamA }), v => v.phrases.length === 1); assert.equal(shared.phrases[0].shortcut, '');
     const remote = await api('GET', `teams/${teamA}/snapshot`); assert.equal(remote.phrases[0].segments[0].blocks[1].kind, 'image'); assert.ok(remote.phrases[0].segments[0].blocks[2].assetId);
     assert.equal(remote.settings, undefined); assert.equal(remote.commonPhrases, undefined);
   });
-  await check('共享库入口在私人入口旁；主窗口展示当前组及窄窗布局', async () => {
-    await click(page.getByRole('button', { name: '共享库', exact: true })); await click(page.getByRole('menuitem', { name: /^售前小组/ }));
-    await page.getByRole('button', { name: '共享库', exact: true }).getByText('共享库：售前小组', { exact: true }).waitFor(); await page.getByText('QA图文附件', { exact: true }).waitFor();
-    assert.ok(await page.getByRole('button', { name: '我的话术', exact: true }).count());
+  await check('共享话术入口在私人入口旁；主窗口展示当前组及窄窗布局', async () => {
+    await click(page.getByRole('button', { name: '共享话术', exact: true })); await click(page.getByRole('menuitem', { name: /^售前小组/ }));
+    await page.getByRole('button', { name: '共享话术', exact: true }).getByText('共享话术：售前小组', { exact: true }).waitFor(); await page.getByText('QA图文附件', { exact: true }).waitFor();
+    assert.ok(await page.getByRole('button', { name: '个人话术', exact: true }).count());
     const geometry = await page.locator('.scope-bar').evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth })); assert.ok(geometry.scroll <= geometry.width + 1);
     await page.getByRole('status').evaluateAll(nodes => nodes.forEach(el => el.click()));
     await page.screenshot({ path: path.join(evidence, 'team-entry.png') });
   });
-  await check('入口交换保持当前共享库及选中话术，窄窗下拉不越界', async () => {
+  await check('入口交换保持当前共享话术及选中话术，窄窗下拉不越界', async () => {
     const original = await invoke('get_library'); const currentRow = page.locator('.content-row').filter({ hasText: 'QA图文附件' }); await click(currentRow);
     const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
     await invoke('save_settings', { settings: { ...original.settings, teamsFirst: true }, libraryId: original.libraryId });
     await page.waitForFunction(() => document.querySelector('.scope-bar').firstElementChild.classList.contains('team-selector'));
     assert.equal(await page.locator('.content-row.selected').filter({ hasText: 'QA图文附件' }).count(), 1);
-    assert.ok(await page.getByRole('button', { name: '共享库', exact: true }).getByText('共享库：售前小组', { exact: true }).count());
+    assert.ok(await page.getByRole('button', { name: '共享话术', exact: true }).getByText('共享话术：售前小组', { exact: true }).count());
     await page.setViewportSize({ width: 300, height: 400 });
     const geometry = await page.locator('.scope-bar').evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth })); assert.ok(geometry.scroll <= geometry.width + 1);
-    await click(page.getByRole('button', { name: '共享库', exact: true })); const dropdown = await page.getByRole('menu', { name: '选择共享库', exact: true }).boundingBox();
+    await click(page.getByRole('button', { name: '共享话术', exact: true })); const dropdown = await page.getByRole('menu', { name: '选择共享话术', exact: true }).boundingBox();
     assert.ok(dropdown.x >= 0 && dropdown.x + dropdown.width <= 300); assert.ok(dropdown.width < 200, '短库名的下拉应随内容收紧'); await page.screenshot({ path: path.join(evidence, 'team-entry-reordered.png') });
     await page.keyboard.press('Escape'); await page.setViewportSize(viewport); await invoke('save_settings', { settings: original.settings, libraryId: original.libraryId });
-    await page.waitForFunction(() => document.querySelector('.scope-bar').firstElementChild.textContent === '我的话术');
+    await page.waitForFunction(() => document.querySelector('.scope-bar').firstElementChild.textContent === '个人话术');
   });
   await check('完整下载、素材协议显示和复制个人库后独立保留真实附件', async () => {
     await invoke('prepare_team_phrase', { id: shared.phrases[0].id }); shared = await invoke('get_team_view', { teamId: teamA }); assert.equal(shared.phrases[0].ready, true);
@@ -136,7 +136,7 @@ try {
     const imageReady = await page.evaluate(path => new Promise(resolve => { const image = new Image(); image.onload = () => resolve(true); image.onerror = () => resolve(false); image.src = 'http://asset.localhost/' + encodeURIComponent(path); }), imagePath); assert.ok(imageReady);
     await invoke('copy_team_to_private', { id: shared.phrases[0].id });
     const copy = (await invoke('get_library')).phrases.find(p => p.id !== privateId); assert.ok(copy); assert.notEqual(copy.segments[0].blocks[2].path, externalAsset);
-    assert.equal(await fs.readFile(copy.segments[0].blocks[2].path, 'utf8'), '共享库附件QA');
+    assert.equal(await fs.readFile(copy.segments[0].blocks[2].path, 'utf8'), '共享话术附件QA');
   });
   await check('SSE真实网络更新、编辑目标标识和编辑冲突保留草稿', async () => {
     const remote = await api('GET', `teams/${teamA}/snapshot`); remote.phrases[0].title = 'QA同步更新';
@@ -145,7 +145,7 @@ try {
     shared = await invoke('get_team_view', { teamId: teamA });
     await page.locator('[data-row]').filter({ hasText: 'QA同步更新' }).dispatchEvent('contextmenu'); await click(page.getByRole('menuitem', { name: '编辑', exact: true }));
     const editor = await view('editor'); await editor.locator('.editor-form').waitFor(); await hideDynamicWindows(editor);
-    assert.ok(await editor.getByText('共享库话术 · 售前小组', { exact: true }).count()); await editor.locator('#phrase-title').fill('QA保留草稿');
+    assert.ok(await editor.getByText('共享话术 · 售前小组', { exact: true }).count()); await editor.locator('#phrase-title').fill('QA保留草稿');
     const remote2 = await api('GET', `teams/${teamA}/snapshot`); remote2.phrases[0].title = 'QA其他成员保存'; await publish(teamA, remote2);
     await until(() => invoke('get_team_view', { teamId: teamA }), v => v.phrases[0].title === 'QA其他成员保存');
     await editor.locator('form').evaluate(el => el.requestSubmit()); await editor.locator('.validation-error').waitFor(); assert.equal(await editor.locator('#phrase-title').inputValue(), 'QA保留草稿');
@@ -154,15 +154,20 @@ try {
   await check('普通用户名仅访问所属库；断网及离线重启可用完整缓存，重连撤权立即清理', async () => {
     await invoke('team_logout'); await invoke('team_login', { server: base, username: '0001', password: employeePassword });
     await invoke('team_change_password', { request: { currentPassword: employeePassword, password: employeeNewPassword } });
+    assert.equal((await invoke('get_library')).phrases.length, 0, '新账号不带入上一账号尚未同步的内容');
     await until(() => invoke('get_team_view', { teamId: teamA }), v => v.phrases.length === 1);
     const status = await invoke('get_team_status'); assert.equal(status.teams.length, 1); assert.equal(status.teams[0].editable, false);
     assert.ok((await invoke('search_scoped_content', { query: 'QA', scope: 'all' })).some(h => h.teamId === teamA && h.sourceLabel === '售前小组'));
     await assert.rejects(invoke('get_team_view', { teamId: teamB }));
     const current = await invoke('get_team_view', { teamId: teamA }); await invoke('prepare_team_phrase', { id: current.phrases[0].id });
+    await invoke('copy_team_to_private', { id: current.phrases[0].id });
+    const employeeLibrary = await invoke('get_library'); employeePrivateId = employeeLibrary.phrases[0].id;
+    await invoke('save_phrase', { libraryId: employeeLibrary.libraryId, expectedRevision: employeeLibrary.privateRevisions[`phrase:${employeePrivateId}`], phrase: { ...employeeLibrary.phrases[0], title: '员工个人副本' } });
+    const lastTeamSync = (await invoke('get_team_status')).teamSyncTimes[teamA]; assert.ok(lastTeamSync > 0);
     service.kill(); await until(() => Promise.resolve(service.exitCode !== null || service.signalCode !== null));
     await assert.rejects(invoke('team_refresh')); const offline = await invoke('get_team_view', { teamId: teamA }); assert.ok(offline.offline); assert.ok(offline.phrases[0].ready);
-    await click(page.getByRole('button', { name: '共享库', exact: true }));
-    assert.ok(await page.getByRole('menuitem', { name: '共享库管理', exact: true }).isDisabled());
+    await click(page.getByRole('button', { name: '共享话术', exact: true }));
+    assert.ok(await page.getByRole('menuitem', { name: '共享话术管理', exact: true }).isDisabled());
     assert.ok(await page.getByRole('menuitem', { name: /^售前小组/ }).isEnabled());
     await click(page.getByRole('menuitem', { name: /^售前小组/ }));
     await invoke('window_action', { action: 'exit' }); await browser.close();
@@ -170,49 +175,50 @@ try {
     await startClient();
     const restarted = await invoke('get_team_view', { teamId: teamA });
     assert.ok(restarted.offline); assert.ok(restarted.phrases[0].ready);
+    assert.equal((await invoke('get_team_status')).teamSyncTimes[teamA], lastTeamSync);
     assert.equal(restarted.phrases[0].title, offline.phrases[0].title);
-    assert.equal(await fs.readFile(restarted.phrases[0].segments[0].blocks[2].path, 'utf8'), '共享库附件QA');
+    assert.equal(await fs.readFile(restarted.phrases[0].segments[0].blocks[2].path, 'utf8'), '共享话术附件QA');
     assert.ok((await invoke('search_scoped_content', { query: 'QA', scope: 'all' })).some(h => h.teamId === teamA));
-    await assert.rejects(invoke('team_admin', { action: 'create-team', request: { name: '离线创建共享库' } }));
+    await assert.rejects(invoke('team_admin', { action: 'create-team', request: { name: '离线创建共享话术' } }));
     service = startServer(); await until(async () => (await fetch(base + '/health')).ok); await invoke('team_refresh');
-    await click(page.getByRole('button', { name: '共享库', exact: true })); await click(page.getByRole('menuitem', { name: /^售前小组/ }));
+    await click(page.getByRole('button', { name: '共享话术', exact: true })); await click(page.getByRole('menuitem', { name: /^售前小组/ }));
     await setMembers(teamA, []); await until(() => invoke('get_team_status'), s => s.teams.length === 0, 5000);
     assert.equal(await page.getByText('QA其他成员保存', { exact: true }).count(), 0); await assert.rejects(invoke('get_team_view', { teamId: teamA }));
-    const privateCopy = (await invoke('get_library')).phrases.find(p => p.id !== privateId); assert.equal(await fs.readFile(privateCopy.segments[0].blocks[2].path, 'utf8'), '共享库附件QA'); assert.equal(await fs.readFile(externalAsset, 'utf8'), '共享库附件QA');
+    const privateCopy = (await invoke('get_library')).phrases.find(p => p.id !== privateId); assert.equal(await fs.readFile(privateCopy.segments[0].blocks[2].path, 'utf8'), '共享话术附件QA'); assert.equal(await fs.readFile(externalAsset, 'utf8'), '共享话术附件QA');
   });
-  await check('默认不授权创建共享库，授权后用户原子创建并成为管理员', async () => {
-    await click(page.getByRole('button', { name: '共享库', exact: true })); await click(page.getByRole('menuitem', { name: '共享库管理', exact: true }));
+  await check('默认不授权创建共享话术，授权后用户原子创建并成为管理员', async () => {
+    await click(page.getByRole('button', { name: '共享话术', exact: true })); await click(page.getByRole('menuitem', { name: '共享话术管理', exact: true }));
     managementView = await view('team-management'); await managementView.locator('.team-management').waitFor(); await hideDynamicWindows(managementView);
-    assert.equal(await managementView.getByRole('button', { name: '新建共享库', exact: true }).count(), 0);
+    assert.equal(await managementView.getByRole('button', { name: '新建共享话术', exact: true }).count(), 0);
     assert.equal(await managementView.getByRole('button', { name: '账号管理', exact: true }).count(), 0);
     await api('PUT', `users/${employee}`, { canCreateTeams: true });
     await until(() => invoke('get_team_status'), s => s.user.canCreateTeams);
-    await click(page.getByRole('button', { name: '共享库', exact: true })); await until(() => page.getByRole('menuitem', { name: '新建共享库', exact: true }).count());
+    await click(page.getByRole('button', { name: '共享话术', exact: true })); await until(() => page.getByRole('menuitem', { name: '新建共享话术', exact: true }).count());
     assert.ok((await page.locator('.team-dropdown').boundingBox()).width <= 250);
     await page.screenshot({ path: path.join(evidence, 'team-dropdown.png') });
-    await click(page.getByRole('menuitem', { name: '新建共享库', exact: true })); await managementView.locator('dialog input[name="name"]').fill('员工自建组');
+    await click(page.getByRole('menuitem', { name: '新建共享话术', exact: true })); await managementView.locator('dialog input[name="name"]').fill('员工自建组');
     await managementView.locator('dialog form').evaluate(el => el.requestSubmit());
     const status = await until(() => invoke('get_team_status'), s => s.teams.some(t => t.name === '员工自建组'));
     ownTeam = status.teams.find(t => t.name === '员工自建组').teamId;
     assert.equal(status.teams.find(t => t.teamId === ownTeam).role, 'manager');
     const members = await api('GET', `teams/${ownTeam}/members`); assert.equal(members.members.length, 1); assert.equal(members.members[0].role, 'manager');
-    await until(() => managementView.getByRole('button', { name: '退出共享库', exact: true }).isDisabled());
+    await until(() => managementView.getByRole('button', { name: '退出共享话术', exact: true }).isDisabled());
     await managementView.screenshot({ path: path.join(evidence, 'team-manager.png') });
   });
-  await check('精确用户名添加成员，草稿保存后生效；库内角色与创建共享库权限独立', async () => {
+  await check('精确用户名添加成员，草稿保存后生效；库内角色与创建共享话术权限独立', async () => {
     recipient = await api('POST', 'users', { username: '0002', displayName: '客服乙', password: recipientPassword });
     await click(managementView.getByRole('button', { name: '添加成员', exact: true }));
     await managementView.getByLabel('用户名', { exact: true }).fill('0002'); await managementView.locator('dialog form').evaluate(el => el.requestSubmit());
-    await managementView.getByRole('combobox', { name: '0002的共享库角色' }).waitFor();
+    await managementView.getByRole('combobox', { name: '0002的共享话术角色' }).waitFor();
     assert.equal((await api('GET', `teams/${ownTeam}/members`)).members.length, 1);
-    await managementView.getByRole('combobox', { name: '0002的共享库角色' }).selectOption('editor');
+    await managementView.getByRole('combobox', { name: '0002的共享话术角色' }).selectOption('editor');
     await click(managementView.getByRole('button', { name: '保存', exact: true }));
     await until(() => api('GET', `teams/${ownTeam}/members`), s => s.members.some(m => m.userId === recipient && m.role === 'editor'));
-    await invoke('publish_private_to_team', { teamId: ownTeam, id: privateId, kind: 'phrase' });
+    await invoke('publish_private_to_team', { teamId: ownTeam, id: employeePrivateId, kind: 'phrase' });
     ownSnapshot = await until(() => invoke('get_team_view', { teamId: ownTeam }), v => v.phrases.length === 1);
     await api('PUT', `users/${employee}`, { canCreateTeams: false }); await until(() => invoke('get_team_status'), s => !s.user.canCreateTeams);
     assert.equal((await invoke('get_team_status')).teams.find(t => t.teamId === ownTeam).role, 'manager');
-    assert.equal(await managementView.getByRole('button', { name: '新建共享库', exact: true }).count(), 0);
+    assert.equal(await managementView.getByRole('button', { name: '新建共享话术', exact: true }).count(), 0);
   });
   await check('管理员移交确认显示组和接收人，移交后撤下编辑与管理入口', async () => {
     await until(() => managementView.getByRole('button', { name: '移交管理员', exact: true }).isEnabled());
@@ -222,21 +228,21 @@ try {
     assert.ok(await managementView.getByText('移交后，你将成为查看者。', { exact: true }).count());
     await managementView.locator('dialog form').evaluate(el => el.requestSubmit());
     await until(() => invoke('get_team_status'), s => s.teams.find(t => t.teamId === ownTeam)?.role === 'member');
-    await until(() => managementView.getByRole('button', { name: '删除', exact: true }).count(), n => n === 0);
+    await until(() => managementView.getByRole('button', { name: '删除整组共享话术', exact: true }).count(), n => n === 0);
     assert.equal(await managementView.getByRole('button', { name: '移交管理员', exact: true }).count(), 0);
-    await until(() => managementView.getByRole('button', { name: '退出共享库', exact: true }).isEnabled());
+    await until(() => managementView.getByRole('button', { name: '退出共享话术', exact: true }).isEnabled());
     await managementView.screenshot({ path: path.join(evidence, 'team-after-transfer.png') });
   });
   await check('成员主动退出后撤下内容与搜索、清理本库缓存且保留个人副本', async () => {
     const current = await invoke('get_team_view', { teamId: ownTeam }); await invoke('prepare_team_phrase', { id: current.phrases[0].id });
     assert.ok((await fs.readdir(path.join(clientData, 'teams'), { recursive: true })).some(p => p.includes(ownTeam)));
-    await click(managementView.getByRole('button', { name: '退出共享库', exact: true }));
+    await click(managementView.getByRole('button', { name: '退出共享话术', exact: true }));
     await until(() => invoke('get_team_status'), s => !s.teams.some(t => t.teamId === ownTeam));
     await assert.rejects(invoke('get_team_view', { teamId: ownTeam }));
     assert.ok(!(await invoke('search_scoped_content', { query: 'QA', scope: 'all' })).some(h => h.teamId === ownTeam));
     assert.ok(!(await fs.readdir(path.join(clientData, 'teams'), { recursive: true })).some(p => p.includes(ownTeam)));
-    assert.ok((await invoke('get_library')).phrases.some(p => p.id === privateId)); assert.equal(await fs.readFile(externalAsset, 'utf8'), '共享库附件QA');
-    assert.ok(await managementView.evaluate(() => window.__qaConfirmations.some(v => v.title === '退出共享库' && v.message.includes('员工自建组'))));
+    assert.ok((await invoke('get_library')).phrases.some(p => p.id === employeePrivateId)); assert.equal(await fs.readFile(externalAsset, 'utf8'), '共享话术附件QA');
+    assert.ok(await managementView.evaluate(() => window.__qaConfirmations.some(v => v.title === '退出共享话术' && v.message.includes('员工自建组'))));
     const members = await api('GET', `teams/${ownTeam}/members`); assert.equal(members.members.length, 1); assert.equal(members.members[0].userId, recipient); assert.equal(members.members[0].role, 'manager');
   });
   await check('接收人获得本库管理权，可整库删除，成员与素材完整保留', async () => {
@@ -244,17 +250,17 @@ try {
     await invoke('team_change_password', { request: { currentPassword: recipientPassword, password: randomUUID() } });
     const current = await until(() => invoke('get_team_view', { teamId: ownTeam }), v => v.phrases.length === 1);
     assert.equal(current.team.role, 'manager'); assert.equal((await invoke('get_team_status')).user.canCreateTeams, false);
-    await until(() => managementView.getByRole('button', { name: '删除', exact: true }).isEnabled());
-    await click(managementView.getByRole('button', { name: '删除', exact: true }));
+    await until(() => managementView.getByRole('button', { name: '删除整组共享话术', exact: true }).isEnabled());
+    await click(managementView.getByRole('button', { name: '删除整组共享话术', exact: true }));
     await until(() => invoke('get_team_status'), s => s.teams.length === 0);
     const removed = (await api('GET', 'deleted-teams')).find(t => t.teamId === ownTeam); assert.equal(removed.memberCount, 1); assert.equal(removed.phraseCount, 1); assert.equal(removed.lifecycleVersion, 2);
     await assert.rejects(invoke('get_team_view', { teamId: ownTeam }));
   });
   await check('服务管理员整库恢复，旧生命周期拒绝，永久删除需完整库名', async () => {
     await invoke('team_logout'); await invoke('team_login', { server: base, username: 'qa-admin', password });
-    await until(() => managementView.getByRole('button', { name: '已删除共享库', exact: true }).count()); await click(managementView.getByRole('button', { name: '已删除共享库', exact: true }));
+    await until(() => managementView.getByRole('button', { name: '已删除共享话术', exact: true }).count()); await click(managementView.getByRole('button', { name: '已删除共享话术', exact: true }));
     await managementView.getByText('员工自建组', { exact: true }).waitFor(); await managementView.screenshot({ path: path.join(evidence, 'deleted-teams.png') });
-    await click(managementView.getByRole('button', { name: '恢复', exact: true }));
+    await click(managementView.getByRole('button', { name: '恢复整组共享话术', exact: true }));
     await until(() => invoke('get_team_status'), s => s.teams.some(t => t.teamId === ownTeam && t.lifecycleVersion === 3)); lifecycles.set(ownTeam, 3);
     const restored = await api('GET', `teams/${ownTeam}/snapshot`); assert.equal(restored.phrases.length, 1);
     const members = await api('GET', `teams/${ownTeam}/members`); assert.equal(members.members[0].userId, recipient); assert.equal(members.members[0].role, 'manager');
@@ -263,14 +269,14 @@ try {
     for (const id of materials) assert.ok((await fs.stat(path.join(serverData, 'assets', id))).isFile());
     await invoke('team_admin', { action: 'delete-team', teamId: ownTeam, request: { expectedLifecycleVersion: 3 } });
     await click(managementView.getByRole('button', { name: '刷新', exact: true })); await managementView.getByText('员工自建组', { exact: true }).waitFor();
-    await click(managementView.getByRole('button', { name: '永久删除', exact: true })); await managementView.locator('dialog input[name="confirmName"]').fill('错误库名'); await managementView.locator('dialog form').evaluate(el => el.requestSubmit());
+    await click(managementView.getByRole('button', { name: '永久删除整组共享话术', exact: true })); await managementView.locator('dialog input[name="confirmName"]').fill('错误库名'); await managementView.locator('dialog form').evaluate(el => el.requestSubmit());
     await managementView.locator('dialog .validation-error').waitFor(); assert.ok((await api('GET', 'deleted-teams')).some(t => t.teamId === ownTeam));
     await managementView.locator('dialog input[name="confirmName"]').fill('员工自建组'); await managementView.locator('dialog form').evaluate(el => el.requestSubmit());
     await until(() => api('GET', 'deleted-teams'), teams => !teams.some(t => t.teamId === ownTeam));
     for (const id of materials) await assert.rejects(fs.stat(path.join(serverData, 'assets', id)));
     assert.ok(!(await api('GET', 'asset-cleanup')).some(t => t.teamId === ownTeam));
   });
-  await check('用户名与共享库双窗口并存、分别复用，资料卡与创建共享库授权', async () => {
+  await check('用户名与共享话术双窗口并存、分别复用，资料卡与创建共享话术授权', async () => {
     await click(page.getByRole('button', { name: '主菜单', exact: true })); await click(page.getByRole('menuitem', { name: '账号管理', exact: true }));
     userView = await view('user-management'); await userView.locator('.user-management').waitFor(); await hideDynamicWindows(userView);
     assert.deepEqual(await userView.evaluate(() => ({ width: innerWidth, height: innerHeight })), { width: 620, height: 620 });
@@ -285,21 +291,21 @@ try {
     await userView.evaluate(() => { window.__qaPauseAction = 'create-user'; }); await userView.locator('dialog form').evaluate(el => el.requestSubmit());
     await until(() => userView.evaluate(() => !!window.__qaResume)); assert.ok(await userView.locator('.dialog-window-close').isDisabled());
     await invoke('plugin:window|close', { label: 'user-management' }, userView); await delay(100); assert.equal(userView.isClosed(), false); await userView.evaluate(() => { window.__qaResume(); delete window.__qaResume; });
-    const permission = userView.getByRole('checkbox', { name: '0003的创建共享库权限', exact: true }); await permission.waitFor(); assert.equal(await permission.isChecked(), false);
+    const permission = userView.getByRole('checkbox', { name: '0003的创建共享话术权限', exact: true }); await permission.waitFor(); assert.equal(await permission.isChecked(), false);
     await click(permission); await until(() => api('GET', 'users'), users => users.some(u => u.username === '0003' && u.canCreateTeams)); await until(() => permission.isChecked());
     await userView.getByRole('searchbox', { name: '搜索用户名', exact: true }).fill('客服丙'); assert.ok(await userView.getByText('联系方式：分机003', { exact: true }).count());
     await userView.screenshot({ path: path.join(evidence, 'employee-management.png') });
-    for (const menu of ['共享库管理', '账号管理']) { await click(page.getByRole('button', { name: '主菜单', exact: true })); await click(page.getByRole('menuitem', { name: menu, exact: true })); }
-    await managementView.getByRole('searchbox', { name: '搜索共享库', exact: true }).waitFor();
+    for (const menu of ['共享话术管理', '账号管理']) { await click(page.getByRole('button', { name: '主菜单', exact: true })); await click(page.getByRole('menuitem', { name: menu, exact: true })); }
+    await managementView.getByRole('searchbox', { name: '搜索共享话术', exact: true }).waitFor();
     for (const route of ['team-management', 'user-management']) assert.equal(context.pages().filter(p => !p.isClosed() && p.url().includes('#' + route)).length, 1);
     await managementView.screenshot({ path: path.join(evidence, 'group-list.png') });
     for (const [target, label, width] of [[userView, 'user-management', 480], [managementView, 'team-management', 560]]) {
-      await resizeManagement(target, label === 'user-management' ? '账号管理' : '共享库管理', width, 440);
+      await resizeManagement(target, label === 'user-management' ? '账号管理' : '共享话术管理', width, 440);
       await until(() => target.evaluate(() => innerWidth), value => value === width);
       const box = await target.locator('.management-pagination').boundingBox(); assert.ok(box.y >= 0 && box.y + box.height <= 440);
       assert.ok(await target.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await target.screenshot({ path: path.join(evidence, label + '-minimum.png') });
-      await resizeManagement(target, label === 'user-management' ? '账号管理' : '共享库管理', label === 'user-management' ? 620 : 680, label === 'user-management' ? 620 : 600);
+      await resizeManagement(target, label === 'user-management' ? '账号管理' : '共享话术管理', label === 'user-management' ? 620 : 680, label === 'user-management' ? 620 : 600);
     }
   });
   await check('20条分页、长用户名、成员全草稿保存和旧服务人数兼容', async () => {
@@ -318,8 +324,8 @@ try {
     await userView.screenshot({ path: path.join(evidence, 'employee-long-fields.png') });
     const group = managementView.locator('.management-groups tbody tr').filter({ hasText: '售后小组' }); await until(() => group.locator('td').nth(1).textContent(), value => value === '21');
     await click(group.getByRole('button', { name: '管理成员', exact: true }));
-    await managementView.getByRole('combobox', { name: 'UI0004的共享库角色', exact: true }).selectOption('editor');
-    await click(managementView.getByRole('button', { name: '下一页', exact: true })); await managementView.getByRole('combobox', { name: 'UI0023的共享库角色', exact: true }).selectOption('editor');
+    await managementView.getByRole('combobox', { name: 'UI0004的共享话术角色', exact: true }).selectOption('editor');
+    await click(managementView.getByRole('button', { name: '下一页', exact: true })); await managementView.getByRole('combobox', { name: 'UI0023的共享话术角色', exact: true }).selectOption('editor');
     await managementView.getByRole('searchbox', { name: '搜索成员', exact: true }).fill('UI0005'); await click(managementView.getByRole('button', { name: '移出', exact: true }));
     assert.equal((await api('GET', `teams/${teamB}/members`)).members.length, 21); await click(managementView.getByRole('button', { name: '保存', exact: true }));
     const saved = await until(() => api('GET', `teams/${teamB}/members`), value => value.members.length === 20); assert.equal(saved.members.filter(m => m.role === 'editor').length, 2); assert.ok(!saved.members.some(m => m.username === 'UI0005'));
@@ -333,13 +339,13 @@ try {
   });
   await check('成员草稿关闭取消后保留，确认放弃后销毁并可重新打开', async () => {
     const group = managementView.locator('.management-groups tbody tr').filter({ hasText: '售后小组' }); await click(group.getByRole('button', { name: '管理成员', exact: true }));
-    const role = managementView.getByRole('combobox', { name: 'UI0004的共享库角色', exact: true }); await role.selectOption('member');
+    const role = managementView.getByRole('combobox', { name: 'UI0004的共享话术角色', exact: true }); await role.selectOption('member');
     await managementView.evaluate(() => { window.__qaCancelNext = true; }); const before = await managementView.evaluate(() => window.__qaConfirmations.length);
     await managementView.getByRole('button', { name: '关闭窗口', exact: true }).click(); await until(() => managementView.evaluate(() => window.__qaConfirmations.length), n => n > before);
     await delay(100); assert.equal(managementView.isClosed(), false); assert.equal(await role.inputValue(), 'member');
     assert.equal((await api('GET', `teams/${teamB}/members`)).members.find(m => m.username === 'UI0004').role, 'editor');
     await managementView.getByRole('button', { name: '关闭窗口', exact: true }).click(); await until(() => managementView.isClosed());
-    await click(page.getByRole('button', { name: '主菜单', exact: true })); await click(page.getByRole('menuitem', { name: '共享库管理', exact: true }));
+    await click(page.getByRole('button', { name: '主菜单', exact: true })); await click(page.getByRole('menuitem', { name: '共享话术管理', exact: true }));
     managementView = await view('team-management'); await managementView.locator('.management-groups').waitFor(); await hideDynamicWindows(managementView);
   });
   await check('设置保留连接与管理入口；退出清理凭据与缓存', async () => {

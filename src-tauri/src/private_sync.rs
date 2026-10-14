@@ -16,12 +16,29 @@ use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{atomic::Ordering, Arc, Mutex},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Emitter, Manager};
 use tokio::sync::Notify;
 type Values = HashMap<(wire::Kind, String), Option<Value>>;
 type Keys = HashSet<(wire::Kind, String)>;
+
+/// 成功时间属于账号库；待提交、冲突和恢复核对未完成时保留上一次成功记录。
+fn record_success(store: &Store, generation: &str, timestamp: u64) -> Result<()> {
+    if local::meta(store, "enabled")? != "1"
+        || local::meta(store, "generation")? != generation
+        || local::meta(store, "reconcile")? == "1"
+    {
+        return Ok(());
+    }
+    let unfinished: bool = store.conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync_dirty) OR EXISTS(SELECT 1 FROM sync_inflight) OR EXISTS(SELECT 1 FROM sync_records WHERE conflict=1)",
+        [], |r| r.get(0)).map_err(db_error)?;
+    if !unfinished {
+        local::set_meta(store, "lastSuccessfulSyncAt", &timestamp.to_string())?;
+    }
+    Ok(())
+}
 
 pub fn conflict_keys(store: &Store) -> Result<Keys> {
     let rows = store
@@ -226,6 +243,8 @@ pub struct Status {
     pub settings_pending: usize,
     pub message: String,
     pub same_account: bool,
+    pub last_successful_sync_at: Option<u64>,
+    pub initialized: bool,
 }
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -527,6 +546,8 @@ impl PrivateSync {
             settings_pending,
             message: self.error.lock().unwrap().clone(),
             same_account,
+            last_successful_sync_at: local::meta(&store, "lastSuccessfulSyncAt")?.parse().ok(),
+            initialized: local::meta(&store, "initialized")? == "1",
         })
     }
     pub fn start(self: &Arc<Self>, app: tauri::AppHandle) {
@@ -622,19 +643,68 @@ impl PrivateSync {
         };
         if let Some(profile) = profile {
             let target = local::open_profile(&self.dir, &profile)?;
-            if local::meta(&target, "initialized")? == "1" {
-                self.activate(app, Some(&profile))?;
+            let source_id = local::meta(&target, "sourceLibraryId")?;
+            let original_id = local::identity(&state.device_store.lock().unwrap())?;
+            if local::meta(&target, "initialized")? != "1" && source_id == original_id {
+                // 首次登录尚未开启同步时，原内容归这次登录保留；换回原账号仍能继续编辑。
+                self.activate(app, None)?;
+                self.wake();
                 return Ok(());
             }
-        }
-        let is_other = {
             let store = state.store.lock().unwrap();
+            // 首次合并取消后仍使用原内容，不能在重新登录时打开尚未确认的空目标库。
+            let activate = local::meta(&target, "initialized")? == "1"
+                || local::meta(&target, "localOnly")? == "1"
+                || local::bound(&store);
+            drop(store);
+            if !activate {
+                self.wake();
+                return Ok(());
+            }
+            self.activate(app, Some(&profile))?;
+            self.wake();
+            return Ok(());
+        }
+        let needs_profile = {
+            let store = state.store.lock().unwrap();
+            let device = state.device_store.lock().unwrap();
             local::bound(&store)
-                && (local::meta(&store, "owner")? != user.id
-                    || local::meta(&store, "server")? != status.server)
+                || device
+                    .conn
+                    .query_row("SELECT EXISTS(SELECT 1 FROM private_profiles)", [], |r| {
+                        r.get::<_, bool>(0)
+                    })
+                    .map_err(db_error)?
         };
-        if is_other {
-            self.activate(app, None)?;
+        // 首次登录也登记身份，但不上传或复制原内容；之后的新账号才使用独立空库。
+        let profile = local::Profile {
+            library_id: id(),
+            server: status.server,
+            user_id: user.id,
+            username: user.username,
+        };
+        let target = local::open_profile(&self.dir, &profile)?;
+        let device = state.device_store.lock().unwrap();
+        if needs_profile {
+            local::set_meta(&target, "localOnly", "1")?;
+        } else {
+            local::set_meta(&target, "sourceLibraryId", &local::identity(&device)?)?;
+        }
+        device
+            .conn
+            .execute(
+                "INSERT INTO private_profiles VALUES(?1,?2,?3,?4)",
+                params![
+                    profile.server,
+                    profile.user_id,
+                    profile.library_id,
+                    profile.username
+                ],
+            )
+            .map_err(db_error)?;
+        drop(device);
+        if needs_profile {
+            self.activate(app, Some(&profile))?;
         }
         self.wake();
         Ok(())
@@ -674,7 +744,15 @@ impl PrivateSync {
         let source_store = if initialized {
             target
         } else {
-            Store::open(&self.dir)?
+            // 首次绑定采用当前正在编辑的库，不能把历史本机库自动上传给另一个账号。
+            let store = state.store.lock().unwrap();
+            if local::bound(&store)
+                && (local::meta(&store, "owner")? != ctx.user_id
+                    || local::meta(&store, "server")? != ctx.server)
+            {
+                return Err("当前内容属于其他账号，请重新登录后再开启同步。".into());
+            }
+            Store::open(&store.dir)?
         };
         let mut source = local::local_records(&source_store)?;
         let frozen_materials = if initialized && !restore {
@@ -855,6 +933,7 @@ impl PrivateSync {
             pending_changes(&store)?
         };
         if changes.is_empty() {
+            self.record_success(app, &ctx, &library_id, &generation)?;
             return Ok(());
         }
         let mut new_assets = vec![];
@@ -986,6 +1065,28 @@ impl PrivateSync {
         }
         self.wake();
         Ok(())
+    }
+    /// 只有实际完成服务器核对后才能记录时间；空操作、部分成功和迟到响应不算成功。
+    fn record_success(
+        &self,
+        app: &tauri::AppHandle,
+        ctx: &AccountContext,
+        library_id: &str,
+        generation: &str,
+    ) -> Result<()> {
+        let state = app.state::<AppState>();
+        let store = state.store.lock().unwrap();
+        state.teams.with_account(ctx, || {
+            local::scope(&store, Some(library_id))?;
+            record_success(
+                &store,
+                generation,
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_err(db_error)?
+                    .as_millis() as u64,
+            )
+        })
     }
     async fn commit(
         &self,
@@ -1594,6 +1695,49 @@ pub fn remap_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn successful_time_requires_a_clean_enabled_generation_and_survives_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        local::set_meta(&store, "generation", "generation-a").unwrap();
+        record_success(&store, "generation-a", 1).unwrap();
+        assert_eq!(local::meta(&store, "lastSuccessfulSyncAt").unwrap(), "");
+        local::set_meta(&store, "enabled", "1").unwrap();
+        record_success(&store, "generation-a", 100).unwrap();
+        assert_eq!(local::meta(&store, "lastSuccessfulSyncAt").unwrap(), "100");
+        for (sql, clear) in [
+            (
+                "INSERT INTO sync_dirty VALUES('phrase','pending',1)",
+                "DELETE FROM sync_dirty",
+            ),
+            (
+                "INSERT INTO sync_inflight VALUES(1,'{}','{}')",
+                "DELETE FROM sync_inflight",
+            ),
+            (
+                "INSERT INTO sync_records VALUES('phrase','conflict',1,'null',1)",
+                "DELETE FROM sync_records",
+            ),
+        ] {
+            store.conn.execute(sql, []).unwrap();
+            record_success(&store, "generation-a", 200).unwrap();
+            assert_eq!(local::meta(&store, "lastSuccessfulSyncAt").unwrap(), "100");
+            store.conn.execute(clear, []).unwrap();
+        }
+        local::set_meta(&store, "reconcile", "1").unwrap();
+        record_success(&store, "generation-a", 200).unwrap();
+        local::set_meta(&store, "reconcile", "0").unwrap();
+        record_success(&store, "old-generation", 200).unwrap();
+        local::set_meta(&store, "enabled", "0").unwrap();
+        record_success(&store, "generation-a", 200).unwrap();
+        drop(store);
+        let store = Store::open(dir.path()).unwrap();
+        assert_eq!(local::meta(&store, "lastSuccessfulSyncAt").unwrap(), "100");
+        local::set_meta(&store, "enabled", "1").unwrap();
+        record_success(&store, "generation-a", 300).unwrap();
+        assert_eq!(local::meta(&store, "lastSuccessfulSyncAt").unwrap(), "300");
+    }
+
     use serde_json::json;
     fn root(id: &str) -> Value {
         json!({"id":id,"name":"私人分类","parentId":null,"position":0,"background":""})

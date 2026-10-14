@@ -4,7 +4,7 @@ import { call, useTeams, useTeamView } from './api';
 import { FormDialog, type DialogSpec } from './ui';
 import { categoryLabel, localDate, type Library } from './types';
 
-export type TransferTarget = { source: 'private'; libraryId: string; sessionEpoch: number } | { source: 'team'; teamId: string; version: number; lifecycleVersion: number; sessionEpoch: number };
+export type TransferTarget = { source: 'private'; libraryId: string; sessionEpoch: number; devicePart?: boolean } | { source: 'team'; teamId: string; version: number; lifecycleVersion: number; sessionEpoch: number };
 interface Preview { id: string; kind: string; filename: string; categories: number; phrases: number; commonPhrases: number; files: number; images: number; attachments: number; recycled: number; rows: { category: string; title: string; text: string }[]; notes: string[]; target: TransferTarget; targetLabel: string; merge: boolean; restoreSettings: boolean; state: string }
 interface ImportResult { state: string; message: string }
 
@@ -14,16 +14,17 @@ export function DataTransfer({ mode, library, initialTeamId = '', initialCategor
   const [source, setSource] = useState<'private' | 'team'>(initialTeamId ? 'team' : 'private');
   const [teamId, setTeamId] = useState(initialTeamId); const { view, error } = useTeamView(teamId, status, version);
   const [category, setCategory] = useState(initialCategoryId); const [kind, setKind] = useState('backup');
+  const [devicePart, setDevicePart] = useState(false); const [hasLegacy, setHasLegacy] = useState(false);
   const [path, setPath] = useState(''); const [merge, setMerge] = useState(false); const [restore, setRestore] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null); const [dialog, setDialog] = useState<DialogSpec | null>(null);
   const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false); const operation = useRef(''); const sequence = useRef(0); const failure = useRef('');
-  const target: TransferTarget | null = source === 'private' ? library.libraryId ? { source, libraryId: library.libraryId, sessionEpoch: status.sessionEpoch || 0 } : null : view ? { source, teamId, version: view.team.version, lifecycleVersion: view.team.lifecycleVersion, sessionEpoch: status.sessionEpoch || 0 } : null;
-  const stamp = source === 'private' ? `private:${library.libraryId}:${status.sessionEpoch || 0}` : `team:${status.server}:${status.user?.id}:${teamId}:${view?.team.lifecycleVersion}:${status.sessionEpoch || 0}`;
+  const target: TransferTarget | null = source === 'private' ? library.libraryId ? { source, libraryId: library.libraryId, sessionEpoch: status.sessionEpoch || 0, ...(devicePart ? { devicePart: true } : {}) } : null : view ? { source, teamId, version: view.team.version, lifecycleVersion: view.team.lifecycleVersion, sessionEpoch: status.sessionEpoch || 0 } : null;
+  const stamp = source === 'private' ? `private:${library.libraryId}:${status.sessionEpoch || 0}:${devicePart}` : `team:${status.server}:${status.user?.id}:${teamId}:${view?.team.lifecycleVersion}:${status.sessionEpoch || 0}`;
   const currentStamp = useRef(stamp); currentStamp.current = stamp;
   const editable = source === 'private' || !!(view?.team.editable && !status.offline && !status.user?.mustChangePassword);
   const categories = source === 'private' ? library.categories.filter(c => !library.ownerLabel || c.kind === 'phrase') : view?.categories || [];
-  const privateLabel = library.ownerLabel ? `我的话术 · ${library.ownerLabel}` : '本机个人库';
-  const label = source === 'private' ? privateLabel : `共享库话术 · ${view?.team.name || ''}`;
+  const privateLabel = library.ownerLabel ? `个人话术 · ${library.ownerLabel}` : '个人话术';
+  const label = source === 'private' ? privateLabel : `共享话术 · ${view?.team.name || ''}`;
   const packageLabel = source === 'private' && !category ? '完整备份' : '话术包';
   function invalidate() { sequence.current++; setPreview(null); setDialog(null); setMessage(''); }
   useEffect(() => {
@@ -41,6 +42,18 @@ export function DataTransfer({ mode, library, initialTeamId = '', initialCategor
       setMessage(saved.state === 'pending' ? '上次导入结果待确认' : '已恢复上次预览');
     }).catch(e => { if (request === sequence.current) setMessage(String(e)); });
   }, [mode, stamp, !!target]);
+  useEffect(() => {
+    let disposed = false; setHasLegacy(false);
+    if (mode === 'import' && source === 'private' && !devicePart && library.libraryId) {
+      void call<boolean>('has_legacy_private_content', { libraryId: library.libraryId }).then(value => { if (!disposed) setHasLegacy(value === true); }).catch(() => {});
+    }
+    return () => { disposed = true; };
+  }, [mode, stamp]);
+  async function recoverLegacy() {
+    if (!target || devicePart) return;
+    const next = await run(id => call<Preview>('preview_legacy_private_content', { target, operationId: id }));
+    if (next) { setPath(''); setMerge(false); setRestore(false); setPreview(next); show(next); }
+  }
   async function run<T>(work: (id: string) => Promise<T>): Promise<T | undefined> {
     if (operation.current) return;
     const id = crypto.randomUUID(), scope = currentStamp.current; operation.current = id; setBusy(true); setMessage(''); failure.current = '';
@@ -89,13 +102,14 @@ export function DataTransfer({ mode, library, initialTeamId = '', initialCategor
   async function template() { const scope = currentStamp.current; await run(async () => { const selected = await save({ title: '保存文字模板', defaultPath: '闪语文字模板.xlsx', filters: [{ name: 'Excel', extensions: ['xlsx'] }] }); if (selected && scope === currentStamp.current) { await call('export_template', { path: selected }); if (scope === currentStamp.current) setMessage('文字模板已保存'); } }); }
   const pending = preview?.state === 'pending';
   return <div className="data-transfer"><h2 className="settings-heading">{mode === 'import' ? '导入话术' : '导出话术'}</h2>
-    <div className="setting-block"><label className="transfer-row"><span>{mode === 'import' ? '目标' : '来源'}</span><select aria-label={mode === 'import' ? '目标库' : '来源库'} value={source} disabled={busy} onChange={e => { invalidate(); setCategory(''); setSource(e.target.value as 'private' | 'team'); if (!teamId) setTeamId(status.teams[0]?.teamId || ''); }}><option value="private">{privateLabel}</option><option value="team" disabled={!status.teams.length}>共享库话术</option></select></label>
-      {source === 'team' && <label className="transfer-row"><span>共享库</span><select aria-label="选择共享库" value={teamId} disabled={busy} onChange={e => { invalidate(); setCategory(''); setTeamId(e.target.value); }}>{status.teams.map(t => <option key={t.teamId} value={t.teamId}>{t.name}{mode === 'import' && !t.editable ? '（只读）' : ''}</option>)}</select></label>}
+    <div className="setting-block"><label className="transfer-row"><span>{mode === 'import' ? '目标' : '来源'}</span><select aria-label={mode === 'import' ? '目标库' : '来源库'} value={source} disabled={busy} onChange={e => { invalidate(); setCategory(''); setSource(e.target.value as 'private' | 'team'); setDevicePart(false); if (!teamId) setTeamId(status.teams[0]?.teamId || ''); }}><option value="private">{privateLabel}</option><option value="team" disabled={!status.teams.length}>共享话术</option></select></label>
+      {mode === 'import' && source === 'private' && <label className="transfer-row"><span>导入部分</span><select aria-label="导入部分" value={devicePart ? 'device' : 'personal'} disabled={busy || pending} onChange={e => { invalidate(); setDevicePart(e.target.value === 'device'); setRestore(false); }}><option value="personal">个人内容</option><option value="device">本机文件与设备设置</option></select></label>}
+      {source === 'team' && <label className="transfer-row"><span>共享话术</span><select aria-label="选择共享话术" value={teamId} disabled={busy} onChange={e => { invalidate(); setCategory(''); setTeamId(e.target.value); }}>{status.teams.map(t => <option key={t.teamId} value={t.teamId}>{t.name}{mode === 'import' && !t.editable ? '（只读）' : ''}</option>)}</select></label>}
       {mode === 'export' && <label className="transfer-row"><span>分类</span><select aria-label="导出分类" value={category} disabled={busy} onChange={e => setCategory(e.target.value)}><option value="">全部分类</option>{categories.filter(c => !c.parentId).map(c => <option key={c.id} value={c.id}>{categoryLabel(c, categories)}{c.kind === 'file' ? '（文件关联）' : ''}</option>)}</select></label>}
       {status.offline && source === 'team' && <p className="settings-hint transfer-status">离线 · 使用已缓存内容</p>}
     </div>
-    {mode === 'import' ? <><div className="setting-block"><p>支持闪语备份、话术包及 Excel。</p><div className="setting-buttons"><button className="secondary-button" disabled={busy || !target || !editable || pending} onClick={() => void choose()}>选择文件</button><button className="secondary-button" disabled={busy} onClick={() => void template()}>下载文字模板</button></div><p className="import-path">{path || preview?.filename || '未选择文件'}</p></div>
-      <div className="setting-block"><label><input type="checkbox" checked={merge} disabled={busy || pending} onChange={e => { invalidate(); setMerge(e.target.checked); }} />合并同级唯一同名分类</label>{source === 'private' && <label><input type="checkbox" checked={restore} disabled={busy || pending || path.toLowerCase().endsWith('.xlsx')} onChange={e => { invalidate(); setRestore(e.target.checked); }} />恢复备份设置</label>}<p className="settings-hint">先预览，再导入独立副本。失败整批回滚。</p>{!editable && <p className="settings-hint">导入需要联网及共享库编辑权限。</p>}</div>
+    {mode === 'import' ? <><div className="setting-block"><p>支持闪语备份、话术包及 Excel。</p><div className="setting-buttons"><button className="secondary-button" disabled={busy || !target || !editable || pending} onClick={() => void choose()}>选择文件</button><button className="secondary-button" disabled={busy} onClick={() => void template()}>下载文字模板</button></div>{hasLegacy && <button className="secondary-button" disabled={busy || !target || pending} onClick={() => void recoverLegacy()}>找回旧本机内容</button>}<p className="import-path">{path || preview?.filename || '未选择文件'}</p></div>
+      <div className="setting-block"><label><input type="checkbox" checked={merge} disabled={busy || pending} onChange={e => { invalidate(); setMerge(e.target.checked); }} />合并同级唯一同名分类</label>{source === 'private' && <label><input type="checkbox" checked={restore} disabled={busy || pending || path.toLowerCase().endsWith('.xlsx')} onChange={e => { invalidate(); setRestore(e.target.checked); }} />{devicePart ? '恢复设备设置' : '恢复个人设置'}</label>}<p className="settings-hint">先预览，再导入独立副本。失败整批回滚。个人内容与设备部分分别预览、分别提交。</p>{!editable && <p className="settings-hint">导入需要联网及共享话术编辑权限。</p>}</div>
       <div className="setting-actions">{preview && <button className="secondary-button" disabled={busy} onClick={() => void inspect()}>核对结果</button>}{pending ? <span role="status">结果待确认</span> : <>{preview && <button className="secondary-button" disabled={busy || !editable} onClick={() => void refreshPreview()}>重新预览</button>}<button className="primary-button" disabled={busy || !target || !editable || (!path && !preview) || preview?.state === 'invalid'} onClick={() => preview ? show(preview) : void prepare()}>预览导入</button></>}</div></>
       : <><div className="setting-block"><p>格式</p><label><input type="radio" name="exportType" checked={kind === 'backup'} disabled={busy} onChange={() => setKind('backup')} />{packageLabel}（含图片、附件）</label><label><input type="radio" name="exportType" checked={kind === 'excel'} disabled={busy} onChange={() => setKind('excel')} />Excel（仅文字）</label><p className="settings-hint">{source === 'private' ? '导出当前本机版本，包含待同步修改。' : '仅导出在用话术，不含回收站、成员及权限。'}素材不足时请联网补齐。</p>{source === 'private' && !library.ownerLabel && <p className="settings-hint">独立文件库只保存路径关联，源文件需单独备份。</p>}</div><div className="setting-actions"><button className="primary-button" disabled={busy || !target} onClick={() => void exportData()}>导出</button></div></>}
     {busy && <div className="setting-buttons"><span role="status">处理中…</span><button className="secondary-button" onClick={() => void call('cancel_data_transfer', { operationId: operation.current }).catch(e => setMessage(String(e)))}>取消</button></div>}

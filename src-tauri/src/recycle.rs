@@ -126,33 +126,23 @@ impl Store {
         .collect()
     }
     pub fn recycle_items(&self, query: &str) -> Result<Vec<RecycleItem>> {
-        let terms: Vec<_> = query.split_whitespace().map(str::to_lowercase).collect();
         Ok(self
             .recycle_records()?
             .into_iter()
             .filter(|r| {
-                let content = format!(
-                    "{} {} {}",
-                    r.label,
-                    r.location,
-                    r.phrases
-                        .iter()
-                        .map(Phrase::text)
-                        .collect::<Vec<_>>()
-                        .join(" ")
+                matches_query(
+                    &format!(
+                        "{} {} {}",
+                        r.label,
+                        r.location,
+                        r.phrases
+                            .iter()
+                            .map(Phrase::text)
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ),
+                    query,
                 )
-                .to_lowercase();
-                let mut full = String::new();
-                let mut initials = String::new();
-                for syllable in content.as_str().to_pinyin().flatten() {
-                    full.push_str(syllable.plain());
-                    if let Some(c) = syllable.plain().chars().next() {
-                        initials.push(c);
-                    }
-                }
-                terms.iter().all(|term| {
-                    content.contains(term) || full.contains(term) || initials.contains(term)
-                })
             })
             .map(|r| RecycleItem {
                 id: r.id,
@@ -316,12 +306,36 @@ impl Store {
         }
         tx.commit().map_err(db_error)
     }
-    pub fn empty_recycle(&self) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM recycle_bin", [])
-            .map_err(db_error)?;
-        Ok(())
+    /// 只清理确认时的记录清单。并发还原/删除的记录跳过，后来新增的记录保留。
+    /// 一次事务失败完整回滚，不处理素材或外部源文件。
+    pub fn clear_recycle_records(&mut self, ids: &[String]) -> Result<usize> {
+        let tx = self.conn.transaction().map_err(db_error)?;
+        let mut count = 0;
+        for id in ids.iter().collect::<HashSet<_>>() {
+            count += tx
+                .execute("DELETE FROM recycle_bin WHERE id=?1", [id])
+                .map_err(db_error)?;
+        }
+        tx.commit().map_err(db_error)?;
+        Ok(count)
     }
+}
+
+/// 个人与共享回收站共用关键词、全拼和首字母匹配，每个搜索词均须命中。
+pub(crate) fn matches_query(content: &str, query: &str) -> bool {
+    let content = content.to_lowercase();
+    let mut full = String::new();
+    let mut initials = String::new();
+    for syllable in content.as_str().to_pinyin().flatten() {
+        full.push_str(syllable.plain());
+        if let Some(c) = syllable.plain().chars().next() {
+            initials.push(c);
+        }
+    }
+    query
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .all(|term| content.contains(&term) || full.contains(&term) || initials.contains(&term))
 }
 
 fn check_selection(ids: &[String]) -> Result<()> {
@@ -655,10 +669,55 @@ mod tests {
             .remove_recycled(&[records[0].id.clone(), "不存在".into()])
             .is_err());
         assert_eq!(s.recycle_records().unwrap().len(), 1);
-        s.empty_recycle().unwrap();
+        let remaining = s
+            .recycle_records()
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect::<Vec<_>>();
+        s.clear_recycle_records(&remaining).unwrap();
         assert!(s.recycle_records().unwrap().is_empty());
         let id = s.save_phrase(phrase("common", None), None).unwrap();
         s.delete_item(&id, "phrase", false).unwrap();
         assert!(s.recycle_records().unwrap().is_empty());
+    }
+    #[test]
+    fn confirmed_clear_skips_restored_records_preserves_new_records_and_rolls_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
+        let first = store.save_phrase(phrase("common", None), None).unwrap();
+        store.delete_item(&first, "phrase", true).unwrap();
+        let old = store.recycle_records().unwrap()[0].id.clone();
+        store
+            .restore_recycled(std::slice::from_ref(&old), false)
+            .unwrap();
+        let second = store.save_phrase(phrase("common", None), None).unwrap();
+        store.delete_item(&second, "phrase", true).unwrap();
+        let preserved = store.recycle_records().unwrap()[0].id.clone();
+        assert_eq!(store.clear_recycle_records(&[old]).unwrap(), 0);
+        assert_eq!(store.recycle_records().unwrap()[0].id, preserved);
+        store.delete_item(&first, "phrase", true).unwrap();
+        let ids: Vec<_> = store
+            .recycle_records()
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        store.conn.execute_batch("CREATE TRIGGER reject_clear BEFORE DELETE ON recycle_bin WHEN (SELECT count(*) FROM recycle_bin)<2 BEGIN SELECT RAISE(ABORT,'模拟清空失败'); END;").unwrap();
+        assert!(store.clear_recycle_records(&ids).is_err());
+        assert_eq!(store.recycle_records().unwrap().len(), 2);
+        store
+            .conn
+            .execute_batch("DROP TRIGGER reject_clear;")
+            .unwrap();
+        assert_eq!(store.clear_recycle_records(&ids).unwrap(), 2);
+    }
+    #[test]
+    fn recycle_search_matches_keywords_full_pinyin_initials_and_all_terms() {
+        let text = "欢迎使用 附件说明.pdf";
+        assert!(matches_query(text, "欢迎 PDF"));
+        assert!(matches_query(text, "huanying"));
+        assert!(matches_query(text, "hysy"));
+        assert!(!matches_query(text, "欢迎 不存在"));
     }
 }

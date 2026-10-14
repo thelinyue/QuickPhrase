@@ -27,7 +27,10 @@ pub struct DeliveryState {
     pub busy: Arc<AtomicBool>,
     pub cancelled: Arc<AtomicBool>,
 }
-pub struct DeliveryGuard(Arc<AtomicBool>);
+pub struct DeliveryGuard(
+    Arc<AtomicBool>,
+    #[allow(dead_code)] crate::update_activity::Activity,
+);
 impl Drop for DeliveryGuard {
     fn drop(&mut self) {
         self.0.store(false, Ordering::Release);
@@ -35,11 +38,12 @@ impl Drop for DeliveryGuard {
 }
 impl DeliveryState {
     pub fn acquire(&self) -> Result<DeliveryGuard> {
+        let activity = crate::update_activity::Activity::enter()?;
         self.busy
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .map_err(|_| "正在处理上一次操作，请等待完成。".to_string())?;
         self.cancelled.store(false, Ordering::Release);
-        Ok(DeliveryGuard(self.busy.clone()))
+        Ok(DeliveryGuard(self.busy.clone(), activity))
     }
 }
 

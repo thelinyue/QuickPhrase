@@ -28,12 +28,26 @@ pub async fn get_company_files(
         .await
 }
 #[tauri::command]
-pub fn prepare_company_upload(
-    state: State<AppState>,
+pub async fn prepare_company_upload(
+    state: State<'_, AppState>,
     session_epoch: u64,
     path: String,
 ) -> Result<CompanyUpload> {
-    state.teams.prepare_company_upload(session_epoch, &path)
+    state
+        .teams
+        .prepare_company_upload_async(session_epoch, path)
+        .await
+}
+#[tauri::command]
+pub fn enqueue_company_uploads(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    session_epoch: u64,
+    paths: Vec<String>,
+) -> Result<Vec<CompanyTransfer>> {
+    state
+        .teams
+        .enqueue_company_uploads(&app, session_epoch, paths)
 }
 #[tauri::command]
 pub async fn upload_company_file(
@@ -191,6 +205,7 @@ pub async fn save_company_private_phrase(
     library_id: String,
     company_files: Vec<CompanySelection>,
 ) -> Result<String> {
+    let _activity = crate::update_activity::Activity::enter()?;
     CompanySelection::validate(&phrase, &company_files)?;
     let first = company_files.first().ok_or("请先选择云文件。")?;
     let ctx = state.teams.company_context(
@@ -259,6 +274,7 @@ pub async fn save_company_file_as(
     id: String,
     path: String,
 ) -> Result<()> {
+    let _activity = crate::update_activity::Activity::enter()?;
     let ctx = state
         .teams
         .company_context(session_epoch, shanyu_team_model::CompanyOperation::Read)?;

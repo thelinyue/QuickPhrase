@@ -21,11 +21,11 @@ export const teamRoleLabel = (role: TeamRole) => role === 'manager' ? '库管理
 export interface CompanyFilePermissions { canUpload: boolean; canRecycle: boolean; canRestore: boolean; version: number; uploadVersion: number }
 export interface TeamUser { id: string; username: string; admin: boolean; disabled: boolean; mustChangePassword: boolean; displayName: string; contact: string; canCreateTeams: boolean; companyFilePermissions?: CompanyFilePermissions; memberships?: { teamId: string; name: string; role: TeamRole }[] }
 export interface TeamInfo { teamId: string; name: string; version: number; editable: boolean; role: TeamRole; membershipVersion: number; lifecycleVersion: number; memberCount?: number }
-export interface TeamStatus { sessionEpoch?: number; server: string; username: string; user: TeamUser | null; teams: TeamInfo[]; offline: boolean; privateSync?: boolean; companyFiles?: boolean; companyFilePermissions?: boolean }
+export interface TeamStatus { sessionEpoch?: number; server: string; username: string; user: TeamUser | null; teams: TeamInfo[]; teamSyncTimes?: Record<string, number>; offline: boolean; privateSync?: boolean; companyFiles?: boolean; companyFilePermissions?: boolean }
 export interface CompanyFile { assetId: string; name: string; size: number; uploadedBy: string; uploaderName: string; uploaderUsername?: string; createdAt: number; deletedAt: number | null; deletedBy?: string | null; deleterUsername?: string; cached: boolean }
 export interface CompanyUpload { id: string; name: string; size: number }
 export interface CompanyView { version: number; files: CompanyFile[]; uploads: CompanyUpload[] }
-export interface CompanyTransfer { sessionEpoch: number; assetId: string; name: string; direction: 'upload' | 'download'; done: number; total: number; status: string; revision: number }
+export interface CompanyTransfer { sessionEpoch: number; assetId: string; name: string; direction: 'upload' | 'download'; done: number; total: number; status: string; revision: number; message?: string }
 export interface TeamView { team: TeamInfo; categories: Category[]; phrases: Phrase[]; offline: boolean }
 export interface TeamMembership { userId: string; teamId: string; role: TeamRole }
 export interface TeamMemberIdentity { userId: string; username: string; displayName: string; disabled: boolean }
@@ -41,3 +41,11 @@ export interface ImportPreview { id: string; kind: 'excel' | 'backup'; filename:
 export const textOf = (phrase: Phrase) => phrase.segments.map(s => s.blocks.filter((b): b is Extract<Block, { kind: 'text' }> => b.kind === 'text').map(b => b.text).join('')).join('\n');
 export const labelOf = (phrase: Phrase) => phrase.title || textOf(phrase).trim().slice(0, 35) || phrase.segments.flatMap(s => s.blocks).filter(b => b.kind !== 'text').map(b => `${b.kind === 'image' ? '图片' : '文件'}：${b.name}`).join(' · ') || '附件话术';
 export const localDate = () => new Intl.DateTimeFormat('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+
+/** 使用系统时区显示完整时间；旧库没有成功记录时不推断时间。 */
+export function syncTime(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return '暂无成功同步记录';
+  const date = new Date(value), pad = (n: number) => String(n).padStart(2, '0');
+  if (Number.isNaN(date.getTime())) return '暂无成功同步记录';
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}

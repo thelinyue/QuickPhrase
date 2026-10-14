@@ -81,8 +81,8 @@ pub struct TargetContext {
     pub focus: i64,
     pub pid: u32,
 }
-/// 启动只进入自动跟随，不能等同于用户主动隐藏。
-/// 独立显示只由托盘／快捷键唤起；重新使用目标后回到跟随，手动隐藏则必须再次唤起。
+/// 初始模式为自动跟随，随后处理手动启动意图；不能等同于用户主动隐藏。
+/// 独立显示由手动启动、托盘或快捷键唤起；重新使用目标后回到跟随，手动隐藏则必须再次唤起。
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 enum DisplayMode {
     #[default]
@@ -133,7 +133,7 @@ pub struct NativeState {
     /// 当前正在编辑或录入快捷键的客户端窗口。输入框与模态框中不触发话术，避免抢走录入按键。
     pub shortcut_input: std::sync::atomic::AtomicI64,
     pub search_input: std::sync::atomic::AtomicI64,
-    /// 设置、用户名与共享库各自记录句柄，最后一个管理窗口关闭后才恢复业务快捷键。
+    /// 设置、用户名与共享话术各自记录句柄，最后一个管理窗口关闭后才恢复业务快捷键。
     pub management_windows: ManagementWindows,
     /// 横条按内容换行后的逻辑高度，由前端测量；跟随线程转换为目标显示器的物理像素。
     pub common_height: std::sync::atomic::AtomicI32,
@@ -1027,7 +1027,7 @@ mod platform {
                                 || pid(foreground) == std::process::id())))
             })
         }
-        /// 只有明确的托盘／快捷键请求允许激活主窗口。先选择显示模式并恢复几何，再交出焦点。
+        /// 手动启动、托盘及快捷键请求允许激活主窗口。先恢复显示模式与几何，再交出焦点。
         unsafe fn show(&mut self, state: &NativeState, action: &str) {
             let Some(windows) = state.windows.get() else {
                 return;
@@ -1060,6 +1060,8 @@ mod platform {
                 log::warn!("闪语已显示，但系统暂未允许切换输入焦点。");
             }
             if let Some(app) = state.app.get() {
+                app.state::<Arc<crate::startup::LaunchIntent>>()
+                    .mark_shown();
                 let _ = app.emit("ui-action", action);
             }
         }

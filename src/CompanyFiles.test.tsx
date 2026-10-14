@@ -1,11 +1,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { call, useTeams } from './api';
+import { call, openWindow, useTeams } from './api';
 import { CompanyFilesWindow, CompanyFilePicker } from './CompanyFiles';
-import { confirm } from '@tauri-apps/plugin-dialog';
+import { confirm, open } from '@tauri-apps/plugin-dialog';
 import type { CompanyFile, CompanyTransfer, TeamStatus, TeamUser } from './types';
 const callbacks = vi.hoisted(() => new Map<string, (event: { payload: unknown }) => void>());
-const windowEvents = vi.hoisted(() => ({ close: vi.fn(), onCloseRequested: vi.fn(async (_callback: (event: { preventDefault: () => void }) => Promise<void>) => () => {}), toggleMaximize: vi.fn() }));
+type DragPayload = { type: 'enter' | 'over' | 'drop'; paths: string[]; position: { x: number; y: number } } | { type: 'leave' };
+const windowEvents = vi.hoisted(() => ({ close: vi.fn(), onCloseRequested: vi.fn(async (_callback: (event: { preventDefault: () => void }) => Promise<void>) => () => {}), onDragDropEvent: vi.fn(async (_callback: (event: { payload: DragPayload }) => void) => () => {}), toggleMaximize: vi.fn() }));
 vi.mock('./api', () => ({ call: vi.fn(), useTeams: vi.fn(), openWindow: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ convertFileSrc: (path: string) => path }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async (name, callback) => { callbacks.set(name, callback); return () => callbacks.delete(name); }) }));
@@ -17,11 +18,11 @@ beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
   status = { sessionEpoch: 1, server: 'server', username: 'employee', user: { id: 'employee', username: 'employee', admin: false, disabled: false, mustChangePassword: false, displayName: '', contact: '', canCreateTeams: false }, teams: [], offline: false, companyFiles: true };
-  vi.mocked(useTeams).mockImplementation(() => ({ status, version: 1 }));
+  vi.mocked(useTeams).mockImplementation(() => ({ status, version: 1, loaded: true }));
   vi.mocked(call).mockImplementation(async command => command === 'get_company_transfers' || command === 'clear_company_transfers' ? [] : command === 'get_file_icon' ? '/icons/xlsx.png' : { version: 1, files: [file], uploads: [] });
 });
-afterEach(() => { cleanup(); callbacks.clear(); vi.clearAllMocks(); });
-it('无共享库用户可查看下载云文件，不能管理文件', async () => {
+afterEach(() => { cleanup(); callbacks.clear(); vi.clearAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it('无共享话术用户可查看下载云文件，不能管理文件', async () => {
   render(<CompanyFilesWindow />); await screen.findByText(file.name); expect(screen.queryByRole('button', { name: '上传新文件' })).toBeNull(); expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '下载' })); await waitFor(() => expect(call).toHaveBeenCalledWith('download_company_file', { sessionEpoch: 1, id: 'cloud' }));
 });
@@ -88,7 +89,7 @@ it('分页全选只选当前页，翻页与搜索清空勾选，支持页码跳�
   fireEvent.change(screen.getByRole('combobox', { name: '每页条数' }), { target: { value: '20' } }); await waitFor(() => expect(screen.getAllByRole('checkbox').length).toBe(21));
 });
 
-it('独立授权显示上传和删除入口，共享库角色不授予服务管理权限', async () => {
+it('独立授权显示上传和删除入口，共享话术角色不授予服务管理权限', async () => {
   status = { ...status, companyFilePermissions: true, user: { ...status.user!, companyFilePermissions: { ...permissions, canUpload: true, canRestore: true } } };
   const { rerender } = render(<CompanyFilesWindow />); await screen.findByText(file.name);
   expect(screen.getByRole('button', { name: '上传新文件' })).toBeTruthy(); expect(screen.queryByRole('button', { name: '删除' })).toBeNull(); expect(screen.queryByRole('button', { name: '云文件权限管理' })).toBeNull();
@@ -113,7 +114,7 @@ it('授权逐行保存只提交三项权限和预期版本，离开草稿页需�
 
 it('保存冲突读取最新授权，保留原草稿并提供采用最新', async () => {
   administrator(); let saved = false;
-  permissionApi(() => [{ ...employee, companyFilePermissions: saved ? { ...permissions, canRestore: true, version: 1 } : permissions }], async () => { saved = true; throw new Error('409:权限已变更'); });
+  permissionApi(() => [{ ...employee, companyFilePermissions: saved ? { ...permissions, canRestore: true, version: 1, loaded: true } : permissions }], async () => { saved = true; throw new Error('409:权限已变更'); });
   render(<CompanyFilesWindow />); await screen.findByText(file.name); fireEvent.click(screen.getByRole('button', { name: '云文件权限管理' })); fireEvent.click(await screen.findByRole('checkbox', { name: '1002的上传权限' })); fireEvent.click(screen.getByRole('button', { name: '保存' }));
   expect(await screen.findByText('权限已变更，草稿已保留')).toBeTruthy(); expect((screen.getByRole('checkbox', { name: '1002的上传权限' }) as HTMLInputElement).checked).toBe(true);
   expect(screen.getByRole('button', { name: '保存' }).hasAttribute('disabled')).toBe(true); fireEvent.click(screen.getByRole('button', { name: '采用最新' })); expect((screen.getByRole('checkbox', { name: '1002的恢复权限' }) as HTMLInputElement).checked).toBe(true);
@@ -151,4 +152,117 @@ it('永久删除逐文件输入完整名称，回收站显示上传者和删除�
   render(<CompanyFilesWindow />); await screen.findByText(file.name); fireEvent.click(screen.getByRole('button', { name: '云文件回收站' })); await screen.findByRole('button', { name: '永久删除' }); expect(screen.getByText('1001')).toBeTruthy(); expect(screen.getByText('1003')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '永久删除' })); const dialog = screen.getByRole('dialog', { name: '永久删除云文件' }); fireEvent.change(within(dialog).getByRole('textbox', { name: '输入完整文件名' }), { target: { value: file.name } }); fireEvent.submit(dialog.querySelector('form')!);
   await waitFor(() => expect(call).toHaveBeenCalledWith('manage_company_file', { sessionEpoch: 1, id: file.assetId, operation: 'purge', confirmName: file.name }));
+});
+
+const waiting: CompanyTransfer = { sessionEpoch: 1, assetId: 'batch-1', name: '第一份.pdf', direction: 'upload', done: 0, total: 0, status: '等待上传', revision: 1 };
+function uploadApi(records: CompanyTransfer[], enqueue: () => Promise<CompanyTransfer[]> = async () => records) {
+  vi.mocked(call).mockImplementation(async command => command === 'enqueue_company_uploads' ? enqueue() : command === 'get_company_transfers' ? records : command === 'get_file_icon' ? '' : { version: 1, files: [file], uploads: [] });
+}
+async function drag(payload: DragPayload) { await act(async () => windowEvents.onDragDropEvent.mock.calls.at(-1)?.[0]({ payload })); }
+function uploadBounds() {
+  vi.spyOn(document.querySelector('.company-list')!, 'getBoundingClientRect').mockReturnValue({ x: 20, y: 80, left: 20, top: 80, right: 520, bottom: 380, width: 500, height: 300, toJSON: () => ({}) });
+}
+
+it('多选只提交一次批量入队，较新失败事件不被初始等待响应覆盖', async () => {
+  administrator(); let resolve!: (records: CompanyTransfer[]) => void;
+  uploadApi([], () => new Promise(done => { resolve = done; })); vi.mocked(open).mockResolvedValueOnce(['C:\\a.pdf', 'C:\\b.pdf']);
+  render(<CompanyFilesWindow />); await screen.findByText(file.name);
+  fireEvent.click(screen.getByRole('button', { name: '上传新文件' }));
+  await waitFor(() => expect(call).toHaveBeenCalledWith('enqueue_company_uploads', { sessionEpoch: 1, paths: ['C:\\a.pdf', 'C:\\b.pdf'] }));
+  expect(open).toHaveBeenCalledWith(expect.objectContaining({ multiple: true, directory: false }));
+  const failed = { ...waiting, status: '准备失败', revision: 3, message: '单文件需为1字节至128MB。' };
+  await act(async () => callbacks.get('company-transfer')?.({ payload: failed }));
+  await act(async () => resolve([waiting, { ...waiting, assetId: 'batch-2', name: '第二份.pdf' }]));
+  expect(await screen.findByText(failed.message)).toBeTruthy(); expect(screen.getByText('准备失败')).toBeTruthy(); expect(screen.getByRole('button', { name: '停止' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '继续原任务' })).toBeNull();
+  expect(vi.mocked(call).mock.calls.some(([name]) => name === 'prepare_company_upload' || name === 'upload_company_file')).toBe(false);
+});
+
+it('原生拖拽按物理坐标识别正文区，拖出清除反馈，文件页和上传页直接入队', async () => {
+  administrator(); uploadApi([waiting]); vi.stubGlobal('devicePixelRatio', 2);
+  render(<CompanyFilesWindow />); await screen.findByText(file.name); uploadBounds();
+  const event = { type: 'enter' as const, paths: ['C:\\拖拽.pdf'], position: { x: 100, y: 200 } };
+  await drag(event); expect(screen.getByText('松开即可上传文件')).toBeTruthy();
+  await drag({ ...event, type: 'over', position: { x: 100, y: 100 } }); expect(screen.queryByText('松开即可上传文件')).toBeNull();
+  await drag(event); await drag({ type: 'leave' }); expect(screen.queryByText('松开即可上传文件')).toBeNull();
+  await drag(event); await drag({ ...event, type: 'drop' });
+  await screen.findByText(waiting.name); expect(call).toHaveBeenCalledWith('enqueue_company_uploads', { sessionEpoch: 1, paths: event.paths });
+  uploadBounds(); await drag(event); await drag({ ...event, type: 'drop' });
+  expect(vi.mocked(call).mock.calls.filter(([name]) => name === 'enqueue_company_uploads')).toHaveLength(2);
+});
+
+it('拖动期间切号、撤权或离线不提交文件，管理弹窗和下载页也拒绝拖入', async () => {
+  administrator(); uploadApi([waiting]); const rendered = render(<CompanyFilesWindow />); await screen.findByText(file.name); uploadBounds();
+  const event = { type: 'enter' as const, paths: ['C:\\拖拽.pdf'], position: { x: 100, y: 200 } };
+  await drag(event); status = { ...status, sessionEpoch: 2 }; rendered.rerender(<CompanyFilesWindow />); await drag({ ...event, type: 'drop' });
+  await drag(event); status = { ...status, offline: true }; rendered.rerender(<CompanyFilesWindow />); await drag({ ...event, type: 'drop' });
+  status = { ...status, offline: false, user: { ...status.user!, admin: false } }; rendered.rerender(<CompanyFilesWindow />); await drag(event); await drag({ ...event, type: 'drop' });
+  administrator(); rendered.rerender(<CompanyFilesWindow />); await screen.findByText(file.name); uploadBounds();
+  fireEvent.click(screen.getByRole('button', { name: '删除' })); await drag(event); await drag({ ...event, type: 'drop' });
+  expect(call).not.toHaveBeenCalledWith('enqueue_company_uploads', expect.anything());
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '取消' }));
+  fireEvent.click(screen.getByRole('button', { name: '下载管理' })); await screen.findByRole('button', { name: '返回' });
+  await drag(event); await drag({ ...event, type: 'drop' }); expect(call).not.toHaveBeenCalledWith('enqueue_company_uploads', expect.anything());
+});
+
+it('等待及准备中的上传可停止，关闭窗口不取消后台任务，重开从快照恢复', async () => {
+  administrator(); const preparing = { ...waiting, assetId: 'batch-2', name: '准备副本.pdf', status: '准备中', revision: 2 }; uploadApi([waiting, preparing]);
+  render(<CompanyFilesWindow />); await screen.findByText(file.name); fireEvent.click(screen.getByRole('button', { name: '上传管理' })); await screen.findByText(preparing.name);
+  fireEvent.click(screen.getAllByRole('button', { name: '停止' })[0]); await waitFor(() => expect(call).toHaveBeenCalledWith('cancel_company_transfer', { sessionEpoch: 1, id: waiting.assetId }));
+  const event = { preventDefault: vi.fn() }; await act(async () => windowEvents.onCloseRequested.mock.calls.at(-1)?.[0](event)); expect(event.preventDefault).not.toHaveBeenCalled();
+  cleanup(); render(<CompanyFilesWindow />); await screen.findByText(file.name); fireEvent.click(screen.getByRole('button', { name: '上传管理' })); expect(await screen.findByText(preparing.name)).toBeTruthy();
+  expect(vi.mocked(call).mock.calls.filter(([name]) => name === 'cancel_company_transfer')).toHaveLength(1); expect(call).not.toHaveBeenCalledWith('enqueue_company_uploads', expect.anything());
+});
+
+it('文件右键替代默认菜单，复用下载且普通用户不能删除', async () => {
+  render(<CompanyFilesWindow />); const row = (await screen.findByText(file.name)).closest('tr')!;
+  expect(fireEvent.contextMenu(row, { clientX: 100, clientY: 100 })).toBe(false);
+  expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['下载', '另存为', '生成话术']);
+  expect(screen.getByText('已选 1 项')).toBeTruthy();
+  fireEvent.click(screen.getByRole('menuitem', { name: '下载' }));
+  await waitFor(() => expect(call).toHaveBeenCalledWith('download_company_file', { sessionEpoch: 1, id: file.assetId }));
+});
+it('右键已勾选行保留批量范围，未勾选行切为单选，空白菜单不改变勾选', async () => {
+  administrator(); const files = [file, { ...file, assetId: 'two', name: '说明.pdf' }, { ...file, assetId: 'three', name: '合同.docx' }];
+  vi.mocked(call).mockImplementation(async command => command === 'get_company_transfers' ? [] : command === 'get_file_icon' ? '' : { version: 1, files, uploads: [] });
+  const { container } = render(<CompanyFilesWindow />); await screen.findByText(file.name);
+  fireEvent.click(screen.getByLabelText(`选择 ${file.name}`)); fireEvent.click(screen.getByLabelText('选择 说明.pdf'));
+  fireEvent.contextMenu(screen.getByText(file.name).closest('tr')!);
+  expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['批量下载', '批量删除']);
+  fireEvent.contextMenu(screen.getByText('合同.docx').closest('tr')!);
+  expect(screen.getByText('已选 1 项')).toBeTruthy(); expect((screen.getByLabelText('选择 合同.docx') as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByRole('menuitem', { name: '删除' })).toBeTruthy();
+  fireEvent.contextMenu(container.querySelector('.company-list')!);
+  expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['刷新', '上传新文件', '下载管理', '上传管理']);
+  expect(screen.getByText('已选 1 项')).toBeTruthy();
+});
+it('右键删除与回收站恢复保留确认，永久删除仍要求文件名', async () => {
+  administrator(); render(<CompanyFilesWindow />); await screen.findByText(file.name);
+  fireEvent.contextMenu(screen.getByText(file.name).closest('tr')!); fireEvent.click(screen.getByRole('menuitem', { name: '删除' }));
+  expect(screen.getByText('将所选文件移入回收站？已有话术继续可用，不能再新增引用。')).toBeTruthy(); expect(call).not.toHaveBeenCalledWith('manage_company_file', expect.anything());
+  fireEvent.click(screen.getByRole('button', { name: '取消' })); fireEvent.click(screen.getByRole('button', { name: '云文件回收站' }));
+  await screen.findByRole('button', { name: '恢复' }); fireEvent.contextMenu(screen.getByText(file.name).closest('tr')!);
+  expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['恢复', '永久删除']);
+  fireEvent.click(screen.getByRole('menuitem', { name: '永久删除' })); expect(screen.getByLabelText('输入完整文件名')).toBeTruthy();
+});
+it('菜单支持键盘选择和Esc恢复焦点，失焦及权限变化关闭', async () => {
+  administrator(); const { rerender } = render(<CompanyFilesWindow />); const row = (await screen.findByText(file.name)).closest('tr')!;
+  fireEvent.contextMenu(row); expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '下载' }));
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'End' }); expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '删除' }));
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Home' }); fireEvent.keyDown(screen.getByRole('menu'), { key: 'ArrowDown' }); expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '另存为' }));
+  fireEvent.keyDown(document, { key: 'Escape' }); expect(screen.queryByRole('menu')).toBeNull(); expect(document.activeElement).toBe(row);
+  fireEvent.contextMenu(row); fireEvent.blur(window); expect(screen.queryByRole('menu')).toBeNull();
+  fireEvent.contextMenu(row); status = { ...status, offline: true }; rerender(<CompanyFilesWindow />); expect(screen.queryByRole('menu')).toBeNull();
+});
+it('输入框保留编辑菜单，传输页空白不弹业务或默认菜单', async () => {
+  const { container } = render(<CompanyFilesWindow />); await screen.findByText(file.name);
+  expect(fireEvent.contextMenu(screen.getByRole('textbox', { name: '搜索云文件' }))).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '下载管理' })); await screen.findByText('暂无下载记录');
+  expect(fireEvent.contextMenu(container.querySelector('.company-list')!)).toBe(false); expect(screen.queryByRole('menu')).toBeNull();
+});
+it('选择器新增入口使用下一步并只允许选择一个文件', async () => {
+  const second = { ...file, assetId: 'second', name: '说明.pdf' }; vi.mocked(call).mockResolvedValue({ version: 1, files: [file, second], uploads: [] });
+  const next = vi.fn(); render(<CompanyFilePicker limit={1} confirmLabel="下一步" onConfirm={next} close={vi.fn()} />); await screen.findByText(file.name);
+  fireEvent.click(screen.getAllByRole('checkbox')[0]); expect((screen.getAllByRole('checkbox')[1] as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '下一步' })); expect(next).toHaveBeenCalledWith([file], 1); expect(openWindow).not.toHaveBeenCalled();
 });

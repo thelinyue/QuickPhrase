@@ -7,7 +7,7 @@ on:
       version:
         description: Candidate SemVer
         required: true
-        default: 0.2.1-rc.1
+        default: 0.2.2-rc.1
 
 permissions:
   contents: read
@@ -79,7 +79,13 @@ jobs:
         run: |
           ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel prerelease -GitRef $env:GITHUB_REF
           ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION
-          ./scripts/package-release.ps1 -Version $env:RELEASE_VERSION
+
+      - name: Sign and package update assets
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          QUICKPHRASE_UPDATE_PRIVATE_KEY: ${{ secrets.QUICKPHRASE_UPDATE_PRIVATE_KEY }}
+          QUICKPHRASE_UPDATE_KEY_PASSWORD: ${{ secrets.QUICKPHRASE_UPDATE_KEY_PASSWORD }}
+        run: ./scripts/package-release.ps1 -Version $env:RELEASE_VERSION
 
       - name: Upload unsigned candidate bundle
         uses: actions/upload-artifact@v4
@@ -91,4 +97,5 @@ jobs:
             artifacts/release/${{ inputs.version }}/QuickPhrase-${{ inputs.version }}-win-x64.zip
             artifacts/release/${{ inputs.version }}/QuickPhrase-Setup-${{ inputs.version }}-x64.exe
             artifacts/release/${{ inputs.version }}/SHA256SUMS.txt
+            artifacts/release/${{ inputs.version }}/SHA256SUMS.txt.minisig
             artifacts/release/${{ inputs.version }}/release-manifest.json

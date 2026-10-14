@@ -1,4 +1,4 @@
-//! 共享库 IPC 接口。这里只负责本地类型转换，权限最终由服务端逐次决定。
+//! 共享话术 IPC 接口。这里只负责本地类型转换，权限最终由服务端逐次决定。
 use crate::{model::*, team, AppState};
 use reqwest::Method;
 use shanyu_team_model as wire;
@@ -81,8 +81,48 @@ pub async fn delete_team_content(
 pub async fn get_team_recycle(
     state: State<'_, AppState>,
     team_id: String,
+    query: Option<String>,
+    session_epoch: Option<u64>,
+    expected_lifecycle_version: Option<u64>,
 ) -> Result<Vec<wire::RecycleRecord>> {
-    state.teams.recycle(&team_id).await
+    let mut rows = state
+        .teams
+        .recycle(&team_id, session_epoch, expected_lifecycle_version)
+        .await?;
+    rows.retain(|r| {
+        crate::recycle::matches_query(
+            &format!(
+                "{} {} {}",
+                r.label,
+                r.categories
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                r.phrases
+                    .iter()
+                    .map(|p| format!(
+                        "{} {}",
+                        p.title,
+                        p.segments
+                            .iter()
+                            .flat_map(|s| &s.blocks)
+                            .map(|b| match b {
+                                wire::Block::Text { text } => text.as_str(),
+                                wire::Block::Image { name, .. }
+                                | wire::Block::File { name, .. } => name.as_str(),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ),
+            query.as_deref().unwrap_or(""),
+        )
+    });
+    rows.sort_by_key(|r| std::cmp::Reverse(r.deleted_at));
+    Ok(rows)
 }
 #[tauri::command]
 pub async fn restore_team_record(
@@ -92,6 +132,7 @@ pub async fn restore_team_record(
     id: String,
     expected_version: u64,
     expected_lifecycle_version: u64,
+    session_epoch: Option<u64>,
 ) -> Result<()> {
     state
         .teams
@@ -101,6 +142,7 @@ pub async fn restore_team_record(
             &id,
             expected_version,
             expected_lifecycle_version,
+            session_epoch,
         )
         .await
 }
@@ -110,10 +152,31 @@ pub async fn purge_team_record(
     team_id: String,
     id: String,
     expected_lifecycle_version: u64,
+    session_epoch: Option<u64>,
 ) -> Result<()> {
     state
         .teams
-        .purge(&team_id, &id, expected_lifecycle_version)
+        .purge(&team_id, &id, expected_lifecycle_version, session_epoch)
+        .await
+}
+#[tauri::command]
+pub async fn empty_team_recycle(
+    state: State<'_, AppState>,
+    team_id: String,
+    ids: Vec<String>,
+    expected_lifecycle_version: u64,
+    session_epoch: Option<u64>,
+) -> Result<usize> {
+    state
+        .teams
+        .empty_recycle(
+            &team_id,
+            wire::ClearRecycleRequest {
+                ids,
+                expected_lifecycle_version,
+            },
+            session_epoch,
+        )
         .await
 }
 #[tauri::command]
@@ -191,7 +254,7 @@ pub async fn team_admin(
     let team = team_id.unwrap_or_default();
     for value in [&id, &team] {
         if !value.is_empty() && uuid::Uuid::parse_str(value).is_err() {
-            return Err("账号或共享库ID无效。".into());
+            return Err("账号或共享话术ID无效。".into());
         }
     }
     let (method, path) = match action.as_str() {
@@ -222,7 +285,7 @@ pub async fn team_admin(
         "restore-team" => (Method::POST, format!("deleted-teams/{team}/restore")),
         "purge-team" => (Method::POST, format!("deleted-teams/{team}/purge")),
         "asset-cleanup" => (Method::GET, "asset-cleanup".into()),
-        _ => return Err("共享库管理操作无效。".into()),
+        _ => return Err("共享话术管理操作无效。".into()),
     };
     let mutating = method != Method::GET;
     let (result, epoch) = state
@@ -234,7 +297,7 @@ pub async fn team_admin(
             .teams
             .forget_team(&app, &team, epoch)
             .await
-            .map_err(|e| format!("操作已提交，共享库授权已撤下；本地缓存处理暂未完成：{e}"))?;
+            .map_err(|e| format!("操作已提交，共享话术授权已撤下；本地缓存处理暂未完成：{e}"))?;
     }
     if mutating {
         // 操作已由服务端提交；授权刷新失败不应把成功的移交误报为失败、诱使用户重试。
@@ -247,7 +310,7 @@ pub async fn backup_team_server(state: State<'_, AppState>, path: String) -> Res
     state.teams.backup(std::path::Path::new(&path)).await
 }
 
-/// 主搜索限定当前来源；底部 dock 搜索才合并全部授权共享库和本地文件。
+/// 主搜索限定当前来源；底部 dock 搜索才合并全部授权共享话术和本地文件。
 #[tauri::command]
 pub fn search_scoped_content(
     state: State<AppState>,
@@ -260,7 +323,7 @@ pub fn search_scoped_content(
     let mut hits = if scope == "team" {
         vec![]
     } else {
-        store.search(&query)?.into_iter().filter(|h|h.kind=="phrase"&&(scope=="all"||scope=="private")).map(|h|{let content_key=crate::private_local::content_key(&store,"phrase",&h.id).ok();serde_json::json!({"id":h.id,"kind":h.kind,"phrase":h.phrase,"file":h.file,"privateKey":content_key,"sourceLabel":"我的话术"})}).collect::<Vec<_>>()
+        store.search(&query)?.into_iter().filter(|h|h.kind=="phrase"&&(scope=="all"||scope=="private")).map(|h|{let content_key=crate::private_local::content_key(&store,"phrase",&h.id).ok();serde_json::json!({"id":h.id,"kind":h.kind,"phrase":h.phrase,"file":h.file,"privateKey":content_key,"sourceLabel":"个人话术"})}).collect::<Vec<_>>()
     };
     drop(store);
     if scope == "all" || scope == "file" {
@@ -271,7 +334,7 @@ pub fn search_scoped_content(
             &query,
             exact,
             if scope == "team" {
-                Some(team_id.as_deref().ok_or("请选择共享库。")?)
+                Some(team_id.as_deref().ok_or("请选择共享话术。")?)
             } else {
                 None
             },

@@ -17,9 +17,9 @@ const app = spawn(path.join(repo, 'src-tauri/target/debug/QuickPhrase.exe'), ['-
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let browser, page, settings; const results = [], menus = [];
 const invoke = (cmd, args = {}) => page.evaluate(({ cmd, args }) => window.__TAURI_INTERNALS__.invoke(cmd, args), { cmd, args });
-const transfer = async (cmd, args = {}) => {
+const transfer = async (cmd, args = {}, devicePart = false) => {
   const [library, account] = await Promise.all([invoke('get_library'), invoke('get_team_status')]);
-  return invoke(cmd, { merge: false, restoreSettings: false, operationId: randomUUID(), ...args, target: { source: 'private', libraryId: library.libraryId, sessionEpoch: account.sessionEpoch } });
+  return invoke(cmd, { merge: false, restoreSettings: false, operationId: randomUUID(), ...args, target: { source: 'private', libraryId: library.libraryId, sessionEpoch: account.sessionEpoch, devicePart } });
 };
 const check = (label, fn) => fn().then(() => { results.push(label); console.log('通过：' + label); });
 const click = async locator => { await locator.waitFor(); for (let i = 0; i < 30 && !(await locator.isEnabled()); i++) await delay(50); assert.ok(await locator.isEnabled()); await locator.evaluate(el => el.click()); };
@@ -94,7 +94,7 @@ try {
     catch (error) { if (i >= 30 || !String(error).includes('服务尚未启动')) throw error; await delay(100); }
   }
   const top = page.getByRole('button', { name: '一级分类菜单', exact: true });
-  const primaryLabels = ['新增话术', '新增二级分类', '新增同级分类', '重命名', '删除', '快速排序一级分类', '复制到', '移动到', '导出该一级分类的话术', '复制到共享库话术', '设置一级分类背景色', '设置一级分类区域高度', '账号与同步'];
+  const primaryLabels = ['新增话术', '新增二级分类', '新增同级分类', '重命名', '删除', '快速排序一级分类', '复制到', '移动到', '导出该一级分类的话术', '复制到共享话术', '设置一级分类背景色', '设置一级分类区域高度', '账号与同步'];
   await check('新库没有预设分类，空态可创建首个分类，最后一个分类仍可删除', async () => {
     assert.deepEqual(initial.categories, []);
     await page.getByText('还没有一级分类', { exact: true }).waitFor();
@@ -125,7 +125,7 @@ try {
   await page.getByRole('button', { name: '常用', exact: true }).waitFor();
   await check('仅剩一个一级分类时允许删除，排序和迁移禁用，菜单方向键跳过禁用项', async () => {
     const menu = await openMenu(top); assert.deepEqual(menu.map(i => i.text), primaryLabels);
-    for (const label of ['快速排序一级分类', '复制到', '移动到', '复制到共享库话术']) assert.equal(menu.find(i => i.text === label).enabled, false);
+    for (const label of ['快速排序一级分类', '复制到', '移动到', '复制到共享话术']) assert.equal(menu.find(i => i.text === label).enabled, false);
     await page.keyboard.press('ArrowDown'); assert.equal(await page.evaluate(() => document.activeElement.textContent), '新增话术');
     await page.keyboard.press('End'); assert.equal(await page.evaluate(() => document.activeElement.textContent), '账号与同步');
     await page.keyboard.press('ArrowUp'); assert.equal(await page.evaluate(() => document.activeElement.textContent), '设置一级分类区域高度');
@@ -603,9 +603,9 @@ try {
     await page.waitForFunction(() => document.querySelector('.content-tabs button').textContent === '本地文件');
     assert.deepEqual(await order.locator('select').evaluateAll(selects => selects.map(s => s.value)), ['本地文件', '话术']);
     const scopeOrder = settings.getByRole('group', { name: '话术库显示位置排序', exact: true });
-    await scopeOrder.getByRole('combobox').nth(0).selectOption('共享库');
+    await scopeOrder.getByRole('combobox').nth(0).selectOption('共享话术');
     await page.waitForFunction(() => document.querySelector('.scope-bar').firstElementChild.classList.contains('team-selector'));
-    assert.deepEqual(await scopeOrder.locator('select').evaluateAll(selects => selects.map(s => s.value)), ['共享库', '我的话术']);
+    assert.deepEqual(await scopeOrder.locator('select').evaluateAll(selects => selects.map(s => s.value)), ['共享话术', '个人话术']);
     assert.equal((await invoke('get_library')).settings.filesFirst, true);
     for (const control of [...await order.locator('select').all(), ...await scopeOrder.locator('select').all()]) assert.equal(await control.evaluate(el => getComputedStyle(el).appearance), 'none');
     const firstBox = await order.locator('select').nth(0).boundingBox(); const secondBox = await order.locator('select').nth(1).boundingBox(); const scopeBox = await scopeOrder.boundingBox(); const themeBox = await settings.getByRole('combobox', { name: '主题风格', exact: true }).boundingBox();
@@ -614,7 +614,7 @@ try {
     await order.getByRole('combobox').nth(1).selectOption('本地文件'); await page.waitForFunction(() => document.querySelector('.content-tabs button').textContent === '话术');
     assert.deepEqual(await order.locator('select').evaluateAll(selects => selects.map(s => s.value)), ['话术', '本地文件']);
     await settings.screenshot({ path: path.join(evidence, 'settings-order.png') });
-    await scopeOrder.getByRole('combobox').nth(0).selectOption('我的话术'); await page.waitForFunction(() => document.querySelector('.scope-bar').firstElementChild.textContent === '我的话术');
+    await scopeOrder.getByRole('combobox').nth(0).selectOption('个人话术'); await page.waitForFunction(() => document.querySelector('.scope-bar').firstElementChild.textContent === '个人话术');
     // 设置通知由主窗口异步应用；等待真实原生属性，不能把 IPC 返回当成窗口已更新。
     await choose(settings, '支持窗口自由拉宽拉窄'); await page.waitForFunction(async () => !await window.__TAURI_INTERNALS__.invoke('plugin:window|is_resizable')); assert.equal(await invoke('plugin:window|is_resizable'), false);
     await choose(settings, '支持窗口自由拉宽拉窄'); await page.waitForFunction(async () => await window.__TAURI_INTERNALS__.invoke('plugin:window|is_resizable')); assert.equal(await invoke('plugin:window|is_resizable'), true);
@@ -666,7 +666,12 @@ try {
     await assert.rejects(transfer('confirm_import', { previewId: preview.id }), /已更新/);
     await transfer('refresh_import_preview', { previewId: preview.id });
     await transfer('confirm_import', { previewId: preview.id });
-    const after = (await invoke('get_library')).settings; assert.deepEqual(after, before);
+    // 个人内容仅恢复便携设置；设备设置必须经独立预览和确认，避免跨账号覆盖本机布局。
+    const after = (await invoke('get_library')).settings;
+    assert.deepEqual(after, { ...before, dockSearch: false, teamsFirst: !before.teamsFirst });
+    const devicePreview = await transfer('preview_import', { path: output, restoreSettings: true }, true);
+    await transfer('confirm_import', { previewId: devicePreview.id }, true);
+    assert.deepEqual((await invoke('get_library')).settings, before);
     await page.waitForFunction(() => document.documentElement.dataset.theme === 'green');
     for (const view of [page, dock, settings]) assert.equal(await view.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|is_visible', {})), false);
   });

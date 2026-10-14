@@ -1,6 +1,7 @@
 //! 云文件网络任务使用账号世代和固定任务 ID；上传源文件先固化，未知回执只查询原任务。
 //! 云文件缓存随账号退出清理，上传待核对任务独立保存，个人副本不放在此缓存目录。
 use super::*;
+use std::io::{Read, Write};
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +68,18 @@ pub struct CompanyTransfer {
     pub total: u64,
     pub status: String,
     pub revision: u64,
+    /// 逐项错误保存在 Rust 快照中，窗口关闭重开仍可查看；不包含源文件载荷。
+    pub message: String,
+}
+
+/// 队列归属于账号会话而非 WebView；任务 ID 在入队时固定，准备与重试不能另建云文件。
+#[derive(Clone)]
+struct UploadJob {
+    ctx: AccountContext,
+    id: String,
+    name: String,
+    version: u64,
+    cancel: CancellationToken,
 }
 fn transfer_key(epoch: u64, direction: &str, id: &str) -> String {
     format!(
@@ -92,6 +105,7 @@ fn advance_transfer(
         record.done = bytes.0;
         record.total = bytes.1;
         record.status = status.into();
+        record.message.clear();
         record.revision += 1;
         let _ = app.emit("company-transfer", record.clone());
     }
@@ -147,6 +161,34 @@ pub fn safe_filename(name: &str) -> String {
         .to_string()
 }
 impl TeamClient {
+    /// 退出只取消未完成的执行，不清除已固化任务；重启不恢复队列，也不自动重传。
+    pub fn stop_company_uploads(&self) {
+        for (key, cancel) in self.company_transfers.lock().unwrap().iter() {
+            if key.contains(":upload:") {
+                cancel.cancel();
+            }
+        }
+    }
+    /// 复制期间退出可能留下半份副本。只有固定 ID 目录且从未提交 task.json 才能清理。
+    pub(super) fn clean_uncommitted_uploads(&self) -> Result<()> {
+        let root = self.dir.join("company-uploads");
+        if !root.exists() {
+            return Ok(());
+        }
+        for entry in fs::read_dir(&root).map_err(io_error)? {
+            let entry = entry.map_err(io_error)?;
+            if entry.file_type().map_err(io_error)?.is_dir()
+                && uuid::Uuid::parse_str(&entry.file_name().to_string_lossy()).is_ok()
+                && !entry.path().join("task.json").exists()
+            {
+                fs::remove_dir_all(entry.path()).map_err(io_error)?;
+            }
+        }
+        Ok(())
+    }
+    pub fn has_active_company_transfers(&self) -> bool {
+        !self.company_transfers.lock().unwrap().is_empty()
+    }
     pub fn company_context(
         &self,
         epoch: u64,
@@ -213,6 +255,7 @@ impl TeamClient {
                     total: bytes.1,
                     status: status.into(),
                     revision: 0,
+                    message: String::new(),
                 });
             advance_transfer(app, &self.company_history, &key, bytes, status);
             Ok(())
@@ -267,6 +310,7 @@ impl TeamClient {
                         total: task.size,
                         status: "待核对".into(),
                         revision: 0,
+                        message: String::new(),
                     });
                 }
             }
@@ -299,7 +343,8 @@ impl TeamClient {
                 r.session_epoch != epoch
                     || r.direction != direction
                     || r.status == "传输中"
-                    || (direction == "upload" && r.status != "已完成")
+                    || (direction == "upload"
+                        && !matches!(r.status.as_str(), "已完成" | "准备失败" | "已停止"))
             });
             Ok(())
         })?;
@@ -391,12 +436,202 @@ impl TeamClient {
         }
         Ok(self.dir.join("company-uploads").join(id))
     }
+    /// 入队只登记路径和固定 ID，实际文件校验及副本复制在获得执行名额后进行。
+    pub fn enqueue_company_uploads(
+        self: &Arc<Self>,
+        app: &tauri::AppHandle,
+        epoch: u64,
+        paths: Vec<String>,
+    ) -> Result<Vec<CompanyTransfer>> {
+        let _activity = crate::update_activity::Activity::enter()?;
+        let ctx = self.company_context(epoch, wire::CompanyOperation::Upload)?;
+        let version = self
+            .active()?
+            .authorization
+            .user
+            .company_file_permissions
+            .upload_version;
+        let mut seen = std::collections::HashSet::new();
+        let mut jobs = vec![];
+        for path in paths {
+            let normalized: PathBuf = Path::new(&path).components().collect();
+            #[cfg(windows)]
+            let normalized = normalized.to_string_lossy().to_lowercase();
+            if !seen.insert(normalized) {
+                continue;
+            }
+            let name = Path::new(&path)
+                .file_name()
+                .map(|v| v.to_string_lossy().into_owned())
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| "文件".into());
+            jobs.push((
+                UploadJob {
+                    ctx: ctx.clone(),
+                    id: local::id(),
+                    name,
+                    version,
+                    cancel: ctx.cancel.child_token(),
+                },
+                path,
+            ));
+        }
+        if jobs.is_empty() {
+            return Err("请选择要上传的文件。".into());
+        }
+        // 权限检查与任务登记在同一短锁内，SSE 撤权一定能取消已经接受的任务。
+        let initial = self.with_upload_authority(&ctx, version, &ctx.cancel, || {
+            let mut tasks = self.company_transfers.lock().unwrap();
+            let mut history = self.company_history.lock().unwrap();
+            let mut initial = vec![];
+            for (job, _) in &jobs {
+                let key = transfer_key(epoch, "upload", &job.id);
+                tasks.insert(key.clone(), job.cancel.clone());
+                let record = CompanyTransfer {
+                    session_epoch: epoch,
+                    asset_id: job.id.clone(),
+                    name: job.name.clone(),
+                    direction: "upload".into(),
+                    done: 0,
+                    total: 0,
+                    status: "等待上传".into(),
+                    revision: 1,
+                    message: String::new(),
+                };
+                history.insert(key, record.clone());
+                initial.push(record);
+            }
+            Ok(initial)
+        })?;
+        for record in &initial {
+            let _ = app.emit("company-transfer", record);
+        }
+        for (job, path) in jobs {
+            let client = self.clone();
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                client.run_queued_upload(&app, job, path).await;
+            });
+        }
+        Ok(initial)
+    }
+    async fn run_queued_upload(
+        self: &Arc<Self>,
+        app: &tauri::AppHandle,
+        job: UploadJob,
+        path: String,
+    ) {
+        let mut prepared = false;
+        let result: Result<wire::CompanyFile> = async {
+            let _permit = tokio::select! {
+                biased;
+                _ = job.cancel.cancelled() => return Err("上传已停止。".into()),
+                permit = self.uploads.acquire() => permit.map_err(|_| "上传已关闭。")?,
+            };
+            self.with_upload_authority(&job.ctx, job.version, &job.cancel, || Ok(()))?;
+            self.company_progress(
+                app,
+                &job.ctx,
+                (&job.id, &job.name),
+                "upload",
+                (0, 0),
+                "准备中",
+            );
+            let client = self.clone();
+            let preparation = job.clone();
+            let task = tauri::async_runtime::spawn_blocking(move || {
+                client.prepare_upload_source(&preparation, &path)
+            })
+            .await
+            .map_err(|_| "上传文件准备中断。".to_owned())??;
+            prepared = true;
+            let result = self.company_upload_body(app, &job, &task, true).await;
+            // 网络失败时先核验连接再交出名额；离线会取消后续任务，单文件失败仍可继续其他项。
+            if result.is_err()
+                && !job.cancel.is_cancelled()
+                && self.with_account(&job.ctx, || Ok(())).is_ok()
+            {
+                let _ = self.refresh_authorization(app).await;
+            }
+            result
+        }
+        .await;
+        self.finish_upload(
+            app,
+            &job,
+            result.as_ref().map(|_| ()).map_err(Clone::clone),
+            prepared,
+        );
+    }
+    #[cfg(test)]
     pub fn prepare_company_upload(&self, epoch: u64, path: &str) -> Result<CompanyUpload> {
         let ctx = self.company_context(epoch, wire::CompanyOperation::Upload)?;
+        let version = self
+            .active()?
+            .authorization
+            .user
+            .company_file_permissions
+            .upload_version;
+        let name = Path::new(path)
+            .file_name()
+            .ok_or("文件名无效。")?
+            .to_string_lossy()
+            .into_owned();
+        let job = UploadJob {
+            id: local::id(),
+            name,
+            version,
+            cancel: ctx.cancel.child_token(),
+            ctx,
+        };
+        self.prepare_upload_source(&job, path)
+    }
+    pub async fn prepare_company_upload_async(
+        self: &Arc<Self>,
+        epoch: u64,
+        path: String,
+    ) -> Result<CompanyUpload> {
+        let _activity = crate::update_activity::Activity::enter()?;
+        let ctx = self.company_context(epoch, wire::CompanyOperation::Upload)?;
+        let job = UploadJob {
+            id: local::id(),
+            name: Path::new(&path)
+                .file_name()
+                .ok_or("文件名无效。")?
+                .to_string_lossy()
+                .into_owned(),
+            version: self
+                .active()?
+                .authorization
+                .user
+                .company_file_permissions
+                .upload_version,
+            cancel: ctx.cancel.child_token(),
+            ctx,
+        };
+        // 旧单文件 IPC 也保存入队时授权；等待名额期间撤权再授权不能接收旧准备请求。
+        let _permit = tokio::select! {
+            biased;
+            _ = job.cancel.cancelled() => return Err("上传准备已停止。".into()),
+            permit = self.uploads.acquire() => permit.map_err(|_| "上传已关闭。")?,
+        };
+        let client = self.clone();
+        tauri::async_runtime::spawn_blocking(move || client.prepare_upload_source(&job, &path))
+            .await
+            .map_err(|_| "上传文件准备中断，请重新选择。".to_owned())?
+    }
+    /// 复制不占账号锁；Windows 禁止源文件写入与替换，每块检查取消，提交前复核原授权。
+    fn prepare_upload_source(&self, job: &UploadJob, path: &str) -> Result<CompanyUpload> {
+        self.with_upload_authority(&job.ctx, job.version, &job.cancel, || Ok(()))?;
         let source = Path::new(path);
+        if !fs::metadata(source)
+            .map_err(|_| "文件无法读取或不存在。")?
+            .is_file()
+        {
+            return Err("文件夹不支持上传，请选择文件。".into());
+        }
         let mut options = fs::OpenOptions::new();
         options.read(true);
-        // Windows 复制期间拒绝写入及替换源文件，避免正在保存的文档混入同一副本。
         #[cfg(windows)]
         {
             use std::os::windows::fs::OpenOptionsExt;
@@ -405,32 +640,50 @@ impl TeamClient {
         let mut input = options
             .open(source)
             .map_err(|_| "文件无法读取或正在被修改，请稍后再试。")?;
-        let size = input.metadata().map_err(|_| "文件无法读取。")?.len();
+        let metadata = input.metadata().map_err(|_| "文件无法读取。")?;
+        if !metadata.is_file() {
+            return Err("只能上传普通文件。".into());
+        }
+        let size = metadata.len();
         if size == 0 || size > LIMIT {
             return Err("单文件需为1字节至128MB。".into());
         }
         let task = CompanyUpload {
-            id: local::id(),
-            name: source
-                .file_name()
-                .ok_or("文件名无效。")?
-                .to_string_lossy()
-                .into_owned(),
+            id: job.id.clone(),
+            name: job.name.clone(),
             size,
-            server: ctx.server.clone(),
-            user_id: ctx.user_id.clone(),
+            server: job.ctx.server.clone(),
+            user_id: job.ctx.user_id.clone(),
         };
-        let dir = self.upload_dir(&task.id)?;
+        let dir = self.upload_dir(&job.id)?;
         fs::create_dir_all(&dir).map_err(io_error)?;
-        let result = self.with_account(&ctx, || {
+        let result = (|| {
             let mut output = fs::File::create(dir.join("content")).map_err(io_error)?;
-            if std::io::copy(&mut input, &mut output).map_err(io_error)? != size {
+            let mut buffer = [0_u8; 64 * 1024];
+            let mut copied = 0;
+            loop {
+                if job.cancel.is_cancelled() {
+                    return Err("上传准备已停止。".into());
+                }
+                let read = input.read(&mut buffer).map_err(io_error)?;
+                if read == 0 {
+                    break;
+                }
+                copied += read as u64;
+                if copied > size {
+                    return Err("文件在复制期间变化，请重新选择。".into());
+                }
+                output.write_all(&buffer[..read]).map_err(io_error)?;
+            }
+            if copied != size {
                 return Err("文件在复制期间变化，请重新选择。".into());
             }
             output.sync_all().map_err(io_error)?;
-            save_json(&dir.join("task.json"), &task)?;
-            Ok(task.clone())
-        });
+            self.with_upload_authority(&job.ctx, job.version, &job.cancel, || {
+                save_json(&dir.join("task.json"), &task)?;
+                Ok(task)
+            })
+        })();
         if result.is_err() {
             let _ = fs::remove_dir_all(dir);
         }
@@ -443,105 +696,209 @@ impl TeamClient {
         id: String,
         retry: bool,
     ) -> Result<wire::CompanyFile> {
-        // 查询既有登记属于读取，撤回上传授权后也不能丢失待核对任务。
+        let _activity = crate::update_activity::Activity::enter()?;
+        // 查询原任务仍属于读取，撤权后可以核对已经登记的云文件。
         let ctx = self.company_context(epoch, wire::CompanyOperation::Read)?;
         let active = self.active()?;
-        self.with_account(&ctx, || Ok(()))?;
-        let dir = self.upload_dir(&id)?;
-        let task = load_json::<CompanyUpload>(&dir.join("task.json")).ok_or("上传任务不存在。")?;
+        let task = load_json::<CompanyUpload>(&self.upload_dir(&id)?.join("task.json"))
+            .ok_or("上传任务不存在。")?;
         if task.id != id || task.server != ctx.server || task.user_id != ctx.user_id {
             return Err("上传任务不属于当前账号。".into());
         }
-        let key = format!("{epoch}:upload:{id}");
-        let cancel = ctx.cancel.child_token();
-        {
+        let job = UploadJob {
+            ctx,
+            id,
+            name: task.name.clone(),
+            version: active
+                .authorization
+                .user
+                .company_file_permissions
+                .upload_version,
+            cancel: active.cancel.child_token(),
+        };
+        self.with_account(&job.ctx, || {
+            let key = transfer_key(epoch, "upload", &job.id);
             let mut tasks = self.company_transfers.lock().unwrap();
             if tasks.contains_key(&key) {
-                return Err("该文件正在上传。".into());
+                return Err("该文件正在上传或等待上传。".into());
             }
-            tasks.insert(key.clone(), cancel.clone());
-        }
+            tasks.insert(key, job.cancel.clone());
+            Ok(())
+        })?;
         self.company_progress(
             app,
-            &ctx,
-            (&id, &task.name),
+            &job.ctx,
+            (&job.id, &job.name),
+            "upload",
+            (0, task.size),
+            if retry { "等待上传" } else { "传输中" },
+        );
+        let result = async {
+            let _permit = if retry {
+                Some(tokio::select! {
+                    biased;
+                    _ = job.cancel.cancelled() => return Err("上传已停止，请查询原任务。".into()),
+                    permit = self.uploads.acquire() => permit.map_err(|_| "上传已关闭。")?,
+                })
+            } else {
+                None
+            };
+            self.company_upload_body(app, &job, &task, retry).await
+        }
+        .await;
+        self.finish_upload(
+            app,
+            &job,
+            result.as_ref().map(|_| ()).map_err(Clone::clone),
+            true,
+        );
+        result
+    }
+    async fn company_upload_body(
+        &self,
+        app: &tauri::AppHandle,
+        job: &UploadJob,
+        task: &CompanyUpload,
+        retry: bool,
+    ) -> Result<wire::CompanyFile> {
+        let ctx = &job.ctx;
+        let id = &job.id;
+        let cancel = &job.cancel;
+        let active = self.active()?;
+        self.company_context(ctx.epoch, wire::CompanyOperation::Read)?;
+        self.with_account(ctx, || Ok(()))?;
+        self.company_progress(
+            app,
+            ctx,
+            (id, &task.name),
             "upload",
             (0, task.size),
             "传输中",
         );
-        let result = async {
-            // 只有明确不存在才传输；网络错误、权限错误和永久删除标记必须停止。
-            let query = self.client.get(format!("{}/api/company/files/{id}", ctx.server))
-                .bearer_auth(&active.token).timeout(Duration::from_secs(30));
-            let response = tokio::select! {
-                _ = cancel.cancelled() => return Err("上传已停止，请查询原任务。".into()),
-                response = query.send() => response.map_err(|_| "上传结果查询失败，不会重新上传。")?,
-            };
-            if response.status() != reqwest::StatusCode::NOT_FOUND {
-                let file = self.check(response).await?.json::<wire::CompanyFile>().await
-                    .map_err(|_| "上传结果无法读取。")?;
-                if file.asset_id != id || file.name != task.name || file.size != task.size {
-                    return Err("上传结果与原任务不符，源副本已保留。".into());
-                }
-                return self.with_account(&ctx, || Ok(file));
+        // 只有明确不存在才传输；网络错误、权限错误和永久删除标记不能触发新上传。
+        let query = self
+            .client
+            .get(format!("{}/api/company/files/{id}", ctx.server))
+            .bearer_auth(&active.token)
+            .timeout(Duration::from_secs(30));
+        let response = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err("上传已停止，请查询原任务。".into()),
+            response = query.send() => response.map_err(|_| "上传结果查询失败，不会重新上传。")?,
+        };
+        let file = if response.status() != reqwest::StatusCode::NOT_FOUND {
+            let file = self
+                .check(response)
+                .await?
+                .json::<wire::CompanyFile>()
+                .await
+                .map_err(|_| "上传结果无法读取。")?;
+            if file.asset_id != *id || file.name != task.name || file.size != task.size {
+                return Err("上传结果与原任务不符，源副本已保留。".into());
             }
-            if !retry { return Err("原任务尚未登记，源副本已保留；获得上传权限后可明确继续。".into()); }
-            self.company_context(epoch, wire::CompanyOperation::Upload)?;
-            let upload_version = self.active()?.authorization.user.company_file_permissions.upload_version;
-            self.check_company_upload_version(&ctx, upload_version)?;
-            if cancel.is_cancelled() { return Err("上传授权已变化，请查询原任务。".into()); }
-            let file = tokio::fs::File::open(dir.join("content")).await.map_err(io_error)?;
-            if file.metadata().await.map_err(io_error)?.len() != task.size {
+            self.with_account(ctx, || Ok(file))?
+        } else {
+            if !retry {
+                return Err("原任务尚未登记，源副本已保留；获得上传权限后可明确继续。".into());
+            }
+            self.with_upload_authority(ctx, job.version, cancel, || Ok(()))?;
+            let source = tokio::fs::File::open(self.upload_dir(id)?.join("content"))
+                .await
+                .map_err(io_error)?;
+            if source.metadata().await.map_err(io_error)?.len() != task.size {
                 return Err("上传源副本不完整，请重新选择文件。".into());
             }
             let mut done = 0;
             let progress_app = app.clone();
-            let progress_history = self.company_history.clone();
-            let progress_key = key.clone();
+            let history = self.company_history.clone();
+            let key = transfer_key(ctx.epoch, "upload", id);
             let total = task.size;
-            let stream = tokio_util::io::ReaderStream::new(file).map(move |chunk| {
+            let stream = tokio_util::io::ReaderStream::new(source).map(move |chunk| {
                 if let Ok(bytes) = &chunk {
                     done += bytes.len() as u64;
-                    advance_transfer(&progress_app, &progress_history, &progress_key, (done, total), "传输中");
+                    advance_transfer(&progress_app, &history, &key, (done, total), "传输中");
                 }
                 chunk
             });
-            let request = self.client.put(format!("{}/api/company/files/{id}/content", ctx.server))
-                .bearer_auth(&active.token).query(&[("name", task.name.clone()), ("size", task.size.to_string()), ("expectedUploadVersion", upload_version.to_string())])
-                .header("content-length", task.size).timeout(Duration::from_secs(120))
+            let request = self
+                .client
+                .put(format!("{}/api/company/files/{id}/content", ctx.server))
+                .bearer_auth(&active.token)
+                .query(&[
+                    ("name", task.name.clone()),
+                    ("size", task.size.to_string()),
+                    ("expectedUploadVersion", job.version.to_string()),
+                ])
+                .header("content-length", task.size)
+                .timeout(Duration::from_secs(120))
                 .body(reqwest::Body::wrap_stream(stream));
             let response = tokio::select! {
+                biased;
                 _ = cancel.cancelled() => return Err("上传已停止，结果需查询原任务；不会自动重试。".into()),
                 response = request.send() => response.map_err(|_| "上传中断或回执丢失，请查询原任务结果。")?,
             };
-            let file = self.check(response).await?.json().await
+            let file: wire::CompanyFile = self
+                .check(response)
+                .await?
+                .json()
+                .await
                 .map_err(|_| "上传结果无法读取，请查询原任务。")?;
-            self.check_company_upload_version(&ctx, upload_version)?;
-            self.with_account(&ctx, || Ok(file))
-        }.await;
-        self.company_transfers.lock().unwrap().remove(&key);
-        self.company_progress(
-            app,
-            &ctx,
-            (&id, &task.name),
-            "upload",
-            (if result.is_ok() { task.size } else { 0 }, task.size),
-            if result.is_ok() {
-                "已完成"
-            } else {
-                "待核对"
-            },
-        );
-        if result.is_ok() {
-            self.with_account(&ctx, || {
-                fs::remove_dir_all(&dir).map_err(io_error)?;
-                Ok(())
-            })?;
-            let _ = app.emit("company-files-changed", epoch);
-        }
-        result
+            if file.asset_id != *id || file.name != task.name || file.size != task.size {
+                return Err("上传结果与原任务不符，源副本已保留。".into());
+            }
+            self.with_upload_authority(ctx, job.version, cancel, || Ok(file))?
+        };
+        self.with_account(ctx, || {
+            fs::remove_dir_all(self.upload_dir(id)?).map_err(io_error)?;
+            Ok(())
+        })?;
+        let _ = app.emit("company-files-changed", ctx.epoch);
+        Ok(file)
     }
+    fn finish_upload(
+        &self,
+        app: &tauri::AppHandle,
+        job: &UploadJob,
+        result: Result<()>,
+        prepared: bool,
+    ) {
+        let key = transfer_key(job.ctx.epoch, "upload", &job.id);
+        self.company_transfers.lock().unwrap().remove(&key);
+        let _ = self.with_account(&job.ctx, || {
+            let mut history = self.company_history.lock().unwrap();
+            if let Some(record) = history.get_mut(&key) {
+                record.status = if result.is_ok() {
+                    "已完成"
+                } else if prepared {
+                    "待核对"
+                } else if job.cancel.is_cancelled() {
+                    "已停止"
+                } else {
+                    "准备失败"
+                }
+                .into();
+                if result.is_ok() {
+                    record.done = record.total;
+                }
+                record.message = result.err().unwrap_or_default();
+                record.revision += 1;
+                let _ = app.emit("company-transfer", record.clone());
+            }
+            Ok(())
+        });
+    }
+    #[cfg(test)]
     fn check_company_upload_version(&self, ctx: &AccountContext, version: u64) -> Result<()> {
+        self.with_upload_authority(ctx, version, &ctx.cancel, || Ok(()))
+    }
+    /// 授权复核和提交只持短锁，撤权再授权也不能接收旧版本任务。
+    fn with_upload_authority<T>(
+        &self,
+        ctx: &AccountContext,
+        version: u64,
+        cancel: &CancellationToken,
+        work: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
         let inner = self.inner.lock().unwrap();
         let active = inner
             .active
@@ -549,20 +906,24 @@ impl TeamClient {
             .filter(|a| {
                 a.epoch == ctx.epoch
                     && a.authorization.user.id == ctx.user_id
+                    && a.connection.server == ctx.server
                     && !a.cancel.is_cancelled()
             })
             .ok_or("账号已变化，旧上传结果已丢弃。")?;
         let user = &active.authorization.user;
-        if user.disabled
+        if cancel.is_cancelled()
+            || active.offline
+            || !active.authorization.capabilities.company_files
+            || user.disabled
             || user.must_change_password
             || user.company_file_permissions.upload_version != version
             || (!user.admin
                 && (!active.authorization.capabilities.company_file_permissions
                     || !user.company_file_permissions.can_upload))
         {
-            return Err("上传授权已变化，源副本已保留，请查询原任务。".into());
+            return Err("上传已停止或授权已变化；已固化的源副本保留，可查询原任务。".into());
         }
-        Ok(())
+        work()
     }
     pub async fn company_download(
         &self,
@@ -570,6 +931,7 @@ impl TeamClient {
         epoch: u64,
         id: &str,
     ) -> Result<(wire::CompanyFile, PathBuf)> {
+        let _activity = crate::update_activity::Activity::enter()?;
         if uuid::Uuid::parse_str(id).is_err() {
             return Err("云文件编号无效。".into());
         }
@@ -752,6 +1114,186 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    fn authorize_uploads(client: &TeamClient) -> UploadJob {
+        {
+            let mut inner = client.inner.lock().unwrap();
+            let active = inner.active.as_mut().unwrap();
+            active.offline = false;
+            active.authorization.capabilities.company_files = true;
+            active.authorization.capabilities.company_file_permissions = true;
+            active
+                .authorization
+                .user
+                .company_file_permissions
+                .can_upload = true;
+        }
+        let ctx = client
+            .company_context(1, wire::CompanyOperation::Upload)
+            .unwrap();
+        UploadJob {
+            id: local::id(),
+            name: "受控源.pdf".into(),
+            version: 0,
+            cancel: ctx.cancel.child_token(),
+            ctx,
+        }
+    }
+
+    #[test]
+    fn upload_preparation_rejects_each_invalid_source_without_touching_it() {
+        let (dir, client, _) = setup();
+        let job = authorize_uploads(&client);
+        let empty = dir.path().join("空文件.pdf");
+        fs::write(&empty, []).unwrap();
+        let large = dir.path().join("超限.pdf");
+        fs::File::create(&large)
+            .unwrap()
+            .set_len(LIMIT + 1)
+            .unwrap();
+        for (path, reason) in [
+            (dir.path().to_owned(), "文件夹"),
+            (empty.clone(), "1字节至128MB"),
+            (large.clone(), "1字节至128MB"),
+            (dir.path().join("不存在.pdf"), "不存在"),
+        ] {
+            assert!(client
+                .prepare_upload_source(&job, path.to_str().unwrap())
+                .err()
+                .unwrap()
+                .contains(reason));
+            assert!(!client.upload_dir(&job.id).unwrap().exists());
+        }
+        assert_eq!(fs::metadata(empty).unwrap().len(), 0);
+        assert_eq!(fs::metadata(large).unwrap().len(), LIMIT + 1);
+        let source = dir.path().join("有效.pdf");
+        fs::write(&source, "有效源文件").unwrap();
+        let task = client
+            .prepare_upload_source(&job, source.to_str().unwrap())
+            .unwrap();
+        fs::write(&source, "源文件后来修改").unwrap();
+        assert_eq!(
+            fs::read_to_string(client.upload_dir(&task.id).unwrap().join("content")).unwrap(),
+            "有效源文件"
+        );
+        assert_eq!(fs::read_to_string(source).unwrap(), "源文件后来修改");
+    }
+
+    #[test]
+    fn legacy_preparation_waiting_for_a_slot_keeps_its_original_upload_version() {
+        let (dir, client, _) = setup();
+        authorize_uploads(&client);
+        let source = dir.path().join("等待名额.pdf");
+        fs::write(&source, "保留源文件").unwrap();
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let permits = client.uploads.acquire_many(2).await.unwrap();
+            let mut pending = Box::pin(
+                client.prepare_company_upload_async(1, source.to_string_lossy().into_owned()),
+            );
+            assert!(futures_util::poll!(pending.as_mut()).is_pending());
+            client
+                .inner
+                .lock()
+                .unwrap()
+                .active
+                .as_mut()
+                .unwrap()
+                .authorization
+                .user
+                .company_file_permissions
+                .upload_version += 1;
+            drop(permits);
+            assert!(pending.await.is_err());
+        });
+        assert_eq!(fs::read_to_string(source).unwrap(), "保留源文件");
+        assert!(client
+            .upload_tasks(
+                &client
+                    .company_context(1, wire::CompanyOperation::Upload)
+                    .unwrap()
+            )
+            .is_empty());
+    }
+
+    #[test]
+    fn preparation_does_not_hold_account_lock_and_rechecks_cancel_or_authority_before_commit() {
+        let (dir, client, _) = setup();
+        let source = dir.path().join("受控源.pdf");
+        fs::File::create(&source).unwrap().set_len(LIMIT).unwrap();
+        for invalidation in ["cancel", "version", "offline", "account"] {
+            let job = authorize_uploads(&client);
+            let output = client.upload_dir(&job.id).unwrap().join("content");
+            let worker_client = client.clone();
+            let worker_job = job.clone();
+            let worker_source = source.clone();
+            let worker = std::thread::spawn(move || {
+                worker_client.prepare_upload_source(&worker_job, worker_source.to_str().unwrap())
+            });
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !output.exists() {
+                assert!(std::time::Instant::now() < deadline, "未观察到后台复制");
+                std::thread::yield_now();
+            }
+            // 文件已经开始复制时仍能立即获得账号锁，账号变动不会被长时间 I/O 阻塞。
+            let mut inner = client.inner.try_lock().expect("复制不能持有账号锁");
+            let active = inner.active.as_mut().unwrap();
+            match invalidation {
+                "cancel" => job.cancel.cancel(),
+                "version" => {
+                    active
+                        .authorization
+                        .user
+                        .company_file_permissions
+                        .upload_version += 1
+                }
+                "offline" => active.offline = true,
+                "account" => active.authorization.user.id = local::id(),
+                _ => unreachable!(),
+            }
+            drop(inner);
+            assert!(worker.join().unwrap().is_err(), "旧准备结果不能提交");
+            assert!(!output.parent().unwrap().exists());
+            assert_eq!(fs::metadata(&source).unwrap().len(), LIMIT);
+            client
+                .inner
+                .lock()
+                .unwrap()
+                .active
+                .as_mut()
+                .unwrap()
+                .authorization
+                .user
+                .company_file_permissions
+                .upload_version = 0;
+        }
+    }
+
+    #[test]
+    fn restart_cleans_only_uncommitted_copies_and_keeps_pending_tasks() {
+        let (dir, client, _) = setup();
+        let job = authorize_uploads(&client);
+        let source = dir.path().join("受控源.pdf");
+        fs::write(&source, "保留源文件").unwrap();
+        let task = client
+            .prepare_upload_source(&job, source.to_str().unwrap())
+            .unwrap();
+        let incomplete = client.upload_dir(&local::id()).unwrap();
+        fs::create_dir_all(&incomplete).unwrap();
+        fs::write(incomplete.join("content"), "半份副本").unwrap();
+        let unknown = client.dir.join("company-uploads/用户目录");
+        fs::create_dir_all(&unknown).unwrap();
+        fs::write(unknown.join("content"), "未知文件").unwrap();
+        client.clean_uncommitted_uploads().unwrap();
+        assert!(!incomplete.exists());
+        assert!(unknown.join("content").exists());
+        assert!(client
+            .upload_dir(&task.id)
+            .unwrap()
+            .join("task.json")
+            .exists());
+        assert_eq!(client.company_transfer_view(1).unwrap()[0].status, "待核对");
+        assert!(source.exists());
+    }
+
     #[test]
     fn windows_names_preserve_chinese_extensions_and_valid_length() {
         assert_eq!(safe_filename("价格表.xlsx"), "价格表.xlsx");
@@ -872,6 +1414,7 @@ mod tests {
             total: 3,
             status: "已完成".into(),
             revision: 1,
+            message: String::new(),
         };
         {
             let mut history = client.company_history.lock().unwrap();

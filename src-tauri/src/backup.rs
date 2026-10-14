@@ -34,7 +34,7 @@ pub struct PendingImport {
     #[serde(default)]
     pub settings_scope: SettingsScope,
 }
-/// 账号包只携带便携设置；分类和共享库包没有可恢复的个人设置。
+/// 账号包只携带便携设置；分类和共享话术包没有可恢复的个人设置。
 #[derive(Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SettingsScope {
@@ -987,13 +987,14 @@ pub fn apply(
     merge: bool,
     restore_settings: bool,
 ) -> Result<()> {
-    apply_inner(store, pending, merge, restore_settings, None)
+    apply_inner(store, pending, merge, restore_settings, None, false)
 }
 pub fn apply_prepared(
     store: &mut Store,
     pending: &PendingImport,
     merge: bool,
     restore_settings: bool,
+    device_settings_only: bool,
 ) -> Result<()> {
     if store.imported(&pending.preview.id)? {
         return Ok(());
@@ -1004,6 +1005,7 @@ pub fn apply_prepared(
         merge,
         restore_settings,
         Some(&pending.preview.id),
+        device_settings_only,
     )
 }
 fn apply_inner(
@@ -1012,6 +1014,7 @@ fn apply_inner(
     merge: bool,
     restore_settings: bool,
     batch: Option<&str>,
+    device_settings_only: bool,
 ) -> Result<()> {
     let mut library = pending.library.clone();
     let mut recycled = pending.recycle_bin.clone();
@@ -1086,7 +1089,14 @@ fn apply_inner(
             material_batch.append(crate::private_local::safe_materials(store, p)?);
         }
         if let Some(batch) = batch {
-            store.import_prepared(&library, merge, restore_settings, &recycled, batch)
+            store.import_prepared(
+                &library,
+                merge,
+                restore_settings,
+                &recycled,
+                batch,
+                device_settings_only,
+            )
         } else {
             store.import(&library, merge, restore_settings, &recycled)
         }
@@ -1858,7 +1868,7 @@ mod tests {
         let target = dir.path().join("target");
         let mut store = Store::open(&target).unwrap();
         store.conn.execute_batch("CREATE TRIGGER reject_common BEFORE INSERT ON common_phrases BEGIN SELECT RAISE(ABORT,'模拟失败'); END;").unwrap();
-        assert!(apply_prepared(&mut store, &pending, false, false).is_err());
+        assert!(apply_prepared(&mut store, &pending, false, false, false).is_err());
         assert!(store.library().unwrap().phrases.is_empty());
         assert!(store.categories().unwrap().is_empty());
         assert!(!store.imported(&pending.preview.id).unwrap());
@@ -1870,7 +1880,7 @@ mod tests {
             .conn
             .execute_batch("DROP TRIGGER reject_common;")
             .unwrap();
-        apply_prepared(&mut store, &pending, false, false).unwrap();
+        apply_prepared(&mut store, &pending, false, false, false).unwrap();
         assert!(store.imported(&pending.preview.id).unwrap());
         assert!(!crate::private_local::dirty(&store).unwrap().is_empty());
         let library = store.library().unwrap();
@@ -1882,7 +1892,7 @@ mod tests {
         drop(store);
         let mut store = Store::open(&target).unwrap();
         let image_count = fs::read_dir(target.join("images")).unwrap().count();
-        apply_prepared(&mut store, &pending, false, false).unwrap();
+        apply_prepared(&mut store, &pending, false, false, false).unwrap();
         assert_eq!(store.library().unwrap().phrases.len(), 1);
         assert_eq!(store.common_phrases().unwrap().len(), 1);
         assert_eq!(
@@ -1915,7 +1925,7 @@ mod tests {
             .notes
             .iter()
             .any(|n| n.contains("多个同级同名项")));
-        apply_prepared(&mut store, &pending, true, false).unwrap();
+        apply_prepared(&mut store, &pending, true, false, false).unwrap();
         assert_eq!(
             store
                 .categories()
@@ -1937,7 +1947,7 @@ mod tests {
         pending.library.settings.theme = "blue".into();
         pending.library.settings.enter = "ctrl-enter".into();
         let mut store = Store::open(&dir.path().join("target")).unwrap();
-        apply_prepared(&mut store, &pending, false, true).unwrap();
+        apply_prepared(&mut store, &pending, false, true, false).unwrap();
         assert_eq!(store.settings().unwrap().enter, "enter");
         assert_eq!(store.settings().unwrap().theme, "blue");
         let desired = crate::private_local::local_records(&store).unwrap();
@@ -1948,7 +1958,7 @@ mod tests {
         let mut second = preview(&template).unwrap();
         prepare_ids(&mut second).unwrap();
         // 明确恢复旧发送值，应替换待确认值，而不是因已应用值相同忽略本次恢复。
-        apply_prepared(&mut store, &second, false, true).unwrap();
+        apply_prepared(&mut store, &second, false, true, false).unwrap();
         let desired = crate::private_local::local_records(&store).unwrap();
         assert_eq!(
             desired[&(shanyu_team_model::private::Kind::Setting, "enter".into())],

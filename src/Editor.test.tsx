@@ -97,3 +97,26 @@ describe('行内图片编辑', () => {
     await waitFor(() => expect(saved()?.segments[0].blocks).toEqual([{ kind: 'text', text: '欢迎\n中文📎\n\n下一行' }]));
   });
 });
+
+it('云文件解析完成前不能保存，完成后保留目标分类和附件引用，保存失败保留草稿', async () => {
+  const previousHash = location.hash; location.hash = '#editor?tab=cloud:7:asset';
+  let resolve!: (view: unknown) => void;
+  vi.mocked(call).mockImplementation(async command => command === 'get_company_files' ? new Promise(done => { resolve = done; }) : command === 'save_company_private_phrase' ? Promise.reject(new Error('云文件已回收')) : undefined);
+  const library = { libraryId: 'private', categories: [{ id: 'root', name: '分类', kind: 'phrase', parentId: null }, { id: 'group', name: '分组', kind: 'phrase', parentId: 'root' }], phrases: [] } as unknown as Library;
+  try {
+    render(<Editor library={library} id="" afterId="" categoryId="root" groupId="group" />);
+    expect((screen.getByRole('button', { name: '确定' }) as HTMLButtonElement).disabled).toBe(true);
+    resolve({ files: [{ assetId: 'asset', name: '价格表.xlsx' }] }); await screen.findByRole('button', { name: '删除附件 价格表.xlsx' });
+    fireEvent.change(screen.getByLabelText('话术标题（可不填）'), { target: { value: '产品价格' } }); fireEvent.click(screen.getByRole('button', { name: '确定' }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith('save_company_private_phrase', expect.objectContaining({ libraryId: 'private', phrase: expect.objectContaining({ title: '产品价格', rootId: 'root', groupId: 'group' }), companyFiles: [{ segment: 0, block: 1, assetId: 'asset', sessionEpoch: 7 }] })));
+    await screen.findByRole('alert'); expect((screen.getByLabelText('话术标题（可不填）') as HTMLInputElement).value).toBe('产品价格'); expect(screen.getByRole('button', { name: '删除附件 价格表.xlsx' })).toBeTruthy();
+  } finally { location.hash = previousHash; }
+});
+it('云文件不存在时不能保存空附件话术，修改标题也保留加载错误', async () => {
+  const previousHash = location.hash; location.hash = '#editor?tab=cloud:7:missing'; vi.mocked(call).mockResolvedValue({ files: [] });
+  try {
+    editor([{ kind: 'text', text: '' }], true); await screen.findByRole('alert');
+    fireEvent.change(screen.getByLabelText('话术标题（可不填）'), { target: { value: '新的标题' } }); expect(screen.getByRole('alert').textContent).toContain('云文件已回收或不存在');
+    expect((screen.getByRole('button', { name: '确定' }) as HTMLButtonElement).disabled).toBe(true); expect(saved()).toBeUndefined();
+  } finally { location.hash = previousHash; }
+});

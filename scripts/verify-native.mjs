@@ -122,7 +122,7 @@ try {
   host = spawn('powershell.exe', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', path.join(repo, 'tests', 'native-host.ps1'), '-EventsPath', eventsPath, '-ControlPath', controlPath], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   host.stderr.on('data', bytes => console.error(bytes.toString()));
   hostInfo = await read(eventsPath);
-  app = spawn(executable, [], { cwd: repo, windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_TEST_DATA_DIR: path.join(root, 'data'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9332' } });
+  app = spawn(executable, ['--autostart'], { cwd: repo, windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_TEST_DATA_DIR: path.join(root, 'data'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9332' } });
   for (let i = 0; i < 60; i++) {
     try { browser = await chromium.connectOverCDP('http://127.0.0.1:9332'); break; }
     catch { await delay(250); }

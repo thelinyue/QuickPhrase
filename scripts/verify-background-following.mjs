@@ -14,7 +14,8 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const executable = path.join(repo, 'src-tauri/target/debug/QuickPhrase.exe');
 const dataDir = path.join(evidence, 'data');
 const output = path.join(evidence, 'native.json'), controls = path.join(evidence, 'control.json');
-let app, browser, page, host, neutral, hostHandle, neutralHandle, handles = {}, nonce = 0, appEnv;
+const neutralOutput = path.join(evidence, 'neutral.json'), neutralControls = path.join(evidence, 'neutral-control.json');
+let app, browser, page, host, neutral, hostHandle, neutralHandle, handles = {}, nonce = 0, appEnv, launchOwner;
 const poll = async (check, label) => { for (let i = 0; i < 100; i++) { const value = await check(); if (value) return value; await delay(40); } throw new Error('等待超时：' + label); };
 const read = async filename => { try { return JSON.parse(await fs.readFile(filename, 'utf8')); } catch { return null; } };
 const native = async args => JSON.parse((await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(repo, 'tests/native-driver.ps1'), ...args], { windowsHide: true, encoding: 'utf8' })).stdout);
@@ -31,7 +32,15 @@ const focus = async handle => {
   await control('focus', { handle });
   if ((await inspect()).foreground !== handle) await native(['-Action', 'focus', '-Handle', String(handle), '-X', '40', '-Y', '60']);
   await poll(async () => (await inspect()).foreground === handle, '激活指定隔离宿主');
+  launchOwner = handle;
 };
+async function authorizeLaunch(processId) {
+  if (launchOwner === hostHandle) await control('allow-foreground', { processId });
+  else if (launchOwner === neutralHandle) {
+    const request = { command: 'allow-foreground', processId, nonce: ++nonce };
+    await fs.writeFile(neutralControls, JSON.stringify(request)); await poll(async () => (await read(neutralOutput))?.nonce === request.nonce, '前台独立宿主授权隔离启动');
+  }
+}
 const check = async (name, fn) => {
   try { await fn(); results.push({ name, passed: true }); console.log('通过：' + name); }
   catch (error) { results.push({ name, passed: false, error: String(error) }); throw error; }
@@ -44,19 +53,34 @@ async function stopApp() {
   await browser?.close().catch(() => {}); browser = null; handles = {};
 }
 async function startApp(args) {
+  const fresh = await fs.access(path.join(dataDir, 'shanyu.sqlite3')).then(() => false, () => true);
   const server = net.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port; await new Promise(resolve => server.close(resolve));
   appEnv = { ...process.env, SHANYU_TEST_DATA_DIR: dataDir, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=' + port };
   app = spawn(executable, args, { cwd: repo, windowsHide: true, stdio: 'ignore', env: appEnv });
+  if (!args.includes('--autostart')) await authorizeLaunch(app.pid);
   browser = await poll(async () => { try { return await chromium.connectOverCDP('http://127.0.0.1:' + port); } catch { if (app.exitCode !== null) throw new Error('隔离客户端提前退出'); return null; } }, '客户端 WebView');
   const context = browser.contexts()[0]; context.setDefaultTimeout(5000);
   page = await poll(() => context.pages().find(p => !new URL(p.url()).hash), '主窗口页面');
   await page.locator('.main-window').waitFor();
   for (const [name, title] of [['main', '闪语'], ['bar', '常用短语 · 闪语'], ['preview', '话术预览 · 闪语']]) handles[name] = (await native(['-ProcessId', String(app.pid), '-Title', title])).handle;
   const library = await invoke('get_library'); assert.equal(library.dataDir, dataDir);
+  if (fresh && !args.includes('--autostart')) {
+    await check('新建本机库首次手动启动自动打开独立指引，展示后才保存状态', async () => {
+      const guide = await poll(() => context.pages().find(p => p.url().includes('#usage-guide')), '首次使用指引');
+      await guide.locator('.usage-guide-window').waitFor(); assert.equal(await guide.locator('.guide-steps li').count(), 3);
+      handles.guide = (await native(['-ProcessId', String(app.pid), '-Title', '使用指引 · 闪语'])).handle; await focus(handles.guide);
+      await poll(async () => !(await invoke('get_usage_guide_state')).pending, '已实际展示指引');
+      await guide.screenshot({ path: path.join(evidence, 'usage-guide.png') });
+      await guide.getByRole('button', { name: '开始使用', exact: true }).click(); await poll(() => guide.isClosed(), '开始使用关闭指引');
+      delete handles.guide;
+      await poll(async () => (await inspect()).foreground === handles.main, '开始使用恢复主窗口');
+    });
+  }
   await delay(150); return library.settings;
 }
 async function duplicate(args) {
+  if (!args.includes('--autostart')) await authorizeLaunch(app.pid);
   const child = spawn(executable, args, { cwd: repo, windowsHide: true, stdio: 'ignore', env: appEnv });
   try { await poll(() => child.exitCode !== null, '重复启动退出'); assert.equal(child.exitCode, 0); }
   finally { if (child.exitCode === null) child.kill(); }
@@ -67,14 +91,18 @@ try {
   await fs.copyFile(fixture, other);
   host = spawn(fixture, [output, controls], { windowsHide: true, stdio: 'ignore' });
   hostHandle = (await poll(() => read(output), '吸附宿主')).hwnd;
-  const neutralOutput = path.join(evidence, 'neutral.json');
-  neutral = spawn(other, [neutralOutput, path.join(evidence, 'neutral-control.json')], { windowsHide: true, stdio: 'ignore' });
+  neutral = spawn(other, [neutralOutput, neutralControls], { windowsHide: true, stdio: 'ignore' });
   neutralHandle = (await poll(() => read(neutralOutput), '独立宿主')).hwnd;
 
   for (const args of [[], ['--autostart']]) {
     const name = args.length ? '开机启动' : '普通启动';
     await focus(hostHandle);
     let settings = await startApp(args);
+    await check(name + (args.length ? '保持后台跟随且不抢焦点' : '主动显示并激活主窗口'), async () => {
+      const state = await inspect(); assert.equal(windowOf(state, 'main').visible, true);
+      assert.equal(state.foreground, args.length ? hostHandle : handles.main);
+    });
+    await focus(hostHandle);
     await check(name + '随目标完整显示，不抢焦点且三个常驻窗口均不进入任务栏', async () => {
       const state = await poll(async () => { const state = await inspect(); return windowOf(state, 'main').visible && windowOf(state, 'bar').visible && state; }, '窗口类型确认后自动跟随');
       assert.match(state.windows[0].className, /^WindowsForms10\.WeWorkWindow\.app\./);
@@ -154,18 +182,24 @@ try {
       snapshots.push({ name: name + '-window-order', state });
       await control('move', { handle: neutralHandle, x: 700, y: 120, width: 600, height: 540 });
     });
-    await check(name + '重复运行不抢焦点，也不解除手动隐藏', async () => {
-      await duplicate([]); assert.equal((await inspect()).foreground, hostHandle);
+    await check(name + '重复手动启动恢复隐藏及最小化，自启重复启动保留手动隐藏', async () => {
+      await duplicate([]); await poll(async () => (await inspect()).foreground === handles.main, '重复手动启动激活主窗口');
       await invoke('window_action', { action: 'hide' }); await poll(async () => !windowOf(await inspect(), 'main').visible, '手动隐藏');
-      await duplicate([]); await duplicate(['--autostart']);
-      const state = await inspect(); assert.equal(windowOf(state, 'main').visible, false); assert.equal(windowOf(state, 'bar').visible, false); assert.equal(state.foreground, hostHandle);
+      await focus(hostHandle); await duplicate(['--autostart']);
+      let state = await inspect(); assert.equal(windowOf(state, 'main').visible, false); assert.equal(windowOf(state, 'bar').visible, false); assert.equal(state.foreground, hostHandle);
+      await duplicate([]); await poll(async () => windowOf(await inspect(), 'main').visible && (await inspect()).foreground === handles.main, '重复运行解除手动隐藏');
+      settings = { ...settings, tray: false }; await invoke('save_settings', { settings }); await invoke('window_action', { action: 'minimize' });
+      await poll(async () => windowOf(await inspect(), 'main').iconic, '重复启动前最小化'); await duplicate([]);
+      await poll(async () => { const state = await inspect(); return windowOf(state, 'main').visible && !windowOf(state, 'main').iconic && state.foreground === handles.main; }, '重复启动还原最小化窗口');
+      settings = { ...settings, tray: true }; await invoke('save_settings', { settings });
     });
     await stopApp(); await focus(neutralHandle); settings = await startApp(args);
-    await check(name + '无目标时只驻留后台，关闭吸附的旧设置也不弹出主窗口', async () => {
-      let state = await inspect(); assert.equal(windowOf(state, 'main').visible, false); assert.equal(windowOf(state, 'bar').visible, false); assert.equal(state.foreground, neutralHandle);
+    await check(name + '无目标及关闭吸附时仍遵守手动显示／自启后台规则，重启不再自动打开指引', async () => {
+      let state = await inspect(); assert.equal(windowOf(state, 'main').visible, !args.length); assert.equal(windowOf(state, 'bar').visible, false); assert.equal(state.foreground, args.length ? neutralHandle : handles.main);
+      assert.equal(browser.contexts()[0].pages().filter(p => p.url().includes('#usage-guide')).length, 0);
       settings = { ...settings, dock: false }; await invoke('save_settings', { settings });
       await stopApp(); await focus(neutralHandle); settings = await startApp(args);
-      state = await inspect(); assert.equal(windowOf(state, 'main').visible, false); assert.equal(state.foreground, neutralHandle);
+      state = await inspect(); assert.equal(windowOf(state, 'main').visible, !args.length); assert.equal(state.foreground, args.length ? neutralHandle : handles.main);
       settings = { ...settings, dock: true }; await invoke('save_settings', { settings });
     });
     await check(name + '无目标手动独立唤起，返回目标后恢复跟随并延续编辑窗口的关系', async () => {
@@ -181,6 +215,30 @@ try {
       assert.equal(windowOf(await inspect(), 'settings').toolWindow, false, '主动打开的设置保留普通任务栏窗口');
       await settingsPage.getByRole('button', { name: '关闭窗口', exact: true }).click();
       delete handles.settings;
+    });
+    await check(name + '指引可关闭重开，最小尺寸可滚动，前台暂停业务快捷键且切回目标可练习', async () => {
+      const originalSettings = settings, library = await invoke('get_library');
+      const root = await invoke('save_category', { libraryId: library.libraryId, category: { id: '', name: '指引验收', kind: 'phrase', parentId: null, position: 0, background: '' } });
+      await invoke('save_phrase', { libraryId: library.libraryId, phrase: { id: '', rootId: root, groupId: null, title: '指引候选验收', color: '', background: '', shortcut: 'Ctrl+F10', position: 0, segments: [{ blocks: [{ kind: 'text', text: '只打开候选，不投递' }] }] } });
+      settings = { ...settings, customHotkeys: true, globalPhraseHotkeys: false }; await invoke('save_settings', { settings });
+      await focus(hostHandle); await focus(handles.main);
+      await page.getByRole('button', { name: '主菜单', exact: true }).click(); await page.getByRole('menuitem', { name: '使用指引', exact: true }).click();
+      let guide = await poll(() => browser.contexts()[0].pages().find(p => p.url().includes('#usage-guide')), '菜单重开指引'); await guide.locator('.usage-guide-window').waitFor();
+      handles.guide = (await native(['-ProcessId', String(app.pid), '-Title', '使用指引 · 闪语'])).handle;
+      handles.candidates = (await native(['-ProcessId', String(app.pid), '-Title', '快捷键候选 · 闪语'])).handle;
+      const inner = await guide.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|inner_size', { label: 'usage-guide' })), outer = await guide.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|outer_size', { label: 'usage-guide' })), scale = await guide.evaluate(() => devicePixelRatio);
+      await native(['-Action', 'move', '-Handle', String(handles.guide), '-X', '100', '-Y', '100', '-Width', String(620 * scale + outer.width - inner.width), '-Height', String(440 * scale + outer.height - inner.height)]);
+      await poll(() => guide.evaluate(() => innerWidth === 620 && innerHeight === 440), '指引最小尺寸');
+      assert.ok(await guide.locator('.guide-content').evaluate(el => el.scrollHeight > el.clientHeight)); assert.ok(await guide.locator('.guide-footer').evaluate(el => el.getBoundingClientRect().bottom <= innerHeight));
+      await guide.screenshot({ path: path.join(evidence, `usage-guide-minimum-${name}.png`) });
+      await focus(handles.guide); await native(['-Action', 'key', '-Key', '121', '-Ctrl']); await delay(200); assert.equal(windowOf(await inspect(), 'candidates').visible, false);
+      await focus(hostHandle); await native(['-Action', 'key', '-Key', '121', '-Ctrl']); await poll(async () => windowOf(await inspect(), 'candidates').visible, '指引打开时目标窗口仍可触发候选');
+      await native(['-Action', 'key', '-Key', '27']); await poll(async () => !windowOf(await inspect(), 'candidates').visible, '取消候选，不执行投递');
+      await guide.keyboard.press('Escape'); await poll(() => guide.isClosed(), 'Esc关闭指引'); delete handles.guide;
+      await focus(handles.main); await page.getByRole('button', { name: '主菜单', exact: true }).click(); await page.getByRole('menuitem', { name: '使用指引', exact: true }).click();
+      guide = await poll(() => browser.contexts()[0].pages().find(p => p.url().includes('#usage-guide')), '再次打开指引'); await guide.getByRole('button', { name: '开始使用', exact: true }).click(); await poll(() => guide.isClosed(), '再次开始使用');
+      await poll(async () => (await inspect()).foreground === handles.main, '开始使用回到主窗口');
+      settings = originalSettings; await invoke('save_settings', { settings }); await invoke('delete_category', { id: root }); delete handles.candidates;
     });
     await check(name + '目标最小化、切换其他程序及还原同步隐藏和显示，手动隐藏保持有效', async () => {
       await focus(hostHandle); await control('minimize');
@@ -210,6 +268,11 @@ try {
     });
     await stopApp();
   }
+  await check('已有数据库升级不自动打开指引，首次状态与内容无关', async () => {
+    await run('python', ['-c', "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(\"DELETE FROM sync_meta WHERE key='usageGuideShown'\"); c.commit(); c.close()", path.join(dataDir, 'shanyu.sqlite3')], { windowsHide: true });
+    await focus(neutralHandle); await startApp([]); assert.equal((await invoke('get_usage_guide_state')).pending, false);
+    assert.equal(browser.contexts()[0].pages().filter(p => p.url().includes('#usage-guide')).length, 0); await stopApp();
+  });
 } catch (error) {
   console.error(error);
   if (page && !page.isClosed()) await page.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});

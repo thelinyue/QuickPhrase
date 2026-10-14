@@ -158,7 +158,7 @@ pub struct Settings {
     pub phrase_category_color: String,
     pub file_category_color: String,
     pub files_first: bool,
-    /// 我的话术／共享库入口顺序属于本机布局，暂不上传至现有个人设置协议。
+    /// 个人话术／共享话术入口顺序属于本机布局，暂不上传至现有个人设置协议。
     pub teams_first: bool,
     pub file_category_height: u16,
     pub common_height: u16,

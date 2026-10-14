@@ -71,7 +71,7 @@ pub fn delete(partition: &str) -> Result<()> {
 }
 #[cfg(not(windows))]
 pub fn write(_: &str, _: &str) -> Result<()> {
-    Err("共享库登录凭据需要 Windows 凭据管理器。".into())
+    Err("共享话术登录凭据需要 Windows 凭据管理器。".into())
 }
 #[cfg(not(windows))]
 pub fn read(_: &str) -> Result<Option<String>> {

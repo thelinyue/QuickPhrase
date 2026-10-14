@@ -1,6 +1,6 @@
 [package]
 name = "quickphrase"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "闪语 QuickPhrase Windows 本地话术工具"
 
@@ -24,7 +24,7 @@ tauri-plugin-dialog = "2.8.2"
 tauri-plugin-single-instance = "2.5.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.152"
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.40.2", features = ["bundled", "backup"] }
 uuid = { version = "1.28.0", features = ["v4"] }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 zip = { version = "9.0.1", default-features = false, features = ["deflate"] }
@@ -38,6 +38,12 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-
 tokio = { version = "1", features = ["fs", "io-util", "sync", "time", "macros"] }
 tokio-util = { version = "0.7", features = ["io", "rt"] }
 futures-util = "0.3"
+minisign-verify = "0.3"
+semver = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+minisign = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39.1"

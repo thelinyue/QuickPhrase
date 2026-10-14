@@ -20,10 +20,23 @@ const initial = randomUUID(), password = randomUUID(), workerInitial = randomUUI
 const base = `http://127.0.0.1:${await port()}`;
 const server = spawn(executable, [], { windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_DATA_DIR: path.join(evidence, 'server'), SHANYU_LISTEN: new URL(base).host, SHANYU_ADMIN_USERNAME: 'qa-admin', SHANYU_ADMIN_PASSWORD: initial } });
 let loseUpload = false, uploadCount = 0, downloadCount = 0, holdDownload = false, heldDownload = false, releaseDownload, holdUpload = false, heldUpload = false, releaseUpload, uploadSettled, token, workerToken, app, browser, page, cloud, editor, epoch, libraryId, root, asset, teams = [];
+let holdBatch = false, offlineClient = false;
+const batchHeld = new Map();
 const proxy = http.createServer((req, res) => {
+  if (offlineClient) { res.writeHead(503); res.end(); return; }
   const lost = loseUpload && req.method === 'PUT' && /\/company\/files\/[^/]+\/content/.test(req.url);
   if (req.method === 'PUT' && /\/company\/files\/[^/]+\/content/.test(req.url)) ++uploadCount;
   if (req.method === 'GET' && /\/company\/files\/[^/]+\/content/.test(req.url)) ++downloadCount;
+  if (holdBatch && req.method === 'PUT' && /\/company\/files\/[^/]+\/content/.test(req.url)) {
+    const id = /\/company\/files\/([^/]+)\/content/.exec(req.url)[1], chunks = [];
+    res.on('close', () => batchHeld.delete(id)); req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => { if (!res.destroyed) batchHeld.set(id, () => {
+      batchHeld.delete(id);
+      const upstream = http.request(base + req.url, { method: req.method, headers: { ...req.headers, host: new URL(base).host } }, response => { if (!res.destroyed) { res.writeHead(response.statusCode, response.headers); response.pipe(res); } else response.resume(); });
+      upstream.on('error', () => res.destroy()); upstream.end(Buffer.concat(chunks));
+    }); });
+    return;
+  }
   const held = holdDownload && req.method === 'GET' && /\/company\/files\/[^/]+\/content/.test(req.url);
   const pausedUpload = holdUpload && req.method === 'PUT' && /\/company\/files\/[^/]+\/content/.test(req.url);
   if (pausedUpload) { holdUpload = false; uploadSettled = null; }
@@ -82,6 +95,20 @@ async function startClient() {
   const debug = await port(); app = spawn(path.join(repo, 'src-tauri/target/debug/QuickPhrase.exe'), ['--autostart'], { cwd: repo, windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_TEST_DATA_DIR: path.join(evidence, 'client'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debug}` } });
   browser = await until(() => chromium.connectOverCDP(`http://127.0.0.1:${debug}`)); page = await until(() => browser.contexts()[0].pages().find(p => !new URL(p.url()).hash)); await page.locator('.main-window').waitFor();
 }
+const transferSnapshot = () => invoke('get_company_transfers', { sessionEpoch: epoch });
+async function batchSources(prefix, count) {
+  const paths = [];
+  for (let i = 0; i < count; i++) { const source = path.join(evidence, `${prefix}-${i}.pdf`); await fs.writeFile(source, `${prefix}源${i}`); paths.push(source); }
+  return paths;
+}
+async function discardUploaded(records) {
+  for (const record of records) { await api('POST', `company/files/${record.assetId}/recycle`); await api('DELETE', `company/files/${record.assetId}`, { confirmName: record.name }); }
+  await invoke('clear_company_transfers', { sessionEpoch: epoch, direction: 'upload' });
+}
+async function finishBatch(records) {
+  holdBatch = false; for (const release of [...batchHeld.values()]) release();
+  return until(async () => { const snapshot = await transferSnapshot(); const tasks = records.map(record => snapshot.find(task => task.assetId === record.assetId)); return tasks.every(task => task && !['等待上传', '准备中', '传输中'].includes(task.status)) && tasks; });
+}
 try {
   await until(() => fetch(`${base}/health`).then(r => r.ok)); const session = await api('POST', 'login', { username: 'qa-admin', password: initial }); token = session.token; await api('PUT', 'password', { currentPassword: initial, password });
   const worker = await api('POST', 'users', { username: 'qa-worker', password: workerInitial });
@@ -105,6 +132,85 @@ try {
     assert.ok(await cloud.locator('tbody button').evaluateAll(buttons => buttons.every(b => !b.textContent && b.title && b.getAttribute('aria-label'))));
     const more = cloud.getByRole('button', { name: '更多', exact: true }); await more.click(); await cloud.getByRole('menuitem', { name: '另存为', exact: true }).waitFor(); await cloud.keyboard.press('Escape'); assert.ok(await more.evaluate(el => el === document.activeElement));
   });
+  await check('云文件右键阻止默认菜单、复用业务动作并在最小窗口避让边缘', async () => {
+    const row = cloud.locator('tbody tr').filter({ hasText: asset.name });
+    const right = async target => target.evaluate(el => { const rect = el.getBoundingClientRect(); return !el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left + 20, clientY: rect.top + 10 })); });
+    assert.equal(await right(row), true); assert.deepEqual(await cloud.getByRole('menuitem').allTextContents(), ['下载', '另存为', '生成话术', '删除']);
+    assert.equal(await cloud.getByRole('menuitem', { name: '下载', exact: true }).evaluate(el => getComputedStyle(el).outlineStyle), 'none');
+    await cloud.screenshot({ path: path.join(evidence, 'company-context-menu.png') }); await cloud.keyboard.press('End'); assert.equal(await cloud.evaluate(() => document.activeElement.textContent), '删除');
+    await cloud.keyboard.press('Escape'); assert.ok(await row.evaluate(el => el === document.activeElement));
+    await resizeCloud(760, 480);
+    await row.evaluate(el => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: innerWidth - 1, clientY: innerHeight - 1 })));
+    await until(() => cloud.getByRole('menu').evaluate(el => { const rect = el.getBoundingClientRect(); return rect.left >= 2 && rect.top >= 2 && rect.right <= innerWidth - 1 && rect.bottom <= innerHeight - 1; }));
+    await cloud.screenshot({ path: path.join(evidence, 'company-context-minimum.png') }); await cloud.keyboard.press('Escape');
+    assert.equal(await right(cloud.locator('.company-list')), true); assert.deepEqual(await cloud.getByRole('menuitem').allTextContents(), ['刷新', '上传新文件', '下载管理', '上传管理']);
+    await cloud.keyboard.press('Escape'); await resizeCloud(1000, 650);
+  });
+  await check('批量入队逐项失败、同源去重、同名不同路径各自上传且不修改源文件', async () => {
+    const folders = ['甲', '乙'].map(name => path.join(evidence, name)); for (const folder of folders) await fs.mkdir(folder);
+    const sources = folders.map(folder => path.join(folder, '同名资料.pdf')); for (let i = 0; i < sources.length; i++) await fs.writeFile(sources[i], `各自的内容${i}`);
+    const empty = path.join(evidence, '空文件.pdf'), huge = path.join(evidence, '超限.pdf'); await fs.writeFile(empty, ''); const handle = await fs.open(huge, 'w'); await handle.truncate(128 * 1024 * 1024 + 1); await handle.close();
+    const records = await invoke('enqueue_company_uploads', { sessionEpoch: epoch, paths: [...sources, sources[0], empty, folders[0], huge, path.join(evidence, '不存在.pdf')] });
+    assert.equal(records.length, 6); assert.ok(records.every(record => record.status === '等待上传'));
+    const tasks = await finishBatch(records); assert.equal(tasks.filter(task => task.status === '已完成').length, 2); assert.equal(tasks.filter(task => task.status === '准备失败' && task.message).length, 4);
+    assert.equal(new Set(tasks.map(task => task.assetId)).size, 6); assert.equal(tasks[0].name, tasks[1].name);
+    for (let i = 0; i < 2; i++) { const response = await fetch(`${base}/api/company/files/${tasks[i].assetId}/content`, { headers: { Authorization: `Bearer ${token}` } }); assert.equal(await response.text(), `各自的内容${i}`); assert.equal(await fs.readFile(sources[i], 'utf8'), `各自的内容${i}`); }
+    await cloud.getByRole('button', { name: '上传管理', exact: true }).click(); await cloud.getByText('文件夹不支持上传，请选择文件。', { exact: true }).waitFor(); await cloud.screenshot({ path: path.join(evidence, 'company-batch-errors.png') });
+    await discardUploaded(tasks.filter(task => task.status === '已完成')); await cloud.getByRole('button', { name: '返回', exact: true }).click();
+  });
+  await check('真实WebView2多选入口与Tauri拖拽事件链直接入队，正文外拒绝且拖出清除反馈', async () => {
+    // 合成 Tauri 原生事件和文件选择结果，只验证事件／前端／Rust 链路；不代替资源管理器实拖。
+    const sources = await batchSources('窗口入队', 4), uploads = uploadCount;
+    const dropPosition = () => cloud.locator('.company-list').evaluate(el => { const rect = el.getBoundingClientRect(); return { x: Math.round((rect.left + 30) * devicePixelRatio), y: Math.round((rect.top + 30) * devicePixelRatio) }; });
+    const emit = (event, payload) => invoke('plugin:event|emit_to', { target: { kind: 'AnyLabel', label: 'company-files' }, event: `tauri://drag-${event}`, payload }, cloud);
+    await emit('enter', { paths: [sources[0]], position: await dropPosition() }); await cloud.getByText('松开即可上传文件', { exact: true }).waitFor(); await cloud.screenshot({ path: path.join(evidence, 'company-drop-feedback.png') });
+    await emit('leave', {}); await until(async () => !await cloud.getByText('松开即可上传文件', { exact: true }).count());
+    await emit('enter', { paths: [sources[0]], position: { x: 1, y: 1 } }); await emit('drop', { paths: [sources[0]], position: { x: 1, y: 1 } }); assert.equal(uploadCount, uploads);
+    for (const source of sources.slice(0, 2)) {
+      const position = await dropPosition(); await emit('enter', { paths: [source], position }); await cloud.getByText('松开即可上传文件', { exact: true }).waitFor(); await emit('drop', { paths: [source], position });
+      await cloud.getByText(path.basename(source), { exact: true }).waitFor();
+      await until(async () => (await transferSnapshot()).some(task => task.name === path.basename(source) && task.status === '已完成'));
+    }
+    await cloud.getByRole('button', { name: '返回', exact: true }).click();
+    await cloud.evaluate(paths => {
+      const original = window.fetch; window.__companyDialogOriginalFetch = original;
+      window.fetch = (input, init) => {
+        const url = new URL(typeof input === 'string' ? input : input.url);
+        if (url.hostname === 'ipc.localhost' && decodeURIComponent(url.pathname.slice(1)) === 'plugin:dialog|open') {
+          window.__companyDialogOptions = JSON.parse(init.body).options;
+          return Promise.resolve(new Response(JSON.stringify(paths), { headers: { 'Tauri-Response': 'ok', 'Content-Type': 'application/json' } }));
+        }
+        return original.call(window, input, init);
+      };
+    }, sources.slice(2));
+    try { await cloud.getByRole('button', { name: '上传新文件', exact: true }).click(); await cloud.getByText(path.basename(sources[2]), { exact: true }).waitFor(); }
+    finally { await cloud.evaluate(() => { window.fetch = window.__companyDialogOriginalFetch; delete window.__companyDialogOriginalFetch; }); }
+    assert.equal((await cloud.evaluate(() => window.__companyDialogOptions)).multiple, true);
+    const tasks = await until(async () => { const tasks = (await transferSnapshot()).filter(task => sources.some(source => path.basename(source) === task.name)); return tasks.length === 4 && tasks.every(task => task.status === '已完成') && tasks; });
+    assert.equal(uploadCount, uploads + 4); await discardUploaded(tasks); await cloud.getByRole('button', { name: '返回', exact: true }).click();
+  });
+  await check('准备和上传共用两个名额，继续原任务也排队，等待可取消且关闭重开不停止后台', async () => {
+    const paths = await batchSources('并发队列', 5), staged = await invoke('prepare_company_upload', { sessionEpoch: epoch, path: paths[4] });
+    holdBatch = true; const records = await invoke('enqueue_company_uploads', { sessionEpoch: epoch, paths: paths.slice(0, 4) }); await until(() => batchHeld.size === 2);
+    const running = new Set(batchHeld.keys()), queued = records.filter(record => !running.has(record.assetId)); assert.equal(queued.length, 2);
+    const uploadRoot = path.join(evidence, 'client', 'teams', 'company-uploads');
+    for (const record of queued) await assert.rejects(fs.access(path.join(uploadRoot, record.assetId)), '等待任务不能预先复制');
+    const uploads = uploadCount, resumed = invoke('upload_company_file', { sessionEpoch: epoch, id: staged.id }).then(value => ({ value }), error => ({ error }));
+    await until(async () => (await transferSnapshot()).some(task => task.assetId === staged.id && task.status === '等待上传')); assert.equal(uploadCount, uploads);
+    await invoke('cancel_company_transfer', { sessionEpoch: epoch, id: queued[1].assetId }); await until(async () => (await transferSnapshot()).some(task => task.assetId === queued[1].assetId && task.status === '已停止'));
+    await invoke('plugin:window|close', {}, cloud); await until(() => cloud.isClosed()); cloud = await window('company-files', 'company-files'); await cloud.getByRole('button', { name: '上传管理', exact: true }).click();
+    await cloud.getByText('等待上传', { exact: true }).first().waitFor(); assert.equal(batchHeld.size, 2); await cloud.screenshot({ path: path.join(evidence, 'company-batch-queue.png') });
+    const tasks = await finishBatch(records); const result = await resumed; assert.ok(result.value, String(result.error)); assert.equal(tasks.filter(task => task.status === '已完成').length, 3); assert.equal(tasks.filter(task => task.status === '已停止').length, 1);
+    await discardUploaded([...tasks.filter(task => task.status === '已完成'), { assetId: staged.id, name: staged.name }]); await cloud.getByRole('button', { name: '返回', exact: true }).click();
+  });
+  await check('切号终止已入队任务，新账号不能继承旧任务，原账号只恢复固化副本', async () => {
+    const paths = await batchSources('切号队列', 4); holdBatch = true; const records = await invoke('enqueue_company_uploads', { sessionEpoch: epoch, paths }); await until(() => batchHeld.size === 2); const prepared = [...batchHeld.keys()]; const uploads = uploadCount;
+    await invoke('team_logout'); epoch = (await invoke('team_login', { server: clientBase, username: 'qa-worker', password: workerPassword })).sessionEpoch; assert.ok(!(await transferSnapshot()).some(task => records.some(record => record.assetId === task.assetId))); await until(() => batchHeld.size === 0);
+    holdBatch = false; epoch = (await invoke('team_login', { server: clientBase, username: 'qa-admin', password })).sessionEpoch;
+    const restored = (await transferSnapshot()).filter(task => records.some(record => record.assetId === task.assetId)); assert.equal(restored.length, 2); assert.ok(restored.every(task => task.status === '待核对')); assert.equal(uploadCount, uploads);
+    for (const id of prepared) await invoke('upload_company_file', { sessionEpoch: epoch, id }); await discardUploaded(restored); await until(async () => await cloud.getByText('价格表.xlsx', { exact: true }).count() === 1);
+    assert.ok((await invoke('get_usage_guide_state')).pending, '切号及内容操作不能重置本机指引状态');
+  });
   await check('真实目录分页全选、时间排序、搜索与最小窗口保持可操作', async () => {
     const temporary = [];
     for (let i = 1; i <= 22; ++i) {
@@ -113,6 +219,10 @@ try {
     }
     await cloud.getByRole('button', { name: '刷新', exact: true }).click(); await cloud.getByText('共3页 23条').waitFor();
     assert.equal(await cloud.locator('tbody tr').count(), 10); await cloud.getByRole('checkbox', { name: '选择当前页全部文件' }).check(); assert.equal(await cloud.locator('tbody input:checked').count(), 10); await cloud.getByText('已选 10 项', { exact: true }).waitFor();
+    await cloud.locator('tbody tr').first().evaluate(el => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 260, clientY: 210 })));
+    assert.deepEqual(await cloud.getByRole('menuitem').allTextContents(), ['批量下载', '批量删除']); assert.equal(await cloud.locator('tbody input:checked').count(), 10); await cloud.keyboard.press('Escape');
+    await cloud.locator('tbody input').last().uncheck(); await cloud.locator('tbody tr').last().evaluate(el => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 260, clientY: 350 })));
+    assert.equal(await cloud.locator('tbody input:checked').count(), 1); assert.deepEqual(await cloud.getByRole('menuitem').allTextContents(), ['下载', '另存为', '生成话术', '删除']); await cloud.keyboard.press('Escape');
     await cloud.getByRole('button', { name: '下一页' }).click(); assert.equal(await cloud.locator('tbody input:checked').count(), 0);
     await cloud.getByRole('textbox', { name: '跳转页码' }).fill('3'); await cloud.getByRole('button', { name: '跳转' }).click(); assert.equal(await cloud.locator('tbody tr').count(), 3);
     await cloud.getByRole('button', { name: '上传时间倒序' }).click(); await cloud.getByRole('button', { name: '上传时间正序' }).waitFor();
@@ -146,12 +256,30 @@ try {
     user = (await api('GET', 'users')).find(u => u.id === worker); await api('PUT', `users/${worker}`, { companyFilePermissions: { canUpload: false, canRecycle: false, canRestore: false, expectedVersion: user.companyFilePermissions.version } });
     await until(async () => !await cloud.getByRole('checkbox', { name: 'qa-worker的上传权限' }).isChecked()); await cloud.getByRole('button', { name: '云文件管理', exact: true }).click();
   });
-  let first, second;
-  await check('我的话术生成独立附件，同一本机个人库复用副本', async () => {
+  let first, second, adminCopy;
+  await check('个人话术生成独立附件，同一本机个人库复用副本', async () => {
     first = await invoke('save_company_private_phrase', { phrase: draft('第一份', root), afterId: null, expectedRevision: null, libraryId, companyFiles: selections() });
     second = await invoke('save_company_private_phrase', { phrase: draft('第二份', root), afterId: null, expectedRevision: null, libraryId, companyFiles: selections() });
     const library = await invoke('get_library'), a = library.phrases.find(p => p.id === first).segments[0].blocks[0].path, b = library.phrases.find(p => p.id === second).segments[0].blocks[0].path;
-    assert.equal(a, b); assert.equal(path.basename(a), '价格表.xlsx'); assert.deepEqual(await fs.readFile(a), bytes);
+    adminCopy = a; assert.equal(a, b); assert.equal(path.basename(a), '价格表.xlsx'); assert.deepEqual(await fs.readFile(a), bytes);
+  });
+  await check('话术右键新增云文件带入分组，取消无写入，已有草稿不覆盖，真实保存附件', async () => {
+    const group = await invoke('save_category', { category: { id: '', name: '右键云文件分组', kind: 'phrase', parentId: root, position: 0, background: '' }, libraryId });
+    const original = await invoke('save_phrase', { phrase: { ...draft('右键入口样本', root, [{ kind: 'text', text: '入口样本' }]), groupId: group }, afterId: null, libraryId, expectedRevision: null });
+    await page.getByRole('button', { name: '资料', exact: true }).click(); const row = page.locator(`[data-row="${original}"]`); await row.waitFor();
+    const selectCloud = async () => {
+      await row.evaluate(el => { const r = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 })); });
+      await page.getByRole('menuitem', { name: '新增云文件', exact: true }).click(); const picker = page.getByRole('dialog', { name: '选择云文件' }); await picker.locator('label').filter({ hasText: asset.name }).waitFor(); return picker;
+    };
+    const before = (await invoke('get_library')).phrases.length; let picker = await selectCloud(); await picker.getByRole('button', { name: '取消' }).click(); assert.equal((await invoke('get_library')).phrases.length, before);
+    picker = await selectCloud(); await picker.getByRole('checkbox').check(); await picker.getByRole('button', { name: '下一步' }).click();
+    editor = await until(() => browser.contexts()[0].pages().find(p => p.url().includes('#editor?'))); await editor.getByRole('button', { name: `删除附件 ${asset.name}`, exact: true }).waitFor();
+    assert.equal(await editor.getByLabel('话术标题（可不填）').inputValue(), asset.name); assert.equal(await editor.getByLabel('请选择一级分类').inputValue(), root); assert.equal(await editor.getByLabel('请选择二级分类（可不选）').inputValue(), group);
+    await editor.getByLabel('话术标题（可不填）').fill('右键云文件草稿');
+    picker = await selectCloud(); await picker.getByRole('checkbox').check(); await picker.getByRole('button', { name: '下一步' }).click(); await page.getByText(/请先完成或关闭当前话术编辑窗口/).waitFor(); assert.equal(await editor.getByLabel('话术标题（可不填）').inputValue(), '右键云文件草稿');
+    await editor.screenshot({ path: path.join(evidence, 'company-context-editor.png') }); await editor.getByRole('button', { name: '确定', exact: true }).click(); await until(() => editor.isClosed());
+    const library = await until(async () => { const library = await invoke('get_library'); return library.phrases.some(p => p.title === '右键云文件草稿') && library; }); const saved = library.phrases.find(p => p.title === '右键云文件草稿');
+    assert.equal(saved.rootId, root); assert.equal(saved.groupId, group); assert.deepEqual(await fs.readFile(saved.segments[0].blocks.find(b => b.kind === 'file').path), bytes);
   });
   await check('真实编辑器选择云文件并保存，附件位置和ID不丢失', async () => {
     editor = await window('editor', `editor?categoryId=${root}&libraryId=${encodeURIComponent(libraryId)}`);
@@ -163,7 +291,7 @@ try {
     const library = await until(async () => { const library = await invoke('get_library'); return library.phrases.some(p => p.title === '编辑器生成') && library; });
     assert.deepEqual(await fs.readFile(library.phrases.find(p => p.title === '编辑器生成').segments[0].blocks.find(b => b.kind === 'file').path), bytes);
   });
-  await check('两共享库直接引用同一云文件本体，下载路径保留实际文件名', async () => {
+  await check('两共享话术直接引用同一云文件本体，下载路径保留实际文件名', async () => {
     for (const name of ['销售', '售后']) teams.push(await api('POST', 'teams', { name })); await invoke('team_refresh');
     for (const teamId of teams) {
       await until(() => invoke('get_team_view', { teamId })); let view = await invoke('get_team_view', { teamId });
@@ -173,7 +301,19 @@ try {
       view = await invoke('get_team_view', { teamId }); await invoke('prepare_team_phrase', { id: view.phrases[0].id }); view = await invoke('get_team_view', { teamId }); assert.equal(path.basename(view.phrases[0].segments[0].blocks[0].path), '价格表.xlsx');
     }
   });
-  await check('共享库ZIP包含实际公司附件，普通导入成为目标私人附件', async () => {
+  await check('共享话术右键新增云文件仍引用原本体并保存到当前共享库', async () => {
+    const teamId = teams[0]; await page.getByRole('button', { name: '共享话术', exact: true }).click(); await page.getByRole('menuitem', { name: /^销售/ }).click();
+    const row = page.locator('.content-row').filter({ hasText: '公司资料' }); await row.waitFor();
+    await row.evaluate(el => { const r = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 })); });
+    await page.getByRole('menuitem', { name: '新增云文件', exact: true }).click(); const picker = page.getByRole('dialog', { name: '选择云文件' }); await picker.getByRole('checkbox').check(); await picker.getByRole('button', { name: '下一步' }).click();
+    editor = await until(() => browser.contexts()[0].pages().find(p => p.url().includes('#editor?'))); await editor.getByRole('button', { name: `删除附件 ${asset.name}`, exact: true }).waitFor();
+    assert.equal(new URLSearchParams(new URL(editor.url()).hash.split('?')[1]).get('teamId'), teamId);
+    await editor.getByLabel('话术标题（可不填）').fill('共享右键文件'); await editor.getByRole('button', { name: '确定', exact: true }).click(); await until(() => editor.isClosed());
+    const snapshot = await until(async () => { const snapshot = await api('GET', `teams/${teamId}/snapshot`); return snapshot.phrases.some(p => p.title === '共享右键文件') && snapshot; });
+    assert.equal(snapshot.phrases.find(p => p.title === '共享右键文件').segments[0].blocks.find(b => b.kind === 'file').assetId, asset.assetId);
+    await page.getByRole('button', { name: '个人话术', exact: true }).click();
+  });
+  await check('共享话术ZIP包含实际公司附件，普通导入成为目标私人附件', async () => {
     const teamId = teams[0], view = await invoke('get_team_view', { teamId }), target = { source: 'team', teamId, version: view.team.version, lifecycleVersion: 1, sessionEpoch: epoch }, zip = path.join(evidence, '公司话术.zip');
     await invoke('export_data', { path: zip, kind: 'backup', categoryId: null, operationId: randomUUID(), target });
     const result = JSON.parse(await python("import sys,zipfile,json; z=zipfile.ZipFile(sys.argv[1]); d=json.loads(z.read('library.json')); print(json.dumps({'files':z.namelist(),'library':d}))", [zip])); assert.ok(result.files.some(name => name !== 'library.json'));
@@ -212,12 +352,13 @@ try {
     }
     await cloud.getByRole('button', { name: '云文件管理', exact: true }).click();
   });
-  await check('无共享库用户可用云文件目录，管理权限由服务端拒绝', async () => {
+  await check('无共享话术用户可用云文件目录，管理权限由服务端拒绝', async () => {
     await invoke('manage_company_file', { sessionEpoch: epoch, id: asset.assetId, operation: 'restore', confirmName: '' }); await invoke('team_logout');
     const employee = await invoke('team_login', { server: clientBase, username: 'qa-worker', password: workerPassword }); epoch = employee.sessionEpoch; assert.equal(employee.teams.length, 0); assert.ok(employee.companyFiles);
     const catalog = await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' }); assert.equal(catalog.files.length, 1); await invoke('download_company_file', { sessionEpoch: epoch, id: asset.assetId });
     await assert.rejects(invoke('manage_company_file', { sessionEpoch: epoch, id: asset.assetId, operation: 'recycle', confirmName: '' }), /权限/);
-    assert.deepEqual(await fs.readFile((await invoke('get_library')).phrases.find(p => p.id === first).segments[0].blocks[0].path), bytes);
+    assert.equal((await invoke('get_library')).phrases.length, 0, '切号后不带入其他账号的个人副本');
+    assert.deepEqual(await fs.readFile(adminCopy), bytes);
     assert.ok(worker);
   });
   await check('按用户名撤权使在途上传失效，重新授权后旧任务不能登记；查询不触发上传', async () => {
@@ -255,7 +396,7 @@ try {
     await until(async () => !(await invoke('get_team_status')).user?.companyFilePermissions.canUpload);
     await cloud.getByRole('button', { name: '返回', exact: true }).click(); await cloud.getByRole('button', { name: '下载管理', exact: true }).click(); await cloud.getByText('已完成', { exact: true }).waitFor(); await verifyProgressLayout(); await cloud.screenshot({ path: path.join(evidence, 'company-download.png') }); await cloud.getByRole('button', { name: '返回', exact: true }).click();
   });
-  await check('重新登录后共享库按需下载，两共享库使用同一云文件缓存', async () => {
+  await check('重新登录后共享话术按需下载，两共享话术使用同一云文件缓存', async () => {
     await invoke('team_logout'); const admin = await invoke('team_login', { server: clientBase, username: 'qa-admin', password }); epoch = admin.sessionEpoch;
     assert.equal((await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' })).files[0].cached, false);
     const downloads = downloadCount;
@@ -270,6 +411,28 @@ try {
     }
     const other = await invoke('get_team_view', { teamId: teams[1] }); assert.equal(other.phrases[0].ready, true); paths.push(other.phrases[0].segments[0].blocks[0].path); assert.equal(paths[0], paths[1]);
     assert.ok((await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' })).files[0].cached);
+  });
+  await check('上传授权版本变化停止整个旧队列，再授权不自动重传；离线也停止等待任务', async () => {
+    const update = async canUpload => { const user = (await api('GET', 'users')).find(u => u.id === worker); await api('PUT', `users/${worker}`, { companyFilePermissions: { canUpload, canRecycle: false, canRestore: false, expectedVersion: user.companyFilePermissions.version } }); };
+    epoch = (await invoke('team_login', { server: clientBase, username: 'qa-worker', password: workerPassword })).sessionEpoch; await update(true); await until(async () => (await invoke('get_team_status')).user?.companyFilePermissions.canUpload);
+    for (const condition of ['撤权', '离线']) {
+      const paths = await batchSources(`${condition}队列`, 4); holdBatch = true; const records = await invoke('enqueue_company_uploads', { sessionEpoch: epoch, paths }); await until(() => batchHeld.size === 2); const uploads = uploadCount;
+      if (condition === '撤权') { await update(false); await until(async () => !(await invoke('get_team_status')).user?.companyFilePermissions.canUpload); }
+      else { offlineClient = true; await assert.rejects(invoke('team_refresh')); assert.ok((await invoke('get_team_status')).offline); }
+      await until(() => batchHeld.size === 0); const tasks = await finishBatch(records); assert.equal(tasks.filter(task => task.status === '已停止').length, 2); assert.equal(tasks.filter(task => task.status === '待核对').length, 2); assert.equal(uploadCount, uploads);
+      if (condition === '撤权') { await update(true); await until(async () => (await invoke('get_team_status')).user?.companyFilePermissions.canUpload); }
+      else { offlineClient = false; await invoke('team_refresh'); assert.equal((await invoke('get_team_status')).offline, false); }
+      assert.equal(uploadCount, uploads, '联网或再授权不能恢复旧队列');
+      for (const task of tasks.filter(task => task.status === '待核对')) await invoke('upload_company_file', { sessionEpoch: epoch, id: task.assetId }); await discardUploaded(tasks.filter(task => task.status === '待核对'));
+    }
+    await invoke('team_logout'); epoch = (await invoke('team_login', { server: clientBase, username: 'qa-admin', password })).sessionEpoch;
+  });
+  await check('退出中止尚未执行队列，重启只列出固化的待核对任务且不自动上传', async () => {
+    const paths = await batchSources('退出队列', 4); holdBatch = true; const records = await invoke('enqueue_company_uploads', { sessionEpoch: epoch, paths }); await until(() => batchHeld.size === 2); const prepared = [...batchHeld.keys()], uploads = uploadCount;
+    await invoke('window_action', { action: 'exit' }).catch(() => {}); await browser.close().catch(() => {}); await until(() => app.exitCode !== null || app.signalCode !== null); await until(() => batchHeld.size === 0); holdBatch = false;
+    await startClient(); const status = await until(async () => { const status = await invoke('get_team_status'); return status.user?.username === 'qa-admin' && !status.offline && status; }); epoch = status.sessionEpoch;
+    const restored = (await transferSnapshot()).filter(task => records.some(record => record.assetId === task.assetId)); assert.equal(restored.length, 2); assert.deepEqual(restored.map(task => task.assetId).sort(), prepared.sort()); assert.ok(restored.every(task => task.status === '待核对')); assert.equal(uploadCount, uploads);
+    for (const task of restored) await invoke('upload_company_file', { sessionEpoch: epoch, id: task.assetId }); await discardUploaded(restored);
   });
   let restarted;
   await check('重启后发现受控上传源副本，继续原ID且不自动上传', async () => {
@@ -296,6 +459,8 @@ try {
   });
   let accountCopy;
   await check('开启个人同步后保存独立附件，公司原件永久删除不影响本机或私人云副本', async () => {
+    const ownLibrary = await invoke('get_library'); assert.equal(ownLibrary.phrases.length, 0);
+    await invoke('save_category', { libraryId: ownLibrary.libraryId, category: { id: '', name: '员工资料', kind: 'phrase', parentId: null, position: 0, background: '' } });
     const preview = await invoke('preview_private_sync'); await invoke('confirm_private_sync', { request: { previewId: preview.id, choices: {} } });
     await until(async () => { const status = await invoke('get_private_status'); return status.enabled && status.pending === 0 && status.state === '已同步'; });
     const library = await invoke('get_library'); const selected = [{ segment: 0, block: 0, assetId: restarted.assetId, sessionEpoch: epoch }];
@@ -314,7 +479,7 @@ try {
     await until(async () => !(await invoke('get_team_status')).user); assert.ok(await pending); releaseDownload?.();
     await assert.rejects(invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' })); assert.equal(await fs.readFile(accountCopy, 'utf8'), '重启前固化的附件');
   });
-  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ checks, limitations: ['真实企业微信接收、安装升级、系统DPI、旧共享库客户端及局域网／HTTPS代理仍须单独验收；容器使用独立脚本验证'] }, null, 2)); console.log('报告：' + evidence);
+  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ checks, limitations: ['真实企业微信接收、新安装及升级、资源管理器拖拽、系统多选对话框和系统DPI仍须单独验收；拖拽联调使用合成Tauri事件', '旧共享话术客户端及局域网／HTTPS代理仍须单独验收；容器使用独立脚本验证'] }, null, 2)); console.log('报告：' + evidence);
 } finally {
   await invoke('team_logout').catch(() => {}); await invoke('window_action', { action: 'exit' }).catch(() => {}); await browser?.close().catch(() => {}); app?.kill(); server.kill(); proxy.closeAllConnections(); await new Promise(r => proxy.close(r));
 }

@@ -7,7 +7,7 @@ import type { Library, Settings } from './types';
 
 vi.mock('./api', () => ({ call: vi.fn(), closeWindow: vi.fn(), openWindow: vi.fn(), useTeams: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
-beforeEach(() => { const status = { server: '', username: '', user: null, teams: [], offline: false }; vi.mocked(useTeams).mockReturnValue({ status, version: 0 }); });
+beforeEach(() => { const status = { server: '', username: '', user: null, teams: [], offline: false }; vi.mocked(useTeams).mockReturnValue({ status, version: 0, loaded: true }); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 function bar(mode: Settings['commonSingleClick'] = 'select', compact = false, busy = false) {
   const onDeliver = vi.fn();

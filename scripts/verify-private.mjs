@@ -34,9 +34,9 @@ async function hideWindows(view) {
   }; });
 }
 async function accountSettings() {
-  await page.getByRole('button', { name: '设置', exact: true }).evaluate(el => el.click());
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   const view = await until(() => context.pages().find(p => !p.isClosed() && p.url().includes('#settings'))); await view.locator('.settings-sidebar').waitFor(); await hideWindows(view);
-  await view.getByRole('button', { name: '账号与同步', exact: true }).evaluate(el => el.click()); return view;
+  await view.getByRole('button', { name: '账号与同步', exact: true }).click(); return view;
 }
 async function stopClient() {
   if (page && !page.isClosed()) await invoke('window_action', { action: 'exit' }).catch(() => {});
@@ -51,7 +51,7 @@ async function startClient(device) {
   page = await until(() => context.pages().find(p => !new URL(p.url()).hash)); await page.locator('.main-window').waitFor(); await hideWindows(page);
   await page.getByRole('status').evaluateAll(nodes => nodes.forEach(node => node.click()));
 }
-const synced = () => until(() => invoke('get_private_status'), s => s.enabled && s.pending === 0 && s.conflicts === 0 && s.state === '已同步');
+const synced = () => until(() => invoke('get_private_status'), s => s.enabled && s.pending === 0 && s.conflicts === 0 && s.state === '已同步' && s.lastSuccessfulSyncAt > 0);
 const firstEnable = async () => { const preview = await invoke('preview_private_sync'); await invoke('confirm_private_sync', { request: { previewId: preview.id, choices: {} } }); return preview; };
 const savePhrase = async (phrase, library) => invoke('save_phrase', { phrase, libraryId: library.libraryId, expectedRevision: library.privateRevisions[`phrase:${phrase.id}`] });
 let root, phraseId, commonId, ownerLibrary, oldEdit, external;
@@ -77,16 +77,69 @@ try {
     await invoke('team_change_password', { request: { currentPassword: initial, password } });
     token = (await api('POST', 'login', { username: 'qa-admin', password })).token;
     await api('POST', 'users', { username: '0002', password: otherPassword });
-    const settings = await accountSettings(); await settings.getByRole('button', { name: '开启同步', exact: true }).evaluate(el => el.click());
+    const initialLocal = await invoke('get_library');
+    const trialPassword = randomUUID(); await api('POST', 'users', { username: 'before-sync', password: trialPassword });
+    await invoke('team_login', { server: base, username: 'before-sync', password: trialPassword });
+    assert.equal((await invoke('get_library')).phrases.length, 0);
+    await invoke('team_login', { server: base, username: 'qa-admin', password });
+    assert.equal((await invoke('get_library')).libraryId, initialLocal.libraryId);
+    assert.equal((await invoke('get_library')).phrases[0].id, phraseId);
+    const unboundId = (await invoke('get_library')).libraryId;
+    await invoke('preview_private_sync'); await invoke('cancel_private_sync_preview');
+    await invoke('team_login', { server: base, username: 'qa-admin', password });
+    assert.equal((await invoke('get_library')).libraryId, unboundId);
+    const settings = await accountSettings(); await until(() => settings.getByRole('button', { name: '开启同步', exact: true }).isEnabled()); await settings.getByRole('button', { name: '开启同步', exact: true }).click();
     await settings.getByRole('dialog', { name: '首次合并', exact: true }).waitFor(); await until(() => settings.getByRole('button', { name: '确认同步', exact: true }).isEnabled());
     assert.equal(await settings.locator('dialog').evaluate(el => getComputedStyle(el).outlineStyle), 'none'); await settings.screenshot({ path: path.join(evidence, 'private-first-merge.png') });
-    await settings.getByRole('button', { name: '确认同步', exact: true }).evaluate(el => el.click()); await synced();
+    await settings.getByRole('button', { name: '确认同步', exact: true }).click(); await synced();
     const library = await invoke('get_library'); ownerLibrary = library.libraryId;
     assert.equal(library.phrases[0].id, phraseId); assert.ok(library.files.length === 1); assert.equal(library.commonPhrases[0].id, commonId);
     const remote = await api('GET', 'me/private/snapshot'); assert.ok(remote.records.some(r => r.kind === 'phrase' && r.id === phraseId)); assert.ok(remote.records.some(r => r.kind === 'category' && r.id === root)); assert.ok(!remote.records.some(r => r.kind === 'category' && r.id === fileCategory));
-    await invoke('use_local_private_library'); assert.equal((await invoke('get_library')).phrases[0].id, phraseId);
-    await invoke('team_login', { server: base, username: 'qa-admin', password }); await synced();
+    assert.equal(await settings.getByRole('button', { name: '本机个人库', exact: true }).count(), 0);
+    const accountBefore = await invoke('get_team_status');
+    await settings.getByRole('button', { name: '暂停同步', exact: true }).click();
+    await until(() => invoke('get_private_status'), s => !s.enabled);
+    const pausedAt = (await invoke('get_private_status')).lastSuccessfulSyncAt;
+    assert.ok(pausedAt > 0); assert.equal((await invoke('get_library')).libraryId, ownerLibrary);
+    assert.equal((await invoke('get_team_status')).sessionEpoch, accountBefore.sessionEpoch);
+    await startClient('device-a');
+    assert.equal((await invoke('get_private_status')).enabled, false);
+    assert.equal((await invoke('get_private_status')).lastSuccessfulSyncAt, pausedAt);
+    await invoke('team_login', { server: base, username: 'qa-admin', password });
+    assert.equal((await invoke('get_private_status')).enabled, false);
+    await firstEnable(); await synced();
     const owned = (await invoke('get_library')).phrases[0].segments[0].blocks[2].path; assert.notEqual(owned, external); assert.equal(path.basename(owned), '原附件.txt');
+  });
+  await check('有历史本机内容时切到新账号仍为空，个人及共享话术分别记录同步时间', async () => {
+    const privateStatus = await invoke('get_private_status'); assert.ok(privateStatus.lastSuccessfulSyncAt > 0);
+    const groupA = await invoke('team_admin', { action: 'create-team', request: { name: '时间验收一' } });
+    const groupB = await invoke('team_admin', { action: 'create-team', request: { name: '时间验收二' } });
+    const groups = await until(() => invoke('get_team_status'), s => s.teamSyncTimes?.[groupA] > 0 && s.teamSyncTimes?.[groupB] > 0);
+    assert.equal(Object.keys(groups.teamSyncTimes).length, 2);
+    const settings = await accountSettings(); await settings.getByText('可管理：2', { exact: true }).waitFor();
+    assert.equal(await settings.getByText('时间验收一', { exact: true }).count(), 0);
+    await settings.screenshot({ path: path.join(evidence, 'sync-times.png') });
+    await settings.getByRole('button', { name: '共享话术管理', exact: true }).click();
+    const management = await until(() => context.pages().find(p => !p.isClosed() && p.url().includes('#team-management')));
+    await management.getByRole('cell', { name: /时间验收一.*最近同步：/ }).waitFor();
+    await management.getByRole('cell', { name: /时间验收二.*最近同步：/ }).waitFor();
+    await management.screenshot({ path: path.join(evidence, 'shared-sync-times.png') });
+    await invoke('pause_private_sync'); const loggedOutTime = (await invoke('get_private_status')).lastSuccessfulSyncAt;
+    await invoke('team_logout');
+    assert.deepEqual((await invoke('get_team_status')).teamSyncTimes, {});
+    assert.equal((await invoke('get_private_status')).lastSuccessfulSyncAt, loggedOutTime);
+    await settings.getByText('未登录，内容保留在本机', { exact: true }).waitFor();
+    await settings.screenshot({ path: path.join(evidence, 'signed-out-private.png') });
+    const isolatedPassword = randomUUID(); await api('POST', 'users', { username: 'isolated', password: isolatedPassword });
+    await invoke('team_login', { server: base, username: 'isolated', password: isolatedPassword });
+    const isolated = await invoke('get_library'); assert.equal(isolated.phrases.length, 0); assert.notEqual(isolated.libraryId, ownerLibrary);
+    assert.equal((await invoke('get_private_status')).initialized, false);
+    await invoke('team_change_password', { request: { currentPassword: isolatedPassword, password: randomUUID() } });
+    const preview = await invoke('preview_private_sync'); assert.equal(preview.phrases, 0);
+    await invoke('confirm_private_sync', { request: { previewId: preview.id, choices: {} } }); await synced();
+    assert.equal((await invoke('get_library')).phrases.length, 0);
+    await invoke('team_login', { server: base, username: 'qa-admin', password }); await firstEnable(); await synced();
+    assert.equal((await invoke('get_library')).libraryId, ownerLibrary);
   });
   await startClient('device-b');
   await check('第二设备接入保留相同 ID；图片后台缓存，附件按需下载', async () => {
@@ -119,15 +172,15 @@ try {
     const library = await invoke('get_library'); assert.equal(library.phrases[0].title, '离线草稿'); assert.equal(library.settings.enter, 'enter'); assert.equal(library.settings.theme, 'blue'); assert.ok(library.commonPhrases.some(c => c.text === '无关内容'));
     await until(() => api('GET', 'me/private/snapshot'), r => r.records.some(r => r.kind === 'common' && r.value?.text === '离线新增'));
     await assert.rejects(invoke('save_phrase', { phrase: { ...oldEdit.phrase, title: '旧编辑窗口' }, libraryId: oldEdit.libraryId, expectedRevision: oldEdit.revision }));
-    const settings = await accountSettings(); await settings.getByRole('button', { name: /^处理冲突/ }).evaluate(el => el.click());
+    const settings = await accountSettings(); await settings.getByRole('button', { name: /^处理冲突/ }).click();
     await settings.getByRole('dialog', { name: '处理冲突', exact: true }).waitFor(); await settings.screenshot({ path: path.join(evidence, 'private-conflicts.png') });
     const footer = await settings.locator('dialog .dialog-actions').boundingBox(); assert.ok(footer.y + footer.height <= 620);
-    await settings.getByRole('button', { name: '关闭', exact: true }).evaluate(el => el.click());
+    await settings.getByRole('button', { name: '关闭', exact: true }).click();
     const conflict = (await invoke('get_private_conflicts')).find(c => c.id === phraseId); assert.ok(conflict);
     await invoke('resolve_private_conflict', { request: { kind: conflict.kind, id: conflict.id, choice: 'both', serverVersion: conflict.serverVersion, localRevision: conflict.localRevision, libraryId: library.libraryId } }); await synced();
     const merged = await invoke('get_library'); assert.equal(merged.phrases.length, 2); assert.ok(merged.phrases.some(p => p.id === phraseId && p.title === '远端新版')); assert.ok(merged.phrases.some(p => p.id !== phraseId && p.title === '离线草稿'));
-    await settings.getByRole('button', { name: /^设置待确认/ }).evaluate(el => el.click()); await settings.getByRole('dialog', { name: '应用设置', exact: true }).waitFor();
-    await settings.screenshot({ path: path.join(evidence, 'private-settings-confirm.png') }); await settings.getByRole('button', { name: '稍后', exact: true }).evaluate(el => el.click());
+    await settings.getByRole('button', { name: /^设置待确认/ }).click(); await settings.getByRole('dialog', { name: '应用设置', exact: true }).waitFor();
+    await settings.screenshot({ path: path.join(evidence, 'private-settings-confirm.png') }); await settings.getByRole('button', { name: '稍后', exact: true }).click();
     assert.equal((await invoke('get_library')).settings.enter, 'enter');
     await invoke('apply_private_settings', { libraryId: merged.libraryId }); assert.equal((await invoke('get_library')).settings.enter, 'ctrl-enter');
     await page.screenshot({ path: path.join(evidence, 'private-synced.png') });
@@ -157,9 +210,29 @@ try {
     const backupLibrary = await invoke('get_library'), backupAccount = await invoke('get_team_status');
     const previewBackup = await invoke('preview_import', { path: path.join(evidence, 'personal.zip'), target: { source: 'private', libraryId: backupLibrary.libraryId, sessionEpoch: backupAccount.sessionEpoch }, merge: false, restoreSettings: false, operationId: randomUUID() }); assert.equal(previewBackup.phrases, 2); assert.ok(previewBackup.images >= 1);
   });
-  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ checks, clientVersion: '0.2.0', limits: ['真实 WebView2、Windows 凭据、SQLite、HTTP/SSE；两个设备轮流运行', '未触发企业微信发送、系统剪贴板或实体输入', '回环网络不能替代局域网、代理、DPI和安装升级验收'] }, null, 2));
+  await startClient('device-a');
+  await check('找回旧本机内容先预览，取消不改变内容，确认保留账号和暂停状态', async () => {
+    await invoke('team_login', { server: base, username: 'qa-admin', password });
+    await invoke('pause_private_sync');
+    const before = await invoke('get_library'), account = await invoke('get_team_status');
+    const target = { source: 'private', libraryId: before.libraryId, sessionEpoch: account.sessionEpoch };
+    assert.equal(await invoke('has_legacy_private_content', { libraryId: before.libraryId }), true);
+    const preview = await invoke('preview_legacy_private_content', { target, operationId: randomUUID() });
+    assert.equal(preview.phrases, 1); assert.equal(preview.files, 0); assert.equal(preview.restoreSettings, false);
+    assert.equal((await invoke('get_library')).phrases.length, before.phrases.length);
+    await invoke('discard_import', { previewId: preview.id, target });
+    const next = await invoke('preview_legacy_private_content', { target, operationId: randomUUID() });
+    await invoke('confirm_import', { previewId: next.id, target, operationId: randomUUID() });
+    const after = await invoke('get_library'); assert.equal(after.libraryId, before.libraryId); assert.equal(after.phrases.length, before.phrases.length + 1);
+    assert.equal(after.files.length, before.files.length); assert.equal((await invoke('get_private_status')).enabled, false);
+    assert.equal((await invoke('get_team_status')).sessionEpoch, account.sessionEpoch);
+    await assert.rejects(invoke('confirm_import', { previewId: next.id, target, operationId: randomUUID() }));
+    assert.equal((await invoke('get_library')).phrases.length, after.phrases.length);
+  });
+  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ checks, clientVersion: await invoke('plugin:app|version'), limits: ['真实 WebView2、Windows 凭据、SQLite、HTTP/SSE；两个设备轮流运行', '未触发企业微信发送、系统剪贴板或实体输入', '回环网络不能替代局域网、代理、DPI和安装升级验收'] }, null, 2));
   console.log('证据：' + evidence);
 } catch (error) {
+  await context?.pages().find(p => !p.isClosed() && p.url().includes('#settings'))?.screenshot({ path: path.join(evidence, 'failure-settings.png') }).catch(() => {});
   await page?.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});
   await fs.writeFile(path.join(evidence, 'failure.json'), JSON.stringify({ checks, error: String(error) }, null, 2)); throw error;
 } finally {

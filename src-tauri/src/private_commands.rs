@@ -119,10 +119,6 @@ pub fn pause_private_sync(app: tauri::AppHandle, state: State<AppState>) -> Resu
     Ok(())
 }
 #[tauri::command]
-pub fn use_local_private_library(app: tauri::AppHandle, state: State<AppState>) -> Result<()> {
-    state.private_sync.activate(&app, None)
-}
-#[tauri::command]
 pub fn download_private_materials(
     app: tauri::AppHandle,
     state: State<AppState>,
@@ -401,7 +397,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// 旧设置仍按原顺序打开；账号库与云端设置不能覆盖本机的我的话术／共享库入口布局。
+    /// 旧设置仍按原顺序打开；账号库与云端设置不能覆盖本机的个人话术／共享话术入口布局。
     #[test]
     fn scope_order_remains_device_local_when_combining_account_settings() {
         let legacy: Settings = serde_json::from_str(r#"{"filesFirst":true}"#).unwrap();

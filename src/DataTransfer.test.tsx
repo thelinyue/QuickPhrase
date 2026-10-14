@@ -12,11 +12,11 @@ const category = { id: 'root', name: '欢迎', kind: 'phrase' as const, parentId
 const library: Library = { libraryId: 'library-a', categories: [category], phrases: [], commonPhrases: [], files: [], settings: {} as Library['settings'], dataDir: '' };
 let status: TeamStatus, view: TeamView;
 const target = { source: 'private', libraryId: library.libraryId, sessionEpoch: 1 };
-const preview = { id: 'batch', kind: 'backup', filename: '话术.zip', categories: 1, phrases: 1, commonPhrases: 0, files: 0, images: 1, attachments: 1, recycled: 0, rows: [{ category: '欢迎', title: '示例', text: '正文摘要' }], notes: [], target, targetLabel: '本机个人库', merge: false, restoreSettings: false, state: 'ready' };
+const preview = { id: 'batch', kind: 'backup', filename: '话术.zip', categories: 1, phrases: 1, commonPhrases: 0, files: 0, images: 1, attachments: 1, recycled: 0, rows: [{ category: '欢迎', title: '示例', text: '正文摘要' }], notes: [], target, targetLabel: '个人话术', merge: false, restoreSettings: false, state: 'ready' };
 beforeEach(() => {
   status = { sessionEpoch: 1, server: 'http://server:7823', username: '0001', user: { id: 'user', mustChangePassword: false } as TeamStatus['user'], teams: [group], offline: false };
   view = { team: group, categories: [category], phrases: [], offline: false };
-  vi.mocked(useTeams).mockImplementation(() => ({ status, version: 0 }));
+  vi.mocked(useTeams).mockImplementation(() => ({ status, version: 0, loaded: true }));
   vi.mocked(useTeamView).mockImplementation(() => ({ view, error: '' }));
   vi.mocked(call).mockImplementation(async command => command === 'get_import_pending' ? null : command === 'preview_import' ? preview : command === 'confirm_import' ? { state: 'completed', message: '导入完成' } : undefined);
   vi.mocked(open).mockResolvedValue('D:/话术.zip'); vi.mocked(save).mockResolvedValue('D:/backup.zip');
@@ -31,7 +31,7 @@ it('默认个人库和独立副本，设置恢复默认关闭，改选项使旧�
   render(<DataTransfer mode="import" library={library} />);
   expect((screen.getByLabelText('目标库') as HTMLSelectElement).value).toBe('private');
   expect((screen.getByLabelText('合并同级唯一同名分类') as HTMLInputElement).checked).toBe(false);
-  expect((screen.getByLabelText('恢复备份设置') as HTMLInputElement).checked).toBe(false);
+  expect((screen.getByLabelText('恢复个人设置') as HTMLInputElement).checked).toBe(false);
   await prepare();
   expect(call).toHaveBeenCalledWith('preview_import', expect.objectContaining({ target, merge: false, restoreSettings: false }));
   expect(commands('confirm_import')).toHaveLength(0);
@@ -66,18 +66,18 @@ it('待确认批次只核对，不自动重发，核对后沿用原预览编号'
   expect(call).toHaveBeenCalledWith('check_import_result', expect.objectContaining({ previewId: 'batch', target }));
   expect(commands('confirm_import')).toHaveLength(0);
 });
-it('共享库入口预选当前组，离线成员能导出完整缓存但不能导入', async () => {
+it('共享话术入口预选当前组，离线成员能导出完整缓存但不能导入', async () => {
   status = { ...status, offline: true, teams: [{ ...group, editable: false, role: 'member' }] };
   view = { ...view, team: status.teams[0], offline: true };
   const rendered = render(<DataTransfer mode="export" library={library} initialTeamId="group" />);
   expect((screen.getByLabelText('来源库') as HTMLSelectElement).value).toBe('team');
-  expect((screen.getByLabelText('选择共享库') as HTMLSelectElement).value).toBe('group');
+  expect((screen.getByLabelText('选择共享话术') as HTMLSelectElement).value).toBe('group');
   expect(screen.queryByText(/完整备份/)).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '导出' }));
   await waitFor(() => expect(call).toHaveBeenCalledWith('export_data', expect.objectContaining({ target: { source: 'team', teamId: 'group', version: 3, lifecycleVersion: 1, sessionEpoch: 1 }, categoryId: null })));
   rendered.unmount(); render(<DataTransfer mode="import" library={library} initialTeamId="group" />);
   expect((screen.getByRole('button', { name: '选择文件' }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.queryByLabelText('恢复备份设置')).toBeNull();
+  expect(screen.queryByLabelText('恢复个人设置')).toBeNull();
 });
 it('切号后丢弃旧预览响应并取消旧任务', async () => {
   let deliver!: (value: typeof preview) => void;
@@ -95,7 +95,7 @@ it('切号后丢弃旧预览响应并取消旧任务', async () => {
 });
 it('个人全库与分类范围名称明确，导出使用本机目标且不强制同步', async () => {
   render(<DataTransfer mode="export" library={{ ...library, ownerLabel: '0001' }} />);
-  expect((screen.getByRole('option', { name: '我的话术 · 0001' }) as HTMLOptionElement).selected).toBe(true);
+  expect((screen.getByRole('option', { name: '个人话术 · 0001' }) as HTMLOptionElement).selected).toBe(true);
   expect(screen.getByText(/导出当前本机版本/)).toBeTruthy();
   expect(screen.getByLabelText('完整备份（含图片、附件）')).toBeTruthy();
   fireEvent.change(screen.getByLabelText('导出分类'), { target: { value: 'root' } });
@@ -104,4 +104,24 @@ it('个人全库与分类范围名称明确，导出使用本机目标且不强�
   await waitFor(() => expect(call).toHaveBeenCalledWith('export_data', expect.objectContaining({ target, categoryId: 'root' })));
   expect(commands('backup_private_server')).toHaveLength(0);
   expect(commands('confirm_private_sync')).toHaveLength(0);
+});
+
+it('旧内容先预览，目标固定为当前个人库，取消不确认也不切库', async () => {
+  vi.mocked(call).mockImplementation(async command => command === 'has_legacy_private_content' ? true : command === 'preview_legacy_private_content' ? { ...preview, filename: '旧本机内容' } : null);
+  render(<DataTransfer mode="import" library={{ ...library, ownerLabel: '0001' }} />);
+  fireEvent.click(await screen.findByRole('button', { name: '找回旧本机内容' }));
+  await screen.findByRole('dialog');
+  expect(call).toHaveBeenCalledWith('preview_legacy_private_content', expect.objectContaining({ target }));
+  expect(commands('confirm_import')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: '取消' }));
+  expect(commands('confirm_import')).toHaveLength(0);
+  expect(commands('use_local_private_library')).toHaveLength(0);
+});
+it('设备部分使用独立目标和设置选项，不能找回历史个人内容', async () => {
+  render(<DataTransfer mode="import" library={library} />);
+  fireEvent.change(screen.getByLabelText('导入部分'), { target: { value: 'device' } });
+  expect(screen.getByLabelText('恢复设备设置')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '找回旧本机内容' })).toBeNull();
+  await prepare();
+  expect(call).toHaveBeenCalledWith('preview_import', expect.objectContaining({ target: { ...target, devicePart: true }, restoreSettings: false }));
 });

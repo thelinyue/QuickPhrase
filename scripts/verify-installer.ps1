@@ -39,6 +39,20 @@ try {
   if ((Test-Path -LiteralPath $testKey) -or (Test-Path -LiteralPath (Join-Path $installDir 'QuickPhrase.exe'))) { throw '新装卸载验收失败。' }
   $results.Add('新装卸载清理程序和注册，保留隔离用户数据。')
 
+  # 免安装用户转为安装版：保留原程序目录和自定义数据，安装到独立的新目录。
+  $portableDir = Join-Path $qaRoot 'portable-original'
+  New-Item -ItemType Directory -Path $portableDir | Out-Null
+  $portableFile = Join-Path $portableDir 'QuickPhrase.exe'
+  Copy-Item -LiteralPath (Join-Path $repo 'src-tauri\target\release\QuickPhrase.exe') -Destination $portableFile
+  $portableBefore = [IO.File]::ReadAllBytes($portableFile)
+  $process = Start-Process -FilePath $setup -ArgumentList $setupArgs -Wait -PassThru -WindowStyle Hidden
+  if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $installDir 'QuickPhrase.exe'))) { throw '免安装转安装失败。' }
+  if (-not [Collections.StructuralComparisons]::StructuralEqualityComparer.Equals($portableBefore, [IO.File]::ReadAllBytes($portableFile)) -or [IO.File]::ReadAllText($sentinel) -cne '安装、升级和卸载应当保留用户数据。') { throw '免安装转安装修改了原程序或自定义数据。' }
+  $results.Add('免安装转安装：原ZIP程序目录及独立数据保留，安装注册进入新的测试目录。')
+  & $uninstall
+  if (-not (Test-Path -LiteralPath $portableFile) -or -not (Test-Path -LiteralPath $sentinel)) { throw '转安装后卸载误删原目录或数据。' }
+  $results.Add('免安装转安装后卸载保留原程序目录与数据。')
+
   # 从已发布标签读取旧安装器，只替换测试资源位置，保留旧文件名及升级识别方式。
   $legacyScript = (& git -C $repo show 'v0.2.0:installer/Shanyu.iss') -join "`r`n"
   if ($LASTEXITCODE -ne 0) { throw '无法读取已发布0.2.0安装器。' }

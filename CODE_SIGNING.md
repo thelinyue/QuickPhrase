@@ -5,8 +5,9 @@
 ## 资产与来源
 
 - GitHub Release 是正式发布资产的公开来源；候选构建只上传 Actions artifact。
-- 沿用已有发布要求：提供 ZIP、Inno Setup 安装器、`SHA256SUMS.txt` 和 `release-manifest.json`。
+- 沿用已有发布要求：提供 ZIP、Inno Setup 安装器、`SHA256SUMS.txt`、`release-manifest.json` 和 `SHA256SUMS.txt.minisig`。
 - manifest 如实声明 `signed: false`、版本、来源提交和发布通道；正式版通道为 `stable`，候选为 `prerelease`。
+- 更新清单同时覆盖manifest，并使用Minisign签名。公钥嵌入客户端，私钥及密码只在发布Secrets和受限备份中保管；缺少或无效签名时不得通过应用内安装。此签名不等于Windows代码签名，历史无签名资产不补写。具体流程见[在线更新](docs/online-update.md)。
 - Windows SmartScreen 可能显示未知发布者提示。发布说明必须明确未签名状态和 SHA256 校验方式。
 - 程序嵌入实际 Tauri 前端资源；安装器可嵌入签名有效的微软 WebView2 引导程序。不能携带无关原型资源、用户数据或非预期二进制。
 

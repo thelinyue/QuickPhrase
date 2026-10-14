@@ -117,7 +117,9 @@ try {
     const removed = await phrase(privateRoot, '回收内容', [{ kind: 'text', text: '回收文字' }]); await invoke('delete_item', { kind: 'phrase', id: removed, recycle: true });
     await invoke('save_common_phrase', { phrase: { id: '', text: '常用短语', position: 0 } });
     const fileRoot = await category('文件关联', 'file'); await invoke('add_files', { categoryId: fileRoot, paths: [originalFile] });
-    const library = await invoke('get_library'); await invoke('save_settings', { settings: { ...library.settings, theme: 'green', dock: false, pinned: false } });
+    const library = await invoke('get_library');
+    // 主WebView可早于Windows后台服务加载，先等待本次隔离设置成功应用。
+    await until(async () => { await invoke('save_settings', { settings: { ...library.settings, theme: 'green', dock: false, pinned: false } }); return true; });
     await transfer('export_data', { path: full, kind: 'backup', categoryId: null });
     const data = await metadata(full); assert.equal(data.version, 2); assert.equal(data.settingsScope, 'device'); assert.equal(data.library.phrases.length, 2); assert.equal(data.recycleBin.length, 1);
     assert.equal(data.library.files[0].path, originalFile); assert.equal(data.assets.length, 2); assert.equal(data.library.settings.theme, 'green');
@@ -134,7 +136,7 @@ try {
     await invoke('save_common_phrase', { phrase: { id: '', text: '期间新增', position: 0 } }); await assert.rejects(transfer('confirm_import', { previewId }), /已更新/);
     const refreshed = await transfer('refresh_import_preview', { previewId }); assert.equal(refreshed.id, previewId);
     const result = await transfer('confirm_import', { previewId }); assert.equal(result.state, 'completed');
-    const after = await invoke('get_library'); assert.equal(after.phrases.length, before.phrases.length * 2); assert.equal(after.files.length, 2);
+    const after = await invoke('get_library'); assert.equal(after.phrases.length, before.phrases.length * 2); assert.equal(after.files.length, before.files.length);
     const imported = after.phrases.find(p => !before.phrases.some(old => old.id === p.id) && p.title === '图文附件'); const file = imported.segments[0].blocks.find(b => b.kind === 'file');
     assert.notEqual(file.path, originalFile); assert.equal(await fs.readFile(file.path, 'utf8'), 'actual-test-attachment');
     assert.equal((await invoke('get_recycle_bin')).length, 2);
@@ -160,18 +162,28 @@ try {
     await phrase(root, '账号原稿', [{ kind: 'text', text: '账号文字' }, image, { kind: 'file', path: originalFile, name: 'external.txt' }]);
     await enable(); await synced(); accountLibrary = (await invoke('get_library')).libraryId;
     team = await invoke('team_admin', { action: 'create-team', request: { name: '导入导出组' } }); member = await invoke('team_admin', { action: 'create-user', request: { username: '0002', password: memberInitial } }); await members('editor');
-    const view = await settings('导入数据'); assert.equal(await view.getByLabel('目标库').inputValue(), 'private'); assert.equal(await view.getByLabel('合并同级唯一同名分类').isChecked(), false); assert.equal(await view.getByLabel('恢复备份设置').isChecked(), false);
+    const view = await settings('导入数据'); assert.equal(await view.getByLabel('目标库').inputValue(), 'private'); assert.equal(await view.getByLabel('合并同级唯一同名分类').isChecked(), false); assert.equal(await view.getByLabel('恢复个人设置').isChecked(), false);
     await checkFormAlignment(view); await view.screenshot({ path: path.join(evidence, 'private-import.png') });
     await view.getByRole('button', { name: '账号与同步', exact: true }).click(); assert.equal(await view.getByRole('button', { name: '个人备份', exact: true }).count(), 0);
     await view.getByRole('button', { name: '导出数据', exact: true }).click(); await checkFormAlignment(view); await view.screenshot({ path: path.join(evidence, 'private-export.png') }); await view.getByRole('button', { name: '关闭窗口', exact: true }).click();
   });
-  await check('账号库拒绝含独立文件关联的本机备份，旧个人包恢复设置不阻塞正文', async () => {
-    await assert.rejects(transfer('preview_import', { path: full }), /本机个人库/);
+  await check('旧完整备份分类导入，个人包恢复设置不阻塞正文', async () => {
+    const personalPreview = await transfer('preview_import', { path: full });
+    assert.equal(personalPreview.files, 0); assert.ok(personalPreview.notes.some(n => n.includes('分别提交')));
+    await transfer('discard_import', { previewId: personalPreview.id });
+    const deviceTarget = { ...await target(), devicePart: true }, beforeDevice = await invoke('get_library');
+    const devicePreview = await transfer('preview_import', { path: full }, deviceTarget);
+    assert.equal(devicePreview.phrases, 0); assert.equal(devicePreview.files, 1); assert.equal(devicePreview.commonPhrases, 0);
+    await transfer('confirm_import', { previewId: devicePreview.id }, deviceTarget);
+    const afterDevice = await invoke('get_library'); assert.equal(afterDevice.libraryId, beforeDevice.libraryId);
+    assert.equal(afterDevice.phrases.length, beforeDevice.phrases.length); assert.equal(afterDevice.files.length, beforeDevice.files.length + 1);
+    assert.equal(afterDevice.settings.theme, beforeDevice.settings.theme);
+    await assert.rejects(transfer('confirm_import', { previewId: devicePreview.id }, deviceTarget));
     const personal = path.join(evidence, 'personal.zip'), configured = path.join(evidence, 'personal-configured.zip'); await invoke('backup_private_server', { path: personal });
     await runPython("import sys,zipfile,json; z=zipfile.ZipFile(sys.argv[1]); data=json.loads(z.read('private.json')); [(r.update(value='ctrl-enter') if r['kind']=='setting' and r['id']=='enter' else r.update(value='blue') if r['kind']=='setting' and r['id']=='theme' else None) for r in data['records']]; out=zipfile.ZipFile(sys.argv[2],'w'); [out.writestr(n,json.dumps(data,ensure_ascii=False).encode('utf8') if n=='private.json' else z.read(n)) for n in z.namelist()]; out.close()", [personal, configured]);
     await invoke('pause_private_sync');
     const importView = await settings('导入数据'); await importView.evaluate(file => { window.__transferQA.openPath = file; }, configured);
-    await importView.getByRole('button', { name: '选择文件', exact: true }).click(); await importView.getByLabel('恢复备份设置').check();
+    await importView.getByRole('button', { name: '选择文件', exact: true }).click(); await importView.getByLabel('恢复个人设置').check();
     await importView.getByRole('button', { name: '预览导入', exact: true }).click(); await importView.getByRole('dialog').waitFor();
     await importView.screenshot({ path: path.join(evidence, 'private-import-preview.png') });
     await importView.getByRole('button', { name: '确认导入', exact: true }).click(); await importView.getByText('导入完成', { exact: true }).waitFor(); await importView.getByRole('button', { name: '关闭窗口', exact: true }).click();
@@ -183,7 +195,7 @@ try {
     const data = await metadata(accountPackage); assert.equal(data.settingsScope, 'portable'); assert.ok(data.library.phrases.some(p => p.title === '本机待同步稿')); assert.equal(data.library.settings.enter, 'ctrl-enter'); assert.equal(data.library.settings.startup, undefined); assert.equal(data.library.settings.dock, undefined); assert.deepEqual(data.library.files, []);
     assert.ok(!(await api('GET', 'me/private/snapshot')).records.some(r => r.value?.title === '本机待同步稿'));
   });
-  await check('共享库导入忽略私人项目，复用事务追加且实际附件在线补齐导出', async () => {
+  await check('共享话术导入忽略私人项目，复用事务追加且实际附件在线补齐导出', async () => {
     await invoke('team_refresh'); await until(() => invoke('get_team_view', { teamId: team }));
     const scope = await target(team), preview = await transfer('preview_import', { path: full }, scope); assert.equal(preview.files, 0); assert.equal(preview.commonPhrases, 0); assert.equal(preview.recycled, 0); assert.ok(preview.notes.some(n => n.startsWith('不导入：')));
     const result = await transfer('confirm_import', { previewId: preview.id }, scope); assert.equal(result.state, 'completed');
@@ -200,7 +212,7 @@ try {
     fault.blockSnapshots = false;
     const checked = await transfer('check_import_result', { previewId: preview.id }, await target(team)); assert.equal(checked.state, 'completed'); assert.equal(publishCount, writes + 1); assert.equal((await api('GET', `teams/${team}/snapshot`)).phrases.length, 3);
   });
-  await check('共享库并发更新保留原预览编号，重新核对后追加不覆盖新内容', async () => {
+  await check('共享话术并发更新保留原预览编号，重新核对后追加不覆盖新内容', async () => {
     await until(() => invoke('get_team_view', { teamId: team }), v => v.phrases.length === 3);
     const scope = await target(team), preview = await transfer('preview_import', { path: pack }, scope); const raw = await api('GET', `teams/${team}/snapshot`);
     raw.phrases.push({ id: randomUUID(), rootId: raw.categories[0].id, groupId: null, title: '期间新增', color: '', background: '', position: 99, revision: 0, segments: [{ blocks: [{ kind: 'text', text: '并发新增' }] }] });
@@ -209,7 +221,7 @@ try {
     const renewed = await transfer('refresh_import_preview', { previewId: preview.id }, await target(team)); assert.equal(renewed.id, preview.id); await transfer('confirm_import', { previewId: preview.id }, renewed.target);
     const current = await api('GET', `teams/${team}/snapshot`); assert.equal(current.phrases.length, 5); assert.ok(current.phrases.some(p => p.title === '期间新增'));
   });
-  await check('离线重启可导出完整共享库缓存，缺素材则保留原成品', async () => {
+  await check('离线重启可导出完整共享话术缓存，缺素材则保留原成品', async () => {
     await transfer('export_data', { path: groupPackage, kind: 'backup', categoryId: null }, await target(team)); fault.offline = true; for (const s of sockets) s.destroy(); await assert.rejects(invoke('team_refresh'));
     await startClient('account'); const offline = await invoke('get_team_view', { teamId: team }); assert.equal(offline.offline, true);
     const output = path.join(evidence, 'offline.zip'); await transfer('export_data', { path: output, kind: 'backup', categoryId: null }, await target(team)); assert.equal((await metadata(output)).library.phrases.length, 5);
@@ -217,7 +229,7 @@ try {
     const old = await fs.readFile(output); await assert.rejects(transfer('export_data', { path: output, kind: 'backup', categoryId: null }, await target(team)), /未缓存/); assert.deepEqual(await fs.readFile(output), old);
     fault.offline = false; await invoke('team_refresh'); await transfer('export_data', { path: output, kind: 'backup', categoryId: null }, await target(team));
   });
-  await check('退出期间旧下载取消，取消导出不覆盖旧文件，共享库缓存及批次不能复活', async () => {
+  await check('退出期间旧下载取消，取消导出不覆盖旧文件，共享话术缓存及批次不能复活', async () => {
     const current = await invoke('get_team_view', { teamId: team }); const file = current.phrases.flatMap(p => p.segments).flatMap(s => s.blocks).find(b => b.kind === 'file'); await fs.unlink(file.path);
     const output = path.join(evidence, 'cancel.zip'); await fs.writeFile(output, 'existing-backup');
     fault.delayAsset = true; delayedAsset = false;
@@ -237,7 +249,7 @@ try {
     await invoke('team_login', { server: clientBase, username: 'qa-admin', password }); const current = await target(); assert.equal(current.libraryId, accountLibrary); const renewed = await transfer('get_import_pending', {}, current); assert.equal(renewed.id, preview.id);
     await assert.rejects(transfer('confirm_import', { previewId: preview.id }, scope), /会话/); await transfer('discard_import', { previewId: preview.id }, current);
   });
-  await check('查看者只读导出，降权、快速删除共享库恢复和撤权使旧导入失效', async () => {
+  await check('查看者只读导出，降权、快速删除共享话术恢复和撤权使旧导入失效', async () => {
     await invoke('team_login', { server: clientBase, username: '0002', password: memberPassword }); await invoke('team_refresh'); await until(() => invoke('get_team_view', { teamId: team }));
     const scope = await target(team), preview = await transfer('preview_import', { path: pack }, scope); await members('member'); await invoke('team_refresh'); await assert.rejects(transfer('confirm_import', { previewId: preview.id }, scope), /权限/);
     await transfer('export_data', { path: path.join(evidence, 'member.zip'), kind: 'backup', categoryId: null }, await target(team)); await assert.rejects(transfer('preview_import', { path: pack }, await target(team)), /权限/);
@@ -248,7 +260,7 @@ try {
     await members(null); await invoke('team_refresh'); await assert.rejects(transfer('confirm_import', { previewId: next.id }, next.target));
     await assert.rejects(fs.access(path.join(evidence, device, 'transfer', next.id))); assert.equal(await fs.readFile(originalFile, 'utf8'), 'actual-test-attachment');
   });
-  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ clientVersion: '0.2.0', checks, limits: ['使用真实 Windows WebView2、Rust IPC、SQLite、HTTP/SSE和隔离Hub', '系统选择文件对话框仅替换选择结果；其余业务接口真实执行', '断线和回执丢失由回环代理构造，不能替代真实局域网与代理部署', '未触发企业微信发送、剪贴板、实体键鼠、DPI及安装升级验收'] }, null, 2));
+  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ clientVersion: await invoke('plugin:app|version'), checks, limits: ['使用真实 Windows WebView2、Rust IPC、SQLite、HTTP/SSE和隔离Hub', '系统选择文件对话框仅替换选择结果；其余业务接口真实执行', '断线和回执丢失由回环代理构造，不能替代真实局域网与代理部署', '未触发企业微信发送、剪贴板、实体键鼠、DPI及安装升级验收'] }, null, 2));
   console.log('证据：' + evidence);
 } catch (error) {
   await page?.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});

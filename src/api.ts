@@ -35,29 +35,35 @@ export function useLibrary() {
 }
 
 /** 独立编辑窗口不会清空或覆盖主窗口记录的外部目标。一个用途保持一个窗口。 */
-export async function openWindow(route: 'editor' | 'file-editor' | 'settings' | 'user-management' | 'team-management' | 'company-files' | 'common-editor' | 'common-sort' | 'category-sort' | 'file-sort' | 'recycle-bin' | 'delete-confirm', id = '', afterId = '', tab = '', categoryId = '', groupId = '', teamId = '') {
+export async function openWindow(route: 'editor' | 'file-editor' | 'settings' | 'user-management' | 'team-management' | 'company-files' | 'usage-guide' | 'common-editor' | 'common-sort' | 'category-sort' | 'file-sort' | 'recycle-bin' | 'delete-confirm', id = '', afterId = '', tab = '', categoryId = '', groupId = '', teamId = '') {
+  // 查询现有窗口会异步让出执行；固定入口的个人库，避免切号后混用新库与旧分类。
+  const libraryId = activeLibraryId;
+  await call('ensure_update_idle');
   // 旧用户名入口兼容映射，两个窗口分别复用，不互相覆盖成员草稿。
   if (route === 'team-management' && tab === 'users') route = 'user-management';
   const existing = await WebviewWindow.getByLabel(route);
   if (existing) {
+    if (route === 'usage-guide') await existing.unminimize();
     if (route === 'editor' && tab.startsWith('cloud:')) { await existing.show(); await existing.setFocus(); throw new Error('请先完成或关闭当前话术编辑窗口，再生成新话术。'); }
     // 设置页复用现有窗口时也更新入口上下文，尤其是同名分类必须按所点击的ID预选。
     if (route === 'settings') await emitTo(route, 'settings-navigation', { tab, categoryId, teamId });
     if (route === 'team-management') await emitTo(route, 'team-management-navigation', { tab, teamId });
+    if (route === 'recycle-bin') await emitTo(route, 'recycle-navigation', { teamId });
     if (route === 'delete-confirm') await emitTo(route, 'deletion-navigation', { id, kind: tab });
     await existing.show(); await existing.setFocus(); return;
   }
-  const query = new URLSearchParams({ id, afterId, tab, categoryId, groupId, teamId, libraryId: activeLibraryId });
+  const query = new URLSearchParams({ id, afterId, tab, categoryId, groupId, teamId, libraryId });
   const sort = route === 'common-sort' || route === 'category-sort' || route === 'file-sort';
   const deleting = route === 'delete-confirm', recycling = route === 'recycle-bin', managing = route === 'team-management' || route === 'user-management';
   const window = new WebviewWindow(route, {
-    url: `index.html#${route}?${query}`, title: managing ? `${route === 'user-management' ? '账号管理' : '共享库管理'} · 闪语` : deleting ? '删除确认 · 闪语' : recycling ? '回收站 · 闪语' : route === 'file-sort' ? '文件快速排序 · 闪语' : route === 'editor' ? '话术编辑 · 闪语' : route === 'settings' ? '设置 · 闪语' : route === 'common-editor' ? '常用短语 · 闪语' : route === 'category-sort' ? '分类排序 · 闪语' : route === 'common-sort' ? '常用短语排序 · 闪语' : '文件关联 · 闪语',
+    url: `index.html#${route}?${query}`, title: managing ? `${route === 'user-management' ? '账号管理' : '共享话术管理'} · 闪语` : deleting ? '删除确认 · 闪语' : recycling ? '回收站 · 闪语' : route === 'file-sort' ? '文件快速排序 · 闪语' : route === 'editor' ? '话术编辑 · 闪语' : route === 'settings' ? '设置 · 闪语' : route === 'common-editor' ? '常用短语 · 闪语' : route === 'category-sort' ? '分类排序 · 闪语' : route === 'common-sort' ? '常用短语排序 · 闪语' : '文件关联 · 闪语',
     width: route === 'user-management' ? 620 : managing ? 680 : deleting ? 384 : recycling ? 830 : route === 'file-editor' ? 510 : route === 'common-editor' ? 380 : sort ? 550 : 594, height: route === 'user-management' ? 620 : managing ? 600 : deleting ? 256 : recycling ? 500 : route === 'file-editor' ? 250 : route === 'common-editor' ? 160 : sort ? 580 : 620,
     minWidth: route === 'user-management' ? 480 : managing ? 560 : deleting ? 384 : recycling ? 640 : route === 'file-editor' ? 450 : route === 'common-editor' ? 360 : sort ? 380 : 480, minHeight: managing ? 440 : deleting ? 256 : recycling ? 400 : route === 'file-editor' ? 230 : route === 'common-editor' ? 160 : sort ? 350 : 480,
     decorations: false, resizable: route !== 'common-editor' && !deleting, center: true,
     // 在 WebView2 层关闭所有动态窗口的“保存的信息”建议，autocomplete="off" 不能可靠禁止它。
     generalAutofillEnabled: false,
     ...(route === 'company-files' ? { title: '云文件管理中心 · 闪语', width: 1000, height: 650, minWidth: 760, minHeight: 480 } : {}),
+    ...(route === 'usage-guide' ? { title: '使用指引 · 闪语', width: 760, height: 620, minWidth: 620, minHeight: 440 } : {}),
   });
   await new Promise<void>((resolve, reject) => {
     void window.once('tauri://created', () => resolve());
@@ -66,17 +72,17 @@ export async function openWindow(route: 'editor' | 'file-editor' | 'settings' | 
 }
 export const closeWindow = () => getCurrentWindow().close();
 
-/** Rust 负责网络合并；此钩子只读 IPC，并让切换账号/共享库前发出的旧视图请求失效。 */
+/** Rust 负责网络合并；此钩子只读 IPC，并让切换账号/共享话术前发出的旧视图请求失效。 */
 export function useTeams() {
   const [status, setStatus] = useState<TeamStatus>({ server: '', username: '', user: null, teams: [], offline: false });
-  const [version, setVersion] = useState(0);
+  const [version, setVersion] = useState(0); const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     let disposed = false, notified = false; let unlisten: (() => void) | undefined;
-    void listen<TeamStatus>('teams-changed', e => { notified = true; if (!disposed) { setStatus(e.payload); setVersion(v => v + 1); } }).then(fn => { if (disposed) fn(); else unlisten = fn; }).catch(() => {});
-    void call<TeamStatus>('get_team_status').then(s => { if (!disposed && !notified) setStatus(s); }).catch(() => {});
+    void listen<TeamStatus>('teams-changed', e => { notified = true; if (!disposed) { setStatus(e.payload); setLoaded(true); setVersion(v => v + 1); } }).then(fn => { if (disposed) fn(); else unlisten = fn; }).catch(() => {});
+    void call<TeamStatus>('get_team_status').then(s => { if (!disposed && !notified) setStatus(s); }).catch(() => {}).finally(() => { if (!disposed) setLoaded(true); });
     return () => { disposed = true; unlisten?.(); };
   }, []);
-  return { status, version };
+  return { status, version, loaded };
 }
 
 export function useTeamView(teamId: string, status: TeamStatus, version: number) {

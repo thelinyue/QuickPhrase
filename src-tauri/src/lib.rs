@@ -1,5 +1,6 @@
 mod backup;
 mod company_commands;
+mod data_directory;
 mod delivery;
 mod file_library;
 mod model;
@@ -8,11 +9,16 @@ mod private_commands;
 mod private_local;
 mod private_sync;
 mod recycle;
+mod search_history;
+mod startup;
 mod store;
 mod team;
 mod team_commands;
 mod team_credentials;
 mod transfer;
+mod update_activity;
+mod update_protocol;
+mod updater;
 
 use delivery::{DeliveryReport, Mode};
 use model::*;
@@ -29,6 +35,8 @@ use tauri::{Emitter, Manager, State};
 /// 应用状态按责任分开：数据库串行事务、待确认导入、发送锁和 Windows 服务。
 /// 编辑窗口只提交完整话术，不直接修改数据库或驱动外部窗口。
 struct AppState {
+    updater: updater::Updater,
+    data_directory: Mutex<data_directory::DataDirectory>,
     store: Mutex<Store>,
     device_store: Mutex<Store>,
     private_sync: Arc<private_sync::PrivateSync>,
@@ -526,13 +534,15 @@ fn delete_item(
     changed(&app, &state)
 }
 #[tauri::command]
-fn get_recycle_bin(state: State<AppState>, query: Option<String>) -> Result<Vec<RecycleItem>> {
-    state
-        .store
-        .lock()
-        .unwrap()
+fn get_recycle_bin(
+    state: State<AppState>,
+    query: Option<String>,
+    library_id: Option<String>,
+) -> Result<Vec<RecycleItem>> {
+    private_commands::active_store(&state, library_id.as_deref())?
         .recycle_items(query.as_deref().unwrap_or(""))
 }
+
 #[tauri::command]
 fn delete_local_content(
     app: tauri::AppHandle,
@@ -559,9 +569,14 @@ fn delete_local_content(
     Ok(count)
 }
 #[tauri::command]
-fn get_recycle_detail(state: State<AppState>, id: String) -> Result<RecycleRecord> {
-    state.store.lock().unwrap().recycle_record(&id)
+fn get_recycle_detail(
+    state: State<AppState>,
+    id: String,
+    library_id: Option<String>,
+) -> Result<RecycleRecord> {
+    private_commands::active_store(&state, library_id.as_deref())?.recycle_record(&id)
 }
+
 #[tauri::command]
 fn restore_recycled(
     app: tauri::AppHandle,
@@ -590,10 +605,20 @@ fn empty_recycle(
     app: tauri::AppHandle,
     state: State<AppState>,
     library_id: Option<String>,
-) -> Result<()> {
-    private_commands::active_store(&state, library_id.as_deref())?.empty_recycle()?;
-    changed(&app, &state)
+    ids: Option<Vec<String>>,
+) -> Result<usize> {
+    let count = {
+        let mut store = private_commands::active_store(&state, library_id.as_deref())?;
+        let ids = match ids {
+            Some(ids) => ids,
+            None => store.recycle_records()?.into_iter().map(|r| r.id).collect(),
+        };
+        store.clear_recycle_records(&ids)?
+    };
+    changed(&app, &state)?;
+    Ok(count)
 }
+
 #[tauri::command]
 fn rename_linked_file(
     app: tauri::AppHandle,
@@ -966,11 +991,10 @@ fn clear_cache(state: State<AppState>, kind: String) -> Result<()> {
 }
 #[tauri::command]
 fn open_directory(state: State<AppState>, kind: String) -> Result<()> {
-    let dir = state.store.lock().unwrap().dir.clone();
     let path = if kind == "cache" {
-        dir.join("thumbnails")
+        state.store.lock().unwrap().dir.join("thumbnails")
     } else {
-        dir
+        state.data_directory.lock().unwrap().root()
     };
     std::process::Command::new("explorer.exe")
         .arg(path)
@@ -979,10 +1003,66 @@ fn open_directory(state: State<AppState>, kind: String) -> Result<()> {
     Ok(())
 }
 #[tauri::command]
+fn get_data_directory(state: State<AppState>) -> data_directory::DirectoryInfo {
+    state.data_directory.lock().unwrap().info()
+}
+/// 更换只保存离线迁移请求；未保存的窗口草稿及主动系统操作完成后才允许重启。
+#[tauri::command(async)]
+fn change_data_directory(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    path: String,
+) -> Result<()> {
+    let _activity = update_activity::Activity::enter()?;
+    if app.webview_windows().keys().any(|label| {
+        [
+            "editor",
+            "file-editor",
+            "common-editor",
+            "common-sort",
+            "category-sort",
+            "file-sort",
+            "team-management",
+            "user-management",
+            "delete-confirm",
+        ]
+        .contains(&label.as_str())
+    }) {
+        return Err("请先保存并关闭编辑、排序或管理窗口。".into());
+    }
+    if state.delivery.busy.load(Ordering::Acquire)
+        || state.transfer.is_active()
+        || state.teams.has_active_company_transfers()
+    {
+        return Err("请等待发送、导入导出和文件传输完成。".into());
+    }
+    state
+        .data_directory
+        .lock()
+        .unwrap()
+        .prepare(Path::new(&path))?;
+    app.request_restart();
+    Ok(())
+}
+#[tauri::command]
 fn window_action(app: tauri::AppHandle, state: State<AppState>, action: String) -> Result<()> {
     match action.as_str() {
         "hide" => state.native.hide(),
         "show" => state.native.show("show"),
+        "start-using" => {
+            if let Some(guide) = app.get_webview_window("usage-guide") {
+                let native = state.native.clone();
+                // 关闭前台窗口会触发 Windows 焦点还原；销毁后再唤起，避免还原覆盖主窗口激活。
+                guide.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::Destroyed) {
+                        native.show("show");
+                    }
+                });
+                guide.close().map_err(|_| "使用指引暂时无法关闭。")?;
+            } else {
+                state.native.show("show");
+            }
+        }
         "minimize" => {
             if state.native.settings.read().unwrap().tray {
                 state.native.hide();
@@ -991,6 +1071,7 @@ fn window_action(app: tauri::AppHandle, state: State<AppState>, action: String) 
             }
         }
         "exit" => {
+            state.teams.stop_company_uploads();
             state.native.running.store(false, Ordering::Release);
             app.exit(0);
         }
@@ -1056,21 +1137,43 @@ pub fn run() {
             eprintln!("Windows 应用标识设置失败：{error}");
         }
     }
+    let launch = Arc::new(startup::LaunchIntent::new(
+        !std::env::args().any(|arg| arg == "--autostart"),
+    ));
+    let duplicate_launch = launch.clone();
+    let page_launch = launch.clone();
     tauri::Builder::default()
-        // 重复启动保持现有跟随／手动隐藏状态，只有托盘和快捷键主动唤起窗口。
-        .plugin(tauri_plugin_single_instance::init(|_, _, _| {}))
+        .manage(launch.clone())
+        // 重复手动启动复用现有窗口；自启不能解除用户的手动隐藏。
+        .plugin(tauri_plugin_single_instance::init(move |app, args, _| {
+            if !args.iter().any(|arg| arg == "--autostart") {
+                duplicate_launch.request_show();
+                startup::dispatch(app, &duplicate_launch);
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
-        .on_page_load(|_webview, _| {
+        .on_page_load(move |_webview, payload| {
             #[cfg(windows)]
             native::square_window_corners(&_webview.window());
+            if _webview.label() == "main"
+                && payload.event() == tauri::webview::PageLoadEvent::Finished
+            {
+                page_launch.page_ready();
+                startup::dispatch(_webview.app_handle(), &page_launch);
+            }
         })
-        .setup(|app| {
+        .setup(move |app| {
             let dir = app.path().app_local_data_dir()?;
             #[cfg(debug_assertions)]
             let dir = std::env::var_os("SHANYU_TEST_DATA_DIR")
                 .map(std::path::PathBuf::from)
                 .unwrap_or(dir);
+            let mut data_directory =
+                data_directory::DataDirectory::startup(&dir).map_err(std::io::Error::other)?;
+            let dir = data_directory.root();
+            let fresh = !dir.join("shanyu.sqlite3").exists();
             let device_store = Store::open(&dir).map_err(std::io::Error::other)?;
+            startup::initialize_guide(&device_store, fresh).map_err(std::io::Error::other)?;
             let private_sync = private_sync::PrivateSync::new(&dir);
             let store = private_sync
                 .startup(&device_store)
@@ -1104,7 +1207,14 @@ pub fn run() {
                 )
                 .map_err(std::io::Error::other)?;
             let teams = team::TeamClient::new(&dir).map_err(std::io::Error::other)?;
+            data_directory
+                .finish_cleanup()
+                .map_err(std::io::Error::other)?;
+            let show_directory_result = data_directory.show_result;
+            let updater = updater::Updater::new(&device_store);
             app.manage(AppState {
+                updater,
+                data_directory: Mutex::new(data_directory),
                 store: Mutex::new(store),
                 device_store: Mutex::new(device_store),
                 private_sync: private_sync.clone(),
@@ -1114,6 +1224,7 @@ pub fn run() {
                 teams,
                 sequence_generation: Mutex::new(0),
             });
+            updater::start_background(app.handle().clone());
             tauri::WebviewWindowBuilder::new(
                 app,
                 "common-dock",
@@ -1201,6 +1312,7 @@ pub fn run() {
                         "search" => state.native.show("search"),
                         "settings" => state.native.show("settings"),
                         "exit" => {
+                            state.teams.stop_company_uploads();
                             state.native.running.store(false, Ordering::Release);
                             app.exit(0);
                         }
@@ -1228,9 +1340,31 @@ pub fn run() {
                 window.set_resizable(settings.free_resize)?;
                 // 主窗口为窄侧栏，配置中禁用最大化，避免标题栏双击与吸附定位分离外框和 WebView 尺寸。
                 // 保留独立编辑／排序窗口的最大化能力，以及主窗口的拖动、拉宽和最小化。
-                // 普通启动和开机启动均由跟随线程决定可见性，无目标时常驻托盘。
+                // 自启只跟随；手动启动通过同一原生队列恢复并显示，无目标时独立打开。
             }
+            launch.services_ready();
+            startup::dispatch(app.handle(), &launch);
             log::info!("闪语已启动，用户数据目录：{}", dir.display());
+            if show_directory_result {
+                let window = tauri::WebviewWindowBuilder::new(
+                    app,
+                    "settings",
+                    tauri::WebviewUrl::App("index.html#settings?tab=%E5%85%B3%E4%BA%8E".into()),
+                )
+                .title("设置 · 闪语")
+                .inner_size(594.0, 620.0)
+                .min_inner_size(480.0, 480.0)
+                .decorations(false)
+                .center()
+                .general_autofill_enabled(false);
+                #[cfg(debug_assertions)]
+                let window = if std::env::var_os("SHANYU_TEST_DATA_DIR").is_some() {
+                    window.visible(false).focused(false)
+                } else {
+                    window
+                };
+                window.build()?;
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -1272,112 +1406,138 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![
-            company_commands::get_company_files,
-            company_commands::prepare_company_upload,
-            company_commands::upload_company_file,
-            company_commands::query_company_upload,
-            company_commands::get_company_transfers,
-            company_commands::clear_company_transfers,
-            company_commands::download_company_file,
-            company_commands::cancel_company_transfer,
-            company_commands::manage_company_file,
-            company_commands::save_company_private_phrase,
-            company_commands::save_company_file_as,
-            private_commands::get_private_status,
-            private_commands::get_private_settings,
-            private_commands::preview_private_sync,
-            private_commands::confirm_private_sync,
-            private_commands::cancel_private_sync_preview,
-            private_commands::pause_private_sync,
-            private_commands::use_local_private_library,
-            private_commands::get_private_conflicts,
-            private_commands::resolve_private_conflict,
-            private_commands::apply_private_settings,
-            private_commands::download_private_materials,
-            private_commands::backup_private_server,
-            team_commands::get_team_status,
-            team_commands::get_team_view,
-            team_commands::team_login,
-            team_commands::team_logout,
-            team_commands::team_refresh,
-            team_commands::team_change_password,
-            team_commands::save_team_phrase,
-            team_commands::save_team_category,
-            team_commands::delete_team_content,
-            team_commands::get_team_recycle,
-            team_commands::restore_team_record,
-            team_commands::purge_team_record,
-            team_commands::prepare_team_phrase,
-            team_commands::preload_team_images,
-            team_commands::copy_team_to_private,
-            team_commands::publish_private_to_team,
-            team_commands::team_admin,
-            team_commands::backup_team_server,
-            team_commands::search_scoped_content,
-            get_library,
-            search_content,
-            save_phrase,
-            validate_phrase_shortcut,
-            set_shortcut_input,
-            sync_sequence_map,
-            get_shortcut_candidates,
-            select_shortcut_candidate,
-            submit_shortcut_candidate,
-            cancel_shortcut_candidates,
-            resize_shortcut_candidates,
-            set_common_dock_height,
-            show_phrase_preview,
-            get_phrase_preview,
-            resize_phrase_preview,
-            hide_phrase_preview,
-            save_category,
-            save_common_phrase,
-            reorder_common_phrases,
-            delete_category,
-            move_copy_category,
-            reorder_categories,
-            delete_item,
-            delete_local_content,
-            get_recycle_bin,
-            get_recycle_detail,
-            restore_recycled,
-            remove_recycled,
-            empty_recycle,
-            rename_linked_file,
-            move_linked_files,
-            remove_linked_files,
-            reorder_files,
-            copy_linked_files,
-            open_linked_file,
-            move_copy_phrase,
-            sort_item,
-            add_files,
-            relink_file,
-            import_images,
-            import_pasted_images,
-            get_file_icon,
-            get_target,
-            native_status,
-            deliver_content,
-            cancel_delivery,
-            copy_phrase_text,
-            save_settings,
-            transfer::preview_import,
-            transfer::confirm_import,
-            transfer::export_data,
-            transfer::cancel_data_transfer,
-            transfer::get_import_pending,
-            transfer::discard_import,
-            transfer::check_import_result,
-            transfer::refresh_import_preview,
-            export_template,
-            cache_info,
-            clear_cache,
-            open_directory,
-            window_action,
-            report_error
-        ])
+        .invoke_handler(|invoke| {
+            #[cfg(debug_assertions)]
+            if invoke.message.command() == "qa_load_update" {
+                let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
+                    tauri::generate_handler![updater::qa_load_update];
+                return handler(invoke);
+            }
+            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+                updater::get_update_status,
+                updater::save_update_config,
+                updater::check_update,
+                updater::download_update,
+                updater::cancel_update,
+                updater::install_update,
+                updater::ensure_update_idle,
+                search_history::get_search_history,
+                search_history::record_search_history,
+                search_history::clear_search_history,
+                startup::get_usage_guide_state,
+                startup::mark_usage_guide_shown,
+                company_commands::get_company_files,
+                company_commands::prepare_company_upload,
+                company_commands::enqueue_company_uploads,
+                company_commands::upload_company_file,
+                company_commands::query_company_upload,
+                company_commands::get_company_transfers,
+                company_commands::clear_company_transfers,
+                company_commands::download_company_file,
+                company_commands::cancel_company_transfer,
+                company_commands::manage_company_file,
+                company_commands::save_company_private_phrase,
+                company_commands::save_company_file_as,
+                private_commands::get_private_status,
+                private_commands::get_private_settings,
+                private_commands::preview_private_sync,
+                private_commands::confirm_private_sync,
+                private_commands::cancel_private_sync_preview,
+                private_commands::pause_private_sync,
+                private_commands::get_private_conflicts,
+                private_commands::resolve_private_conflict,
+                private_commands::apply_private_settings,
+                private_commands::download_private_materials,
+                private_commands::backup_private_server,
+                team_commands::get_team_status,
+                team_commands::get_team_view,
+                team_commands::team_login,
+                team_commands::team_logout,
+                team_commands::team_refresh,
+                team_commands::team_change_password,
+                team_commands::save_team_phrase,
+                team_commands::save_team_category,
+                team_commands::delete_team_content,
+                team_commands::get_team_recycle,
+                team_commands::restore_team_record,
+                team_commands::purge_team_record,
+                team_commands::empty_team_recycle,
+                team_commands::prepare_team_phrase,
+                team_commands::preload_team_images,
+                team_commands::copy_team_to_private,
+                team_commands::publish_private_to_team,
+                team_commands::team_admin,
+                team_commands::backup_team_server,
+                team_commands::search_scoped_content,
+                get_library,
+                search_content,
+                save_phrase,
+                validate_phrase_shortcut,
+                set_shortcut_input,
+                sync_sequence_map,
+                get_shortcut_candidates,
+                select_shortcut_candidate,
+                submit_shortcut_candidate,
+                cancel_shortcut_candidates,
+                resize_shortcut_candidates,
+                set_common_dock_height,
+                show_phrase_preview,
+                get_phrase_preview,
+                resize_phrase_preview,
+                hide_phrase_preview,
+                save_category,
+                save_common_phrase,
+                reorder_common_phrases,
+                delete_category,
+                move_copy_category,
+                reorder_categories,
+                delete_item,
+                delete_local_content,
+                get_recycle_bin,
+                get_recycle_detail,
+                restore_recycled,
+                remove_recycled,
+                empty_recycle,
+                rename_linked_file,
+                move_linked_files,
+                remove_linked_files,
+                reorder_files,
+                copy_linked_files,
+                open_linked_file,
+                move_copy_phrase,
+                sort_item,
+                add_files,
+                relink_file,
+                import_images,
+                import_pasted_images,
+                get_file_icon,
+                get_target,
+                native_status,
+                deliver_content,
+                cancel_delivery,
+                copy_phrase_text,
+                save_settings,
+                transfer::preview_import,
+                transfer::has_legacy_private_content,
+                transfer::preview_legacy_private_content,
+                transfer::confirm_import,
+                transfer::export_data,
+                transfer::cancel_data_transfer,
+                transfer::get_import_pending,
+                transfer::discard_import,
+                transfer::check_import_result,
+                transfer::refresh_import_preview,
+                export_template,
+                cache_info,
+                clear_cache,
+                open_directory,
+                get_data_directory,
+                change_data_directory,
+                window_action,
+                report_error
+            ];
+            handler(invoke)
+        })
         .run(context)
         .unwrap_or_else(|error| {
             native::startup_error(&format!(

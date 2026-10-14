@@ -26,6 +26,7 @@ public static class ShanyuHoverDockHost {
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint command);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint process);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(uint process);
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint message, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr h);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int width, int height, uint flags);
@@ -88,6 +89,8 @@ public static class ShanyuHoverDockHost {
                 nonce = Number(command, "nonce", 0); var action = (string)command["command"]; var handle = new IntPtr(Number(command, "handle", form.Handle.ToInt64()));
                 if (action == "move") SetWindowPos(handle, IntPtr.Zero, (int)Number(command, "x", 0), (int)Number(command, "y", 0), (int)Number(command, "width", 330), (int)Number(command, "height", 550), 0x0014);
                 if (action == "focus") SetForegroundWindow(handle);
+                // 模拟用户从前台启动程序时由 Shell 授予的激活权限，仅指定隔离客户端进程。
+                if (action == "allow-foreground") AllowSetForegroundWindow((uint)Number(command, "processId", 0));
                 if (action == "focus-list") { form.ActiveControl = null; SetFocus(form.Handle); }
                 if (action == "minimize") ShowWindow(handle, 6);
                 if (action == "maximize") ShowWindow(handle, 3);

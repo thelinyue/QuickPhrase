@@ -556,7 +556,7 @@ impl Store {
             .map_err(db_error)?;
         tx.commit().map_err(db_error)
     }
-    /// 分类复制/移动仅在我的话术库内进行。同名二级分类合并，内容追加到目标末尾。
+    /// 分类复制/移动仅在个人话术库内进行。同名二级分类合并，内容追加到目标末尾。
     /// 目标有多个同名分组时选择列表中最靠前的一组，不改动其余同名分组。
     /// 移动保留话术主键和快捷键，复制生成新主键并清空快捷键；整批失败时全部回滚。
     /// 图片仍引用用户素材目录，外部附件仅复制关联，既不删除也不改写源文件。
@@ -733,7 +733,7 @@ impl Store {
         }
         tx.commit().map_err(db_error)
     }
-    /// 缓存管理仅删除已确认的我的话术或常用短语，不删除分类、素材、文件关联及旧回收记录。
+    /// 缓存管理仅删除已确认的个人话术或常用短语，不删除分类、素材、文件关联及旧回收记录。
     /// 以当前完整主键集合校验确认范围，跨窗口增删后要求重新确认；回收与删除在同一事务内完成。
     pub fn delete_local_content(
         &mut self,
@@ -744,7 +744,7 @@ impl Store {
         let table = match kind {
             "phrase" => "phrases",
             "common" => "common_phrases",
-            _ => return Err("只能删除我的话术或常用短语。".into()),
+            _ => return Err("只能删除个人话术或常用短语。".into()),
         };
         let records = if kind == "phrase" && recycle {
             let library = self.library()?;
@@ -942,7 +942,7 @@ impl Store {
         restore_settings: bool,
         recycled: &[RecycleRecord],
     ) -> Result<()> {
-        self.import_inner(data, merge, restore_settings, recycled, None)
+        self.import_inner(data, merge, restore_settings, recycled, None, false)
     }
     /// 已预览的导入使用固定副本编号；批次回执和正文、待同步键同事务保存。
     pub fn import_prepared(
@@ -952,8 +952,16 @@ impl Store {
         restore_settings: bool,
         recycled: &[RecycleRecord],
         batch: &str,
+        device_settings_only: bool,
     ) -> Result<()> {
-        self.import_inner(data, merge, restore_settings, recycled, Some(batch))
+        self.import_inner(
+            data,
+            merge,
+            restore_settings,
+            recycled,
+            Some(batch),
+            device_settings_only,
+        )
     }
     pub fn imported(&self, batch: &str) -> Result<bool> {
         self.conn
@@ -971,6 +979,7 @@ impl Store {
         restore_settings: bool,
         recycled: &[RecycleRecord],
         batch: Option<&str>,
+        device_settings_only: bool,
     ) -> Result<()> {
         if let Some(batch) = batch {
             if self.imported(batch)? {
@@ -1124,7 +1133,10 @@ impl Store {
         }
         if restore_settings {
             data.settings.validate()?;
-            crate::private_local::save_setting_changes(&tx, &previous_desired, &data.settings)?;
+            // 设备部分不触碰个人设置的待确认值，否则恢复设备设置可能取消尚未应用的发送偏好。
+            if !device_settings_only {
+                crate::private_local::save_setting_changes(&tx, &previous_desired, &data.settings)?;
+            }
             let mut applied = serde_json::to_value(&data.settings).map_err(db_error)?;
             if batch.is_some() {
                 let old = serde_json::to_value(&previous_settings).map_err(db_error)?;

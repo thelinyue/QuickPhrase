@@ -1,4 +1,4 @@
-//! Rust 独占共享库网络、授权、离线缓存和素材下载。UI 从不持有会话令牌。
+//! Rust 独占共享话术网络、授权、离线缓存和素材下载。UI 从不持有会话令牌。
 //! 每组仅一个刷新任务；epoch 和 slot generation 使退出/移库前的旧响应永远失效。
 use crate::{model as local, team_credentials, AppState};
 use futures_util::StreamExt;
@@ -11,7 +11,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{atomic::Ordering, Arc, Mutex},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Emitter, Manager};
 use tokio::{
@@ -48,7 +48,15 @@ struct Context {
     lifecycle_version: u64,
     company_asset_ids: Vec<String>,
 }
+/// 每个共享话术独立保存最后一次成功核对时间；随账号缓存一同清理，不能跨授权复用。
+#[derive(Serialize, Deserialize)]
+struct SyncTime {
+    version: u64,
+    lifecycle_version: u64,
+    timestamp: u64,
+}
 struct Slot {
+    last_successful_sync_at: Option<u64>,
     snapshot: Option<wire::Snapshot>,
     wanted: u64,
     refreshing: bool,
@@ -70,6 +78,7 @@ pub struct Status {
     pub username: String,
     pub user: Option<wire::User>,
     pub teams: Vec<wire::Team>,
+    pub team_sync_times: HashMap<String, u64>,
     pub offline: bool,
     pub private_sync: bool,
     pub company_files: bool,
@@ -123,6 +132,8 @@ pub struct TeamClient {
     auth_refresh: AsyncMutex<()>,
     login_lock: AsyncMutex<()>,
     downloads: Semaphore,
+    /// 云文件准备与上传共用两个名额，避免多选时预先复制整批素材；下载许可保持独立。
+    uploads: Semaphore,
     download_locks: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     company_transfers: Mutex<HashMap<String, CancellationToken>>,
     company_history: Arc<Mutex<HashMap<String, CompanyTransfer>>>,
@@ -142,7 +153,7 @@ pub fn normalize_server(value: &str) -> Result<String> {
     Ok(url.as_str().trim_end_matches('/').to_owned())
 }
 fn io_error(_: impl std::fmt::Display) -> String {
-    "共享库缓存读写失败，请检查数据目录权限和可用空间。".into()
+    "共享话术缓存读写失败，请检查数据目录权限和可用空间。".into()
 }
 fn save_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     fs::create_dir_all(path.parent().ok_or("缓存目录无效。")?).map_err(io_error)?;
@@ -233,7 +244,7 @@ impl TeamClient {
             return Err("请先修改初始密码。".into());
         }
         if !active.authorization.capabilities.private_sync {
-            return Err("服务端需升级后才能同步我的话术。".into());
+            return Err("服务端需升级后才能同步个人话术。".into());
         }
         Ok(AccountContext {
             server: active.connection.server,
@@ -359,7 +370,7 @@ impl TeamClient {
         }
         if image {
             let input = temp.path().to_owned();
-            // 解码仍持共享下载许可，私人和共享库素材合计只占两个下载／解码位置。
+            // 解码仍持共享下载许可，私人和共享话术素材合计只占两个下载／解码位置。
             tauri::async_runtime::spawn_blocking(move || {
                 crate::backup::decode_image(&fs::read(input).map_err(io_error)?).map(|_| ())
             })
@@ -375,7 +386,7 @@ impl TeamClient {
             .connect_timeout(Duration::from_secs(5))
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|_| "无法创建共享库网络连接。".to_owned())?;
+            .map_err(|_| "无法创建共享话术网络连接。".to_owned())?;
         let this = Arc::new(Self {
             dir,
             client,
@@ -383,10 +394,14 @@ impl TeamClient {
             auth_refresh: AsyncMutex::new(()),
             login_lock: AsyncMutex::new(()),
             downloads: Semaphore::new(2),
+            uploads: Semaphore::new(2),
             company_transfers: Mutex::new(HashMap::new()),
             company_history: Arc::new(Mutex::new(HashMap::new())),
             download_locks: Mutex::new(HashMap::new()),
         });
+        if let Err(error) = this.clean_uncommitted_uploads() {
+            log::warn!("未完成的上传副本暂时无法清理：{error}");
+        }
         if let Some(connection) = load_json::<Connection>(&this.dir.join("connection.json")) {
             if uuid::Uuid::parse_str(&connection.partition).is_ok()
                 && normalize_server(&connection.server).as_deref() == Ok(connection.server.as_str())
@@ -419,6 +434,18 @@ impl TeamClient {
                             inner.slots.insert(
                                 team.team_id.clone(),
                                 Slot {
+                                    last_successful_sync_at: load_json::<SyncTime>(
+                                        &this
+                                            .team_dir(&active, &team.team_id)
+                                            .join("sync-time.json"),
+                                    )
+                                    .filter(|t| {
+                                        snapshot.as_ref().is_some_and(|s| {
+                                            t.lifecycle_version == s.lifecycle_version
+                                                && t.version <= s.version
+                                        })
+                                    })
+                                    .map(|t| t.timestamp),
                                     snapshot,
                                     wanted: team.version,
                                     refreshing: false,
@@ -443,15 +470,15 @@ impl TeamClient {
             .unwrap()
             .active
             .clone()
-            .ok_or("请先在设置中登录共享库服务。".into())
+            .ok_or("请先在设置中登录共享话术服务。".into())
     }
     fn context(&self, team: &str) -> Result<Context> {
         let inner = self.inner.lock().unwrap();
-        let active = inner.active.clone().ok_or("请先登录共享库服务。")?;
+        let active = inner.active.clone().ok_or("请先登录共享话术服务。")?;
         if !active.authorization.teams.iter().any(|t| t.team_id == team) {
-            return Err("已没有该共享库的访问权限。".into());
+            return Err("已没有该共享话术的访问权限。".into());
         }
-        let slot = inner.slots.get(team).ok_or("共享库正在加载。")?;
+        let slot = inner.slots.get(team).ok_or("共享话术正在加载。")?;
         Ok(Context {
             company_asset_ids: slot
                 .snapshot
@@ -492,6 +519,13 @@ impl TeamClient {
                 username: active.connection.username.clone(),
                 user: Some(active.authorization.user.clone()),
                 teams: active.authorization.teams.clone(),
+                team_sync_times: inner
+                    .slots
+                    .iter()
+                    .filter_map(|(id, slot)| {
+                        slot.last_successful_sync_at.map(|time| (id.clone(), time))
+                    })
+                    .collect(),
                 offline: active.offline,
                 private_sync: active.authorization.capabilities.private_sync,
                 company_files: active.authorization.capabilities.company_files,
@@ -508,6 +542,7 @@ impl TeamClient {
                 username: c.map(|v| v.username).unwrap_or_default(),
                 user: None,
                 teams: vec![],
+                team_sync_times: HashMap::new(),
                 offline: false,
                 private_sync: false,
                 company_files: false,
@@ -732,6 +767,12 @@ impl TeamClient {
                     let mut inner = self.inner.lock().unwrap();
                     if let Some(a) = inner.active.as_mut().filter(|a| a.epoch == active.epoch) {
                         a.offline = true;
+                        let prefix = format!("{}:upload:", a.epoch);
+                        for (key, cancel) in self.company_transfers.lock().unwrap().iter() {
+                            if key.starts_with(&prefix) {
+                                cancel.cancel();
+                            }
+                        }
                     }
                 }
                 self.emit(app);
@@ -744,7 +785,7 @@ impl TeamClient {
                 .iter()
                 .any(|t| uuid::Uuid::parse_str(&t.team_id).is_err())
         {
-            return Err("服务器返回了无效的账号或共享库ID。".into());
+            return Err("服务器返回了无效的账号或共享话术ID。".into());
         }
         let (removed, cache_result) = {
             let mut inner = self.inner.lock().unwrap();
@@ -779,6 +820,7 @@ impl TeamClient {
                     .slots
                     .entry(team.team_id.clone())
                     .or_insert_with(|| Slot {
+                        last_successful_sync_at: None,
                         snapshot: None,
                         wanted: team.version,
                         refreshing: false,
@@ -818,12 +860,17 @@ impl TeamClient {
             let current = inner.active.as_mut().unwrap();
             current.authorization = authorization;
             current.offline = false;
-            let cache_result = self.persist_authorization(current).and_then(|_| {
+            let current = current.clone();
+            let cache_result = self.persist_authorization(&current).and_then(|_| {
                 for id in &removed {
                     let dir = self.team_dir(&active, id);
                     if dir.exists() {
                         fs::remove_dir_all(dir).map_err(io_error)?;
                     }
+                }
+                for (id, slot) in &mut inner.slots {
+                    // 授权响应确认版本未变且本机内容已齐备时，无需重新下载快照。
+                    self.record_team_success(&current, id, slot)?;
                 }
                 Ok(())
             });
@@ -941,13 +988,42 @@ impl TeamClient {
         }
         more
     }
+    fn record_team_success(&self, active: &Active, team: &str, slot: &mut Slot) -> Result<()> {
+        let Some(snapshot) = &slot.snapshot else {
+            return Ok(());
+        };
+        if active.offline
+            || snapshot.version < slot.wanted
+            || !active
+                .authorization
+                .teams
+                .iter()
+                .any(|t| t.team_id == team && t.lifecycle_version == snapshot.lifecycle_version)
+        {
+            return Ok(());
+        }
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(io_error)?
+            .as_millis() as u64;
+        save_json(
+            &self.team_dir(active, team).join("sync-time.json"),
+            &SyncTime {
+                version: snapshot.version,
+                lifecycle_version: snapshot.lifecycle_version,
+                timestamp,
+            },
+        )?;
+        slot.last_successful_sync_at = Some(timestamp);
+        Ok(())
+    }
     fn accept_snapshot(&self, ctx: &Context, snapshot: wire::Snapshot) -> Result<()> {
         let mut inner = self.inner.lock().unwrap();
         if !Self::valid(&inner, ctx) {
-            return Err("旧账号或共享库响应已失效。".into());
+            return Err("旧账号或共享话术响应已失效。".into());
         }
         if snapshot.team_id != ctx.team || snapshot.lifecycle_version != ctx.lifecycle_version {
-            return Err("共享库快照归属无效。".into());
+            return Err("共享话术快照归属无效。".into());
         }
         if snapshot
             .phrases
@@ -957,8 +1033,9 @@ impl TeamClient {
             .filter_map(wire::Block::asset)
             .any(|(id, _)| uuid::Uuid::parse_str(id).is_err())
         {
-            return Err("共享库素材ID无效。".into());
+            return Err("共享话术素材ID无效。".into());
         }
+        let active = inner.active.as_ref().unwrap().clone();
         let slot = inner.slots.get_mut(&ctx.team).unwrap();
         if slot
             .snapshot
@@ -970,6 +1047,7 @@ impl TeamClient {
                 &snapshot,
             )?;
             slot.snapshot = Some(snapshot);
+            self.record_team_success(&active, &ctx.team, slot)?;
         }
         Ok(())
     }
@@ -1127,15 +1205,15 @@ impl TeamClient {
         let ctx = self.context(team)?;
         let inner = self.inner.lock().unwrap();
         if !Self::valid(&inner, &ctx) {
-            return Err("共享库授权已变化。".into());
+            return Err("共享话术授权已变化。".into());
         }
         let snapshot = inner
             .slots
             .get(team)
             .and_then(|s| s.snapshot.as_ref())
-            .ok_or("正在加载共享库话术，请稍后重试。")?;
+            .ok_or("正在加载共享话术，请稍后重试。")?;
         if snapshot.lifecycle_version != ctx.lifecycle_version {
-            return Err("共享库状态已变化，正在重新加载。".into());
+            return Err("共享话术状态已变化，正在重新加载。".into());
         }
         let mut info = inner
             .active
@@ -1175,7 +1253,7 @@ impl TeamClient {
         })
     }
     pub fn phrase(&self, key: &str, require_ready: bool) -> Result<local::Phrase> {
-        let reference = wire::ContentRef::from_key(key).ok_or("共享库话术引用无效。")?;
+        let reference = wire::ContentRef::from_key(key).ok_or("共享话术引用无效。")?;
         let view = self.view(&reference.team_id)?;
         let phrase = view
             .phrases
@@ -1269,7 +1347,7 @@ impl TeamClient {
         let mut size = 0;
         let mut stream = response.bytes_stream();
         loop {
-            let chunk = tokio::select! {_=cancellation.cancelled()=>return Err("该共享库下载已取消。".into()),c=stream.next()=>c};
+            let chunk = tokio::select! {_=cancellation.cancelled()=>return Err("该共享话术下载已取消。".into()),c=stream.next()=>c};
             let Some(chunk) = chunk else { break };
             let chunk = chunk.map_err(|_| "素材下载中断。")?;
             size += chunk.len() as u64;
@@ -1318,7 +1396,7 @@ impl TeamClient {
         let reference = wire::ContentRef::from_key(key).ok_or("话术引用无效。")?;
         let ctx = self.context(&reference.team_id)?;
         if reference.lifecycle_version != ctx.lifecycle_version {
-            return Err("共享库状态已变化，请重新选择话术。".into());
+            return Err("共享话术状态已变化，请重新选择话术。".into());
         }
         let phrase = {
             let inner = self.inner.lock().unwrap();
@@ -1424,7 +1502,7 @@ impl TeamClient {
             return Err("账号已切换，旧管理操作已失效。".into());
         }
         if active.offline || active.authorization.user.must_change_password {
-            return Err("请连接服务器并完成首次改密后再管理共享库。".into());
+            return Err("请连接服务器并完成首次改密后再管理共享话术。".into());
         }
         let result = self.request(&active, method, path, body).await?;
         if !self
@@ -1439,7 +1517,7 @@ impl TeamClient {
         }
         Ok((result, active.epoch))
     }
-    /// 退出/删除共享库成功即撤下本地授权。先等待此前授权刷新结束，防止其旧结果重新加回已退出组。
+    /// 退出/删除共享话术成功即撤下本地授权。先等待此前授权刷新结束，防止其旧结果重新加回已退出组。
     pub async fn forget_team(&self, app: &tauri::AppHandle, team: &str, epoch: u64) -> Result<()> {
         let _refresh = self.auth_refresh.lock().await;
         let mut inner = self.inner.lock().unwrap();
@@ -1471,12 +1549,12 @@ impl TeamClient {
         let ctx = self.context(team)?;
         let inner = self.inner.lock().unwrap();
         if !Self::valid(&inner, &ctx) {
-            return Err("共享库授权已失效。".into());
+            return Err("共享话术授权已失效。".into());
         }
         inner.slots[team]
             .snapshot
             .clone()
-            .ok_or("共享库正在加载。".into())
+            .ok_or("共享话术正在加载。".into())
     }
     pub fn transfer_identity(&self) -> Result<(String, String, u64)> {
         let active = self.active()?;
@@ -1529,25 +1607,25 @@ impl TeamClient {
     ) -> Result<T> {
         let (server, owner, epoch) = identity;
         let inner = self.inner.lock().unwrap();
-        let active = inner.active.as_ref().ok_or("请先登录共享库服务。")?;
+        let active = inner.active.as_ref().ok_or("请先登录共享话术服务。")?;
         let info = active
             .authorization
             .teams
             .iter()
             .find(|t| t.team_id == team)
-            .ok_or("共享库权限已撤销。")?;
+            .ok_or("共享话术权限已撤销。")?;
         if active.connection.server != server
             || active.authorization.user.id != owner
             || active.epoch != epoch
             || info.lifecycle_version != lifecycle
         {
-            return Err("账号或共享库已变化，请重新预览。".into());
+            return Err("账号或共享话术已变化，请重新预览。".into());
         }
         if active.authorization.user.must_change_password {
             return Err("请先修改初始密码。".into());
         }
         if edit && (active.offline || !info.editable) {
-            return Err("导入需要联网及共享库编辑权限。".into());
+            return Err("导入需要联网及共享话术编辑权限。".into());
         }
         action()
     }
@@ -1593,7 +1671,7 @@ impl TeamClient {
         self.emit(app);
         Ok(snapshot)
     }
-    /// 共享库导入只追加在用内容，复用批量发布。内容ID由持久化预览提供，绝不在上传时重新分配。
+    /// 共享话术导入只追加在用内容，复用批量发布。内容ID由持久化预览提供，绝不在上传时重新分配。
     pub async fn prepare_transfer(
         self: &Arc<Self>,
         team: &str,
@@ -1687,7 +1765,7 @@ impl TeamClient {
                 phrases.push(p);
             }
             if phrases.len() == old_phrases && categories.len() == old_categories {
-                return Err("没有可导入的共享库话术或新分类。".into());
+                return Err("没有可导入的共享话术或新分类。".into());
             }
             Ok(wire::Publish {
                 expected_version: base.version,
@@ -1782,7 +1860,7 @@ impl TeamClient {
             .as_ref()
             .is_some_and(|r| r.team_id != ctx.team || r.lifecycle_version != ctx.lifecycle_version)
         {
-            return Err("话术引用与当前共享库或版本不符，请重新选择。".into());
+            return Err("话术引用与当前共享话术或版本不符，请重新选择。".into());
         }
         let mut next = wire::Phrase {
             id: reference
@@ -1891,7 +1969,7 @@ impl TeamClient {
             if snapshot.version != draft.expected_version
                 || snapshot.lifecycle_version != draft.expected_lifecycle_version
             {
-                return Err("共享库已更新，请比较新内容后保存；草稿已保留。".into());
+                return Err("共享话术已更新，请比较新内容后保存；草稿已保留。".into());
             }
             let phrase = self
                 .to_wire_selected(&ctx, &draft.phrase, &mut new_assets, &draft.company_files)
@@ -1934,13 +2012,13 @@ impl TeamClient {
         app: &tauri::AppHandle,
         key: &str,
     ) -> Result<local::Phrase> {
-        let reference = wire::ContentRef::from_key(key).ok_or("共享库引用无效。")?;
+        let reference = wire::ContentRef::from_key(key).ok_or("共享话术引用无效。")?;
         let active = self.active()?;
         let _ = self.refresh_authorization(app).await;
         let ctx = self.context(&reference.team_id)?;
         if ctx.active.epoch != active.epoch || ctx.lifecycle_version != reference.lifecycle_version
         {
-            return Err("账号或共享库已变化，请重新选择话术。".into());
+            return Err("账号或共享话术已变化，请重新选择话术。".into());
         }
         if !ctx.active.offline {
             let remote = self
@@ -1968,14 +2046,14 @@ impl TeamClient {
         self.begin_delivery(&ctx, &reference)?;
         Ok(phrase)
     }
-    /// 最后核验与投递登记共用锁；加载期间切换账号、删除共享库恢复或内容更新不能穿过此检查。
+    /// 最后核验与投递登记共用锁；加载期间切换账号、删除共享话术恢复或内容更新不能穿过此检查。
     fn begin_delivery(&self, ctx: &Context, reference: &wire::ContentRef) -> Result<()> {
         let mut inner = self.inner.lock().unwrap();
         if !Self::valid(&inner, ctx)
             || ctx.team != reference.team_id
             || ctx.lifecycle_version != reference.lifecycle_version
         {
-            return Err("共享库授权已变化，请重新选择话术。".into());
+            return Err("共享话术授权已变化，请重新选择话术。".into());
         }
         let unchanged = inner.slots[&ctx.team]
             .snapshot
@@ -2007,7 +2085,7 @@ impl TeamClient {
     ) -> Result<()> {
         let mut snapshot = self.cached_snapshot(team)?;
         if snapshot.version != expected || snapshot.lifecycle_version != lifecycle {
-            return Err("共享库已更新，请刷新后重试。".into());
+            return Err("共享话术已更新，请刷新后重试。".into());
         }
         let category = wire::Category {
             id: if category.id.is_empty() {
@@ -2056,15 +2134,51 @@ impl TeamClient {
         self.schedule(app.clone(), team, version);
         Ok(())
     }
-    pub async fn recycle(&self, team: &str) -> Result<Vec<wire::RecycleRecord>> {
+    /// 回收操作固定到发起时的账号与生命周期，不把旧窗口请求投向新登录账号。
+    fn recycle_context(
+        &self,
+        team: &str,
+        epoch: Option<u64>,
+        lifecycle: Option<u64>,
+    ) -> Result<Context> {
         let ctx = self.context(team)?;
-        self.request(
-            &ctx.active,
-            Method::GET,
-            &format!("teams/{team}/recycle"),
-            None,
-        )
-        .await
+        if epoch.is_some_and(|epoch| epoch != ctx.active.epoch)
+            || lifecycle.is_some_and(|value| value != ctx.lifecycle_version)
+        {
+            return Err("账号或共享话术已变化，请重新打开回收站。".into());
+        }
+        if ctx.active.offline
+            || ctx.active.authorization.user.must_change_password
+            || !ctx
+                .active
+                .authorization
+                .teams
+                .iter()
+                .any(|t| t.team_id == team && t.editable)
+        {
+            return Err("请联网并核对共享话术编辑权限后使用回收站。".into());
+        }
+        Ok(ctx)
+    }
+    pub async fn recycle(
+        &self,
+        team: &str,
+        epoch: Option<u64>,
+        lifecycle: Option<u64>,
+    ) -> Result<Vec<wire::RecycleRecord>> {
+        let ctx = self.recycle_context(team, epoch, lifecycle)?;
+        let rows = self
+            .request(
+                &ctx.active,
+                Method::GET,
+                &format!("teams/{team}/recycle"),
+                None,
+            )
+            .await?;
+        if !Self::valid(&self.inner.lock().unwrap(), &ctx) {
+            return Err("回收站来源已变化，请刷新。".into());
+        }
+        Ok(rows)
     }
     pub async fn restore(
         self: &Arc<Self>,
@@ -2073,24 +2187,23 @@ impl TeamClient {
         id: &str,
         version: u64,
         lifecycle: u64,
+        epoch: Option<u64>,
     ) -> Result<()> {
-        let ctx = self.context(team)?;
-        let version = self
-            .request::<u64>(
-                &ctx.active,
-                Method::POST,
-                &format!("teams/{team}/recycle/{id}"),
-                Some(serde_json::json!({"expectedVersion":version,"expectedLifecycleVersion":lifecycle})),
-            )
-            .await?;
-        self.schedule(app.clone(), team, version);
+        let ctx = self.recycle_context(team, epoch, Some(lifecycle))?;
+        let version = self.request::<u64>(&ctx.active, Method::POST, &format!("teams/{team}/recycle/{id}"), Some(serde_json::json!({"expectedVersion":version,"expectedLifecycleVersion":lifecycle}))).await?;
+        if Self::valid(&self.inner.lock().unwrap(), &ctx) {
+            self.schedule(app.clone(), team, version);
+        }
         Ok(())
     }
-    pub async fn purge(&self, team: &str, id: &str, lifecycle: u64) -> Result<()> {
-        let ctx = self.context(team)?;
-        if ctx.lifecycle_version != lifecycle {
-            return Err("共享库状态已变化，请刷新后重试。".into());
-        }
+    pub async fn purge(
+        &self,
+        team: &str,
+        id: &str,
+        lifecycle: u64,
+        epoch: Option<u64>,
+    ) -> Result<()> {
+        let ctx = self.recycle_context(team, epoch, Some(lifecycle))?;
         self.request::<serde_json::Value>(
             &ctx.active,
             Method::DELETE,
@@ -2099,6 +2212,30 @@ impl TeamClient {
         )
         .await?;
         Ok(())
+    }
+    /// 批量清空一次提交，不逐条重试；旧 Hub 的缺失接口单独提示升级。
+    pub async fn empty_recycle(
+        &self,
+        team: &str,
+        request: wire::ClearRecycleRequest,
+        epoch: Option<u64>,
+    ) -> Result<usize> {
+        let ctx = self.recycle_context(team, epoch, Some(request.expected_lifecycle_version))?;
+        self.request(
+            &ctx.active,
+            Method::POST,
+            &format!("teams/{team}/recycle/clear"),
+            Some(serde_json::to_value(request).map_err(io_error)?),
+        )
+        .await
+        .map_err(|e| {
+            // 旧 Hub 会将 clear 匹配为还原记录 ID，并因缺少还原参数返回 422。
+            if e.starts_with("404:") || e.starts_with("405:") || e.starts_with("422:") {
+                "服务端尚不支持清空共享话术的回收站，请升级 Hub；仍可逐条永久删除。".into()
+            } else {
+                e
+            }
+        })
     }
     pub async fn copy_from_private(
         self: &Arc<Self>,
@@ -2179,7 +2316,7 @@ impl TeamClient {
         let state = app.state::<AppState>();
         let library_id = crate::private_local::identity(&state.store.lock().unwrap())?;
         self.prepare(app, key).await?;
-        let reference = wire::ContentRef::from_key(key).ok_or("共享库引用无效。")?;
+        let reference = wire::ContentRef::from_key(key).ok_or("共享话术引用无效。")?;
         let ctx = self.context(&reference.team_id)?;
         let snapshot = self.cached_snapshot(&reference.team_id)?;
         let mut phrase = self.phrase(key, true)?;
@@ -2383,6 +2520,7 @@ mod tests {
             inner.slots.insert(
                 team,
                 Slot {
+                    last_successful_sync_at: None,
                     snapshot: None,
                     wanted: 0,
                     refreshing: false,
@@ -2402,6 +2540,120 @@ mod tests {
             categories: vec![],
             phrases: vec![],
         }
+    }
+    #[test]
+    fn recycle_rejects_stale_account_lifecycle_and_revoked_permissions() {
+        let (_dir, client, ctx) = setup();
+        assert!(client.recycle_context(&ctx.team, Some(1), Some(1)).is_err());
+        {
+            let mut inner = client.inner.lock().unwrap();
+            let active = inner.active.as_mut().unwrap();
+            active.offline = false;
+            active.authorization.teams[0].editable = true;
+        }
+        assert!(client.recycle_context(&ctx.team, Some(1), Some(1)).is_ok());
+        assert!(client.recycle_context(&ctx.team, Some(2), Some(1)).is_err());
+        assert!(client.recycle_context(&ctx.team, Some(1), Some(2)).is_err());
+        client
+            .inner
+            .lock()
+            .unwrap()
+            .active
+            .as_mut()
+            .unwrap()
+            .authorization
+            .teams[0]
+            .editable = false;
+        assert!(client.recycle_context(&ctx.team, Some(1), Some(1)).is_err());
+    }
+    #[test]
+    fn empty_recycle_explains_old_hub_responses_without_retrying() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        for status in [404, 405, 422] {
+            let (_dir, client, ctx) = setup();
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            {
+                let mut inner = client.inner.lock().unwrap();
+                let active = inner.active.as_mut().unwrap();
+                active.connection.server = format!("http://{}", listener.local_addr().unwrap());
+                active.offline = false;
+                active.authorization.teams[0].editable = true;
+            }
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut request = [0; 4096];
+                let size = stream.read(&mut request).unwrap();
+                assert!(String::from_utf8_lossy(&request[..size]).starts_with("POST /api/teams/"));
+                // 只接收一次请求；若客户端错误重试，将得不到这个兼容提示。
+                stream.write_all(format!("HTTP/1.1 {status} Unsupported\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes()).unwrap();
+            });
+            let error = runtime
+                .block_on(client.empty_recycle(
+                    &ctx.team,
+                    wire::ClearRecycleRequest {
+                        ids: vec![local::id()],
+                        expected_lifecycle_version: 1,
+                    },
+                    Some(1),
+                ))
+                .unwrap_err();
+            server.join().unwrap();
+            assert!(error.contains("请升级 Hub"), "{error}");
+            assert!(error.contains("逐条永久删除"));
+        }
+    }
+    #[test]
+    fn sync_time_requires_current_complete_snapshot_and_is_persisted_per_team() {
+        let (_dir, client, ctx) = setup();
+        client
+            .inner
+            .lock()
+            .unwrap()
+            .active
+            .as_mut()
+            .unwrap()
+            .offline = false;
+        assert!(client.status().team_sync_times.is_empty());
+        client
+            .inner
+            .lock()
+            .unwrap()
+            .slots
+            .get_mut(&ctx.team)
+            .unwrap()
+            .wanted = 2;
+        client.accept_snapshot(&ctx, snapshot(&ctx, 1)).unwrap();
+        assert!(client.status().team_sync_times.is_empty());
+        client.accept_snapshot(&ctx, snapshot(&ctx, 2)).unwrap();
+        let time = client.status().team_sync_times[&ctx.team];
+        let saved = load_json::<SyncTime>(
+            &client
+                .team_dir(&ctx.active, &ctx.team)
+                .join("sync-time.json"),
+        )
+        .unwrap();
+        assert_eq!(saved.timestamp, time);
+        assert_eq!(saved.version, 2);
+        client.accept_snapshot(&ctx, snapshot(&ctx, 1)).unwrap();
+        assert_eq!(client.status().team_sync_times[&ctx.team], time);
+        client
+            .inner
+            .lock()
+            .unwrap()
+            .active
+            .as_mut()
+            .unwrap()
+            .offline = true;
+        client.accept_snapshot(&ctx, snapshot(&ctx, 3)).unwrap();
+        assert_eq!(client.status().team_sync_times[&ctx.team], time);
+        client.inner.lock().unwrap().active.as_mut().unwrap().epoch += 1;
+        assert!(client.accept_snapshot(&ctx, snapshot(&ctx, 4)).is_err());
+        assert_eq!(client.status().team_sync_times[&ctx.team], time);
     }
     #[test]
     fn addresses_allow_lan_http_and_https_without_embedded_credentials() {
@@ -2569,6 +2821,7 @@ mod tests {
             inner.slots.insert(
                 ctx.team.clone(),
                 Slot {
+                    last_successful_sync_at: None,
                     snapshot: None,
                     wanted: 2,
                     refreshing: false,
@@ -2677,6 +2930,7 @@ mod tests {
             inner.slots.insert(
                 ctx.team.clone(),
                 Slot {
+                    last_successful_sync_at: None,
                     snapshot: None,
                     wanted: 0,
                     refreshing: false,

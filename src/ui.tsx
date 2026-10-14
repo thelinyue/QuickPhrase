@@ -53,18 +53,18 @@ export function categoryTextColor(background: string) {
 }
 const categoryColors = ['#84c394', '#88b3fa', '#ff9800', '#d8bda6', '#8bc5e8', '#f3829e', '#aea0e6', '#83d0c9', '#dca4c9', '#929eaa', '#f4a1b5', '#ffaa95'];
 /** 分类色板使用固定色块与原位弹层，避免系统颜色对话框遮住当前分类。
- * 恢复默认提交空字符串，由标签的默认配色接管，不改其他分类。 */
+ * 恢复默认提交空字符串，由标签的默认配色接管，不改其他分类；选中色用勾号表示，不增加外框。 */
 export function CategoryColorPicker({ label, value, defaultColor = '#ffac00', disabled = false, fontColor = false, onChange }: { label: string; value: string; defaultColor?: string; disabled?: boolean; fontColor?: boolean; onChange: (color: string) => void }) {
   const [open, setOpen] = useState(false); const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     const close = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false); } };
+    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false); ref.current?.querySelector<HTMLButtonElement>('.category-color-trigger')?.focus(); } };
     document.addEventListener('pointerdown', close); ref.current?.addEventListener('keydown', escape);
     return () => { document.removeEventListener('pointerdown', close); ref.current?.removeEventListener('keydown', escape); };
   }, [open]);
   return <div className="category-color-picker" ref={ref}><button type="button" className="category-color-trigger" aria-label={`设置 ${label} ${fontColor ? '字体颜色' : '背景色'}`} aria-expanded={open} disabled={disabled} onClick={() => setOpen(v => !v)}><span style={fontColor ? { color: value || defaultColor } : undefined}>{fontColor ? '颜色效果' : label}</span>{!fontColor && <i style={{ background: value || defaultColor }} />}</button>
-    {open && <div className="category-color-popover"><div className="category-color-grid" role="group" aria-label={fontColor ? '标题字体色色板' : '分类背景色色板'}>{(fontColor ? ['#ff6600', '#0000ff', '#ff00ff', '#32ad21', '#ff0000', '#ca9663', '#00caca', '#000000'] : categoryColors).map(color => <button key={color} type="button" style={{ background: color }} aria-label={`颜色 ${color}`} aria-pressed={value === color} disabled={disabled} onClick={() => { onChange(color); setOpen(false); }} />)}</div><button type="button" className="restore-category-color" disabled={disabled} onClick={() => { onChange(''); setOpen(false); }}>恢复默认颜色</button></div>}
+    {open && <div className="category-color-popover"><div className="category-color-grid" role="group" aria-label={fontColor ? '标题字体色色板' : '分类背景色色板'}>{(fontColor ? ['#ff6600', '#0000ff', '#ff00ff', '#32ad21', '#ff0000', '#ca9663', '#00caca', '#000000'] : categoryColors).map(color => <button key={color} type="button" style={{ background: color, color: categoryTextColor(color) }} aria-label={`颜色 ${color}`} aria-pressed={value === color} disabled={disabled} onClick={() => { onChange(color); setOpen(false); ref.current?.querySelector<HTMLButtonElement>('.category-color-trigger')?.focus(); }}>{value === color && <Icon name="check" />}</button>)}</div><button type="button" className="restore-category-color" disabled={disabled} onClick={() => { onChange(''); setOpen(false); ref.current?.querySelector<HTMLButtonElement>('.category-color-trigger')?.focus(); }}>恢复默认颜色</button></div>}
   </div>;
 }
 export function Titlebar({ title, minimize = false, maximize = false }: { title: string; minimize?: boolean; maximize?: boolean }) { return <header className="standard-titlebar"><img className="app-symbol" src="/shanyu.png" alt="" draggable={false} /><span data-tauri-drag-region>{title}</span><span className="titlebar-spacer" data-tauri-drag-region />{minimize && <button aria-label="最小化窗口" onClick={() => void getCurrentWindow().minimize()}><Icon name="minus" /></button>}{maximize && <button aria-label="最大化或还原窗口" onClick={() => void getCurrentWindow().toggleMaximize()}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5h10v10H5z" /></svg></button>}<button aria-label="关闭窗口" onClick={() => void closeWindow()}><Icon name="close" /></button></header>; }

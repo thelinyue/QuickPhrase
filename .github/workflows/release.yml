@@ -7,7 +7,7 @@ on:
       version:
         description: Stable SemVer
         required: true
-        default: 0.2.1
+        default: 0.2.2
 
 permissions:
   contents: read
@@ -85,7 +85,13 @@ jobs:
         run: |
           ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel stable -GitRef "refs/tags/v$env:RELEASE_VERSION"
           ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION
-          ./scripts/package-release.ps1 -Version $env:RELEASE_VERSION
+
+      - name: Sign and package update assets
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          QUICKPHRASE_UPDATE_PRIVATE_KEY: ${{ secrets.QUICKPHRASE_UPDATE_PRIVATE_KEY }}
+          QUICKPHRASE_UPDATE_KEY_PASSWORD: ${{ secrets.QUICKPHRASE_UPDATE_KEY_PASSWORD }}
+        run: ./scripts/package-release.ps1 -Version $env:RELEASE_VERSION
 
       - name: Upload release bundle
         uses: actions/upload-artifact@v4
@@ -96,6 +102,7 @@ jobs:
             artifacts/release/${{ inputs.version }}/QuickPhrase-${{ inputs.version }}-win-x64.zip
             artifacts/release/${{ inputs.version }}/QuickPhrase-Setup-${{ inputs.version }}-x64.exe
             artifacts/release/${{ inputs.version }}/SHA256SUMS.txt
+            artifacts/release/${{ inputs.version }}/SHA256SUMS.txt.minisig
             artifacts/release/${{ inputs.version }}/release-manifest.json
 
       - name: Publish GitHub Release
@@ -104,7 +111,7 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           $root = Join-Path 'artifacts/release' $env:RELEASE_VERSION
-          $assets = @((Join-Path $root "QuickPhrase-$env:RELEASE_VERSION-win-x64.zip"), (Join-Path $root "QuickPhrase-Setup-$env:RELEASE_VERSION-x64.exe"), (Join-Path $root 'SHA256SUMS.txt'), (Join-Path $root 'release-manifest.json'))
+          $assets = @((Join-Path $root "QuickPhrase-$env:RELEASE_VERSION-win-x64.zip"), (Join-Path $root "QuickPhrase-Setup-$env:RELEASE_VERSION-x64.exe"), (Join-Path $root 'SHA256SUMS.txt'), (Join-Path $root 'SHA256SUMS.txt.minisig'), (Join-Path $root 'release-manifest.json'))
           # 使用标签内的版本说明，公开支持范围、验收边界和未签名状态。
           $notes = Join-Path 'docs/releases' "v$env:RELEASE_VERSION.md"
           gh release create "v$env:RELEASE_VERSION" @assets --verify-tag --title "闪语 QuickPhrase v$env:RELEASE_VERSION" --notes-file $notes
