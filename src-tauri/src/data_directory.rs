@@ -107,6 +107,10 @@ impl DataDirectory {
             }
         }
         this.check_current()?;
+        if let Some(current) = this.location.current.as_mut() {
+            // 旧定位记录可能保留8.3短名称；对外统一实际目录名，不改变目录身份。
+            *current = canonical(current)?;
+        }
         Ok(this)
     }
     pub fn root(&self) -> PathBuf {
@@ -287,6 +291,16 @@ fn path_key(path: &Path) -> String {
 fn relative_under(path: &Path, root: &Path) -> Option<PathBuf> {
     let path = PathBuf::from(external_path(path));
     let root = PathBuf::from(external_path(root));
+    // 必须先拒绝父目录跳转，再扩展短名称；不能由路径展开掩盖越界输入。
+    if path
+        .components()
+        .chain(root.components())
+        .any(|p| matches!(p, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    #[cfg(windows)]
+    let (path, root) = (long_path(&path), long_path(&root));
     let parts: Vec<_> = path.components().collect();
     let base: Vec<_> = root.components().collect();
     if parts.len() < base.len()
@@ -297,14 +311,28 @@ fn relative_under(path: &Path, root: &Path) -> Option<PathBuf> {
     {
         return None;
     }
-    // 不允许 .. 越过迁移边界；存量缺失素材也能按组件修正，无需解析其文件实体。
-    if parts
-        .iter()
-        .any(|p| matches!(p, std::path::Component::ParentDir))
-    {
-        return None;
-    }
     Some(parts[base.len()..].iter().map(|p| p.as_os_str()).collect())
+}
+
+#[cfg(windows)]
+fn long_path(path: &Path) -> PathBuf {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use windows::{core::PCWSTR, Win32::Storage::FileSystem::GetLongPathNameW};
+    // 素材可能已经缺失，只展开可访问的祖先，保留缺失后缀；不解析链接或更改外部文件。
+    for ancestor in path.ancestors() {
+        let wide: Vec<u16> = ancestor.as_os_str().encode_wide().chain(Some(0)).collect();
+        let required = unsafe { GetLongPathNameW(PCWSTR(wide.as_ptr()), None) };
+        if required == 0 {
+            continue;
+        }
+        let mut buffer = vec![0; required as usize];
+        let count = unsafe { GetLongPathNameW(PCWSTR(wide.as_ptr()), Some(&mut buffer)) };
+        if count > 0 && (count as usize) < buffer.len() {
+            let expanded = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..count as usize]));
+            return expanded.join(path.strip_prefix(ancestor).unwrap());
+        }
+    }
+    path.to_path_buf()
 }
 fn linked(metadata: &fs::Metadata) -> bool {
     if metadata.file_type().is_symlink() {
@@ -923,6 +951,28 @@ mod tests {
             [content.to_string()],
         )
         .unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_short_root_matches_missing_material_under_long_root() {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::{core::PCWSTR, Win32::Storage::FileSystem::GetShortPathNameW};
+        // 只读系统既有的短名称，缺失素材也必须按同一个目录身份映射，不创建系统文件。
+        let root = PathBuf::from(std::env::var_os("ProgramFiles").unwrap());
+        let wide: Vec<u16> = root.as_os_str().encode_wide().chain(Some(0)).collect();
+        let mut buffer = vec![0; 32768];
+        let count = unsafe { GetShortPathNameW(PCWSTR(wide.as_ptr()), Some(&mut buffer)) };
+        assert!(count > 0 && (count as usize) < buffer.len());
+        let short = PathBuf::from(String::from_utf16(&buffer[..count as usize]).unwrap());
+        assert_eq!(
+            relative_under(
+                &short.join("images/missing.png"),
+                &canonical(&root).unwrap()
+            ),
+            Some(PathBuf::from("images/missing.png"))
+        );
+        assert!(relative_under(&short.join("../outside.png"), &root).is_none());
     }
 
     #[test]

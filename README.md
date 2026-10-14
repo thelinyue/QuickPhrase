@@ -1,12 +1,12 @@
 # 闪语 QuickPhrase
 
-Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.2。
+Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.3。
 
-正式下载：[v0.2.2 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.2) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.2/QuickPhrase-Setup-0.2.2-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.2/QuickPhrase-0.2.2-win-x64.zip)。安装器和程序未代码签名；[Hub 公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
+正式下载：[v0.2.3 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.3) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.3/QuickPhrase-Setup-0.2.3-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.3/QuickPhrase-0.2.3-win-x64.zip)。安装器和程序未代码签名；[Hub 公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
 
-0.2.1统一英文名称 QuickPhrase；0.2.2新增在线更新、数据目录迁移、搜索历史、使用指引与云文件批量上传。普通用户使用安装器安装和升级；ZIP供免安装启动，需预装WebView2，用户数据仍保存于用户目录。0.2.0的历史下载文件保留原名。
+0.2.1统一英文名称 QuickPhrase；0.2.3新增在线更新、数据目录迁移、搜索历史、使用指引与云文件批量上传。普通用户使用安装器安装和升级；ZIP供免安装启动，需预装WebView2，用户数据仍保存于用户目录。0.2.0的历史下载文件保留原名。
 
-设置 → 关于新增 GitHub 在线更新：默认自动检查、手动下载安装，可选择默认／备用代理、自定义地址或直连；更新清单和安装包验证通过后才允许安装。免安装版更新时转为安装版并保留原文件夹。首次使用在线更新需要先手动安装0.2.2；发布密钥配置见[在线更新](docs/online-update.md)。
+设置 → 关于新增 GitHub 在线更新：默认自动检查、手动下载安装，可选择默认／备用代理、自定义地址或直连；更新清单和安装包验证通过后才允许安装。免安装版更新时转为安装版并保留原文件夹。首次使用在线更新需要先手动安装0.2.3；发布密钥配置见[在线更新](docs/online-update.md)。
 
 ## 使用
 
@@ -97,7 +97,7 @@ services:
       - "./data:/data"
 ```
 
-服务名称统一为 `quickphrase-hub`。旧项目使用 `shanyu` 时，在图形界面先停止并移除旧容器，保留原项目目录和 `data`，再应用新配置，避免同时启动两个服务。已发布的0.2.1镜像支持 `QUICKPHRASE_*` 并兼容旧 `SHANYU_*` 变量；原0.2.0镜像及其配置继续可用，新变量需升级镜像后使用。本次客户端0.2.2不替换已部署的Hub，共享回收站清空需后续支持该接口的Hub。
+服务名称统一为 `quickphrase-hub`。旧项目使用 `shanyu` 时，在图形界面先停止并移除旧容器，保留原项目目录和 `data`，再应用新配置，避免同时启动两个服务。已发布的0.2.1镜像支持 `QUICKPHRASE_*` 并兼容旧 `SHANYU_*` 变量；原0.2.0镜像及其配置继续可用，新变量需升级镜像后使用。本次客户端0.2.3不替换已部署的Hub，共享回收站清空需后续支持该接口的Hub。
 
 默认用户名为 `admin`，可自行修改；首次登录必须修改初始密码。用户名支持1—64个字符的普通名称，昵称和联系方式可选。已有数据库不会被初始化变量覆盖；初始化完成后可从图形界面移除初始密码变量。
 
@@ -107,7 +107,7 @@ services:
 
 共享数据备份包含账号、共享话术、云文件、回收记录及实际素材，排除个人内容和会话；个人内容使用个人完整备份。完整运维备份在停服后保存整个 `data`。全目录恢复须使用同一份备份还原到新目录，并执行恢复准备以清除旧会话、更换个人同步世代；维护流程见下文。
 
-可复制的配置及备份细节见[共享话术与部署](docs/team-sharing.md)，客户端本版变化见[0.2.2 发布说明](docs/releases/v0.2.2.md)。
+可复制的配置及备份细节见[共享话术与部署](docs/team-sharing.md)，客户端本版变化见[0.2.3 发布说明](docs/releases/v0.2.3.md)。
 
 ## 数据与备份
 
@@ -140,11 +140,11 @@ npm run tauri -- dev
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -InnoCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
-脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.2，产物为 `artifacts/QuickPhrase-Setup-0.2.2-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
+脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.3，产物为 `artifacts/QuickPhrase-Setup-0.2.3-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
 
-默认仍只生成安装器。候选构建可加 `-Version 0.2.2-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.2`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.2` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
+默认仍只生成安装器。候选构建可加 `-Version 0.2.3-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.3`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.3` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
 
-GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.2-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
+GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.3-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
 
 ## 验证
 

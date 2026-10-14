@@ -39,7 +39,7 @@ src-tauri/target/debug/examples/update-probe.exe direct
 src-tauri/target/debug/examples/update-probe.exe default
 src-tauri/target/debug/examples/update-probe.exe backup
 src-tauri/target/debug/examples/update-probe.exe custom https://gh-proxy.com/
-src-tauri/target/debug/examples/update-probe.exe local artifacts/release/0.2.2
+src-tauri/target/debug/examples/update-probe.exe local artifacts/release/0.2.3
 ```
 
 网络探测只比对直连官方清单并删除临时下载，不执行安装器，也不把无签名历史包标记为可安装。`local` 模式使用产品公钥验证本地签名清单、manifest及安装器，发布时将示例目录换为实际新版本目录。
