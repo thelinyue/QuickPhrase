@@ -37,7 +37,7 @@ async function hook(target) {
       if (cmd === 'deliver_content') { qa.deliveries.push(args); return response({ status: qa.status, completedSegments: qa.status === 'submitted' ? 1 : 0, completedBlocks: qa.status === 'submitted' ? 1 : 0, error: qa.status === 'submitted' ? null : '隔离验证：操作已停止' }); }
       if (['copy_phrase_text', 'copy_linked_files', 'open_linked_file'].includes(cmd)) throw new Error('隔离验证禁止系统复制或打开文件');
       if (['plugin:window|show', 'plugin:window|set_focus', 'plugin:menu|popup', 'show_phrase_preview'].includes(cmd)) return response(null);
-      if (cmd === 'set_common_dock_height') qa.heights.push(args.height);
+      if (cmd === 'set_common_dock_height') { qa.heights.push(args.height); qa.geometry = args; }
       return original(input, init);
     };
   });
@@ -123,7 +123,7 @@ try {
       for (let i = 0; i < 2; i++) {
         if (i > 0) await click(target.getByRole('button', { name: target === page ? '清空搜索' : '清空底部搜索', exact: true }));
         await click(history); await waitResults(target);
-        assert.equal(await target.locator('.search-history').count(), 0, '搜索结果状态不显示历史');
+        assert.equal(await target.locator('.search-history').count(), target === dock ? 1 : 0, '底部搜索保留历史，主窗口隐藏历史');
         await target.waitForFunction(n => window.__historyQA.requests.filter(r => r.cmd === 'search_scoped_content').length === n, before.searches + i + 1);
         assert.equal(await target.locator('.search-bar input').inputValue(), 'UPS');
         assert.equal(await target.locator('.search-bar input').evaluate(el => document.activeElement === el), true);
@@ -149,6 +149,53 @@ try {
     await dock.waitForFunction(() => window.__historyQA.heights.at(-1) === Math.ceil(document.querySelector('.common-dock-content').getBoundingClientRect().height));
     const heights = await dock.evaluate(() => window.__historyQA.heights);
     assert.ok(heights.length > 1); assert.ok(new Set(heights).size > 1); assert.ok(heights.every(h => h >= 28 && h <= 420));
+  });
+  await check('底部标签、收起恢复、紧凑结果及420 DIP高度预算，按钮始终居中且完整可见', async () => {
+    const categoryId = await invoke('save_category', { category: { id: '', name: '本地文件验证', kind: 'file', parentId: null, position: 0, background: '' } });
+    const filePath = path.join(evidence, 'UPS说明.txt'); await fs.writeFile(filePath, '隔离布局验证');
+    await invoke('add_files', { categoryId, paths: [filePath] });
+    for (let i = 0; i < 30; i++) await invoke('save_common_phrase', { libraryId, phrase: { id: '', text: '常用短语' + i, position: i } });
+    let current = await invoke('get_library');
+    await invoke('save_settings', { settings: { ...current.settings, dockCommon: true, dockCommonRows: 0 } });
+    await setInput(dock, 'UPS'); await waitResults(dock);
+    const validate = async () => {
+      await dock.waitForFunction(() => {
+        const el = document.querySelector('.common-dock-content'), upper = document.querySelector('.dock-search-upper'), geometry = window.__historyQA.geometry;
+        return geometry?.height === Math.ceil(el.getBoundingClientRect().height) && geometry.aboveHeight === Math.ceil(upper.getBoundingClientRect().height);
+      });
+      const bounds = await dock.evaluate(() => {
+        const rect = el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, bottom: r.bottom, right: r.right }; };
+        const bar = document.querySelector('.dock-search-bar'), result = document.querySelector('.dock-search-results');
+        return { content: rect(document.querySelector('.common-dock-content')), bar: rect(bar), buttons: [...bar.querySelectorAll('button')].map(rect), result: rect(result), scroll: result.scrollHeight > result.clientHeight, common: rect(document.querySelector('.common-phrases')), geometry: window.__historyQA.geometry };
+      });
+      assert.ok(bounds.content.height <= 420); assert.equal(bounds.bar.height, 30); assert.ok(bounds.result.height <= 228);
+      assert.ok(bounds.common.bottom <= bounds.content.bottom);
+      assert.equal(bounds.geometry.aboveHeight, bounds.bar.y);
+      for (const button of bounds.buttons) { assert.ok(Math.abs(button.y + button.height / 2 - bounds.bar.y - bounds.bar.height / 2) <= 1); assert.ok(button.x >= 0 && button.right <= bounds.content.right); }
+      return bounds;
+    };
+    await dock.setViewportSize({ width: 300, height: 420 });
+    assert.ok((await validate()).scroll, '窄窗口优先压缩结果区并提供滚动'); await dock.screenshot({ path: path.join(evidence, 'dock-search-narrow.png') });
+    await dock.setViewportSize({ width: 988, height: 420 });
+    await validate(); await dock.screenshot({ path: path.join(evidence, 'dock-search-wide.png') });
+    await click(dock.getByRole('tab', { name: '本地文件', exact: true }));
+    assert.equal(await dock.locator('.dock-search-results .content-row').count(), 1);
+    assert.ok((await validate()).result.height < 80, '单条文件不撑大结果区');
+    await dock.screenshot({ path: path.join(evidence, 'dock-search-file.png') });
+    await click(dock.getByRole('button', { name: '收起底部搜索' }));
+    assert.equal(await dock.locator('.search-bar input').count(), 0); assert.equal(await dock.locator('.search-history').count(), 0);
+    assert.equal(await dock.locator('.common-phrases').count(), 1); assert.equal((await invoke('get_library')).settings.dockSearch, true);
+    await dock.screenshot({ path: path.join(evidence, 'dock-search-collapsed.png') });
+    await click(dock.getByRole('button', { name: '展开底部搜索' })); await waitResults(dock);
+    assert.equal(await dock.locator('.search-bar input').inputValue(), 'UPS');
+    assert.equal(await dock.getByRole('tab', { name: '本地文件' }).getAttribute('aria-selected'), 'true');
+    await click(dock.getByRole('tab', { name: '话术', exact: true }));
+    await setInput(dock, '不存在的搜索词'); await dock.getByText('没有找到匹配的话术', { exact: true }).waitFor();
+    assert.ok((await validate()).result.height < 80);
+    await click(dock.getByRole('button', { name: '清空底部搜索' }));
+    current = await invoke('get_library'); await invoke('save_settings', { settings: { ...current.settings, dockCommon: false } });
+    await invoke('set_common_dock_height', { height: 420, aboveHeight: 421 }, dock).then(() => assert.fail('非法向上高度必须拒绝'), error => assert.match(String(error), /高度无效/));
+    await invoke('set_common_dock_height', { height: 50, aboveHeight: 20 }, page).then(() => assert.fail('非底栏窗口必须拒绝'), error => assert.match(String(error), /高度无效/));
   });
   await check('退出并重启实际客户端，记录持久保留并在两处恢复', async () => {
     const before = await read(), id = libraryId;

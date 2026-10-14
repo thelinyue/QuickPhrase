@@ -248,9 +248,22 @@ mark { background: transparent; color: #f36c21; }
 .common-dock-toggle { order: -3; height: 24px; width: 22px; padding: 0; background: transparent; border: 0; color: #777; display: grid; place-items: center; }
 .common-label { display: flex; align-items: center; gap: 5px; flex-shrink: 0; border: 0; color: #7e94a5; background: transparent; padding: 0 3px; height: 25px; order: -2; }
 .common-menu-arrow { border: 4px solid transparent; border-bottom: 0; border-top-color: #899ead; }
-.common-dock-content { width: 100%; }
-.dock-search-results { background: #fff; max-height: 228px; overflow-y: auto; font-size: var(--phrase-size); }
-.common-dock { position: relative; }
+.common-dock-content { width: 100%; display: flex; flex-direction: column; max-height: 420px; }
+/* 只让结果区缩小并滚动，历史、输入与短语保留完整高度，禁止原生窗口裁掉底部按钮。 */
+.dock-search-upper { display: flex; flex-direction: column; min-height: 0; flex-shrink: 1; background: #fff; }
+.dock-search-tabs { display: flex; flex-shrink: 0; height: 25px; border-top: 1px solid #70a7db; border-bottom: 1px solid #dbe3e9; }
+.dock-search-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 0 14px; background: transparent; color: #315470; }
+.dock-search-tabs button[aria-selected="true"] { border-bottom-color: var(--blue); color: var(--blue); }
+.dock-search-results { background: #fff; min-height: 0; max-height: 228px; overflow-y: auto; font-size: var(--phrase-size); flex-shrink: 1; }
+.dock-search-results .no-results { padding: 8px 14px; }
+.search-history-label { flex-shrink: 0; line-height: 22px; color: #8098ae; }
+.dock-search-bar { gap: 5px; }
+.dock-search-bar > svg { flex-shrink: 0; margin: 0; }
+.dock-search-bar > button { display: grid; place-items: center; flex-shrink: 0; padding: 0; }
+.dock-search-bar > .dock-search-toggle { width: 22px; height: 24px; border: 0; background: transparent; color: #777; }
+.dock-search-toggle svg { width: 18px; height: 18px; }
+.dock-search-bar > .dock-search-clear { width: 18px; height: 18px; line-height: 1; }
+.common-dock { position: relative; border: 0; box-shadow: none; }
 .dock-status { position: absolute; inset: 0; color: #fff; background: #284f70; padding: 7px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .common-editor { display: flex; flex-direction: column; background: #f5f5f5; }
 .common-editor form { display: flex; flex-direction: column; flex: 1; padding: 15px; min-height: 0; }

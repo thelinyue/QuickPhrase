@@ -57,6 +57,62 @@ function view(dock = false, value = library) {
 }
 function input(dock: boolean) { return screen.getByRole('textbox', { name: dock ? '底部搜索话术、本地文件' : '搜索话术、本地文件' }); }
 function results(dock: boolean) { return dock ? screen.getByRole('listbox', { name: '底部搜索结果' }) : screen.getByRole('region', { name: '搜索结果' }); }
+describe('底部搜索面板', () => {
+  it('标签隔离文件与话术，键盘选择和投递只使用当前标签', async () => {
+    const base = vi.mocked(call).getMockImplementation()!;
+    vi.mocked(call).mockImplementation(async (name, args) => name === 'search_scoped_content' ? [...hits, { id: 'file1', kind: 'file', phrase: null, file: { id: 'file1', categoryId: 'files', name: 'UPS说明.txt', path: 'C:\\UPS说明.txt', position: 0, missing: false } }] : base(name, args));
+    view(true); await search(true);
+    fireEvent.keyDown(input(true), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('tab', { name: '本地文件' }));
+    expect(within(results(true)).getAllByRole('option')).toHaveLength(1);
+    expect(within(results(true)).getByRole('option').getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(input(true), { key: 'Enter' });
+    await waitFor(() => expect(deliveries()).toHaveLength(1));
+    expect(deliveries()[0][1]).toMatchObject({ id: 'file1', kind: 'file', mode: 'insert' });
+    fireEvent.keyDown(screen.getByRole('tab', { name: '本地文件' }), { key: 'ArrowLeft' });
+    expect(screen.getByRole('tab', { name: '话术' }).getAttribute('aria-selected')).toBe('true');
+    expect(within(results(true)).getAllByRole('option')[0].getAttribute('aria-selected')).toBe('true');
+    expect(searches()).toHaveLength(1);
+  });
+  it('收起保留关键词和标签、不保存设置；展开重新查询并聚焦，短语保持独立', async () => {
+    view(true, { ...library, commonPhrases: [{ id: 'common', text: '您好', position: 0 }], settings: { ...library.settings, dockCommon: true } });
+    await search(true); fireEvent.click(screen.getByRole('tab', { name: '本地文件' }));
+    fireEvent.compositionStart(input(true));
+    fireEvent.click(screen.getByRole('button', { name: '收起底部搜索' }));
+    expect(screen.queryByRole('textbox')).toBeNull(); expect(screen.queryByRole('region', { name: '搜索记录' })).toBeNull();
+    expect(screen.getByRole('option', { name: '您好' })).toBeTruthy();
+    expect(vi.mocked(call).mock.calls.some(([name]) => name === 'save_settings')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '展开底部搜索' }));
+    expect(input(true)).toHaveProperty('value', 'UPS');
+    expect(screen.getByRole('tab', { name: '本地文件' }).getAttribute('aria-selected')).toBe('true');
+    await waitFor(() => expect(searches()).toHaveLength(2));
+    await waitFor(() => expect(document.activeElement).toBe(input(true)));
+    fireEvent.keyDown(input(true), { key: 'Escape' });
+    expect(input(true)).toHaveProperty('value', ''); expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.getByRole('region', { name: '搜索记录' })).toBeTruthy();
+  });
+  it('搜索期间可直接点击历史重搜，清空记录不改变当前结果', async () => {
+    view(true); await search(true);
+    fireEvent.click(screen.getByRole('button', { name: 'SSH' }));
+    await waitFor(() => expect(searches().at(-1)?.[1]).toMatchObject({ query: 'SSH' }));
+    expect(input(true)).toHaveProperty('value', 'SSH');
+    fireEvent.click(screen.getByRole('button', { name: '清空搜索记录' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: '搜索记录' })).toBeNull());
+    expect(input(true)).toHaveProperty('value', 'SSH'); expect(within(results(true)).getAllByRole('option')).toHaveLength(2);
+  });
+  it('输入法确认不投递，发送中的重复Enter只提交一次', async () => {
+    view(true); await search(true);
+    fireEvent.compositionStart(input(true)); fireEvent.keyDown(input(true), { key: 'Enter', isComposing: true });
+    expect(deliveries()).toHaveLength(0);
+    fireEvent.compositionEnd(input(true)); await waitFor(() => expect(searches()).toHaveLength(2));
+    const base = vi.mocked(call).getMockImplementation()!;
+    let finish!: (value: DeliveryReport) => void;
+    vi.mocked(call).mockImplementation(async (name, args) => name === 'deliver_content' ? new Promise(resolve => { finish = resolve; }) : base(name, args));
+    fireEvent.keyDown(input(true), { key: 'Enter' }); fireEvent.keyUp(input(true), { key: 'Enter' }); fireEvent.keyDown(input(true), { key: 'Enter' });
+    await waitFor(() => expect(deliveries()).toHaveLength(1));
+    await act(async () => finish({ status: 'submitted', completedSegments: 1, completedBlocks: 1 } as DeliveryReport));
+  });
+});
 async function search(dock: boolean, query = 'UPS') {
   fireEvent.change(input(dock), { target: { value: query } });
   await waitFor(() => expect(within(results(dock)).getAllByRole('option')).toHaveLength(2));
@@ -68,7 +124,7 @@ describe.each([false, true])('搜索记录入口，底部=%s', dock => {
     fireEvent.click(button);
     await waitFor(() => expect(within(results(dock)).getAllByRole('option')).toHaveLength(2));
     expect(input(dock)).toHaveProperty('value', 'UPS'); expect(document.activeElement).toBe(input(dock));
-    expect(screen.queryByRole('region', { name: '搜索记录' })).toBeNull();
+    expect(Boolean(screen.queryByRole('region', { name: '搜索记录' }))).toBe(dock);
     expect(searches().at(-1)?.[1]).toEqual(dock ? { query: 'UPS', scope: 'all' } : { query: 'UPS', scope: 'private', teamId: null });
     fireEvent.keyDown(input(dock), { key: 'ArrowDown' }); expect(within(results(dock)).getAllByRole('option')[1].getAttribute('aria-selected')).toBe('true');
     const count = searches().length;

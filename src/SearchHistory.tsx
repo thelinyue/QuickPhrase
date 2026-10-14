@@ -50,11 +50,12 @@ export function useSearchHistory(libraryId: string | undefined, onError: (messag
 }
 
 /** 关键词按钮只重新搜索；使用独立清空入口，避免与清空当前搜索混淆。 */
-export function SearchHistoryBar({ items, clearing, onSelect, onClear }: {
-  items: string[]; clearing: boolean; onSelect: (query: string) => void; onClear: () => void;
+export function SearchHistoryBar({ items, clearing, onSelect, onClear, label }: {
+  items: string[]; clearing: boolean; onSelect: (query: string) => void; onClear: () => void; label?: string;
 }) {
   if (!items.length) return null;
   return <section className="search-history" aria-label="搜索记录">
+    {label && <span className="search-history-label">{label}：</span>}
     <div className="search-history-items">{items.map(query => <button type="button" key={query} title={query} onClick={() => onSelect(query)}>{query}</button>)}</div>
     <button type="button" className="clear-search-history" aria-label="清空搜索记录" title="清空搜索记录" disabled={clearing} onClick={onClear}><Icon name="trash" /></button>
   </section>;

@@ -135,8 +135,8 @@ pub struct NativeState {
     pub search_input: std::sync::atomic::AtomicI64,
     /// 设置、用户名与共享话术各自记录句柄，最后一个管理窗口关闭后才恢复业务快捷键。
     pub management_windows: ManagementWindows,
-    /// 横条按内容换行后的逻辑高度，由前端测量；跟随线程转换为目标显示器的物理像素。
-    pub common_height: std::sync::atomic::AtomicI32,
+    /// 总高度与向上展开高度必须来自同一次布局，避免跟随线程读到半次更新而移动输入行。
+    pub common_geometry: Mutex<(i32, i32)>,
     pub error: Mutex<Option<String>>,
     display_mode: Mutex<DisplayMode>,
     pub running: AtomicBool,
@@ -170,7 +170,7 @@ impl NativeState {
             shortcut_input: std::sync::atomic::AtomicI64::new(0),
             search_input: std::sync::atomic::AtomicI64::new(0),
             management_windows: ManagementWindows::default(),
-            common_height: std::sync::atomic::AtomicI32::new(34),
+            common_geometry: Mutex::new((34, 0)),
             error: Mutex::new(None),
             display_mode: Mutex::new(DisplayMode::default()),
             running: AtomicBool::new(true),
@@ -388,7 +388,7 @@ mod platform {
             },
             System::{LibraryLoader::GetModuleHandleW, Registry::*},
             UI::{
-                HiDpi::GetDpiForWindow,
+                HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI},
                 Input::{
                     GetCurrentInputMessageSource, KeyboardAndMouse::*, IMO_INJECTED,
                     INPUT_MESSAGE_SOURCE,
@@ -1001,10 +1001,13 @@ mod platform {
         /// 闪语窗口只能延续刚才正在使用的目标，不能让独立窗口吸附到后台的旧目标。
         target_context: bool,
         original_rect: Option<RECT>,
+        original_dpi: u32,
         width: super::docking::DockWidth,
         foreground: i64,
         /// 底栏独立记录前台切换，在目标所在层内维持目标、侧栏、底栏的顺序。
         common_foreground: i64,
+        /// 只为本次进程首次独立显示定位；随后唤起保留用户移动的位置。
+        standalone_positioned: bool,
     }
     impl Dock {
         /// 两处面板共用进程及窗口类型结论；同进程图片／视频窗口不能借用后台聊天关系。
@@ -1081,7 +1084,7 @@ mod platform {
             Ok(rect)
         }
         /// 独立横条不改变聊天窗口的焦点；即使主窗口没有左右吸附，也可跟随底边。
-        /// 始终贴在目标下方且与目标等宽，超出屏幕时不回挪到聊天区域，也不压缩内容。
+        /// 输入行固定贴在目标下方；搜索结果和历史向上覆盖目标，其他底部内容不改变锚点。
         unsafe fn update_common(&mut self, state: &NativeState, foreground: HWND) {
             let foreground_changed = self.common_foreground != foreground.0 as i64;
             self.common_foreground = foreground.0 as i64;
@@ -1110,24 +1113,23 @@ mod platform {
             }
             // 内容高度来自底栏 WebView 的 DIP，必须使用底栏自身 DPI，避免目标 DPI 模式不同而裁短内容。
             // 跨屏后下一轮重新读取 DPI 和边框，沿用异步定位，不重复处理系统的 DPI 通知。
-            let height = (state.common_height.load(Ordering::Acquire)
-                * GetDpiForWindow(bar).max(96) as i32
-                / 96)
-                .max(1);
-            let y = target_rect.bottom;
+            let (height, above_height) = *state.common_geometry.lock().unwrap();
+            let mut desired = super::docking::bottom_bounds(
+                &target_rect,
+                height,
+                above_height,
+                GetDpiForWindow(bar),
+            );
             let Ok(frame) = Self::frame(bar) else {
                 return;
             };
-            let bounds = super::docking::window_bounds_for_frame(
-                &RECT {
-                    left: target_rect.left,
-                    top: y,
-                    right: target_rect.right,
-                    bottom: y + height,
-                },
-                &current,
-                &frame,
-            );
+            // 可见原生边框也占高度；前端上报的是客户区内容，不能让底部控件被这一圈边框裁掉。
+            let mut client = RECT::default();
+            if GetClientRect(bar, &mut client).is_ok() {
+                desired.bottom +=
+                    ((frame.bottom - frame.top) - (client.bottom - client.top)).max(0);
+            }
+            let bounds = super::docking::window_bounds_for_frame(&desired, &current, &frame);
             let (x, y, width, height) = (
                 bounds.left,
                 bounds.top,
@@ -1137,7 +1139,23 @@ mod platform {
             let topmost = GetWindowLongPtrW(target, GWL_EXSTYLE) & WS_EX_TOPMOST.0 as isize != 0;
             let is_topmost = GetWindowLongPtrW(bar, GWL_EXSTYLE) & WS_EX_TOPMOST.0 as isize != 0;
             let main = hwnd(windows.0);
-            let anchor = if self.original_rect.is_some()
+            let expanded = above_height > 0;
+            let anchor = if expanded {
+                // 插到目标之前而不是全局置顶；跳过底栏自身，避免把自身作为插入锚点。
+                let previous = GetWindow(target, GW_HWNDPREV).unwrap_or(HWND_TOP);
+                let previous = if previous == bar {
+                    GetWindow(bar, GW_HWNDPREV).unwrap_or(HWND_TOP)
+                } else {
+                    previous
+                };
+                if !topmost
+                    && GetWindowLongPtrW(previous, GWL_EXSTYLE) & WS_EX_TOPMOST.0 as isize != 0
+                {
+                    HWND_TOP
+                } else {
+                    previous
+                }
+            } else if self.original_rect.is_some()
                 && IsWindowVisible(main).as_bool()
                 && !IsIconic(main).as_bool()
             {
@@ -1148,15 +1166,38 @@ mod platform {
             if !IsWindowVisible(bar).as_bool()
                 || foreground_changed
                 || is_topmost != topmost
-                || GetWindow(anchor, GW_HWNDNEXT).ok() != Some(bar)
+                || if expanded {
+                    GetWindow(target, GW_HWNDPREV).ok() != Some(bar)
+                } else {
+                    GetWindow(anchor, GW_HWNDNEXT).ok() != Some(bar)
+                }
                 || current.left != x
                 || current.top != y
                 || current.right - current.left != width
                 || current.bottom - current.top != height
             {
-                // 点击也会改变层内顺序。底栏紧邻侧栏（或仅显示底栏时的目标）后方，
-                // 目标先显示，跟随刷新短暂滞后时也不会遮住聊天内容；任务栏仍可正常遮挡。
+                // 展开时底栏在目标前，收起后回到原有层级；跟随目标的置顶状态，不抢焦点。
+                // 不移动共同所有者，否则 Windows 会把侧栏一起带到目标前方，收起后也无法恢复顺序。
                 // 跨线程定位异步提交，避免界面等待设置响应时与后台同步窗口消息互相等待。
+                if expanded && is_topmost != topmost {
+                    let _ = SetWindowPos(
+                        bar,
+                        Some(if topmost {
+                            HWND_TOPMOST
+                        } else {
+                            HWND_NOTOPMOST
+                        }),
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE
+                            | SWP_NOSIZE
+                            | SWP_NOACTIVATE
+                            | SWP_NOOWNERZORDER
+                            | SWP_ASYNCWINDOWPOS,
+                    );
+                }
                 let _ = SetWindowPos(
                     bar,
                     Some(anchor),
@@ -1164,7 +1205,7 @@ mod platform {
                     y,
                     width,
                     height,
-                    SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_ASYNCWINDOWPOS,
+                    SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS,
                 );
             }
         }
@@ -1186,6 +1227,60 @@ mod platform {
                 self.width = Default::default();
             }
             true
+        }
+        /// 独立窗口先在前台所在屏幕定位再显示；尺寸随目标 DPI 换算，工作区排除任务栏。
+        unsafe fn position_standalone(
+            &mut self,
+            main: HWND,
+            foreground: HWND,
+            original: Option<RECT>,
+        ) -> Result<()> {
+            if self.standalone_positioned {
+                return Ok(());
+            }
+            let monitor = if !foreground.0.is_null() && IsWindow(Some(foreground)).as_bool() {
+                MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST)
+            } else {
+                let mut point = POINT::default();
+                GetCursorPos(&mut point).map_err(|e| format!("无法确定当前屏幕：{e}"))?;
+                MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST)
+            };
+            let mut info = MONITORINFO {
+                cbSize: size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            if !GetMonitorInfoW(monitor, &mut info).as_bool() {
+                return Err("无法读取当前屏幕工作区。".into());
+            }
+            let mut rect = RECT::default();
+            GetWindowRect(main, &mut rect).map_err(|e| format!("无法读取主窗口尺寸：{e}"))?;
+            // 恢复定位是异步消息，不能立刻把尚未恢复的侧栏尺寸当作独立窗口尺寸。
+            let current_dpi = if let Some(original) = original {
+                rect = original;
+                self.original_dpi.max(96)
+            } else {
+                GetDpiForWindow(main).max(96)
+            };
+            let (mut dpi, mut dpi_y) = (current_dpi, current_dpi);
+            let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut dpi_y);
+            let bounds = super::docking::standalone_bounds(
+                &info.rcWork,
+                ((rect.right - rect.left) as f64 * dpi as f64 / current_dpi as f64).round() as i32,
+                ((rect.bottom - rect.top) as f64 * dpi as f64 / current_dpi as f64).round() as i32,
+                dpi,
+            );
+            SetWindowPos(
+                main,
+                None,
+                bounds.left,
+                bounds.top,
+                bounds.right - bounds.left,
+                bounds.bottom - bounds.top,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+            )
+            .map_err(|e| format!("无法将主窗口定位到屏幕右侧：{e}"))?;
+            self.standalone_positioned = true;
+            Ok(())
         }
         unsafe fn update(&mut self, state: &NativeState, foreground: HWND) {
             let Some(windows) = state.windows.get() else {
@@ -1211,8 +1306,15 @@ mod platform {
             };
             self.target_context = target.is_some() && mode != DisplayMode::Hidden;
             if !settings.dock || mode == DisplayMode::Standalone {
+                let original = self.original_rect;
                 if !self.restore(state, main, settings.pinned) {
                     return;
+                }
+                if show {
+                    if let Err(error) = self.position_standalone(main, foreground, original) {
+                        state.notify_error(error);
+                        return;
+                    }
                 }
                 if show && !visible {
                     let _ = ShowWindow(main, SW_SHOWNOACTIVATE);
@@ -1255,6 +1357,7 @@ mod platform {
             }
             if self.original_rect.is_none() {
                 self.original_rect = Some(m);
+                self.original_dpi = GetDpiForWindow(main).max(96);
             }
             let Ok(frame) = Self::frame(main) else {
                 return;
@@ -1305,7 +1408,7 @@ mod platform {
                     y,
                     width,
                     height,
-                    SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_ASYNCWINDOWPOS,
+                    SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS,
                 ) {
                     state.notify_error(format!("闪语跟随目标窗口失败：{error}"));
                 }

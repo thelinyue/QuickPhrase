@@ -320,11 +320,16 @@ fn set_common_dock_height(
     state: State<AppState>,
     window: tauri::Window,
     height: i32,
+    above_height: Option<i32>,
 ) -> Result<()> {
-    if window.label() != "common-dock" || !(28..=420).contains(&height) {
+    let above_height = above_height.unwrap_or(0);
+    if window.label() != "common-dock"
+        || !(28..=420).contains(&height)
+        || !(0..=height - 28).contains(&above_height)
+    {
         return Err("常用短语横条高度无效。".into());
     }
-    state.native.common_height.store(height, Ordering::Release);
+    *state.native.common_geometry.lock().unwrap() = (height, above_height);
     Ok(())
 }
 /// 浮层只接受列表窗口的悬停请求，内容从本地库按 ID 读取，前端不能伪造发送或修改数据。

@@ -115,6 +115,38 @@ try {
       for (const key of ['main', 'bar', 'preview']) { assert.equal(windowOf(state, key).toolWindow, true); assert.equal(windowOf(state, key).appWindow, false); }
       snapshots.push({ name: name + '-active', state });
     });
+    await check(name + '底部搜索向上展开固定输入行，临时覆盖目标且收起恢复层级', async () => {
+      const dock = browser.contexts()[0].pages().find(p => p.url().includes('#common-dock'));
+      const library = await invoke('get_library');
+      const root = await invoke('save_category', { libraryId: library.libraryId, category: { id: '', name: '底部搜索定位验证', kind: 'phrase', parentId: null, position: 0, background: '' } });
+      await invoke('save_phrase', { libraryId: library.libraryId, phrase: { id: '', rootId: root, groupId: null, title: '定位验证', color: '', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '隔离宿主布局验证，不投递内容' }] }] }, afterId: null });
+      await invoke('save_settings', { settings: { ...settings, dockSearch: true } });
+      await focus(hostHandle);
+      const setInput = value => dock.locator('.search-bar input').evaluate((el, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); }, value);
+      const anchored = async () => {
+        const state = await inspect(), bar = windowOf(state, 'bar'), target = state.windows[0];
+        const geometry = await dock.evaluate(() => ({ offset: document.querySelector('.dock-search-bar').getBoundingClientRect().top, height: document.querySelector('.common-dock-content').getBoundingClientRect().height }));
+        return Math.abs(bar.frame.top + Math.round(geometry.offset * bar.dpi / 96) - target.frame.bottom) <= 1 && bar.clientRect.bottom - bar.clientRect.top >= Math.ceil(geometry.height * bar.dpi / 96) && state;
+      };
+      await poll(anchored, '空搜索锚点');
+      await setInput('定位验证'); await dock.locator('.dock-search-results .content-row').waitFor();
+      let state = await poll(async () => { const state = await anchored(); return state && windowOf(state, 'bar').zOrder < state.windows[0].zOrder && state; }, '结果在目标前方且输入行不动');
+      assert.equal(state.foreground, hostHandle); assert.equal(windowOf(state, 'bar').topmost, false);
+      await dock.screenshot({ path: path.join(evidence, 'dock-expanded-' + name + '.png') });
+      snapshots.push({ name: name + '-search-expanded', state });
+      await control('raise'); await poll(async () => windowOf(await inspect(), 'bar').topmost, '展开时跟随目标置顶');
+      await control('unpin'); await poll(async () => !windowOf(await inspect(), 'bar').topmost, '展开时撤销目标置顶');
+      await invoke('record_search_history', { libraryId: library.libraryId, query: '定位验证' });
+      await dock.locator('.search-history').waitFor(); await poll(anchored, '历史增加后输入行仍固定');
+      await focus(neutralHandle); await poll(async () => !windowOf(await inspect(), 'bar').visible, '展开时切换其他程序隐藏');
+      await focus(hostHandle); await poll(async () => windowOf(await inspect(), 'bar').visible, '返回宿主恢复展开');
+      await dock.getByRole('button', { name: '收起底部搜索' }).evaluate(el => el.click());
+      state = await poll(async () => { const state = await anchored(); return state && windowOf(state, 'bar').zOrder > state.windows[0].zOrder && state; }, '收起后恢复跟随层级');
+      assert.equal(state.foreground, hostHandle); assert.equal(await dock.locator('.search-bar input').count(), 0);
+      snapshots.push({ name: name + '-search-collapsed', state });
+      await invoke('clear_search_history', { libraryId: library.libraryId });
+      await invoke('delete_category', { id: root }); await invoke('save_settings', { settings });
+    });
     await check(name + '主窗口内通讯录、搜索及无可用输入框页面持续吸附，不要求输入焦点', async () => {
       await control('focus-list');
       const unfocused = await inspect(); assert.equal(unfocused.inputFocused, false);
@@ -201,6 +233,19 @@ try {
       await stopApp(); await focus(neutralHandle); settings = await startApp(args);
       state = await inspect(); assert.equal(windowOf(state, 'main').visible, !args.length); assert.equal(state.foreground, args.length ? neutralHandle : handles.main);
       settings = { ...settings, dock: true }; await invoke('save_settings', { settings });
+    });
+    await check(name + '首次独立显示靠屏幕右侧，移动后隐藏与重复唤起保留位置', async () => {
+      await invoke('window_action', { action: 'show' });
+      const state = await poll(async () => { const state = await inspect(); return windowOf(state, 'main').visible && state; }, '首次独立显示');
+      const main = windowOf(state, 'main'), margin = Math.round(12 * main.dpi / 96);
+      assert.equal(main.work.right - main.rect.right, margin);
+      assert.ok(Math.abs((main.rect.top - main.work.top) - (main.work.bottom - main.rect.bottom)) <= 1);
+      const x = main.work.left + 100, y = main.work.top + 45;
+      await control('move', { handle: handles.main, x, y, width: main.rect.right - main.rect.left, height: main.rect.bottom - main.rect.top });
+      await invoke('window_action', { action: 'hide' }); await focus(neutralHandle); await duplicate([]);
+      const restored = await poll(async () => { const state = await inspect(); return windowOf(state, 'main').visible && state; }, '重复启动恢复独立窗口');
+      assert.equal(windowOf(restored, 'main').rect.left, x); assert.equal(windowOf(restored, 'main').rect.top, y);
+      snapshots.push({ name: name + '-right-position', state }, { name: name + '-moved-restored', state: restored });
     });
     await check(name + '无目标手动独立唤起，返回目标后恢复跟随并延续编辑窗口的关系', async () => {
       await invoke('window_action', { action: 'show' }); await poll(async () => windowOf(await inspect(), 'main').visible, '独立显示');

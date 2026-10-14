@@ -51,9 +51,95 @@ pub fn sidebar_bounds(
     }
 }
 
+/// 独立窗口默认靠当前工作区右侧，超大尺寸先收进工作区；负坐标屏幕同样按其边界计算。
+pub fn standalone_bounds(
+    work: &windows::Win32::Foundation::RECT,
+    width: i32,
+    height: i32,
+    dpi: u32,
+) -> windows::Win32::Foundation::RECT {
+    let width = width.clamp(1, (work.right - work.left).max(1));
+    let height = height.clamp(1, (work.bottom - work.top).max(1));
+    let margin = (12.0 * f64::from(dpi.max(96)) / 96.0).round() as i32;
+    let left = (work.right - width - margin).max(work.left);
+    let top = work.top + ((work.bottom - work.top - height) / 2).max(0);
+    windows::Win32::Foundation::RECT {
+        left,
+        top,
+        right: left + width,
+        bottom: top + height,
+    }
+}
+
+/// 两段高度使用同一 DPI 换算；输入行的物理位置恒为目标底边，不随搜索结果数量跳动。
+pub fn bottom_bounds(
+    target: &windows::Win32::Foundation::RECT,
+    height: i32,
+    above: i32,
+    dpi: u32,
+) -> windows::Win32::Foundation::RECT {
+    let scale = f64::from(dpi.max(96)) / 96.0;
+    let top = target.bottom - (f64::from(above) * scale).round() as i32;
+    windows::Win32::Foundation::RECT {
+        left: target.left,
+        top,
+        right: target.right,
+        bottom: top + (f64::from(height) * scale).round() as i32,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn standalone_stays_inside_current_work_area_at_each_dpi() {
+        use windows::Win32::Foundation::RECT;
+        for dpi in [96, 144, 192] {
+            let work = RECT {
+                left: -2560,
+                top: -240,
+                right: 0,
+                bottom: 1200,
+            };
+            let width = 330 * dpi as i32 / 96;
+            let height = 720 * dpi as i32 / 96;
+            let bounds = standalone_bounds(&work, width, height, dpi);
+            assert_eq!(work.right - bounds.right, 12 * dpi as i32 / 96);
+            assert_eq!(bounds.top - work.top, (work.bottom - bounds.bottom).max(0));
+            assert!(bounds.left >= work.left && bounds.bottom <= work.bottom);
+            let oversized = standalone_bounds(&work, 4000, 3000, dpi);
+            assert_eq!(
+                (
+                    oversized.left,
+                    oversized.top,
+                    oversized.right,
+                    oversized.bottom
+                ),
+                (work.left, work.top, work.right, work.bottom)
+            );
+        }
+    }
+    #[test]
+    fn search_expansion_keeps_input_at_target_bottom_at_each_dpi() {
+        use windows::Win32::Foundation::RECT;
+        let target = RECT {
+            left: -1200,
+            top: 30,
+            right: -200,
+            bottom: 800,
+        };
+        for dpi in [96, 144, 192] {
+            for above in [0, 29, 84, 253, 362] {
+                let rect = bottom_bounds(&target, above + 58, above, dpi);
+                assert_eq!(
+                    rect.top + (f64::from(above) * f64::from(dpi) / 96.0).round() as i32,
+                    target.bottom
+                );
+                assert_eq!((rect.left, rect.right), (target.left, target.right));
+                assert_eq!(rect.bottom, target.bottom + 58 * dpi as i32 / 96);
+            }
+        }
+    }
     #[test]
     fn sidebar_at_screen_edge_stays_on_configured_side_with_full_width() {
         use windows::Win32::Foundation::RECT;
