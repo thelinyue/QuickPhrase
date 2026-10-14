@@ -18,6 +18,54 @@ pub struct User {
     /// 建组是账号级授权，不能从任一小组角色推导。旧缓存默认未授权。
     #[serde(default)]
     pub can_create_teams: bool,
+    /// 公司文件管理授权属于工号，与小组角色无关；旧 Hub 和旧缓存默认为未授权。
+    #[serde(default)]
+    pub company_file_permissions: CompanyFilePermissions,
+}
+
+/// 配置版本防止管理员互相覆盖；上传版本只在上传授权变化时递增，
+/// 使撤权后再授权也不能接收旧在途任务，而恢复授权调整不会打断上传。
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyFilePermissions {
+    pub can_upload: bool,
+    pub can_recycle: bool,
+    pub can_restore: bool,
+    pub version: u64,
+    pub upload_version: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompanyOperation {
+    Read,
+    RecycleBin,
+    Upload,
+    Recycle,
+    Restore,
+    Purge,
+}
+impl CompanyFilePermissions {
+    /// 管理员始终具有全权限，不能通过普通授权配置降低管理员身份。
+    pub fn allows(&self, admin: bool, operation: CompanyOperation) -> bool {
+        admin
+            || match operation {
+                CompanyOperation::Read => true,
+                CompanyOperation::RecycleBin => self.can_recycle || self.can_restore,
+                CompanyOperation::Upload => self.can_upload,
+                CompanyOperation::Recycle => self.can_recycle,
+                CompanyOperation::Restore => self.can_restore,
+                CompanyOperation::Purge => false,
+            }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompanyFilePermissionsWrite {
+    pub can_upload: bool,
+    pub can_recycle: bool,
+    pub can_restore: bool,
+    pub expected_version: u64,
 }
 
 /// 角色只在对应小组内生效；公司管理员仍由 User.admin 单独表示。
@@ -183,6 +231,38 @@ pub struct Authorization {
 #[serde(rename_all = "camelCase")]
 pub struct Capabilities {
     pub private_sync: bool,
+    /// 公司文件是独立能力；旧服务端缺少此字段时关闭入口。
+    #[serde(default)]
+    pub company_files: bool,
+    /// 目录能力与可配置授权分别协商；旧公司文件 Hub 仍沿用固定管理员权限。
+    #[serde(default)]
+    pub company_file_permissions: bool,
+}
+
+/// 公司资料独立于小组素材；ID 对应不可变本体，回收不改变已有话术引用。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyFile {
+    pub asset_id: String,
+    pub name: String,
+    pub size: u64,
+    pub uploaded_by: String,
+    pub uploader_name: String,
+    #[serde(default)]
+    pub uploader_username: String,
+    pub created_at: u64,
+    pub deleted_at: Option<u64>,
+    #[serde(default)]
+    pub deleted_by: Option<String>,
+    #[serde(default)]
+    pub deleter_username: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyFiles {
+    pub version: u64,
+    pub files: Vec<CompanyFile>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -275,6 +355,9 @@ pub struct Snapshot {
     pub lifecycle_version: u64,
     pub categories: Vec<Category>,
     pub phrases: Vec<Phrase>,
+    /// 服务端从话术引用推导，旧快照为空；客户端据此选择账号隔离的公司缓存。
+    #[serde(default)]
+    pub company_asset_ids: Vec<String>,
 }
 
 /// 批量写入使用小组版本和事务；新增素材单独列出，失败仅清理本会话尚未引用的素材。
@@ -335,6 +418,7 @@ pub struct UserWrite {
     pub display_name: Option<String>,
     pub contact: Option<String>,
     pub can_create_teams: Option<bool>,
+    pub company_file_permissions: Option<CompanyFilePermissionsWrite>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -440,7 +524,50 @@ pub fn validate_phrase(p: &Phrase) -> Result<(), String> {
 
 #[cfg(test)]
 mod team_tests {
-    use super::Team;
+    use super::{
+        Block, Capabilities, CompanyFilePermissions, CompanyOperation, Snapshot, Team, User,
+        UserWrite,
+    };
+
+    #[test]
+    fn legacy_hub_disables_company_files_and_keeps_the_file_wire_shape() {
+        let capabilities: Capabilities =
+            serde_json::from_value(serde_json::json!({"privateSync":true})).unwrap();
+        assert!(!capabilities.company_files);
+        assert!(!capabilities.company_file_permissions);
+        let snapshot: Snapshot = serde_json::from_value(serde_json::json!({"teamId":"A","version":1,"lifecycleVersion":1,"categories":[],"phrases":[]})).unwrap();
+        assert!(snapshot.company_asset_ids.is_empty());
+        let file = serde_json::json!({"kind":"file","assetId":"A","name":"价格表.xlsx"});
+        let block: Block = serde_json::from_value(file.clone()).unwrap();
+        assert_eq!(serde_json::to_value(block).unwrap(), file);
+    }
+
+    #[test]
+    fn legacy_user_and_partial_account_update_do_not_grant_company_management() {
+        let user: User = serde_json::from_value(serde_json::json!({"id":"worker","username":"1002","admin":false,"disabled":false,"mustChangePassword":false})).unwrap();
+        assert_eq!(
+            user.company_file_permissions,
+            CompanyFilePermissions::default()
+        );
+        assert!(user
+            .company_file_permissions
+            .allows(false, CompanyOperation::Read));
+        assert!(!user
+            .company_file_permissions
+            .allows(false, CompanyOperation::Upload));
+        let update: UserWrite =
+            serde_json::from_value(serde_json::json!({"displayName":"员工"})).unwrap();
+        assert!(update.company_file_permissions.is_none());
+        let delegated = CompanyFilePermissions {
+            can_upload: true,
+            can_restore: true,
+            ..Default::default()
+        };
+        assert!(delegated.allows(false, CompanyOperation::RecycleBin));
+        assert!(!delegated.allows(false, CompanyOperation::Recycle));
+        assert!(!delegated.allows(false, CompanyOperation::Purge));
+        assert!(CompanyFilePermissions::default().allows(true, CompanyOperation::Purge));
+    }
 
     #[test]
     fn missing_member_count_remains_unknown_and_zero_is_preserved() {
