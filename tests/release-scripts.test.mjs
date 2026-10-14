@@ -16,7 +16,7 @@ function fixture(t) {
   for (const script of ['check-release.ps1', 'package-release.ps1']) copyFileSync(path.join('scripts', script), path.join(dir, 'scripts', script));
   writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ version: '0.1.1' }));
   writeFileSync(path.join(dir, 'src-tauri/tauri.conf.json'), JSON.stringify({ version: '0.1.1' }));
-  writeFileSync(path.join(dir, 'src-tauri/Cargo.toml'), '[package]\nname = "shanyu"\nversion = "0.1.1"\n[dependencies]\n');
+  writeFileSync(path.join(dir, 'src-tauri/Cargo.toml'), '[package]\nname = "quickphrase"\nversion = "0.1.1"\n[dependencies]\n');
   return dir;
 }
 function run(dir, args, script = 'check-release.ps1') {
@@ -81,6 +81,6 @@ test('正式版要求标签存在且指向当前提交', t => {
 test('打包拒绝缺失产物', t => { rejected(fixture(t), [], '缺少构建产物', 'package-release.ps1'); });
 test('打包拒绝错误程序版本', t => {
   const dir = fixture(t); mkdirSync(path.join(dir, 'src-tauri/target/release'), { recursive: true });
-  writeFileSync(path.join(dir, 'src-tauri/target/release/shanyu.exe'), 'not an executable');
+  writeFileSync(path.join(dir, 'src-tauri/target/release/QuickPhrase.exe'), 'not an executable');
   rejected(dir, [], '构建产物版本不一致', 'package-release.ps1');
 });

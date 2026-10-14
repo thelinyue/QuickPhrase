@@ -11,7 +11,7 @@ const repo = process.cwd(), evidence = path.join(repo, '.build', 'background-fol
 await fs.mkdir(evidence, { recursive: true });
 const run = promisify(execFile), results = [], snapshots = [];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const executable = path.join(repo, 'src-tauri/target/debug/shanyu.exe');
+const executable = path.join(repo, 'src-tauri/target/debug/QuickPhrase.exe');
 const dataDir = path.join(evidence, 'data');
 const output = path.join(evidence, 'native.json'), controls = path.join(evidence, 'control.json');
 let app, browser, page, host, neutral, hostHandle, neutralHandle, handles = {}, nonce = 0, appEnv;

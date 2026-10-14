@@ -1,8 +1,10 @@
-# 闪语
+# 闪语 QuickPhrase
 
 Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.0。
 
 正式下载：[v0.2.0 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.0) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.0/Shanyu-Setup-0.2.0-x64.exe) · [便携 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.0/Shanyu-0.2.0-win-x64.zip)。安装器和程序未代码签名；[Hub 公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
+
+当前源码为尚未发布的0.2.1，统一英文名称 QuickPhrase。0.2.0的下载链接与文件保持原名；新名称将在后续发布中提供。
 
 ## 使用
 
@@ -72,7 +74,7 @@ Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、Reac
 
 ```yaml
 services:
-  shanyu:
+  quickphrase-hub:
     image: ghcr.io/thelinyue/quickphrase-hub:0.2.0
     user: "0:0"
     restart: unless-stopped
@@ -84,6 +86,8 @@ services:
     volumes:
       - "./data:/data"
 ```
+
+服务名称统一为 `quickphrase-hub`。旧项目使用 `shanyu` 时，在图形界面先停止并移除旧容器，保留原项目目录和 `data`，再应用新配置，避免同时启动两个服务。0.2.0镜像继续使用上面的 `SHANYU_*` 初始化变量；当前0.2.1源码新增 `QUICKPHRASE_*` 名称并兼容旧变量，新名称需配合后续镜像使用。
 
 默认用户名为 `admin`，可自行修改；首次登录必须修改初始密码。用户名支持1—64个字符的普通名称，昵称和联系方式可选。已有数据库不会被初始化变量覆盖；初始化完成后可从图形界面移除初始密码变量。
 
@@ -126,11 +130,11 @@ npm run tauri -- dev
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -InnoCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
-脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。产物为 `artifacts/Shanyu-Setup-0.2.0-x64.exe`，默认安装到当前用户的 `Programs\Shanyu`，无需管理员权限。
+脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前源码为尚未发布的0.2.1，产物为 `artifacts/QuickPhrase-Setup-0.2.1-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
 
-默认仍只生成安装器。候选构建可加 `-Version 0.2.0-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.0`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.0` 下的 ZIP、安装器、原有 SHA256 清单及 manifest。ZIP 需要本机已安装 WebView2。
+默认仍只生成安装器。候选构建可加 `-Version 0.2.1-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.1`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.1` 下的 ZIP、安装器、原有 SHA256 清单及 manifest。ZIP 需要本机已安装 WebView2。
 
-GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.0-rc.N`，保留企业微信人工验收确认，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出已有 `v0.2.0` 标签，源码版本、标签与提交必须一致，并确认企业微信及 Windows 11 安装矩阵。当前实机缺口见验收记录，不能勾选确认来代替实际验证。工作流不会覆盖既有标签或 Release。
+GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.1-rc.N`，保留企业微信人工验收确认，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致，并确认企业微信及 Windows 11 安装矩阵。当前实机缺口见验收记录，不能勾选确认来代替实际验证。工作流不会覆盖既有标签或 Release。
 
 ## 验证
 
@@ -154,7 +158,7 @@ node scripts/verify-mouse-latency.mjs
 node scripts/verify-hover-docking.mjs --dpi
 node scripts/verify-categories.mjs
 node scripts/verify-library.mjs
-$env:SHANYU_TEAM_SERVER_EXE = 'D:\code\QuickPhrase-hub\target\debug\shanyu-team-server.exe'
+$env:SHANYU_TEAM_SERVER_EXE = 'D:\code\QuickPhrase-hub\target\debug\quickphrase-hub.exe'
 node scripts/verify-transfer.mjs
 node scripts/verify-company.mjs
 npm run test:native
@@ -165,7 +169,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installer
 
 调研企业微信的 UI Automation 可访问性时，在聊天、搜索及图片页面分别运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/inspect-wecom-input.ps1`。此调研脚本不参与吸附识别，只读控件类型、标识、状态和边界，不读取正文、不点击或发送；默认检查主窗口，可用 `-Handle` 指定窗口。没有运行企业微信时明确报错，不启动企业微信。
 
-原生验收使用独立数据目录、Debug 单实例标识和本机输入宿主，可以保留正式客户端运行。`--dock-only` 只运行主窗口吸附和底部短语横条两组检查。吸附测试使用专用 ShanyuDockHost.exe，仅隔离 Debug 客户端识别。后台跟随专项覆盖普通／开机／重复启动、独立唤起、隐藏恢复、任务栏样式和多窗口遮挡，悬停专项覆盖预览与稳定宽度；这两项不使用系统剪贴板或聊天发送。原生脚本需顺序运行，执行时暂停键鼠操作；发送验收会短暂使用剪贴板，结束时仅恢复仍属于本次验收的内容，保留后来的用户复制。安装验收需要先关闭运行中的闪语，使用独立 AppId、开始菜单组和安装目录，并清理自己的测试安装。报告和截图位于 `.build` 下对应的专项目录。
+原生验收使用独立数据目录、Debug 单实例标识和本机输入宿主，可以保留正式客户端运行。`--dock-only` 只运行主窗口吸附和底部短语横条两组检查。吸附测试使用专用 ShanyuDockHost.exe，仅隔离 Debug 客户端识别。后台跟随专项覆盖普通／开机／重复启动、独立唤起、隐藏恢复、任务栏样式和多窗口遮挡，悬停专项覆盖预览与稳定宽度；这两项不使用系统剪贴板或聊天发送。原生脚本需顺序运行，执行时暂停键鼠操作；发送验收会短暂使用剪贴板，结束时仅恢复仍属于本次验收的内容，保留后来的用户复制。安装验收仅运行安装器，使用独立 AppId、编译时菜单组、启动项和安装目录，验证已发布0.2.0旧安装器夹具的改名升级；需保留其 shanyu.exe 构建产物，完成后清理自己的测试安装。报告和截图位于 `.build` 下对应的专项目录。
 
 鼠标延迟专项运行前退出普通客户端，避免旧实例的全局钩子干扰测量。每组120次左右1像素往返移动，不点击、不按键、不访问剪贴板；比较未启动、关闭吸附、正在吸附、连续移动缩放及退出后的钩子链延迟。检测到其他鼠标移动时不恢复旧光标位置，避免覆盖用户后来移动的位置。
 

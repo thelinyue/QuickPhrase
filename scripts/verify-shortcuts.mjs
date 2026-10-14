@@ -74,7 +74,7 @@ try {
   // 连续切换隔离输入桌面时，旧WebView进程可能尚未释放公共配置目录；每次独立配置和调试端口。
   const debuggerSocket=net.createServer();await new Promise(resolve=>debuggerSocket.listen(0,'127.0.0.1',resolve));
   const debuggerPort=debuggerSocket.address().port;await new Promise(resolve=>debuggerSocket.close(resolve));
-  app=spawn(path.join(repo,'src-tauri','target','debug','shanyu.exe'),[],{cwd:repo,windowsHide:true,stdio:'ignore',env:{...process.env,SHANYU_TEST_DATA_DIR:path.join(root,'data'),WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${debuggerPort}`}});
+  app=spawn(path.join(repo,'src-tauri','target','debug','QuickPhrase.exe'),[],{cwd:repo,windowsHide:true,stdio:'ignore',env:{...process.env,SHANYU_TEST_DATA_DIR:path.join(root,'data'),WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${debuggerPort}`}});
   for(let i=0;i<80;i++){try{browser=await chromium.connectOverCDP(`http://127.0.0.1:${debuggerPort}`);break;}catch{await delay(200);}}
   if(!browser)throw Error('无法连接隔离客户端。');context=browser.contexts()[0];context.setDefaultTimeout(6000);page=context.pages().find(p=>!new URL(p.url()).hash);
   await page.locator('.main-window').waitFor();assert.equal((await invoke('get_library')).dataDir,path.join(root,'data'));

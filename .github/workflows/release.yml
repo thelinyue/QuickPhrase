@@ -7,7 +7,7 @@ on:
       version:
         description: Stable SemVer
         required: true
-        default: 0.2.0
+        default: 0.2.1
       confirmWeComAcceptance:
         description: Confirm current WeCom manual matrix
         required: true
@@ -104,11 +104,11 @@ jobs:
       - name: Upload release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: Shanyu-${{ inputs.version }}-unsigned
+          name: QuickPhrase-${{ inputs.version }}-unsigned
           if-no-files-found: error
           path: |
-            artifacts/release/${{ inputs.version }}/Shanyu-${{ inputs.version }}-win-x64.zip
-            artifacts/release/${{ inputs.version }}/Shanyu-Setup-${{ inputs.version }}-x64.exe
+            artifacts/release/${{ inputs.version }}/QuickPhrase-${{ inputs.version }}-win-x64.zip
+            artifacts/release/${{ inputs.version }}/QuickPhrase-Setup-${{ inputs.version }}-x64.exe
             artifacts/release/${{ inputs.version }}/SHA256SUMS.txt
             artifacts/release/${{ inputs.version }}/release-manifest.json
 
@@ -118,8 +118,8 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           $root = Join-Path 'artifacts/release' $env:RELEASE_VERSION
-          $assets = @((Join-Path $root "Shanyu-$env:RELEASE_VERSION-win-x64.zip"), (Join-Path $root "Shanyu-Setup-$env:RELEASE_VERSION-x64.exe"), (Join-Path $root 'SHA256SUMS.txt'), (Join-Path $root 'release-manifest.json'))
+          $assets = @((Join-Path $root "QuickPhrase-$env:RELEASE_VERSION-win-x64.zip"), (Join-Path $root "QuickPhrase-Setup-$env:RELEASE_VERSION-x64.exe"), (Join-Path $root 'SHA256SUMS.txt'), (Join-Path $root 'release-manifest.json'))
           # 使用标签内的版本说明，公开支持范围、验收边界和未签名状态。
           $notes = Join-Path 'docs/releases' "v$env:RELEASE_VERSION.md"
-          gh release create "v$env:RELEASE_VERSION" @assets --verify-tag --title "闪语 v$env:RELEASE_VERSION" --notes-file $notes
+          gh release create "v$env:RELEASE_VERSION" @assets --verify-tag --title "闪语 QuickPhrase v$env:RELEASE_VERSION" --notes-file $notes
           if ($LASTEXITCODE -ne 0) { throw 'GitHub Release 发布失败；未覆盖已有标签或资产。' }

@@ -10,7 +10,7 @@ import { chromium } from 'playwright';
 // 在隔离数据目录启动真实 Tauri 客户端。发送只进入本机标准剪贴板宿主，绝不操作聊天会话。
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.join(repo, '.build', `native-${Date.now()}`);
-const executable = path.join(repo, 'src-tauri', 'target', 'debug', 'shanyu.exe');
+const executable = path.join(repo, 'src-tauri', 'target', 'debug', 'QuickPhrase.exe');
 const run = promisify(execFile);
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const powershell = args => run('powershell.exe', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', ...args], { windowsHide: true, encoding: 'utf8' });
@@ -117,7 +117,7 @@ try {
   if (process.platform !== 'win32') throw new Error('原生验收只能在 Windows 上运行。');
   await fs.access(executable);
   // Debug 的隔离数据模式有独立单实例标识，可以保留用户正在使用的正式客户端。
-  const existing = (await powershell(['-Command', `$qaExecutable = '${executable.replace(/'/g, "''")}'; Get-CimInstance Win32_Process -Filter \"Name='shanyu.exe'\" | Where-Object { $_.ExecutablePath -eq $qaExecutable } | Select-Object -ExpandProperty ProcessId`])).stdout.trim();
+  const existing = (await powershell(['-Command', `$qaExecutable = '${executable.replace(/'/g, "''")}'; Get-CimInstance Win32_Process -Filter \"Name='QuickPhrase.exe'\" | Where-Object { $_.ExecutablePath -eq $qaExecutable } | Select-Object -ExpandProperty ProcessId`])).stdout.trim();
   if (existing) throw new Error('已有 Debug 验收实例正在运行，请先结束该实例。');
   host = spawn('powershell.exe', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', path.join(repo, 'tests', 'native-host.ps1'), '-EventsPath', eventsPath, '-ControlPath', controlPath], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   host.stderr.on('data', bytes => console.error(bytes.toString()));

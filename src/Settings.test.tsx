@@ -49,6 +49,7 @@ describe('应用版本', () => {
   it('关于页面与侧栏显示实际 RC 版本', async () => {
     vi.mocked(getVersion).mockResolvedValue('0.1.1-rc.2');
     render(<SettingsWindow library={library} initialTab="关于" />);
+    expect(screen.getByRole('heading', { name: '闪语 QuickPhrase' })).toBeTruthy();
     expect(await screen.findByText('Windows 本地话术工具 · v0.1.1-rc.2')).toBeTruthy();
     expect(screen.getByText('本地话术工具 · 0.1.1-rc.2')).toBeTruthy();
   });

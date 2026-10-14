@@ -11,7 +11,7 @@ const repo = process.cwd(), evidence = path.join(repo, '.build', 'library-ui-' +
 await fs.mkdir(evidence, { recursive: true });
 const server = net.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const port = server.address().port; await new Promise(resolve => server.close(resolve));
-const app = spawn(path.join(repo, 'src-tauri/target/debug/shanyu.exe'), ['--autostart'], { cwd: repo, windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_TEST_DATA_DIR: path.join(evidence, 'data'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=' + port } });
+const app = spawn(path.join(repo, 'src-tauri/target/debug/QuickPhrase.exe'), ['--autostart'], { cwd: repo, windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_TEST_DATA_DIR: path.join(evidence, 'data'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=' + port } });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let browser, context, page; const results = [], views = new Set();
 const check = async (label, fn) => { await fn(); results.push(label); console.log('通过：' + label); };

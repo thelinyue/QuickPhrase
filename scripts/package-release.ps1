@@ -4,8 +4,8 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $release = & (Join-Path $PSScriptRoot 'check-release.ps1') -Version $Version
 $Version = $release.Version
-$program = Join-Path $repo 'src-tauri\target\release\shanyu.exe'
-$installer = Join-Path $repo "artifacts\Shanyu-Setup-$Version-x64.exe"
+$program = Join-Path $repo 'src-tauri\target\release\QuickPhrase.exe'
+$installer = Join-Path $repo "artifacts\QuickPhrase-Setup-$Version-x64.exe"
 
 # 两条工作流仅打包明确指定的当前产物，不扫描 artifacts，防止混入旧版本或用户文件。
 foreach ($asset in @($program, $installer)) {
@@ -19,8 +19,8 @@ foreach ($asset in @($program, $installer)) {
 $revision = & git -C $repo rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw '无法读取发布来源提交。' }
 $output = Join-Path $repo "artifacts\release\$Version"
-$archive = Join-Path $output "Shanyu-$Version-win-x64.zip"
-$setup = Join-Path $output "Shanyu-Setup-$Version-x64.exe"
+$archive = Join-Path $output "QuickPhrase-$Version-win-x64.zip"
+$setup = Join-Path $output "QuickPhrase-Setup-$Version-x64.exe"
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $policies = @('LICENSE', 'PRIVACY.md', 'SECURITY.md', 'CODE_SIGNING.md') | ForEach-Object { Join-Path $repo $_ }
 Compress-Archive -LiteralPath (@($program) + $policies) -DestinationPath $archive -CompressionLevel Optimal -Force

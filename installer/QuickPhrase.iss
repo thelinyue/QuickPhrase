@@ -1,6 +1,6 @@
 ; 闪语 Rust/Tauri 安装器。AppId 在各版本保持一致，数据由应用保存在用户目录。
 #ifndef AppVersion
-  #define AppVersion "0.1.3"
+  #define AppVersion "0.2.1"
 #endif
 #ifndef FileVersion
   #define FileVersion AppVersion
@@ -21,20 +21,28 @@
   #define ChineseLanguage "Languages\ChineseSimplified.isl"
 #endif
 #ifndef StartupValue
-  #define StartupValue "Shanyu"
+  #define StartupValue "QuickPhrase"
+#endif
+#ifndef LegacyStartupValue
+  #define LegacyStartupValue "Shanyu"
+#endif
+#ifndef AppGroup
+  #define AppGroup "闪语"
 #endif
 
 [Setup]
 AppId={#AppId}
-AppName=闪语
+AppName=闪语 (QuickPhrase)
 AppVersion={#AppVersion}
 VersionInfoVersion={#FileVersion}
 VersionInfoProductVersion={#FileVersion}
 VersionInfoProductTextVersion={#AppVersion}
-AppVerName=闪语 {#AppVersion}
-AppPublisher=闪语开源项目
-DefaultDirName={localappdata}\Programs\Shanyu
-DefaultGroupName=闪语
+AppVerName=闪语 (QuickPhrase) {#AppVersion}
+AppPublisher=QuickPhrase 开源项目
+DefaultDirName={localappdata}\Programs\QuickPhrase
+; 同一 AppId 的升级沿用用户原来的目录，避免改名后另装一份。
+UsePreviousAppDir=yes
+DefaultGroupName={#AppGroup}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ; 吸附服务调用 GetDpiForWindow，需要 Windows 10 1607 或更高版本。
@@ -42,10 +50,10 @@ MinVersion=10.0.14393
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#ReleaseRoot}
-OutputBaseFilename=Shanyu-Setup-{#AppVersion}-x64
+OutputBaseFilename=QuickPhrase-Setup-{#AppVersion}-x64
 SetupIconFile=..\src-tauri\icons\icon.ico
-UninstallDisplayIcon={app}\shanyu.exe
-UninstallDisplayName=闪语
+UninstallDisplayIcon={app}\QuickPhrase.exe
+UninstallDisplayName=闪语 (QuickPhrase)
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -59,24 +67,61 @@ Name: "chinesesimplified"; MessagesFile: "{#ChineseLanguage}"
 Name: "desktopicon"; Description: "创建桌面快捷方式(&D)"; GroupDescription: "附加任务："; Flags: unchecked
 
 [Files]
-Source: "{#SourceDir}\shanyu.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\QuickPhrase.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#WebViewBootstrap}"; Flags: dontcopy
 
 [Icons]
-Name: "{group}\闪语"; Filename: "{app}\shanyu.exe"
+Name: "{group}\闪语"; Filename: "{app}\QuickPhrase.exe"; AppUserModelID: "com.quickphrase.desktop"
 Name: "{group}\卸载闪语"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\闪语"; Filename: "{app}\shanyu.exe"; Tasks: desktopicon
+Name: "{autodesktop}\闪语"; Filename: "{app}\QuickPhrase.exe"; Tasks: desktopicon; AppUserModelID: "com.quickphrase.desktop"
 
 [Run]
-Filename: "{app}\shanyu.exe"; Description: "打开闪语(&L)"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\QuickPhrase.exe"; Description: "打开闪语(&L)"; Flags: nowait postinstall skipifsilent
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "{#StartupValue}"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "{#LegacyStartupValue}"; Flags: uninsdeletevalue
+
+[InstallDelete]
+; 只清理已注册旧安装的程序本体；用户数据库和外部附件不在安装目录中。
+Type: files; Name: "{app}\shanyu.exe"; Check: IsUpgrade
 
 [Code]
 const
   WebViewKey = 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+
+function IsUpgrade: Boolean;
+var PreviousPath: String;
+begin
+  Result := RegQueryStringValue(HKCU,
+    'Software\Microsoft\Windows\CurrentVersion\Uninstall\' + ExpandConstant('{#AppId}') + '_is1',
+    'Inno Setup: App Path', PreviousPath) and
+    (CompareText(RemoveBackslashUnlessRoot(PreviousPath), RemoveBackslashUnlessRoot(ExpandConstant('{app}'))) = 0);
+end;
+
+procedure RegisterExtraCloseApplicationsResources;
+begin
+  { 改名升级也必须检查旧程序是否正在运行，不能遗漏旧二进制的文件占用。 }
+  if IsUpgrade then
+    RegisterExtraCloseApplicationsResource(True, ExpandConstant('{app}\shanyu.exe'));
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var LegacyCommand: String;
+begin
+  if CurStep = ssPostInstall then begin
+    { 静默升级未启动应用时也更新入口；仅接管指向本次安装目录的旧启动项。 }
+    if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', '{#LegacyStartupValue}', LegacyCommand) and
+      (CompareText(LegacyCommand, '"' + ExpandConstant('{app}\shanyu.exe') + '" --autostart') = 0) then begin
+      if RegWriteStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', '{#StartupValue}',
+        '"' + ExpandConstant('{app}\QuickPhrase.exe') + '" --autostart') then
+        RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', '{#LegacyStartupValue}')
+      else
+        Log('开机启动入口更新失败，请在闪语设置中重新启用开机启动。');
+    end;
+  end;
+end;
 
 function WebViewInstalled: Boolean;
 var Version: String;

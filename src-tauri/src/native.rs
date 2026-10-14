@@ -1324,7 +1324,8 @@ mod platform {
         unsafe {
             let mut key = HKEY::default();
             let sub = wide("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
-            let name = wide("Shanyu");
+            let name = wide("QuickPhrase");
+            let legacy_name = wide("Shanyu");
             RegCreateKeyExW(
                 HKEY_CURRENT_USER,
                 PCWSTR(sub.as_ptr()),
@@ -1353,6 +1354,15 @@ mod platform {
                     code.ok().map_err(|e| format!("开机启动设置无法删除：{e}"))
                 }
             };
+            // 旧版本使用拼音启动项；只有新入口写入成功后才移除，避免重复开机启动。
+            let result = result.and_then(|_| {
+                let code = RegDeleteValueW(key, PCWSTR(legacy_name.as_ptr()));
+                if code == ERROR_FILE_NOT_FOUND {
+                    Ok(())
+                } else {
+                    code.ok().map_err(|e| format!("旧开机启动项无法删除：{e}"))
+                }
+            });
             let _ = RegCloseKey(key);
             result
         }

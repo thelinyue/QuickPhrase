@@ -31,7 +31,7 @@ try {
   & npm.cmd run tauri -- build --no-bundle --config $configPath -- --locked
   if ($LASTEXITCODE -ne 0) { throw 'Tauri/Rust 程序构建失败。' }
   $sourceDir = Join-Path $repo 'src-tauri\target\release'
-  & $InnoCompiler "/DAppVersion=$version" "/DFileVersion=$($release.FileVersion)" "/DReleaseRoot=$releaseRoot" "/DSourceDir=$sourceDir" "/DWebViewBootstrap=$bootstrap" "/DChineseLanguage=$language" (Join-Path $repo 'installer\Shanyu.iss')
+  & $InnoCompiler "/DAppVersion=$version" "/DFileVersion=$($release.FileVersion)" "/DReleaseRoot=$releaseRoot" "/DSourceDir=$sourceDir" "/DWebViewBootstrap=$bootstrap" "/DChineseLanguage=$language" (Join-Path $repo 'installer\QuickPhrase.iss')
   if ($LASTEXITCODE -ne 0) { throw 'Inno Setup 安装包编译失败。' }
-  Write-Host "安装包已生成：$(Join-Path $releaseRoot "Shanyu-Setup-$version-x64.exe")"
+  Write-Host "安装包已生成：$(Join-Path $releaseRoot "QuickPhrase-Setup-$version-x64.exe")"
 } finally { Pop-Location }

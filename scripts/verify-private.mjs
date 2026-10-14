@@ -46,7 +46,7 @@ async function stopClient() {
 }
 async function startClient(device) {
   await stopClient(); const debug = await port();
-  app = spawn(path.join(repo, 'src-tauri/target/debug/shanyu.exe'), ['--autostart'], { cwd: repo, windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_TEST_DATA_DIR: path.join(evidence, device), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debug}` } });
+  app = spawn(path.join(repo, 'src-tauri/target/debug/QuickPhrase.exe'), ['--autostart'], { cwd: repo, windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_TEST_DATA_DIR: path.join(evidence, device), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debug}` } });
   browser = await until(() => chromium.connectOverCDP(`http://127.0.0.1:${debug}`)); context = browser.contexts()[0];
   page = await until(() => context.pages().find(p => !new URL(p.url()).hash)); await page.locator('.main-window').waitFor(); await hideWindows(page);
   await page.getByRole('status').evaluateAll(nodes => nodes.forEach(node => node.click()));

@@ -1038,6 +1038,24 @@ pub fn run() {
     if std::env::var_os("SHANYU_TEST_DATA_DIR").is_some() {
         context.config_mut().identifier.push_str(".qa");
     }
+    // 显式使用稳定的 Windows 应用身份，让快捷方式、任务栏和通知识别同一产品。
+    // 启动器造成的任务管理器父子分组仍由 Windows 决定，不为显示分组重启进程。
+    #[cfg(windows)]
+    {
+        let identity: Vec<u16> = context
+            .config()
+            .identifier
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        if let Err(error) = unsafe {
+            windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(
+                windows::core::PCWSTR(identity.as_ptr()),
+            )
+        } {
+            eprintln!("Windows 应用标识设置失败：{error}");
+        }
+    }
     tauri::Builder::default()
         // 重复启动保持现有跟随／手动隐藏状态，只有托盘和快捷键主动唤起窗口。
         .plugin(tauri_plugin_single_instance::init(|_, _, _| {}))

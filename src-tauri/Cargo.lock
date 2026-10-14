@@ -3676,8 +3676,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "shanyu"
-version = "0.2.0"
+name = "quickphrase"
+version = "0.2.1"
 dependencies = [
  "calamine",
  "futures-util",

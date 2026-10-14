@@ -1,8 +1,12 @@
 [package]
-name = "shanyu"
-version = "0.2.0"
+name = "quickphrase"
+version = "0.2.1"
 edition = "2021"
-description = "闪语 Windows 本地话术工具"
+description = "闪语 QuickPhrase Windows 本地话术工具"
+
+[[bin]]
+name = "QuickPhrase"
+path = "src/main.rs"
 
 [lib]
 name = "shanyu_lib"

@@ -79,7 +79,7 @@ async function verifyProgressLayout() {
   assert.ok(layout.length > 0 && layout.every(item => item.lines === 1 && item.ordered), JSON.stringify(layout));
 }
 async function startClient() {
-  const debug = await port(); app = spawn(path.join(repo, 'src-tauri/target/debug/shanyu.exe'), ['--autostart'], { cwd: repo, windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_TEST_DATA_DIR: path.join(evidence, 'client'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debug}` } });
+  const debug = await port(); app = spawn(path.join(repo, 'src-tauri/target/debug/QuickPhrase.exe'), ['--autostart'], { cwd: repo, windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_TEST_DATA_DIR: path.join(evidence, 'client'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debug}` } });
   browser = await until(() => chromium.connectOverCDP(`http://127.0.0.1:${debug}`)); page = await until(() => browser.contexts()[0].pages().find(p => !new URL(p.url()).hash)); await page.locator('.main-window').waitFor();
 }
 try {

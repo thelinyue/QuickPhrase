@@ -1,5 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
+$version = (Get-Content -Raw -LiteralPath (Join-Path $repo 'package.json') | ConvertFrom-Json).version
 # 仅截图安装前页面。所有查找和退出操作限定在本次启动的安装进程及其子进程。
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
 Add-Type -TypeDefinition @"
@@ -19,7 +20,7 @@ public static class ShanyuInstallerCapture {
  }
 }
 "@
-$setup = Start-Process -FilePath (Join-Path $repo 'artifacts\Shanyu-Setup-0.1.0-x64.exe') -ArgumentList '/NORESTART' -PassThru -WindowStyle Hidden
+$setup = Start-Process -FilePath (Join-Path $repo "artifacts\QuickPhrase-Setup-$version-x64.exe") -ArgumentList '/NORESTART' -PassThru -WindowStyle Hidden
 $childIds = @($setup.Id)
 function OwnWindows {
   foreach ($processId in $childIds) {
@@ -40,8 +41,10 @@ try {
   Start-Sleep -Milliseconds 300
   $controls = [ShanyuInstallerCapture]::Controls($handle)
   if (-not ($controls | Where-Object { $_.Text -match '^下一步' })) { throw '安装向导没有显示中文下一步按钮。' }
-  $expectedPath = Join-Path $env:LOCALAPPDATA 'Programs\Shanyu'
-  if (-not ($controls | Where-Object { $_.Text -eq $expectedPath })) { throw '默认安装路径不是当前用户的应用目录。' }
+  $expectedPath = Join-Path $env:LOCALAPPDATA 'Programs\QuickPhrase'
+  $previous = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{E9DBDCE4-4E86-4F88-A845-7E91B5D7726C}_is1' -ErrorAction SilentlyContinue
+  if ($previous.'Inno Setup: App Path') { $expectedPath = $previous.'Inno Setup: App Path' }
+  if (-not ($controls | Where-Object { $_.Text.TrimEnd('\') -ieq $expectedPath.TrimEnd('\') })) { throw '安装路径没有采用新默认目录或保留原安装目录。' }
   $rect = New-Object ShanyuInstallerCapture+Rect
   if ([ShanyuInstallerCapture]::DwmGetWindowAttribute($handle,9,[ref]$rect,16) -ne 0) { [ShanyuInstallerCapture]::GetWindowRect($handle,[ref]$rect) | Out-Null }
   $bitmap = [Drawing.Bitmap]::new($rect.right-$rect.left,$rect.bottom-$rect.top)
