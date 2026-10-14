@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode, type FormEvent } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { call, closeWindow } from './api';
@@ -33,6 +33,17 @@ const paths: Record<string, string> = {
   segment: 'M2 3h16v4H2zM2 13h16v4H2zM4 10h3M10 10h2M15 10h2',
   keyboard: 'M3 4h14l2 2v8l-2 2H3l-2-2V6zM4 7h1M8 7h1M12 7h1M16 7h1M4 10h1M8 10h1M12 10h1M16 10h1M5 13h10',
   trash: 'M3 5h14M7 5V2h6v3M5 5v12h10V5M8 8v6M12 8v6',
+  refresh: 'M16 7a6 6 0 1 0 0 6M16 3v4h-4',
+  upload: 'M10 14V3M6 7l4-4 4 4M3 12v5h14v-5',
+  download: 'M10 3v11M6 10l4 4 4-4M3 13v4h14v-4',
+  back: 'M7 4l-5 5 5 5M2 9h10a5 5 0 0 1 0 10',
+  shield: 'M10 2l7 3v5c0 4-4 7-7 8-3-1-7-4-7-8V5zM7 10l2 2 4-4',
+  recycle: 'm7 3 3-2 4 6M14 3v4h-4M16 8l3 5-3 5h-5M17 17l-4 1 1-4M8 18H3l-2-5 3-5M2 10l2-3 3 3',
+  more: 'M4 10h1M9.5 10h1M15 10h1',
+  save: 'M3 2h11l3 3v13H3zM6 2v5h7V2M6 18v-7h8v7',
+  restore: 'M5 7H1V3M2 7a8 8 0 1 1 0 6M10 6v5l3 2',
+  stop: 'M4 4h12v12H4z',
+  play: 'M6 3l11 7-11 7z',
 };
 export function Icon({ name }: { name: string }) { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d={paths[name] || paths.document} /></svg>; }
 /** 自定义标签背景为浅色时使用深色文字，避免白底白字；默认标签保持参考图配色。 */
@@ -72,13 +83,16 @@ export function FileIcon({ path }: { path: string }) {
   useEffect(() => { let disposed = false; void call<string>('get_file_icon', { path }).then(path => { if (!disposed) setUrl(convertFileSrc(path)); }).catch(() => {}); return () => { disposed = true; }; }, [path]);
   return url ? <img className="row-system-icon" src={url} alt="" /> : <Icon name="file" />;
 }
-export interface DialogSpec { title: string; fields: ReactNode; submit?: string; onSubmit: (data: FormData) => Promise<void> }
-export function FormDialog({ spec, close }: { spec: DialogSpec; close: () => void }) {
+export interface DialogSpec { title: string; fields: ReactNode; submit?: string; className?: string; onSubmit: (data: FormData) => Promise<void> }
+export function FormDialog({ spec, close, windowClose = false }: { spec: DialogSpec; close: () => void; windowClose?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null); const busyRef = useRef(false); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
-  useEffect(() => { ref.current?.showModal(); }, []);
+  const titleId = useId();
+  const trigger = useRef(document.activeElement as HTMLElement | null);
+  useEffect(() => { ref.current?.showModal(); return () => { if (trigger.current?.isConnected) trigger.current.focus(); }; }, []);
   // 同步锁覆盖同一事件批次内的重复提交；执行期间 Escape 也不能提前关闭确认窗口。
   async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (busyRef.current) return; busyRef.current = true; setBusy(true); try { await spec.onSubmit(new FormData(e.currentTarget)); close(); } catch (e) { setError(String(e)); } finally { busyRef.current = false; setBusy(false); } }
-  return <dialog ref={ref} className="small-dialog" onCancel={e => { if (busyRef.current) e.preventDefault(); else close(); }}><form onSubmit={submit}><h2>{spec.title}</h2>{spec.fields}{error && <p className="validation-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={close} disabled={busy}>取消</button><button type="submit" className="primary-button" disabled={busy}>{spec.submit || '确定'}</button></div></form></dialog>;
+  // 模态dialog会让外面的自绘标题栏失去交互；管理窗关闭按钮在顶层原位置接收点击，仍经过草稿确认。
+  return <dialog ref={ref} className={`small-dialog ${spec.className || ''}`} aria-labelledby={titleId} onCancel={e => { if (busyRef.current) e.preventDefault(); else close(); }}>{windowClose && <button type="button" className="dialog-window-close" aria-label="关闭窗口" disabled={busy} onClick={() => void closeWindow()}><Icon name="close" /></button>}<form onSubmit={submit}><h2 id={titleId}>{spec.title}</h2><fieldset className="dialog-fields" disabled={busy}>{spec.fields}{error && <p className="validation-error" role="alert">{error}</p>}</fieldset><div className="dialog-actions"><button type="button" className="secondary-button" onClick={close} disabled={busy}>取消</button><button type="submit" className="primary-button" disabled={busy}>{busy ? '提交中…' : spec.submit || '确定'}</button></div></form></dialog>;
 }
 export function CategoryPicker({ categories, rootId, groupId = null }: { categories: Category[]; rootId: string; groupId?: string | null }) {
   const [root, setRoot] = useState(rootId);

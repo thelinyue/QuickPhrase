@@ -1,4 +1,4 @@
-﻿param([ValidateSet('focus','inspect','move','minimize','restore','key','menu')][string]$Action = 'inspect', [long]$Handle = 0, [int]$X = 0, [int]$Y = 0, [int]$Width = 0, [int]$Height = 0, [int]$Key = 0, [switch]$Ctrl, [switch]$Alt, [switch]$Shift, [int]$Repeats = 1, [int]$HoldMilliseconds = 0, [string]$Keys, [string]$ClipboardExpected, [string]$ClipboardImageExpected, [string]$ClipboardImageSnapshot, [string]$ClipboardFileExpected, [int]$ProcessId = 0, [string]$Title, [string]$WindowClass, [string]$Screenshot, [int]$MenuIndex = -1)
+﻿param([ValidateSet('focus','inspect','move','minimize','restore','key','menu')][string]$Action = 'inspect', [long]$Handle = 0, [int]$X = 0, [int]$Y = 0, [int]$Width = 0, [int]$Height = 0, [int]$Key = 0, [switch]$Ctrl, [switch]$Alt, [switch]$Shift, [int]$Repeats = 1, [int]$HoldMilliseconds = 0, [string]$Keys, [string]$ClipboardExpected, [string]$ClipboardImageSnapshot, [string]$ClipboardFileExpected, [int]$ProcessId = 0, [string]$Title, [string]$WindowClass, [string]$Screenshot, [int]$MenuIndex = -1)
 $ErrorActionPreference = 'Stop'
 # 仅用于本机验收：原生鼠标和按键确保焦点流程经过真实 Windows 输入队列。
 Add-Type -TypeDefinition @'
@@ -29,6 +29,7 @@ public static class ShanyuQaWindows {
  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h,uint attribute,out Rect r,int size);
  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
  [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
+ [DllImport("user32.dll")] public static extern IntPtr GetClipboardOwner();
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int width,int height,uint flags);
  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
@@ -128,6 +129,9 @@ $monitorInfo = New-Object ShanyuQaWindows+MonitorInfo
 $monitorInfo.size = [Runtime.InteropServices.Marshal]::SizeOf($monitorInfo)
 [ShanyuQaWindows]::GetMonitorInfo([ShanyuQaWindows]::MonitorFromWindow($nativeHandle,2),[ref]$monitorInfo) | Out-Null
 $result = @{ handle=$nativeHandle.ToInt64(); topmost=($extendedStyle -band 8) -ne 0; toolWindow=($extendedStyle -band 128) -ne 0; appWindow=($extendedStyle -band 262144) -ne 0; noActivate=($extendedStyle -band 134217728) -ne 0; foreground=$foreground.ToInt64(); pid=$owner; visible=[ShanyuQaWindows]::IsWindowVisible($nativeHandle); rect=$rect; frame=$frame; workArea=$monitorInfo.work; clipboardSequence=[ShanyuQaWindows]::GetClipboardSequenceNumber() }
+$clipboardOwnerProcess = [uint32]0
+[ShanyuQaWindows]::GetWindowThreadProcessId([ShanyuQaWindows]::GetClipboardOwner(),[ref]$clipboardOwnerProcess) | Out-Null
+$result.clipboardOwnerPid = $clipboardOwnerProcess
 $result.desktop = [ShanyuQaWindows]::DesktopName([ShanyuQaWindows]::GetThreadDesktop([ShanyuQaWindows]::GetCurrentThreadId()))
 $result.enterDown = [ShanyuQaWindows]::GetAsyncKeyState(13) -lt 0
 # 只读指定窗口线程的菜单状态，区分 WebView 导航与 Windows 系统菜单抢走方向键。
@@ -149,20 +153,10 @@ if ($PSBoundParameters.ContainsKey('ClipboardExpected')) {
 if ($PSBoundParameters.ContainsKey('ClipboardImageSnapshot')) {
   # 在独立进程记录系统提供的测试图片；WinForms 跨进程转换后可能不再具有源 PNG 的透明度。
   Add-Type -AssemblyName System.Windows.Forms,System.Drawing
-  if (-not [Windows.Forms.Clipboard]::ContainsImage()) { throw '测试剪贴板中没有图片，无法记录投递前的内容。' }
+  if (-not [Windows.Forms.Clipboard]::ContainsImage()) { throw '测试剪贴板中没有图片，无法记录当前内容。' }
   $image = [Drawing.Bitmap]::new([Windows.Forms.Clipboard]::GetImage())
-  try { $image.Save($ClipboardImageSnapshot, [Drawing.Imaging.ImageFormat]::Png); $result.clipboardImageRecorded = $true }
+  try { $image.Save($ClipboardImageSnapshot, [Drawing.Imaging.ImageFormat]::Png); $result.clipboardImageRecorded = $true; $result.clipboardImageSize = @($image.Width, $image.Height) }
   finally { $image.Dispose() }
-}
-if ($PSBoundParameters.ContainsKey('ClipboardImageExpected')) {
-  Add-Type -AssemblyName System.Windows.Forms,System.Drawing
-  $result.clipboardImageMatches = $false
-  if ([Windows.Forms.Clipboard]::ContainsImage()) {
-    $actual = [Drawing.Bitmap]::new([Windows.Forms.Clipboard]::GetImage())
-    $expected = [Drawing.Bitmap]::new($ClipboardImageExpected)
-    try { $result.clipboardImageMatches = $actual.Width -eq $expected.Width -and $actual.Height -eq $expected.Height -and $actual.GetPixel(128,128).ToArgb() -eq $expected.GetPixel(128,128).ToArgb() }
-    finally { $actual.Dispose(); $expected.Dispose() }
-  }
 }
 if ($PSBoundParameters.ContainsKey('ClipboardFileExpected')) {
   Add-Type -AssemblyName System.Windows.Forms

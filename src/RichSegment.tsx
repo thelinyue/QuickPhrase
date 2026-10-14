@@ -61,6 +61,7 @@ function renderBlocks(blocks: Block[]) {
     if (block.kind === 'text') { fragment.append(document.createTextNode(block.text)); continue; }
     const media = document.createElement('span'); media.className = `media-block inline-${block.kind}`; media.contentEditable = 'false';
     media.dataset.blockKind = block.kind; media.dataset.path = block.path; media.dataset.name = block.name; media.title = block.name;
+    if (block.companyAssetId) { media.dataset.companyAssetId = block.companyAssetId; media.dataset.companySessionEpoch = String(block.companySessionEpoch); }
     if (block.kind === 'image') { const img = document.createElement('img'); img.src = convertFileSrc(block.path); img.alt = block.name; img.draggable = false; media.append(img); }
     else { const name = document.createElement('span'); name.textContent = `📎 ${block.name}`; media.append(name); }
     const remove = document.createElement('button'); remove.type = 'button'; remove.dataset.removeMedia = ''; remove.setAttribute('aria-label', `删除附件 ${block.name}`); remove.textContent = '×'; media.append(remove);
@@ -77,7 +78,7 @@ function readBlocks(root: HTMLElement): Block[] {
     if (node.nodeType === Node.TEXT_NODE) { text(node.textContent || ''); return; }
     if (!(node instanceof HTMLElement)) return;
     const kind = node.dataset.blockKind;
-    if (kind === 'image' || kind === 'file') { blocks.push({ kind, path: node.dataset.path || '', name: node.dataset.name || '' }); return; }
+    if (kind === 'image' || kind === 'file') { blocks.push({ kind, path: node.dataset.path || '', name: node.dataset.name || '', ...(node.dataset.companyAssetId ? { companyAssetId: node.dataset.companyAssetId, companySessionEpoch: Number(node.dataset.companySessionEpoch) } : {}) }); return; }
     if (node.tagName === 'BR') {
       // Chromium 在空行或最后一个换行之后添加占位 br，它本身不代表额外的一行。
       if (!node.nextSibling && (!node.previousSibling || (node.previousSibling as Element).tagName === 'BR')) return;

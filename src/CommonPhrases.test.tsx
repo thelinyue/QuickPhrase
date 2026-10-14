@@ -1,12 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CommonDockWindow, CommonPhraseBar, commonNavigationIndex } from './CommonPhrases';
-import { call } from './api';
+import { call, useTeams } from './api';
 import type { Library, Settings } from './types';
 
-vi.mock('./api', () => ({ call: vi.fn(), closeWindow: vi.fn(), openWindow: vi.fn() }));
+vi.mock('./api', () => ({ call: vi.fn(), closeWindow: vi.fn(), openWindow: vi.fn(), useTeams: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
+beforeEach(() => { const status = { server: '', username: '', user: null, teams: [], offline: false }; vi.mocked(useTeams).mockReturnValue({ status, version: 0 }); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 function bar(mode: Settings['commonSingleClick'] = 'select', compact = false, busy = false) {
   const onDeliver = vi.fn();

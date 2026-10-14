@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,7 +22,7 @@ const controlPath = path.join(root, 'control.json');
 const clipboardMarker = '闪语本机验收剪贴板';
 const dockOnly = process.argv.includes('--dock-only');
 const read = async filename => {
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 1000; i++) {
     try { return JSON.parse(await fs.readFile(filename, 'utf8')); }
     catch { await delay(30); }
   }
@@ -38,6 +39,10 @@ const control = async (command, fields = {}, filename = controlPath) => {
   await delay(130);
 };
 const invoke = (cmd, args = {}, window = page) => window.evaluate(({ cmd, args }) => window.__TAURI_INTERNALS__.invoke(cmd, args), { cmd, args });
+const transfer = async (cmd, args = {}) => {
+  const [library, account] = await Promise.all([invoke('get_library'), invoke('get_team_status')]);
+  return invoke(cmd, { merge: false, restoreSettings: false, operationId: randomUUID(), ...args, target: { source: 'private', libraryId: library.libraryId, sessionEpoch: account.sessionEpoch } });
+};
 const poll = async (check, description, attempts = 75) => {
   for (let i = 0; i < attempts; i++) { if (await check()) return; await delay(40); }
   throw new Error(`等待超时：${description}`);
@@ -58,7 +63,12 @@ const prepare = async (draft = '', ctrlEnter = false) => {
   assert.equal(foreground.foreground, hostInfo.hwnd, `插入前必须激活独立输入宿主（当前进程 ${foreground.pid}）`);
   await invoke('window_action', { action: 'show' });
   // 页面重载后用非拖动区域的真实点击返回客户端，避免标题栏拖动占用系统鼠标捕获。
-  await native(['-Action', 'focus', '-Handle', mainHandle, '-X', '120', '-Y', '40']);
+  const tab = await page.locator('.content-tabs button.active').boundingBox();
+  for (let i = 0; i < 3; i++) {
+    foreground = await native(['-Action', 'focus', '-Handle', mainHandle, '-X', String(Math.round(tab.x + tab.width / 2)), '-Y', String(Math.round(tab.y + tab.height / 2))]);
+    if (foreground.foreground === Number(mainHandle)) break;
+  }
+  assert.equal(foreground.foreground, Number(mainHandle), '投递前必须实际激活隔离客户端，不重试投递');
   await delay(140);
   const target = await invoke('get_target');
   assert.equal(target.hwnd, hostInfo.hwnd);
@@ -176,7 +186,7 @@ try {
     assert.equal((await sent()).length, 1); assert.equal((await sent())[0].value.text, '已有草稿：这是 B');
     assert.equal(await row(a).getAttribute('aria-selected'), 'true');
     assert.equal((await receipt()).events.filter(e => e.kind === 'paste-text').length, 1);
-    assert.equal((await native(['-ClipboardExpected', clipboardMarker])).clipboardMatches, true);
+    assert.equal((await native(['-ClipboardExpected', '这是 B'])).clipboardMatches, true);
   });
   await test('双击正文插入并保留草稿；右键直接发送使用同一流程', async () => {
     await prepare('已有草稿：'); await row(b).locator('.row-title').dblclick(); await poll(async () => (await receipt()).draft === '已有草稿：这是 B', '双击插入');
@@ -236,20 +246,45 @@ try {
   const images = await invoke('import_images', { paths: [path.join(repo, 'src-tauri', 'icons', 'icon.png')] });
   const mixed = await savePhrase({ title: '混合内容', segments: [{ blocks: [{ kind: 'text', text: '开头' }, images[0], { kind: 'text', text: '图片之后' }, { kind: 'file', path: filePath, name: '发送验收.txt' }] }, { blocks: [{ kind: 'text', text: '第二段' }] }] });
   const multi = await savePhrase({ title: '中断验收', segments: [{ blocks: [{ kind: 'text', text: '第一段' }] }, { blocks: [{ kind: 'text', text: '第二段' }] }] });
-  await test('原有图片和文件剪贴板格式可以完整保留', async () => {
-    const image = path.join(repo, 'src-tauri', 'icons', 'icon.png'), snapshot = path.join(root, 'original-clipboard.png'); let target = await prepare(); await control('copy-image', { path: image });
-    assert.equal((await native(['-ClipboardImageSnapshot', snapshot])).clipboardImageRecorded, true);
-    assert.equal((await native(['-ClipboardImageExpected', snapshot])).clipboardImageMatches, true, '投递前的剪贴板图片已记录');
-    assert.equal((await deliver(b, 'insert', target)).status, 'submitted'); assert.equal((await native(['-ClipboardImageExpected', snapshot])).clipboardImageMatches, true);
-    target = await prepare(); await control('copy-files', { path: filePath });
-    assert.equal((await deliver(b, 'insert', target)).status, 'submitted'); assert.equal((await native(['-ClipboardFileExpected', filePath])).clipboardFileMatches, true);
+  await test('原剪贴板文字、图片、文件及无法读取的延迟格式均不阻止插入', async () => {
+    for (const source of ['text', 'image', 'files', 'delayed']) {
+      const target = await prepare('已有草稿：');
+      if (source === 'image') await control('copy-image', { path: path.join(repo, 'src-tauri', 'icons', 'icon.png') });
+      if (source === 'files') await control('copy-files', { path: filePath });
+      if (source === 'delayed') {
+        await control('copy-delayed');
+        assert.equal((await receipt()).events.find(e => e.kind === 'test-copy-delayed').value, true);
+      }
+      const report = await deliver(b, 'insert', target);
+      assert.equal(report.status, 'submitted', JSON.stringify(report));
+      assert.equal((await receipt()).draft, '已有草稿：这是 B');
+      assert.equal((await sent()).length, 0);
+      assert.equal((await native(['-ClipboardExpected', '这是 B'])).clipboardMatches, true);
+      assert.equal((await receipt()).events.filter(e => e.kind === 'render-request').length, 0, '不得读取原延迟格式');
+    }
+  });
+  await test('单独图片和文件投递后保留最后写入的格式', async () => {
+    const imageOnly = await savePhrase({ title: '仅图片', segments: [{ blocks: [images[0]] }] });
+    const fileOnly = await savePhrase({ title: '仅文件', segments: [{ blocks: [{ kind: 'file', path: filePath, name: '发送验收.txt' }] }] });
+    const imageReport = await deliver(imageOnly, 'insert', await prepare());
+    assert.equal(imageReport.status, 'submitted', JSON.stringify(imageReport));
+    assert.deepEqual((await receipt()).events.find(e => e.kind === 'paste-image').value, [256, 256]);
+    const snapshot = await native(['-ClipboardImageSnapshot', path.join(root, 'last-written-image.png')]);
+    assert.equal(snapshot.clipboardImageRecorded, true);
+    assert.deepEqual(snapshot.clipboardImageSize, [256, 256]);
+    assert.equal((await sent()).length, 0);
+    const fileReport = await deliver(fileOnly, 'send', await prepare());
+    assert.equal(fileReport.status, 'submitted', JSON.stringify(fileReport));
+    assert.deepEqual((await receipt()).events.find(e => e.kind === 'paste-files').value, [filePath]);
+    assert.equal((await native(['-ClipboardFileExpected', filePath])).clipboardFileMatches, true);
+    assert.equal((await sent()).length, 1);
   });
   await test('混合内容按顺序逐段发送；图片和文件使用标准格式', async () => {
     const report = await deliver(mixed, 'send', await prepare()); assert.equal(report.status, 'submitted', JSON.stringify(report)); assert.equal(report.completedSegments, 2);
     const events = (await receipt()).events.filter(e => e.kind.startsWith('paste-') || e.kind === 'send');
     assert.deepEqual(events.map(e => e.kind), ['paste-text', 'paste-image', 'paste-text', 'paste-files', 'send', 'paste-text', 'send']);
     assert.deepEqual(events[1].value, [256, 256]); assert.deepEqual(events[3].value, [filePath]);
-    assert.equal((await native(['-ClipboardExpected', clipboardMarker])).clipboardMatches, true);
+    assert.equal((await native(['-ClipboardExpected', '第二段'])).clipboardMatches, true);
   });
   await test('Ctrl+Enter 发送配置', async () => {
     await invoke('save_settings', { settings: { ...settings, enter: 'ctrl-enter' } });
@@ -310,17 +345,17 @@ try {
     for (const tab of ['常用设置', '界面设置', '吸附设置', '导入数据', '导出数据', '快捷键', '缓存管理', '关于']) { await settingsPage.getByRole('button', { name: tab, exact: true }).click(); assert.equal(await settingsPage.locator('.settings-content').isVisible(), true); }
     await settingsPage.screenshot({ path: path.join(root, 'settings.png') }); await settingsPage.getByRole('button', { name: '关闭窗口', exact: true }).click();
     const backupPath = path.join(root, '备份.zip'); const templatePath = path.join(root, '模板.xlsx');
-    await invoke('export_data', { path: backupPath, kind: 'backup', categoryId: null }); await invoke('export_template', { path: templatePath });
-    assert.equal((await invoke('preview_import', { path: templatePath })).phrases, 1);
-    const before = await invoke('get_library'); const preview = await invoke('preview_import', { path: backupPath }); assert.equal(preview.images, 1);
+    await transfer('export_data', { path: backupPath, kind: 'backup', categoryId: null }); await invoke('export_template', { path: templatePath });
+    assert.equal((await transfer('preview_import', { path: templatePath })).phrases, 1);
+    const before = await invoke('get_library'); const preview = await transfer('preview_import', { path: backupPath, merge: true, restoreSettings: true }); assert.equal(preview.images, 1);
     assert.equal(preview.commonPhrases, before.commonPhrases.length);
-    await invoke('confirm_import', { previewId: preview.id, merge: true, restoreSettings: true }); const restored = await invoke('get_library');
+    await transfer('confirm_import', { previewId: preview.id }); const restored = await invoke('get_library');
     assert.equal(restored.phrases.length, before.phrases.length * 2); assert.equal(restored.categories.length, before.categories.length);
     assert.equal(restored.commonPhrases.length, before.commonPhrases.length * 2);
     const badPath = path.join(root, '无效备份.zip');
     await run('python', ['-c', "import sys,zipfile,json; z=zipfile.ZipFile(sys.argv[1]); data=json.loads(z.read('library.json')); data['library']['phrases'][0]['segments'][0]['blocks']=[{'kind':'text','text':'文'*5001}]; out=zipfile.ZipFile(sys.argv[2],'w'); [out.writestr(n,json.dumps(data,ensure_ascii=False).encode('utf8') if n=='library.json' else z.read(n)) for n in z.namelist()]; out.close()", backupPath, badPath], { windowsHide: true });
-    const invalid = await invoke('preview_import', { path: badPath }); const imageCount = (await fs.readdir(path.join(root, 'data', 'images'))).length;
-    await assert.rejects(invoke('confirm_import', { previewId: invalid.id, merge: false, restoreSettings: false }), /5000/);
+    const invalid = await transfer('preview_import', { path: badPath }); const imageCount = (await fs.readdir(path.join(root, 'data', 'images'))).length;
+    await assert.rejects(transfer('confirm_import', { previewId: invalid.id }), /5000/);
     assert.equal((await invoke('get_library')).phrases.length, restored.phrases.length); assert.equal((await invoke('get_library')).categories.length, restored.categories.length);
     assert.equal((await fs.readdir(path.join(root, 'data', 'images'))).length, imageCount);
     await invoke('clear_cache', { kind: 'thumbnails' }); await invoke('clear_cache', { kind: 'temp' }); assert.equal(await invoke('cache_info'), 0);
@@ -401,15 +436,14 @@ try {
 } catch (error) {
   console.error(error); process.exitCode = 1;
 } finally {
-  if (page && !page.isClosed()) { try { await invoke('window_action', { action: 'exit' }); } catch {} }
+  if (dockHost) await control('close', {}, path.join(root, 'dock-control.json')).catch(() => {});
   if (hostInfo) {
-    // 系统序号仍对应已知验收内容时，宿主才认领并恢复开始前的剪贴板。用户后来的复制优先。
-    let state = await native(['-ClipboardExpected', clipboardMarker]).catch(() => null);
-    if (state && !state.clipboardMatches) state = await native(['-ClipboardExpected', '闪语验收新复制内容']).catch(() => null);
-    if (state?.clipboardMatches) await control('adopt', { sequence: state.clipboardSequence }).catch(() => {});
+    // 只认领隔离客户端当前拥有的序号，不通过正文猜测归属；宿主在锁内再次核对。
+    const state = await native([]).catch(() => null);
+    if (app && state?.clipboardOwnerPid === app.pid) await control('adopt', { sequence: state.clipboardSequence, ownerPid: app.pid }).catch(() => {});
     await control('close').catch(() => {});
   }
-  if (dockHost) await control('close', {}, path.join(root, 'dock-control.json')).catch(() => {});
+  if (page && !page.isClosed()) { try { await invoke('window_action', { action: 'exit' }); } catch {} }
   for (let i = 0; i < 60 && host?.exitCode === null; i++) await delay(40);
   if (app && app.exitCode === null) app.kill();
   if (host && host.exitCode === null) host.kill();

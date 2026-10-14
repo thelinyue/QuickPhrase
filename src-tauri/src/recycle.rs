@@ -351,10 +351,12 @@ pub(crate) fn import_records(
     tx: &Transaction<'_>,
     records: &[RecycleRecord],
     active_map: &HashMap<String, String>,
+    prepared: bool,
 ) -> Result<()> {
     let mut map = active_map.clone();
     for c in records.iter().flat_map(|r| &r.categories) {
-        map.entry(c.id.clone()).or_insert_with(id);
+        map.entry(c.id.clone())
+            .or_insert_with(|| if prepared { c.id.clone() } else { id() });
     }
     for original in records {
         if !["phrase", "primary-category", "secondary-category"].contains(&original.kind.as_str()) {
@@ -401,7 +403,9 @@ pub(crate) fn import_records(
             }
         }
         let mut record = original.clone();
-        record.id = id();
+        if !prepared {
+            record.id = id();
+        }
         let mut seen = HashSet::new();
         for c in &mut record.categories {
             if !seen.insert(c.id.clone()) {
@@ -420,7 +424,9 @@ pub(crate) fn import_records(
         }
         for p in &mut record.phrases {
             validate_phrase(p)?;
-            p.id = id();
+            if !prepared {
+                p.id = id();
+            }
             p.root_id = map
                 .get(&p.root_id)
                 .cloned()

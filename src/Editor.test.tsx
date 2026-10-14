@@ -5,7 +5,7 @@ import { Editor } from './Editor';
 import { call } from './api';
 import type { Block, Library, Phrase } from './types';
 
-vi.mock('./api', () => ({ call: vi.fn(async () => {}), closeWindow: vi.fn(async () => {}) }));
+vi.mock('./api', () => ({ call: vi.fn(async () => {}), closeWindow: vi.fn(async () => {}), useTeams: () => ({ status: { companyFiles: false }, version: 0 }) }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ convertFileSrc: (path: string) => path }));
 const originalEdit = document.execCommand;
@@ -59,6 +59,7 @@ describe('行内图片编辑', () => {
     });
     vi.mocked(open).mockResolvedValue(['C:/附件.txt']);
     fireEvent.click(screen.getByRole('button', { name: '文件' }));
+    fireEvent.click(screen.getByRole('button', { name: '本机文件' }));
     await screen.findByRole('button', { name: '删除附件 附件.txt' });
     expect(input.querySelectorAll('[data-block-kind="file"]')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: '确定' }));

@@ -3,7 +3,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { call } from './api';
 import { Icon } from './ui';
-import { labelOf, type Phrase } from './types';
+import { contentKey, labelOf, type Phrase } from './types';
 
 interface PreviewPayload { phrase: Phrase; fontSize: number; titleColor: string; theme: string; maxHeight: number }
 type HoverState = { timer?: ReturnType<typeof setTimeout>; triggered: boolean };
@@ -33,7 +33,7 @@ export function usePhraseHover(phrase: Phrase | undefined, busy: boolean) {
     hover.current.timer = setTimeout(() => {
       hover.current.timer = undefined; hover.current.triggered = true;
       const rect = row.getBoundingClientRect();
-      void call('show_phrase_preview', { id: phrase.id, anchor: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } }).catch(() => {});
+      void call('show_phrase_preview', { id: contentKey(phrase), anchor: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } }).catch(() => {});
     }, 350);
   };
   return { onMouseEnter: enter, onMouseMove: enter, onMouseLeave: () => { cancel(); hover.current.triggered = false; if (activeHover === hover.current) activeHover = undefined; }, onMouseDown: () => { cancel(); hover.current.triggered = true; hide(); } };

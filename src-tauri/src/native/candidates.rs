@@ -230,14 +230,14 @@ mod window {
             let context = unsafe { input_context() };
             if state.payload.is_some()
                 && (!state.valid(context)
-                    || self.settings_window.load(Ordering::Acquire) != 0
+                    || self.management_windows.is_open()
                     || self.busy.load(Ordering::Acquire))
             {
                 log::info!(
-                    "快捷键候选已取消：输入焦点 {:?} → {:?}，设置窗口={}，发送中={}。",
+                    "快捷键候选已取消：输入焦点 {:?} → {:?}，管理界面={}，发送中={}。",
                     state.context,
                     context,
-                    self.settings_window.load(Ordering::Acquire),
+                    self.management_windows.is_open(),
                     self.busy.load(Ordering::Acquire)
                 );
                 state.cancel();

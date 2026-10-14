@@ -112,7 +112,7 @@ pub fn validate_common_text(text: &str) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub startup: bool,
@@ -158,6 +158,8 @@ pub struct Settings {
     pub phrase_category_color: String,
     pub file_category_color: String,
     pub files_first: bool,
+    /// 我的话术／共享库入口顺序属于本机布局，暂不上传至现有个人设置协议。
+    pub teams_first: bool,
     pub file_category_height: u16,
     pub common_height: u16,
     /// 0 为自适应，1—3 为限制可见行数；超出内容仍可滚动访问。
@@ -204,6 +206,7 @@ impl Default for Settings {
             phrase_category_color: String::new(),
             file_category_color: String::new(),
             files_first: false,
+            teams_first: false,
             file_category_height: 31,
             common_height: 144,
             dock_common_rows: 0,

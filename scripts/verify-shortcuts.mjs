@@ -3,13 +3,14 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 // 完整原生链路只在隔离 Debug 数据目录和标准 WinForms 宿主验收；不操作真实聊天软件。
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.join(repo, '.build', `shortcuts-${Date.now()}`);
-const evidence = path.join(repo, 'docs', 'ui', 'runtime', 'shortcuts');
+const evidence = root;
 const run = promisify(execFile), delay = ms => new Promise(done => setTimeout(done, ms));
 const powershell = args => run('powershell.exe', ['-NoProfile','-STA','-ExecutionPolicy','Bypass',...args], { windowsHide:true,encoding:'utf8' });
 const native = async args => JSON.parse((await powershell(['-File',path.join(repo,'tests','native-driver.ps1'),...args])).stdout.trim());
@@ -17,6 +18,7 @@ const events = path.join(root,'events.json'), controls = path.join(root,'control
 const results = [], receipts = [];
 const filter = process.argv.find(arg=>arg.startsWith('--filter='))?.slice(9);
 let host, otherHost, app, browser, page, candidates, settingsPage, dockPage, context, hostInfo, main, candidateHandle;
+let expectedClipboard = '快捷键验收剪贴板';
 const read = async filename => { for(let i=0;i<150;i++) {try{return JSON.parse(await fs.readFile(filename,'utf8'));}catch{await delay(30);}} throw Error(`无法读取宿主记录：${filename}`); };
 const receipt = () => read(events);
 const control = async (command, fields={}, filename=controls) => {
@@ -29,18 +31,30 @@ const invoke = (cmd,args={},window=page) => window.evaluate(({cmd,args})=>window
 const key = async (code, modifiers=[], extra=[]) => {const result=await native(['-Action','key','-Key',String(code),...modifiers,...extra]);assert.equal(result.desktop,result.inputDesktop,'测试按键应进入隔离输入桌面');return result;};
 const chord = () => native(['-Action','key','-Keys','81,87']);
 const focusHost = async () => { for(let i=0;i<3;i++){await native(['-Action','focus','-Handle',String(hostInfo.hwnd)]);await control('focus');await delay(300);if((await native(['-Handle',String(hostInfo.hwnd)])).foreground===hostInfo.hwnd)return;}throw Error('隔离宿主未取得稳定输入焦点。'); };
+// 点击活动页签取得前台权限，避免固定坐标误打开共享库菜单或命中拖动区域。
+const focusMain = async () => {
+  const tab=await page.locator('.content-tabs button.active').boundingBox();
+  await native(['-Action','focus','-Handle',String(main),'-X',String(Math.round(tab.x+tab.width/2)),'-Y',String(Math.round(tab.y+tab.height/2))]);
+};
 const prepare = async (draft='已有草稿：') => {
-  await control('reset',{draft});await control('copy',{text:'快捷键验收剪贴板'});await focusHost();
-  await invoke('window_action',{action:'show'});await native(['-Action','focus','-Handle',String(main),'-X','100','-Y','40']);await delay(100);
+  expectedClipboard = '快捷键验收剪贴板';
+  await control('reset',{draft});await control('copy',{text:expectedClipboard});await focusHost();
+  await invoke('window_action',{action:'show'});await focusMain();await delay(100);
   await poll(async()=>(await invoke('get_target'))?.focus===hostInfo.focus,'冻结原宿主目标');await invoke('window_action',{action:'hide'});await delay(120);await focusHost();
 };
 const opened = async (trigger=chord) => {await trigger();await poll(async()=>!!await invoke('get_shortcut_candidates'),'原生候选');return invoke('get_shortcut_candidates');};
 const noCandidate = () => poll(async()=>!await invoke('get_shortcut_candidates'),'候选关闭');
-const submitted = async (draft, sends=0) => {await poll(async()=>{const r=await receipt();return r.draft===draft&&r.events.filter(e=>e.kind==='send').length===sends;},'宿主内容');await poll(async()=>await page.locator('.stop-delivery').count()===0,'发送完成回执');assert.equal((await native(['-ClipboardExpected','快捷键验收剪贴板'])).clipboardMatches,true,'保留原剪贴板');};
+const submitted = async (draft, sends=0) => {
+  await poll(async()=>{const r=await receipt();return r.draft===draft&&r.events.filter(e=>e.kind==='send').length===sends;},'宿主内容');
+  await poll(async()=>await page.locator('.stop-delivery').count()===0,'发送完成回执');
+  const paste=(await receipt()).events.filter(e=>e.kind==='paste-text').at(-1);
+  if(paste)expectedClipboard=paste.value;
+  assert.equal((await native(['-ClipboardExpected',expectedClipboard])).clipboardMatches,true,'保留最后投递内容；没有投递时不改剪贴板');
+};
 const record = async name => {receipts.push({name,...await receipt()});};
 const test = async (name,fn) => {if(filter&&!name.includes(filter))return;try{await fn();results.push({name,passed:true});console.log(`通过：${name}`);}catch(error){results.push({name,passed:false,error:String(error)});throw error;}};
 const settings = async patch => {const library=await invoke('get_library');await invoke('save_settings',{settings:{...library.settings,...patch}});await delay(160);};
-const showMain = async () => {await invoke('window_action',{action:'show'});await delay(120);if(main)await native(['-Action','focus','-Handle',String(main),'-X','100','-Y','40']);};
+const showMain = async () => {await invoke('window_action',{action:'show'});await delay(120);if(main)await focusMain();};
 const captureScales = async (window, name, width, height) => {
   const session=await context.newCDPSession(window);
   try {for(const scale of [1,1.5,2]) {
@@ -57,8 +71,11 @@ try {
   await fs.mkdir(root,{recursive:true});await fs.mkdir(evidence,{recursive:true});
   const hostExe=path.join(root,'ShanyuDockHost.exe');await powershell(['-File',path.join(repo,'tests','build-dock-host.ps1'),'-OutputPath',hostExe]);
   host=spawn(hostExe,[events,controls],{windowsHide:true,stdio:['ignore','ignore','pipe']});host.stderr.on('data',b=>console.error(b.toString()));hostInfo=await receipt();
-  app=spawn(path.join(repo,'src-tauri','target','debug','shanyu.exe'),[],{cwd:repo,windowsHide:true,stdio:'ignore',env:{...process.env,SHANYU_TEST_DATA_DIR:path.join(root,'data'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=9374'}});
-  for(let i=0;i<80;i++){try{browser=await chromium.connectOverCDP('http://127.0.0.1:9374');break;}catch{await delay(200);}}
+  // 连续切换隔离输入桌面时，旧WebView进程可能尚未释放公共配置目录；每次独立配置和调试端口。
+  const debuggerSocket=net.createServer();await new Promise(resolve=>debuggerSocket.listen(0,'127.0.0.1',resolve));
+  const debuggerPort=debuggerSocket.address().port;await new Promise(resolve=>debuggerSocket.close(resolve));
+  app=spawn(path.join(repo,'src-tauri','target','debug','shanyu.exe'),[],{cwd:repo,windowsHide:true,stdio:'ignore',env:{...process.env,SHANYU_TEST_DATA_DIR:path.join(root,'data'),WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${debuggerPort}`}});
+  for(let i=0;i<80;i++){try{browser=await chromium.connectOverCDP(`http://127.0.0.1:${debuggerPort}`);break;}catch{await delay(200);}}
   if(!browser)throw Error('无法连接隔离客户端。');context=browser.contexts()[0];context.setDefaultTimeout(6000);page=context.pages().find(p=>!new URL(p.url()).hash);
   await page.locator('.main-window').waitFor();assert.equal((await invoke('get_library')).dataDir,path.join(root,'data'));
   await poll(async()=>{try{await settings({dock:false,searchHotkey:'8',windowHotkey:'9',commonHotkey:'0',sequenceHotkeys:false,globalPhraseHotkeys:true,showCommon:true});return true;}catch(error){if(String(error).includes('服务尚未启动'))return false;throw error;}},'Windows监听服务');await showMain();
@@ -76,10 +93,12 @@ try {
   const ids=[];
   for(let i=0;i<12;i++)ids.push(await savePhrase(String(i+1),'Q+W',i<4?phraseRoot:otherRoot,i===2||i===3?group:null));
   const solo=await savePhrase('单候选','Ctrl+Shift+F11');await delay(250);
+  const library=await invoke('get_library');
+  const references=new Map([...ids,solo].map(id=>[id,`private:${library.libraryId}:phrase:${id}:${library.privateRevisions[`phrase:${id}`]}`]));
   const targetContext={hwnd:hostInfo.hwnd,focus:hostInfo.focus,pid:hostInfo.pid};
 
   await test('双键完整匹配只显示候选，按分类排序、无激活且不占任务栏',async()=>{
-    await prepare();const payload=await opened();assert.deepEqual(payload.phrases.map(p=>p.id),ids);assert.deepEqual(payload.target,targetContext);
+    await prepare();const payload=await opened();assert.deepEqual(payload.phrases.map(p=>p.id),ids.map(id=>references.get(id)));assert.deepEqual(payload.target,targetContext);
     await poll(async()=>(await native(['-Handle',String(candidateHandle)])).visible,'候选窗口显示');
     const actual=await native(['-Handle',String(candidateHandle)]);assert.equal(actual.foreground,hostInfo.hwnd);assert.equal(actual.visible,true);assert.equal(actual.toolWindow,true);assert.equal(actual.appWindow,false);assert.equal(actual.noActivate,true);
     assert.ok(actual.rect.left>=actual.workArea.left&&actual.rect.top>=actual.workArea.top&&actual.rect.right<=actual.workArea.right&&actual.rect.bottom<=actual.workArea.bottom,'候选完整限制在屏幕工作区内');
@@ -93,7 +112,7 @@ try {
     await delay(1300);assert.equal((await invoke('get_shortcut_candidates')).selectedIndex,11);await key(32);await submitted('已有草稿：正文12');await record('第十二候选不限时插入');
   });
   await test('单条也弹候选；长按触发与重复提交只执行一次',async()=>{
-    await prepare();const payload=await opened(()=>key(122,['-Ctrl','-Shift'],['-Repeats','5']));assert.equal(payload.phrases.length,1);assert.equal(payload.phrases[0].id,solo);
+    await prepare();const payload=await opened(()=>key(122,['-Ctrl','-Shift'],['-Repeats','5']));assert.equal(payload.phrases.length,1);assert.equal(payload.phrases[0].id,references.get(solo));
     await key(13,[],['-Repeats','8']);await submitted('',1);await delay(250);assert.equal((await receipt()).events.filter(e=>e.kind==='paste-text').length,1);await record('长按Enter只发送一次');
   });
   await test('双键超时在原输入区回放，焦点和外部点击取消候选',async()=>{
@@ -103,7 +122,12 @@ try {
     await prepare();await opened();await native(['-Action','focus','-Handle',String(hostInfo.hwnd)]);await noCandidate();await record('点击候选外部取消');
     await prepare();await opened();await showMain();await noCandidate();assert.equal((await receipt()).draft,'已有草稿：');await record('窗口切换取消');
   });
-  await test('提交前重新核对活动话术，改绑或删除后关闭候选且保留草稿',async()=>{
+  await test('提交前核对库和修订，正文更新、改绑或删除后拒绝旧候选并保留草稿',async()=>{
+    await prepare();await opened(()=>key(122,['-Ctrl','-Shift']));
+    const original=(await invoke('get_library')).phrases.find(p=>p.id===solo);
+    await invoke('save_phrase',{phrase:{...original,segments:[{blocks:[{kind:'text',text:'更新后的另一版正文'}]}]},afterId:null});
+    await key(13);await noCandidate();await submitted('已有草稿：');await record('正文更新后旧候选拒绝发送');
+    await invoke('save_phrase',{phrase:original,afterId:null});
     await prepare();await opened(()=>key(122,['-Ctrl','-Shift']));
     const phrase=(await invoke('get_library')).phrases.find(p=>p.id===solo);
     await invoke('save_phrase',{phrase:{...phrase,shortcut:'Ctrl+Shift+F12'},afterId:null});await key(13);await noCandidate();await submitted('已有草稿：');await record('候选改绑后拒绝发送');
@@ -122,10 +146,11 @@ try {
     assert.equal(await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).evaluate(e=>e===document.activeElement),true);
     await key(49,['-Ctrl']);await submitted('搜索输入：正文单候选');await record('搜索框保持焦点时序号插入原目标');
     const attachment=path.join(root,'序号搜索文件.txt');await fs.writeFile(attachment,'隔离验收');await invoke('add_files',{categoryId:fileRoot,paths:[attachment]});
-    await showMain();await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).fill('序号搜索文件');await page.locator('#search-results [data-row]').waitFor();
+    // 文件搜索属于本地文件来源，先切页签再验证文件槽位不会触发话术。
+    await showMain();await page.getByRole('button',{name:'本地文件',exact:true}).click();await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).fill('序号搜索文件');await page.locator('#search-results [data-row]').waitFor();
     await control('reset',{draft:'文件占位：'});await focusHost();await key(49,['-Ctrl']);await delay(200);await submitted('文件占位：');await record('搜索文件槽位不发送话术');
     await invoke('sync_sequence_map',{ids:[ids[0]],loading:true});await key(49,['-Ctrl']);await delay(100);await submitted('文件占位：');
-    await showMain();await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).fill('');await settings({sequenceDirectSend:true});await focusHost();await key(49,['-Ctrl']);await submitted('',1);await record('序号直接发送');
+    await showMain();await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).fill('');await page.getByRole('button',{name:'话术',exact:true}).click();await settings({sequenceDirectSend:true});await focusHost();await key(49,['-Ctrl']);await submitted('',1);await record('序号直接发送');
   });
   await test('序号与自定义开关独立，冲突失败保留配置，设置关闭才恢复业务快捷键',async()=>{
     await settings({sequenceHotkeys:false});await prepare();await opened();await key(27);await noCandidate();
@@ -169,8 +194,12 @@ try {
   await fs.writeFile(path.join(evidence,'native-report.json'),JSON.stringify({root,results,receipts,error:String(error),diagnosis},null,2));
   if(page)await page.screenshot({path:path.join(evidence,'failure.png')}).catch(()=>{});console.error(error);process.exitCode=1;
 } finally {
-  if(page&&!page.isClosed())await invoke('window_action',{action:'exit'}).catch(()=>{});if(browser)await browser.close().catch(()=>{});
-  if(host) { if((await native(['-ClipboardExpected','快捷键验收剪贴板']).catch(()=>null))?.clipboardMatches)await control('adopt',{sequence:(await native([])).clipboardSequence}).catch(()=>{});await control('close').catch(()=>{}); }
   if(otherHost)await control('close',{},path.join(root,'other-controls.json')).catch(()=>{});
+  if(host) {
+    const state=await native([]).catch(()=>null);
+    if(app&&state?.clipboardOwnerPid===app.pid)await control('adopt',{sequence:state.clipboardSequence,ownerPid:app.pid}).catch(()=>{});
+    await control('close').catch(()=>{});
+  }
+  if(page&&!page.isClosed())await invoke('window_action',{action:'exit'}).catch(()=>{});if(browser)await browser.close().catch(()=>{});
   if(app&&!app.exitCode)app.kill();if(host&&!host.exitCode)host.kill();if(otherHost&&!otherHost.exitCode)otherHost.kill();
 }

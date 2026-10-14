@@ -12,6 +12,12 @@ public static class ShanyuTestHost {
     [DllImport("user32.dll")] static extern bool OpenClipboard(IntPtr window);
     [DllImport("user32.dll")] static extern bool CloseClipboard();
     [DllImport("user32.dll")] static extern uint GetClipboardSequenceNumber();
+    [DllImport("user32.dll")] static extern IntPtr GetClipboardOwner();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
+    [DllImport("user32.dll")] static extern bool EmptyClipboard();
+    [DllImport("user32.dll")] static extern IntPtr SetClipboardData(uint format,IntPtr data);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern uint RegisterClipboardFormat(string name);
+    [DllImport("user32.dll")] static extern bool IsClipboardFormatAvailable(uint format);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
     static string eventsPath,controlPath,lastControl;
     static readonly List<Dictionary<string,object>> events = new List<Dictionary<string,object>>();
@@ -40,7 +46,7 @@ public static class ShanyuTestHost {
     public static void Run(string output,string controls) {
         eventsPath=output;controlPath=controls;ProtectOriginalClipboard();
         Application.EnableVisualStyles();
-        form=new ShanyuDockForm{Text="闪语通用发送验收",Width=600,Height=450,StartPosition=FormStartPosition.CenterScreen};
+        form=new ClipboardForm{Text="闪语通用发送验收",Width=600,Height=450,StartPosition=FormStartPosition.CenterScreen};
         var label=new Label{Text="仅用于本机文字、图片、文件与发送按键验收",Dock=DockStyle.Top,Height=32};
         // 仅在宿主内禁用输入法：普通按键回放立即形成文字，不把输入法候选误判为没有回放。
         input=new InputBox{Name="ShanyuChatInput",Multiline=true,Dock=DockStyle.Fill,Font=new Font("Microsoft YaHei UI",12),Text="已有草稿：",ImeMode=ImeMode.Disable};
@@ -61,7 +67,22 @@ public static class ShanyuTestHost {
                 if(action=="copy") {Clipboard.SetText((string)command["text"]);ownClipboard=GetClipboardSequenceNumber();Record("new-copy",true);}
                 if(action=="copy-image") {using(var image=Image.FromFile((string)command["path"])){Clipboard.SetImage(image);}ownClipboard=GetClipboardSequenceNumber();Record("test-copy-image",true);}
                 if(action=="copy-files") {var files=new System.Collections.Specialized.StringCollection();files.Add((string)command["path"]);Clipboard.SetFileDropList(files);ownClipboard=GetClipboardSequenceNumber();Record("test-copy-files",true);}
-                if(action=="adopt") {if(GetClipboardSequenceNumber()==Convert.ToUInt32(command["sequence"]))ownClipboard=GetClipboardSequenceNumber();}
+                // 声明格式但故意不响应延迟渲染；旧快照会读到空句柄，新投递不得请求原载荷。
+                if(action=="copy-delayed") {
+                    if(!OpenClipboard(form.Handle))throw new InvalidOperationException("无法准备延迟剪贴板格式。");
+                    uint format=RegisterClipboardFormat("ShanyuQA.UnavailableDelayedData");
+                    try {if(!EmptyClipboard())throw new InvalidOperationException("无法清空测试剪贴板。");SetClipboardData(format,IntPtr.Zero);}
+                    finally {CloseClipboard();}
+                    ownClipboard=GetClipboardSequenceNumber();Record("test-copy-delayed",IsClipboardFormatAvailable(format));
+                }
+                // 清理仅认领指定隔离客户端当前拥有的序号；用户后来复制的内容不属于测试。
+                if(action=="adopt") {
+                    if(OpenClipboard(form.Handle)) {
+                        try {uint ownerPid;GetWindowThreadProcessId(GetClipboardOwner(),out ownerPid);
+                            if(ownerPid==Convert.ToUInt32(command["ownerPid"]) && GetClipboardSequenceNumber()==Convert.ToUInt32(command["sequence"]))ownClipboard=GetClipboardSequenceNumber();}
+                        finally {CloseClipboard();}
+                    }
+                }
                 if(action=="hold") {if(OpenClipboard(form.Handle)){releaseClipboard=DateTime.Now.AddMilliseconds(1200);Record("clipboard-held",true);}}
                 if(action=="minimize") {form.WindowState=FormWindowState.Minimized;Record("minimized",true);}
                 if(action=="close") {form.Close();}
@@ -73,6 +94,12 @@ public static class ShanyuTestHost {
             if(ownClipboard!=0 && GetClipboardSequenceNumber()==ownClipboard && original!=null)Clipboard.SetDataObject(original,true);
         };
         Application.Run(form);timer.Dispose();
+    }
+    sealed class ClipboardForm:ShanyuDockForm {
+        protected override void WndProc(ref Message msg) {
+            if(msg.Msg==0x305) {Record("render-request",msg.WParam.ToInt64());msg.Result=IntPtr.Zero;return;}
+            base.WndProc(ref msg);
+        }
     }
     sealed class InputBox:TextBox {
         protected override bool ProcessCmdKey(ref Message msg,Keys key) {

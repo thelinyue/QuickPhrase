@@ -1,6 +1,7 @@
 node_modules/
 dist/
 src-tauri/target/
+crates/team-model/target/
 src-tauri/gen/
 .build/
 artifacts/

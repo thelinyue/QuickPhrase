@@ -104,6 +104,23 @@ impl DisplayMode {
 /// 焦点记录、全局快捷键和吸附共享一个轻量后台线程；发送另用独立线程，避免分段等待阻塞窗口跟随。
 /// 全局鼠标钩子使用独立消息线程，不能等吸附轮询休眠或窗口查询完成后才放行系统鼠标事件。
 /// target 只在外部窗口进入闪语时冻结；切到其他软件不会扩大话术快捷键的默认生效范围。
+/// 管理窗口可独立开关；不使用单一“最后打开窗口”句柄，避免关掉一个就提前解除暂停。
+#[derive(Default)]
+pub struct ManagementWindows {
+    pub settings: std::sync::atomic::AtomicI64,
+    pub teams: std::sync::atomic::AtomicI64,
+    pub users: std::sync::atomic::AtomicI64,
+    pub company: std::sync::atomic::AtomicI64,
+}
+impl ManagementWindows {
+    pub(crate) fn is_open(&self) -> bool {
+        self.settings.load(Ordering::Acquire) != 0
+            || self.teams.load(Ordering::Acquire) != 0
+            || self.users.load(Ordering::Acquire) != 0
+            || self.company.load(Ordering::Acquire) != 0
+    }
+}
+
 pub struct NativeState {
     pub target: Mutex<Option<TargetContext>>,
     pub settings: RwLock<Settings>,
@@ -116,8 +133,8 @@ pub struct NativeState {
     /// 当前正在编辑或录入快捷键的客户端窗口。输入框与模态框中不触发话术，避免抢走录入按键。
     pub shortcut_input: std::sync::atomic::AtomicI64,
     pub search_input: std::sync::atomic::AtomicI64,
-    /// 设置窗口存在期间暂停业务快捷键，关闭后使用已成功保存的新配置。
-    pub settings_window: std::sync::atomic::AtomicI64,
+    /// 设置、用户名与共享库各自记录句柄，最后一个管理窗口关闭后才恢复业务快捷键。
+    pub management_windows: ManagementWindows,
     /// 横条按内容换行后的逻辑高度，由前端测量；跟随线程转换为目标显示器的物理像素。
     pub common_height: std::sync::atomic::AtomicI32,
     pub error: Mutex<Option<String>>,
@@ -152,7 +169,7 @@ impl NativeState {
             sequence_map: RwLock::new((vec![], true)),
             shortcut_input: std::sync::atomic::AtomicI64::new(0),
             search_input: std::sync::atomic::AtomicI64::new(0),
-            settings_window: std::sync::atomic::AtomicI64::new(0),
+            management_windows: ManagementWindows::default(),
             common_height: std::sync::atomic::AtomicI32::new(34),
             error: Mutex::new(None),
             display_mode: Mutex::new(DisplayMode::default()),
@@ -267,10 +284,7 @@ impl NativeState {
         for p in phrases.iter().filter(|p| !p.shortcut.is_empty()) {
             let shortcut = parse_shortcut(&p.shortcut)?;
             if settings.shortcut_reserved(&shortcut) {
-                return Err(format!(
-                    "话术「{}」的快捷键与导航或序号快捷键冲突。",
-                    p.label()
-                ));
+                return Err("话术快捷键与导航或序号快捷键冲突。".into());
             }
             let canonical = shortcut.canonical();
             if !bindings.iter().any(|(key, _)| key == &canonical) {
@@ -518,7 +532,7 @@ mod platform {
         if (!settings.custom_hotkeys && !settings.sequence_hotkeys)
             || !active
             || state.busy.load(Ordering::Acquire)
-            || state.settings_window.load(Ordering::Acquire) != 0
+            || state.management_windows.is_open()
         {
             return None;
         }
@@ -1473,6 +1487,27 @@ mod platform {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn management_windows_suspend_shortcuts_until_the_last_window_closes() {
+        let windows = ManagementWindows::default();
+        assert!(!windows.is_open());
+        for handle in [
+            &windows.settings,
+            &windows.teams,
+            &windows.users,
+            &windows.company,
+        ] {
+            handle.store(1, Ordering::Release);
+            assert!(windows.is_open());
+            handle.store(0, Ordering::Release);
+        }
+        windows.teams.store(1, Ordering::Release);
+        windows.users.store(2, Ordering::Release);
+        windows.teams.store(0, Ordering::Release);
+        assert!(windows.is_open());
+        windows.users.store(0, Ordering::Release);
+        assert!(!windows.is_open());
+    }
     #[test]
     fn background_start_and_target_lifecycle_follow_without_manual_hide() {
         let mut mode = DisplayMode::default();

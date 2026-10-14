@@ -1,5 +1,5 @@
 use crate::model::*;
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -22,14 +22,17 @@ impl Store {
         for sub in ["images", "thumbnails", "temp"] {
             std::fs::create_dir_all(dir.join(sub)).map_err(db_error)?;
         }
-        let conn = Connection::open(dir.join("shanyu.sqlite3")).map_err(db_error)?;
+        let mut conn = Connection::open(dir.join("shanyu.sqlite3")).map_err(db_error)?;
         conn.busy_timeout(Duration::from_secs(5))
             .map_err(db_error)?;
         conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;")
             .map_err(db_error)?;
         // 首发前只维护版本1的完整初始结构，开发期调整直接合并到这里，不累加迁移版本。
         // 现有开发库按实际字段和索引无损补齐，结构整理与版本标记在同一事务中完成。
-        let schema = conn.unchecked_transaction().map_err(db_error)?;
+        // 账号库可能仍在后台同步；先取得写锁，避免结构检查后的锁升级遇到旧快照而立即失败。
+        let schema = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(db_error)?;
         schema.execute_batch("CREATE TABLE IF NOT EXISTS categories(id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('phrase','file')), parent_id TEXT REFERENCES categories(id) ON DELETE CASCADE, position INTEGER NOT NULL, background TEXT NOT NULL DEFAULT '');
           CREATE TABLE IF NOT EXISTS phrases(id TEXT PRIMARY KEY,root_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,group_id TEXT REFERENCES categories(id) ON DELETE CASCADE,title TEXT NOT NULL,color TEXT NOT NULL,background TEXT NOT NULL,shortcut TEXT NOT NULL,position INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS segments(id TEXT PRIMARY KEY,phrase_id TEXT NOT NULL REFERENCES phrases(id) ON DELETE CASCADE,position INTEGER NOT NULL);
@@ -72,11 +75,16 @@ impl Store {
         schema.execute_batch("DROP INDEX IF EXISTS category_names; CREATE INDEX IF NOT EXISTS phrase_shortcuts ON phrases(shortcut COLLATE NOCASE) WHERE shortcut<>''; PRAGMA user_version=1;")
             .map_err(db_error)?;
         schema.commit().map_err(db_error)?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS company_copies(source TEXT PRIMARY KEY,path TEXT NOT NULL)",
+        )
+        .map_err(db_error)?;
         // 分类由用户创建；新库和删除全部分类后的库都保持为空，不自动补默认分类。
         let store = Self {
             conn,
             dir: dir.to_path_buf(),
         };
+        crate::private_local::init(&store)?;
         // 不记住吸附状态时，仅在启动读取库时关闭左右吸附，当前会话仍可手动开启。
         let mut settings = store.settings()?;
         if !settings.remember_dock && settings.dock {
@@ -137,7 +145,11 @@ impl Store {
                 ));
             }
         }
-        self.conn.execute("INSERT INTO settings VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET content=excluded.content", [serde_json::to_string(settings).map_err(db_error)?]).map_err(db_error)?;
+        let old = self.settings()?;
+        let tx = self.conn.unchecked_transaction().map_err(db_error)?;
+        crate::private_local::save_setting_changes(&tx, &old, settings)?;
+        tx.execute("INSERT INTO settings VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET content=excluded.content", [serde_json::to_string(settings).map_err(db_error)?]).map_err(db_error)?;
+        tx.commit().map_err(db_error)?;
         Ok(())
     }
     pub fn phrase(&self, id: &str) -> Result<Phrase> {
@@ -320,7 +332,17 @@ impl Store {
         }
         Ok(found)
     }
-    pub fn save_phrase(&mut self, mut p: Phrase, after_id: Option<&str>) -> Result<String> {
+    pub fn save_phrase(&mut self, p: Phrase, after_id: Option<&str>) -> Result<String> {
+        self.save_phrase_with_company(p, after_id, &[])
+    }
+    /// 来源映射与话术同事务提交；失败只清理本次新副本，复用副本不能被回滚删除。
+    pub fn save_phrase_with_company(
+        &mut self,
+        mut p: Phrase,
+        after_id: Option<&str>,
+        copies: &[(String, String)],
+    ) -> Result<String> {
+        let materials = crate::private_local::safe_materials(self, &mut p)?;
         validate_phrase(&p)?;
         self.validate_images(&p)?;
         if !p.shortcut.is_empty() {
@@ -371,13 +393,23 @@ impl Store {
             };
         }
         write_phrase(&tx, &p)?;
+        for (source, path) in copies {
+            tx.execute("INSERT INTO company_copies VALUES(?1,?2) ON CONFLICT(source) DO UPDATE SET path=excluded.path",params![source,path]).map_err(db_error)?;
+        }
         tx.commit().map_err(db_error)?;
+        materials.keep();
         Ok(p.id)
     }
     pub(crate) fn validate_images(&self, p: &Phrase) -> Result<()> {
         let root = self.dir.join("images").canonicalize().map_err(db_error)?;
         for b in p.segments.iter().flat_map(|s| &s.blocks) {
             if let Block::Image { path, .. } = b {
+                if crate::private_local::bound(self) && !Path::new(path).exists() {
+                    let known:bool=self.conn.query_row("SELECT EXISTS(SELECT 1 FROM sync_assets WHERE path=?1 AND kind='image')",[path],|r|r.get(0)).map_err(db_error)?;
+                    if known {
+                        continue;
+                    }
+                }
                 let file = Path::new(path)
                     .canonicalize()
                     .map_err(|_| "图片素材已失效，请重新添加。".to_string())?;
@@ -524,7 +556,7 @@ impl Store {
             .map_err(db_error)?;
         tx.commit().map_err(db_error)
     }
-    /// 分类复制/移动仅在私人话术库内进行。同名二级分类合并，内容追加到目标末尾。
+    /// 分类复制/移动仅在我的话术库内进行。同名二级分类合并，内容追加到目标末尾。
     /// 目标有多个同名分组时选择列表中最靠前的一组，不改动其余同名分组。
     /// 移动保留话术主键和快捷键，复制生成新主键并清空快捷键；整批失败时全部回滚。
     /// 图片仍引用用户素材目录，外部附件仅复制关联，既不删除也不改写源文件。
@@ -701,7 +733,7 @@ impl Store {
         }
         tx.commit().map_err(db_error)
     }
-    /// 缓存管理仅删除已确认的私人话术或常用短语，不删除分类、素材、文件关联及旧回收记录。
+    /// 缓存管理仅删除已确认的我的话术或常用短语，不删除分类、素材、文件关联及旧回收记录。
     /// 以当前完整主键集合校验确认范围，跨窗口增删后要求重新确认；回收与删除在同一事务内完成。
     pub fn delete_local_content(
         &mut self,
@@ -712,7 +744,7 @@ impl Store {
         let table = match kind {
             "phrase" => "phrases",
             "common" => "common_phrases",
-            _ => return Err("只能删除私人话术或常用短语。".into()),
+            _ => return Err("只能删除我的话术或常用短语。".into()),
         };
         let records = if kind == "phrase" && recycle {
             let library = self.library()?;
@@ -910,6 +942,41 @@ impl Store {
         restore_settings: bool,
         recycled: &[RecycleRecord],
     ) -> Result<()> {
+        self.import_inner(data, merge, restore_settings, recycled, None)
+    }
+    /// 已预览的导入使用固定副本编号；批次回执和正文、待同步键同事务保存。
+    pub fn import_prepared(
+        &mut self,
+        data: &Library,
+        merge: bool,
+        restore_settings: bool,
+        recycled: &[RecycleRecord],
+        batch: &str,
+    ) -> Result<()> {
+        self.import_inner(data, merge, restore_settings, recycled, Some(batch))
+    }
+    pub fn imported(&self, batch: &str) -> Result<bool> {
+        self.conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM import_batches WHERE id=?1)",
+                [batch],
+                |r| r.get(0),
+            )
+            .map_err(db_error)
+    }
+    fn import_inner(
+        &mut self,
+        data: &Library,
+        merge: bool,
+        restore_settings: bool,
+        recycled: &[RecycleRecord],
+        batch: Option<&str>,
+    ) -> Result<()> {
+        if let Some(batch) = batch {
+            if self.imported(batch)? {
+                return Ok(());
+            }
+        }
         for p in data
             .phrases
             .iter()
@@ -921,6 +988,21 @@ impl Store {
             data.settings.clone()
         } else {
             self.settings()?
+        };
+        let previous_settings = self.settings()?;
+        // 恢复便携配置按库内期望值比较；即使导入值恰好等于已应用的旧值，也要替换待确认的新值。
+        let previous_desired = if batch.is_some() && restore_settings {
+            let mut value = serde_json::to_value(&previous_settings).map_err(db_error)?;
+            for ((kind, key), next) in crate::private_local::local_records(self)? {
+                if kind == shanyu_team_model::private::Kind::Setting {
+                    if let Some(next) = next {
+                        value[key] = next;
+                    }
+                }
+            }
+            serde_json::from_value(value).map_err(db_error)?
+        } else {
+            previous_settings.clone()
         };
         let tx = self.conn.transaction().map_err(db_error)?;
         let mut map = HashMap::new();
@@ -943,7 +1025,13 @@ impl Store {
                 return Err("导入文件中的分类无效。".into());
             }
             let existing: Option<String> = if merge {
-                tx.query_row("SELECT id FROM categories WHERE kind=?1 AND coalesce(parent_id,'')=coalesce(?2,'') AND name=?3 COLLATE NOCASE ORDER BY position,rowid LIMIT 1", params![c.kind,parent,c.name], |r| r.get(0)).optional().map_err(db_error)?
+                let matches = tx.prepare("SELECT id FROM categories WHERE kind=?1 AND coalesce(parent_id,'')=coalesce(?2,'') AND name=?3 COLLATE NOCASE ORDER BY position,rowid LIMIT 2").map_err(db_error)?
+                    .query_map(params![c.kind,parent,c.name], |r| r.get::<_, String>(0)).map_err(db_error)?.collect::<std::result::Result<Vec<_>, _>>().map_err(db_error)?;
+                if matches.len() == 1 || (batch.is_none() && !matches.is_empty()) {
+                    matches.first().cloned()
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -957,7 +1045,7 @@ impl Store {
                 }
                 id
             } else {
-                let new_id = id();
+                let new_id = if batch.is_some() { c.id.clone() } else { id() };
                 let pos: i64 = tx
                     .query_row(
                         "SELECT coalesce(max(position),-1)+1 FROM categories",
@@ -978,7 +1066,9 @@ impl Store {
         }
         for original in &data.phrases {
             let mut p = original.clone();
-            p.id = id();
+            if batch.is_none() {
+                p.id = id();
+            }
             p.root_id = map
                 .get(&p.root_id)
                 .cloned()
@@ -1016,7 +1106,12 @@ impl Store {
         }
         for common in &data.common_phrases {
             validate_common_text(&common.text)?;
-            tx.execute("INSERT INTO common_phrases VALUES(?1,?2,(SELECT coalesce(max(position),-1)+1 FROM common_phrases))", params![id(), common.text]).map_err(db_error)?;
+            let key = if batch.is_some() {
+                common.id.clone()
+            } else {
+                id()
+            };
+            tx.execute("INSERT INTO common_phrases VALUES(?1,?2,(SELECT coalesce(max(position),-1)+1 FROM common_phrases))", params![key, common.text]).map_err(db_error)?;
         }
         for f in &data.files {
             let category = map.get(&f.category_id).ok_or("导入文件关联缺少分类。")?;
@@ -1024,13 +1119,29 @@ impl Store {
             if !Path::new(&f.path).is_absolute() {
                 return Err("导入文件关联使用了无效路径。".into());
             }
-            tx.execute("INSERT INTO files VALUES(?1,?2,?3,?4,(SELECT coalesce(max(position),-1)+1 FROM files))",params![id(),category,f.path,f.name]).map_err(db_error)?;
+            let key = if batch.is_some() { f.id.clone() } else { id() };
+            tx.execute("INSERT INTO files VALUES(?1,?2,?3,?4,(SELECT coalesce(max(position),-1)+1 FROM files))",params![key,category,f.path,f.name]).map_err(db_error)?;
         }
         if restore_settings {
             data.settings.validate()?;
-            tx.execute("INSERT INTO settings VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET content=excluded.content",[serde_json::to_string(&data.settings).map_err(db_error)?]).map_err(db_error)?;
+            crate::private_local::save_setting_changes(&tx, &previous_desired, &data.settings)?;
+            let mut applied = serde_json::to_value(&data.settings).map_err(db_error)?;
+            if batch.is_some() {
+                let old = serde_json::to_value(&previous_settings).map_err(db_error)?;
+                for key in shanyu_team_model::private::SETTINGS
+                    .iter()
+                    .filter(|key| shanyu_team_model::private::requires_confirmation(key))
+                {
+                    applied[*key] = old[*key].clone();
+                }
+            }
+            tx.execute("INSERT INTO settings VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET content=excluded.content",[applied.to_string()]).map_err(db_error)?;
         }
-        crate::recycle::import_records(&tx, recycled, &map)?;
+        crate::recycle::import_records(&tx, recycled, &map, batch.is_some())?;
+        if let Some(batch) = batch {
+            tx.execute("INSERT INTO import_batches VALUES(?1)", [batch])
+                .map_err(db_error)?;
+        }
         tx.commit().map_err(db_error)
     }
 }

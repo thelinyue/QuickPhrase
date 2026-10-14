@@ -16,7 +16,7 @@ use std::{
 use windows::Win32::{
     Foundation::*,
     Graphics::Gdi::*,
-    System::{DataExchange::*, Memory::*, Ole::*, Threading::*},
+    System::{DataExchange::*, Memory::*, Threading::*},
     UI::{Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
 
@@ -103,74 +103,15 @@ pub fn copy_files(owner: i64, paths: &[String]) -> Result<()> {
     put(15, &bytes)
 }
 
-struct SavedFormat {
-    format: u32,
-    handle: Option<HANDLE>,
-}
-impl Drop for SavedFormat {
-    fn drop(&mut self) {
-        if let Some(handle) = self.handle.take() {
-            unsafe {
-                match self.format {
-                    2 | 9 | 130 => {
-                        let _ = DeleteObject(HGDIOBJ(handle.0));
-                    }
-                    14 | 142 => {
-                        let _ = DeleteEnhMetaFile(Some(HENHMETAFILE(handle.0)));
-                    }
-                    3 | 131 => {
-                        let memory = HGLOBAL(handle.0);
-                        let ptr = GlobalLock(memory);
-                        if !ptr.is_null() {
-                            let _ = DeleteMetaFile((*(ptr as *const METAFILEPICT)).hMF);
-                            let _ = GlobalUnlock(memory);
-                        }
-                        let _ = GlobalFree(Some(memory));
-                    }
-                    _ => {
-                        let _ = GlobalFree(Some(HGLOBAL(handle.0)));
-                    }
-                }
-            }
-        }
-    }
-}
-fn snapshot(owner: HWND) -> Result<(Vec<SavedFormat>, u32)> {
-    let _lock = ClipboardLock::open(owner)?;
-    let mut formats = vec![];
-    let mut format = 0;
-    loop {
-        format = unsafe { EnumClipboardFormats(format) };
-        if format == 0 {
-            break;
-        }
-        let original = unsafe { GetClipboardData(format) }
-            .map_err(|e| format!("当前剪贴板格式无法读取，未开始操作：{e}"))?;
-        let copy =
-            unsafe { OleDuplicateData(original, CLIPBOARD_FORMAT(format as u16), GMEM_MOVEABLE) };
-        if copy.0.is_null() {
-            return Err(format!(
-                "无法保留当前剪贴板格式（{format}），未开始操作。请先复制普通文字后重试。"
-            ));
-        }
-        formats.push(SavedFormat {
-            format,
-            handle: Some(copy),
-        });
-    }
-    Ok((formats, unsafe { GetClipboardSequenceNumber() }))
-}
-/// 通用 Windows 发送驱动：完全不识别聊天软件。先复制所有实际剪贴板载荷以恢复原有格式；
-/// 不仅保留可能延迟读取的 IDataObject 引用，避免 EmptyClipboard 后快照指向新的内容。
-/// 每一步核对剪贴板序号，用户新复制的内容优先，绝不将旧快照覆盖回去。
+/// 通用 Windows 发送驱动：直接写入待投递内容，不读取、备份或恢复旧剪贴板。
+/// 操作开始及每次写入后记录序号，写入和按键提交前核对变化；用户新复制时立即停止。
+/// 完成或中断后保留最后写入的内容，新复制也不会被结束清理覆盖。
 pub struct WindowsDriver {
     owner: HWND,
     target: TargetContext,
     cancelled: Arc<AtomicBool>,
-    original: Vec<SavedFormat>,
-    original_seq: u32,
+    initial_seq: u32,
     owned_seq: Option<u32>,
-    initialized: bool,
 }
 impl WindowsDriver {
     pub fn new(owner: i64, target: TargetContext, cancelled: Arc<AtomicBool>) -> Self {
@@ -178,10 +119,8 @@ impl WindowsDriver {
             owner: hwnd(owner),
             target,
             cancelled,
-            original: vec![],
-            original_seq: 0,
+            initial_seq: 0,
             owned_seq: None,
-            initialized: false,
         }
     }
     fn valid(&self) -> Result<()> {
@@ -203,10 +142,9 @@ impl WindowsDriver {
         }
     }
     fn check_clipboard(&self) -> Result<()> {
-        if let Some(seq) = self.owned_seq {
-            if unsafe { GetClipboardSequenceNumber() } != seq {
-                return Err("检测到新的复制操作，已停止；新剪贴板内容已保留。".into());
-            }
+        let expected = self.owned_seq.unwrap_or(self.initial_seq);
+        if unsafe { GetClipboardSequenceNumber() } != expected {
+            return Err("检测到新的复制操作，已停止；新剪贴板内容已保留。".into());
         }
         Ok(())
     }
@@ -268,15 +206,10 @@ impl WindowsDriver {
             }
         };
         let lock = ClipboardLock::open(self.owner)?;
-        let expected = self.owned_seq.unwrap_or(self.original_seq);
-        if unsafe { GetClipboardSequenceNumber() } != expected {
-            return Err("检测到新的复制操作，已停止；新内容已保留。".into());
-        }
+        self.check_clipboard()?;
         unsafe {
             EmptyClipboard().map_err(error)?;
         }
-        // 即使后续 SetClipboardData 失败，也记住已清空后的序号，结束时仍可恢复原剪贴板。
-        self.owned_seq = Some(unsafe { GetClipboardSequenceNumber() });
         let result = (|| {
             for (format, bytes) in formats {
                 put(format, &bytes)?;
@@ -284,7 +217,7 @@ impl WindowsDriver {
             Ok(())
         })();
         // Windows 可能在 CloseClipboard 时补充合成格式并更新序号。释放锁后只认领仍由
-        // 本窗口拥有、读取期间未变化的剪贴板；其他程序抢先复制的内容不会被认领或恢复覆盖。
+        // 本窗口拥有、检查期间未变化的剪贴板；其他程序抢先复制的内容不会被认领或粘贴。
         drop(lock);
         let sequence = unsafe { GetClipboardSequenceNumber() };
         if unsafe { GetClipboardOwner() }.ok() != Some(self.owner)
@@ -300,9 +233,8 @@ impl DeliveryDriver for WindowsDriver {
     fn prepare(&mut self) -> Result<()> {
         self.valid()?;
         unsafe {
-            OleInitialize(None).map_err(|e| format!("剪贴板服务无法初始化：{e}"))?;
-            self.initialized = true;
-            (self.original, self.original_seq) = snapshot(self.owner)?;
+            // 只记录变化标识，不读取原格式；即使原载荷无法读取也能开始投递。
+            self.initial_seq = GetClipboardSequenceNumber();
             let window = hwnd(self.target.hwnd);
             if IsIconic(window).as_bool() {
                 let _ = ShowWindow(window, SW_RESTORE);
@@ -371,44 +303,8 @@ impl DeliveryDriver for WindowsDriver {
         Ok(())
     }
     fn finish(&mut self) -> Result<()> {
-        let result = (|| -> Result<()> {
-            if let Some(seq) = self.owned_seq {
-                let _lock = ClipboardLock::open(self.owner)?;
-                if unsafe { GetClipboardSequenceNumber() } == seq {
-                    unsafe {
-                        EmptyClipboard().map_err(error)?;
-                    }
-                    for format in &mut self.original {
-                        if let Some(handle) = format.handle {
-                            unsafe {
-                                SetClipboardData(format.format, Some(handle))
-                                    .map_err(|e| format!("原剪贴板恢复失败：{e}"))?;
-                            }
-                            format.handle = None;
-                        }
-                    }
-                }
-            }
-            Ok(())
-        })();
-        self.original.clear();
-        if self.initialized {
-            unsafe {
-                OleUninitialize();
-            }
-            self.initialized = false;
-        }
-        result
-    }
-}
-impl Drop for WindowsDriver {
-    fn drop(&mut self) {
-        self.original.clear();
-        if self.initialized {
-            unsafe {
-                OleUninitialize();
-            }
-        }
+        // 产品不恢复旧内容，也不清空最后写入或用户后来复制的内容。
+        Ok(())
     }
 }
 fn keys(key: VIRTUAL_KEY, ctrl: bool, mut check: impl FnMut() -> Result<()>) -> Result<()> {

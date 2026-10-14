@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import net from 'node:net';
+import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
@@ -16,6 +17,10 @@ const app = spawn(path.join(repo, 'src-tauri/target/debug/shanyu.exe'), ['--auto
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let browser, page, settings; const results = [], menus = [];
 const invoke = (cmd, args = {}) => page.evaluate(({ cmd, args }) => window.__TAURI_INTERNALS__.invoke(cmd, args), { cmd, args });
+const transfer = async (cmd, args = {}) => {
+  const [library, account] = await Promise.all([invoke('get_library'), invoke('get_team_status')]);
+  return invoke(cmd, { merge: false, restoreSettings: false, operationId: randomUUID(), ...args, target: { source: 'private', libraryId: library.libraryId, sessionEpoch: account.sessionEpoch } });
+};
 const check = (label, fn) => fn().then(() => { results.push(label); console.log('通过：' + label); });
 const click = async locator => { await locator.waitFor(); for (let i = 0; i < 30 && !(await locator.isEnabled()); i++) await delay(50); assert.ok(await locator.isEnabled()); await locator.evaluate(el => el.click()); };
 const setInput = async (view, selector, value) => view.locator(selector).evaluate((el, value) => { const prototype = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; const setter = Object.getOwnPropertyDescriptor(prototype, 'value').set; setter.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); }, value);
@@ -69,6 +74,7 @@ const hook = async view => view.evaluate(() => {
     if (command === 'plugin:dialog|message') return response('Ok');
     if (command === 'plugin:dialog|save') return response(qa.savePath);
     const result = await original(input, { ...init, body: JSON.stringify(args) });
+    if (command === 'get_library') qa.library = await result.clone().json();
     if (command === 'plugin:menu|new' && args.kind === 'Menu') { const created = await result.clone().json(); qa.menu = { rid: created[0], items: args.options.items, ready: true }; }
     return result;
   };
@@ -88,7 +94,7 @@ try {
     catch (error) { if (i >= 30 || !String(error).includes('服务尚未启动')) throw error; await delay(100); }
   }
   const top = page.getByRole('button', { name: '一级分类菜单', exact: true });
-  const primaryLabels = ['新增话术', '新增二级分类', '新增同级分类', '重命名', '删除', '快速排序一级分类', '复制到', '移动到', '导出该一级分类的话术', '设置一级分类背景色', '设置一级分类区域高度'];
+  const primaryLabels = ['新增话术', '新增二级分类', '新增同级分类', '重命名', '删除', '快速排序一级分类', '复制到', '移动到', '导出该一级分类的话术', '复制到共享库话术', '设置一级分类背景色', '设置一级分类区域高度', '账号与同步'];
   await check('新库没有预设分类，空态可创建首个分类，最后一个分类仍可删除', async () => {
     assert.deepEqual(initial.categories, []);
     await page.getByText('还没有一级分类', { exact: true }).waitFor();
@@ -119,9 +125,10 @@ try {
   await page.getByRole('button', { name: '常用', exact: true }).waitFor();
   await check('仅剩一个一级分类时允许删除，排序和迁移禁用，菜单方向键跳过禁用项', async () => {
     const menu = await openMenu(top); assert.deepEqual(menu.map(i => i.text), primaryLabels);
-    for (const label of ['快速排序一级分类', '复制到', '移动到']) assert.equal(menu.find(i => i.text === label).enabled, false);
+    for (const label of ['快速排序一级分类', '复制到', '移动到', '复制到共享库话术']) assert.equal(menu.find(i => i.text === label).enabled, false);
     await page.keyboard.press('ArrowDown'); assert.equal(await page.evaluate(() => document.activeElement.textContent), '新增话术');
-    await page.keyboard.press('End'); assert.equal(await page.evaluate(() => document.activeElement.textContent), '设置一级分类区域高度');
+    await page.keyboard.press('End'); assert.equal(await page.evaluate(() => document.activeElement.textContent), '账号与同步');
+    await page.keyboard.press('ArrowUp'); assert.equal(await page.evaluate(() => document.activeElement.textContent), '设置一级分类区域高度');
     await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
     assert.equal(await page.evaluate(() => document.activeElement.textContent), '删除');
     await page.keyboard.press('Escape'); await page.locator('.context-menu').waitFor({ state: 'detached' });
@@ -138,7 +145,7 @@ try {
     const matrix = await page.getByRole('button', { name: '吸附', exact: true }).locator('svg').evaluate(el => getComputedStyle(el).transform);
     assert.equal(matrix, 'matrix(0, -1, 1, 0, 0, 0)');
   });
-  await check('右上角一级分类菜单11项顺序与参考一致', async () => {
+  await check('右上角一级分类菜单保留分类操作并分隔账号入口', async () => {
     const menu = await openMenu(top);
     assert.deepEqual(menu.map(i => i.text), primaryLabels);
   });
@@ -163,7 +170,7 @@ try {
     assert.equal(await page.locator('.category-tabs').evaluate(el => getComputedStyle(el).flexWrap), 'wrap');
     assert.ok((await page.locator('.list-area').boundingBox()).height > 400);
   });
-  await check('一级分类右键与右上角菜单共用11项，32像素行高、文字留白与直角对齐', async () => {
+  await check('一级分类右键与右上角菜单共用分类与账号入口，32像素行高、文字留白与直角对齐', async () => {
     const menu = await openMenu(page.getByRole('button', { name: '常用', exact: true }), true);
     assert.deepEqual(menu.map(i => i.text), primaryLabels); assert.equal(menu.find(i => i.text === '删除').enabled, true);
     const geometry = await page.locator('.category-context-menu').evaluate(el => { const style = getComputedStyle(el); return { width: el.getBoundingClientRect().width, radius: style.borderRadius, rows: [...el.querySelectorAll('button')].map(b => ({ height: b.getBoundingClientRect().height, padding: getComputedStyle(b).paddingLeft })) }; });
@@ -251,9 +258,16 @@ try {
     assert.deepEqual((await invoke('get_library')).categories.filter(c => c.parentId === phraseRoot).map(c => c.id), [pro, other]);
   });
   await check('分类导出菜单只导出当前分类及其分组', async () => {
-    const output = path.join(evidence, '分类导出.zip'); await page.evaluate(output => { window.__categoryQA.savePath = output; }, output);
-    await openMenu(top); await action('导出该一级分类的话术'); await submit();
-    const preview = await invoke('preview_import', { path: output }); assert.equal(preview.phrases, 2); assert.equal(preview.commonPhrases, 0); assert.equal(preview.categories, 3);
+    const output = path.join(evidence, '分类导出.zip');
+    await openMenu(top); await action('导出该一级分类的话术');
+    const exportView = await (async () => { for (let i = 0; i < 50; i++) { const found = context.pages().find(p => p.url().includes('#settings')); if (found) return found; await delay(100); } throw new Error('设置窗口未打开'); })();
+    await hook(exportView); await exportView.locator('.data-transfer').waitFor();
+    assert.equal(await exportView.getByLabel('导出分类').inputValue(), phraseRoot);
+    await exportView.evaluate(output => { window.__categoryQA.savePath = output; }, output);
+    await click(exportView.getByRole('button', { name: '导出', exact: true })); await exportView.getByText('导出完成', { exact: true }).waitFor();
+    await click(exportView.getByRole('button', { name: '关闭窗口', exact: true }));
+    settings = null;
+    const preview = await transfer('preview_import', { path: output }); assert.equal(preview.phrases, 2); assert.equal(preview.commonPhrases, 0); assert.equal(preview.categories, 3);
   });
   await check('话术空白菜单新增话术和二级分类，归属当前一级分类，取消不写库', async () => {
     await click(page.getByRole('button', { name: '另一分类', exact: true }));
@@ -287,7 +301,7 @@ try {
   for (let i = 0; i < 30 && !settings; i++) { settings = context.pages().find(p => p.url().includes('#settings')); if (!settings) await delay(100); }
   assert.ok(settings); await hook(settings); await settings.locator('.interface-settings').waitFor();
   await check('参考设置页真实开关、标签色板、显示模式及高度同步主窗口', async () => {
-    assert.equal(await settings.locator('.settings-sidebar nav button').count(), 8);
+    assert.equal(await settings.locator('.settings-sidebar nav button').count(), 9);
     await settings.getByLabel('背景色所属分类', { exact: true }).selectOption(phraseRoot);
     await click(settings.getByRole('button', { name: '设置 常用 背景色', exact: true }));
     await settings.screenshot({ path: path.join(evidence, 'settings-palette.png') });
@@ -405,9 +419,9 @@ try {
   });
   await check('完整备份不合并导入保留重名分类，原始分类和话术不被覆盖', async () => {
     const output = path.join(evidence, '重名分类备份.zip');
-    await invoke('export_data', { path: output, kind: 'backup', categoryId: duplicateRoot2 });
-    const preview = await invoke('preview_import', { path: output }); assert.equal(preview.categories, 3); assert.equal(preview.phrases, 3);
-    await invoke('confirm_import', { previewId: preview.id, merge: false, restoreSettings: false });
+    await transfer('export_data', { path: output, kind: 'backup', categoryId: duplicateRoot2 });
+    const preview = await transfer('preview_import', { path: output }); assert.equal(preview.categories, 3); assert.equal(preview.phrases, 3);
+    await transfer('confirm_import', { previewId: preview.id });
     const lib = await invoke('get_library'); const roots = lib.categories.filter(c => !c.parentId && c.name === '111');
     assert.equal(roots.length, 3);
     assert.ok(lib.categories.some(c => c.id === duplicateRoot2 && c.name === '111'));
@@ -417,15 +431,38 @@ try {
     const imported = lib.phrases.filter(p => p.rootId === importedRoot.id); assert.equal(imported.length, 3);
     assert.equal(new Set(imported.map(p => p.groupId)).size, 2); assert.ok(!imported.some(p => p.id === selectedPhrase || p.id === hoveredPhrase));
   });
-  await check('原有一级分类保留话术删除在底部菜单可用，取消不变更，确认后仅迁移指定分类', async () => {
+  await check('左下菜单在按钮上方留4像素，窄窗滚动且不遮挡工具栏，移除五项', async () => {
     const disposable = await category('删除保留验证'); const retainedId = await phrase('保留删除测试', disposable, null);
     await page.getByRole('button', { name: '删除保留验证', exact: true }).waitFor(); await click(page.getByRole('button', { name: '删除保留验证', exact: true }));
-    await click(page.getByRole('button', { name: '主菜单', exact: true })); await click(page.getByRole('menuitem', { name: '删除一级分类但保留话术', exact: true }));
-    await page.locator('dialog select[name="target"]').selectOption(duplicateRoot2); await click(page.locator('dialog').getByRole('button', { name: '取消', exact: true }));
-    let lib = await invoke('get_library'); assert.ok(lib.categories.some(c => c.id === disposable)); assert.equal(lib.phrases.find(p => p.id === retainedId).rootId, disposable);
-    await click(page.getByRole('button', { name: '主菜单', exact: true })); await click(page.getByRole('menuitem', { name: '删除一级分类但保留话术', exact: true }));
-    await page.locator('dialog select[name="target"]').selectOption(duplicateRoot2); await submit();
-    lib = await invoke('get_library'); assert.ok(!lib.categories.some(c => c.id === disposable)); assert.equal(lib.phrases.find(p => p.id === retainedId).rootId, duplicateRoot2); assert.ok(lib.phrases.some(p => p.id === selectedPhrase));
+    await page.getByRole('button', { name: '主菜单', exact: true }).click();
+    for (const name of ['新增话术', '新增一级分类', '新增二级分类', '删除一级分类但保留话术', '退出闪语']) assert.equal(await page.getByRole('menuitem', { name, exact: true }).count(), 0);
+    for (const name of ['账号与同步', '导入数据', '导出数据', '常用设置', '界面设置', '回收站']) assert.equal(await page.getByRole('menuitem', { name, exact: true }).count(), 1);
+    const trigger = await page.getByRole('button', { name: '主菜单', exact: true }).boundingBox(); const menu = await page.getByRole('menu').boundingBox();
+    assert.ok(Math.abs(trigger.y - menu.y - menu.height - 4) < 1); assert.equal(menu.x, Math.max(2, trigger.x));
+    await page.screenshot({ path: path.join(evidence, 'main-menu.png') }); await page.keyboard.press('Escape');
+    const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight })); await page.setViewportSize({ width: 300, height: 400 });
+    await page.getByRole('button', { name: '主菜单', exact: true }).click();
+    const compactTrigger = await page.getByRole('button', { name: '主菜单', exact: true }).boundingBox(); const compactMenu = await page.getByRole('menu').boundingBox();
+    assert.ok(Math.abs(compactTrigger.y - compactMenu.y - compactMenu.height - 4) < 1); assert.ok(compactMenu.y >= 2);
+    assert.ok(compactMenu.y + compactMenu.height <= compactTrigger.y - 4);
+    await page.getByRole('menuitem', { name: '账号与同步', exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(evidence, 'main-menu-compact.png') }); await page.keyboard.press('Escape');
+    // 未登录的话术菜单较短；文件菜单多两项，用它验证空间不足时确实滚动。
+    await click(page.getByRole('button', { name: '本地文件', exact: true })); await page.getByRole('button', { name: '主菜单', exact: true }).click();
+    assert.ok(await page.getByRole('menu').evaluate(el => el.scrollHeight > el.clientHeight));
+    const fileTrigger = await page.getByRole('button', { name: '主菜单', exact: true }).boundingBox(); const fileMenu = await page.getByRole('menu').boundingBox();
+    assert.ok(Math.abs(fileTrigger.y - fileMenu.y - fileMenu.height - 4) < 1); assert.ok(fileMenu.y >= 2);
+    await page.screenshot({ path: path.join(evidence, 'main-file-menu-compact.png') }); await page.keyboard.press('Escape');
+    await click(page.getByRole('button', { name: '话术', exact: true })); await page.setViewportSize(viewport);
+    const lib = await invoke('get_library'); assert.ok(lib.categories.some(c => c.id === disposable)); assert.equal(lib.phrases.find(p => p.id === retainedId).rootId, disposable); assert.ok(lib.phrases.some(p => p.id === selectedPhrase));
+  });
+  await check('话术一级标签默认高度自动换行，长标签不溢出且列表可用', async () => {
+    const current = await invoke('get_library'); await invoke('save_settings', { settings: { ...current.settings, categoryHeight: 31 } });
+    const longName = '这是用于验证一级话术分类自动换行的较长分类名称'.repeat(2).slice(0, 40); await category(longName);
+    await page.getByRole('button', { name: longName, exact: true }).waitFor();
+    await page.waitForFunction(() => { const el = document.querySelector('.category-tabs'); return el.getBoundingClientRect().height > 31 && el.getBoundingClientRect().height <= 200; });
+    const sizes = await page.locator('.category-tabs').evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth, lines: new Set(Array.from(el.querySelectorAll('button')).map(b => b.getBoundingClientRect().y)).size })); assert.ok(sizes.scroll <= sizes.width + 1); assert.ok(sizes.lines > 1);
+    assert.ok((await page.locator('.content-list').boundingBox()).height > 100); await page.screenshot({ path: path.join(evidence, 'category-auto-wrap.png') });
   });
   await check('列表设置双键快捷键、删除取消及冲突提示，搜索复用逗号蓝色标签', async () => {
     await click(page.locator('.category-tabs button[title="111（同名 2）"]'));
@@ -486,7 +523,14 @@ try {
     await dock.getByRole('option', { name: '麻烦输入下验证码', exact: true }).waitFor(); assert.equal(await dock.getByRole('option').count(), count);
   });
   const dock = context.pages().find(p => p.url().includes('#common-dock')); assert.ok(dock); await hook(dock);
-  const choose = async (view, label) => { await click(view.getByLabel(label, { exact: true })); await view.waitForFunction(() => !document.querySelector('.settings-content input:disabled')); };
+  const choose = async (view, label) => {
+    const input = view.getByLabel(label, { exact: true });
+    const checked = await input.getAttribute('type') === 'checkbox' ? !await input.isChecked() : true;
+    await click(input);
+    // React 首次提交前也可能暂时没有禁用控件；同时核对目标值，才能确认本次保存完成。
+    for (let i = 0; i < 100 && (!await input.isEnabled() || await input.isChecked() !== checked); i++) await delay(20);
+    assert.ok(await input.isEnabled()); assert.equal(await input.isChecked(), checked);
+  };
   const number = async (label, value) => { const input = settings.getByLabel(label, { exact: true }); await setInput(settings, `[aria-label="${label}"]`, String(value)); await input.evaluate(el => el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))); await settings.waitForFunction(() => !document.querySelector('.settings-content input:disabled')); };
   await check('常用设置默认点击规则保持，配置后话术与两处短语只按指定方式提交一次', async () => {
     await click(settings.getByRole('button', { name: '常用设置', exact: true }));
@@ -498,15 +542,17 @@ try {
     await page.waitForFunction(() => document.querySelector('[data-row]'));
     for (const view of [page, dock]) await view.evaluate(() => { window.__categoryQA.mockDelivery = true; });
     const sample = page.locator('.content-list [data-row]').first(); const id = await sample.getAttribute('data-row');
+    const library = await invoke('get_library'); const contentId = `private:${library.libraryId}:phrase:${id}:${library.privateRevisions[`phrase:${id}`]}`;
     await page.waitForFunction(() => document.querySelector('.main-window')); await sample.evaluate(el => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, detail: 2 })));
     await page.waitForFunction(() => window.__categoryQA.deliveries.length === 1);
-    assert.deepEqual(await page.evaluate(() => window.__categoryQA.deliveries.map(({id,kind,mode}) => ({id,kind,mode}))), [{ id, kind: 'phrase', mode: 'send' }]);
+    assert.deepEqual(await page.evaluate(() => window.__categoryQA.deliveries.map(({id,kind,mode}) => ({id,kind,mode}))), [{ id: contentId, kind: 'phrase', mode: 'send' }]);
     const shortId = (await invoke('get_library')).commonPhrases[0].id;
     const gesture = async view => { await view.locator(`[data-common="${shortId}"]`).evaluate(el => { for (const [type, detail] of [['click',1],['click',2],['dblclick',2]]) el.dispatchEvent(new MouseEvent(type, { bubbles: true, detail })); }); };
     await gesture(page); await page.waitForFunction(() => window.__categoryQA.deliveries.length === 2);
     await gesture(dock); await dock.waitForFunction(() => window.__categoryQA.deliveries.length === 1);
     assert.equal(await dock.evaluate(() => window.__categoryQA.deliveries[0].mode), 'send');
     await click(singleRow.getByLabel('输入到编辑区', { exact: true })); await settings.waitForFunction(() => !document.querySelector('.settings-content input:disabled'));
+    await dock.waitForFunction(() => window.__categoryQA.library?.settings.commonSingleClick === 'insert');
     await gesture(dock); await dock.waitForFunction(() => window.__categoryQA.deliveries.length === 2); assert.equal(await dock.evaluate(() => window.__categoryQA.deliveries[1].mode), 'insert');
     await click(singleRow.getByLabel('仅选中', { exact: true })); await settings.waitForFunction(() => !document.querySelector('.settings-content input:disabled'));
     await click(doubleRow.getByLabel('输入到编辑区', { exact: true })); await settings.waitForFunction(() => !document.querySelector('.settings-content input:disabled'));
@@ -531,7 +577,7 @@ try {
     const saved = (await invoke('get_library')).settings; assert.equal(saved.theme, 'green'); assert.equal(saved.fontSize, 16); assert.equal(saved.titleColor, '#0000ff');
   });
   await check('私人和文件默认背景色独立生效，分类自身颜色优先且恢复默认不改其他分类', async () => {
-    await click(settings.getByRole('button', { name: '设置 私人分类 背景色', exact: true })); await click(settings.getByRole('button', { name: '颜色 #ff9800', exact: true }));
+    await click(settings.getByRole('button', { name: '设置 个人分类 背景色', exact: true })); await click(settings.getByRole('button', { name: '颜色 #ff9800', exact: true }));
     await page.waitForFunction(() => document.querySelector('.category-tabs .active').style.backgroundColor === 'rgb(255, 152, 0)');
     await click(settings.getByRole('button', { name: '设置 文件分类 背景色', exact: true })); await click(settings.getByRole('button', { name: '颜色 #929eaa', exact: true }));
     await click(page.getByRole('button', { name: '本地文件', exact: true }));
@@ -539,7 +585,7 @@ try {
     await click(page.getByRole('button', { name: '话术', exact: true })); await click(page.getByRole('button', { name: '常用', exact: true }));
     assert.equal(await page.locator('.category-tabs .active').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(136, 179, 250)');
     const before = (await invoke('get_library')).categories.map(c => ({ id: c.id, background: c.background }));
-    await click(settings.getByRole('button', { name: '设置 私人分类 背景色', exact: true })); await click(settings.getByRole('button', { name: '恢复默认颜色', exact: true }));
+    await click(settings.getByRole('button', { name: '设置 个人分类 背景色', exact: true })); await click(settings.getByRole('button', { name: '恢复默认颜色', exact: true }));
     assert.deepEqual((await invoke('get_library')).categories.map(c => ({ id: c.id, background: c.background })), before);
     await click(page.locator('.category-tabs button[title="111（同名 2）"]'));
   });
@@ -548,10 +594,30 @@ try {
     await choose(settings, '显示主窗口常用短语'); await page.locator('.common-phrases').waitFor({ state: 'detached' });
     await choose(settings, '显示底部吸附常用短语'); await dock.locator('.common-phrases').waitFor({ state: 'detached' });
     await choose(settings, '显示底部吸附搜索栏'); await dock.getByRole('textbox', { name: '底部搜索话术、本地文件', exact: true }).waitFor();
-    await click(settings.getByRole('button', { name: '交换话术与本地文件位置', exact: true }));
+    const order = settings.getByRole('group', { name: '类目显示位置排序', exact: true });
+    assert.equal(await order.locator('select').count(), 2);
+    const saves = await settings.evaluate(() => window.__categoryQA.commands.filter(c => c === 'save_settings').length);
+    await click(order.getByRole('combobox').nth(0)); await settings.keyboard.press('Escape');
+    assert.equal(await settings.evaluate(() => window.__categoryQA.commands.filter(c => c === 'save_settings').length), saves);
+    await order.getByRole('combobox').nth(0).selectOption('本地文件');
     await page.waitForFunction(() => document.querySelector('.content-tabs button').textContent === '本地文件');
-    await choose(settings, '支持窗口自由拉宽拉窄'); assert.equal(await invoke('plugin:window|is_resizable'), false);
-    await choose(settings, '支持窗口自由拉宽拉窄'); assert.equal(await invoke('plugin:window|is_resizable'), true);
+    assert.deepEqual(await order.locator('select').evaluateAll(selects => selects.map(s => s.value)), ['本地文件', '话术']);
+    const scopeOrder = settings.getByRole('group', { name: '话术库显示位置排序', exact: true });
+    await scopeOrder.getByRole('combobox').nth(0).selectOption('共享库');
+    await page.waitForFunction(() => document.querySelector('.scope-bar').firstElementChild.classList.contains('team-selector'));
+    assert.deepEqual(await scopeOrder.locator('select').evaluateAll(selects => selects.map(s => s.value)), ['共享库', '我的话术']);
+    assert.equal((await invoke('get_library')).settings.filesFirst, true);
+    for (const control of [...await order.locator('select').all(), ...await scopeOrder.locator('select').all()]) assert.equal(await control.evaluate(el => getComputedStyle(el).appearance), 'none');
+    const firstBox = await order.locator('select').nth(0).boundingBox(); const secondBox = await order.locator('select').nth(1).boundingBox(); const scopeBox = await scopeOrder.boundingBox(); const themeBox = await settings.getByRole('combobox', { name: '主题风格', exact: true }).boundingBox();
+    assert.equal(firstBox.y, secondBox.y); assert.equal(firstBox.height, secondBox.height); assert.equal(firstBox.x, themeBox.x); assert.equal(Math.round(secondBox.x + secondBox.width), Math.round(themeBox.x + themeBox.width));
+    assert.equal(firstBox.y, scopeBox.y); assert.equal(firstBox.height, scopeBox.height);
+    await order.getByRole('combobox').nth(1).selectOption('本地文件'); await page.waitForFunction(() => document.querySelector('.content-tabs button').textContent === '话术');
+    assert.deepEqual(await order.locator('select').evaluateAll(selects => selects.map(s => s.value)), ['话术', '本地文件']);
+    await settings.screenshot({ path: path.join(evidence, 'settings-order.png') });
+    await scopeOrder.getByRole('combobox').nth(0).selectOption('我的话术'); await page.waitForFunction(() => document.querySelector('.scope-bar').firstElementChild.textContent === '我的话术');
+    // 设置通知由主窗口异步应用；等待真实原生属性，不能把 IPC 返回当成窗口已更新。
+    await choose(settings, '支持窗口自由拉宽拉窄'); await page.waitForFunction(async () => !await window.__TAURI_INTERNALS__.invoke('plugin:window|is_resizable')); assert.equal(await invoke('plugin:window|is_resizable'), false);
+    await choose(settings, '支持窗口自由拉宽拉窄'); await page.waitForFunction(async () => await window.__TAURI_INTERNALS__.invoke('plugin:window|is_resizable')); assert.equal(await invoke('plugin:window|is_resizable'), true);
     await choose(settings, '记住主窗口吸附状态'); assert.equal((await invoke('get_library')).settings.rememberDock, false);
     await choose(settings, '记住主窗口吸附状态');
     for (const label of ['显示主窗口搜索功能', '显示主窗口常用短语', '显示底部吸附常用短语']) await choose(settings, label);
@@ -581,8 +647,9 @@ try {
     await choose(settings, '精确匹配'); await dock.getByText('没有找到匹配的内容', { exact: true }).waitFor();
     await input.fill('悬停色验证'); await dock.locator('.dock-search-results [data-row]').first().waitFor();
     const hit = dock.locator('.dock-search-results [data-row]').first(); const id = await hit.getAttribute('data-row');
+    const library = await invoke('get_library'); const contentId = `private:${library.libraryId}:phrase:${id}:${library.privateRevisions[`phrase:${id}`]}`;
     const hitBox = await hit.boundingBox(); await dock.mouse.move(hitBox.x + 10, hitBox.y + hitBox.height / 2);
-    await click(hit.getByRole('button', { name: /^直接发送/ })); await dock.waitForFunction(() => window.__categoryQA.deliveries.length === 4); assert.equal(await dock.evaluate(() => window.__categoryQA.deliveries[3].id), id); assert.equal(await dock.evaluate(() => window.__categoryQA.deliveries[3].mode), 'send');
+    await click(hit.getByRole('button', { name: /^直接发送/ })); await dock.waitForFunction(() => window.__categoryQA.deliveries.length === 4); assert.equal(await dock.evaluate(() => window.__categoryQA.deliveries[3].id), contentId); assert.equal(await dock.evaluate(() => window.__categoryQA.deliveries[3].mode), 'send');
     await hit.evaluate(el => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 12 })));
     await dock.waitForFunction(() => window.__categoryQA.menu?.ready);
     await dock.evaluate(() => { const item = window.__categoryQA.menu.items.find(i => i.text === '直接发送'); window.__TAURI_INTERNALS__.runCallback(Number(item.handler.split(':')[1]), { index: 0, message: 'qa-send-route' }); });
@@ -593,10 +660,12 @@ try {
     await input.press('Enter'); await dock.locator('.dock-search-results').waitFor({ state: 'detached' }); assert.equal(await input.inputValue(), '');
   });
   await check('新增设置完整备份可预览和恢复，隐藏客户端与正式数据保持隔离', async () => {
-    const output = path.join(evidence, '设置备份.zip'); await invoke('export_data', { path: output, kind: 'backup', categoryId: null });
-    const before = (await invoke('get_library')).settings; const preview = await invoke('preview_import', { path: output });
-    await invoke('save_settings', { settings: { ...before, theme: 'orange', fontSize: 12, dockSearch: false, filesFirst: false } });
-    await invoke('confirm_import', { previewId: preview.id, merge: false, restoreSettings: true });
+    const output = path.join(evidence, '设置备份.zip'); await transfer('export_data', { path: output, kind: 'backup', categoryId: null });
+    const before = (await invoke('get_library')).settings; const preview = await transfer('preview_import', { path: output, restoreSettings: true });
+    await invoke('save_settings', { settings: { ...before, theme: 'orange', fontSize: 12, dockSearch: false, filesFirst: false, teamsFirst: !before.teamsFirst } });
+    await assert.rejects(transfer('confirm_import', { previewId: preview.id }), /已更新/);
+    await transfer('refresh_import_preview', { previewId: preview.id });
+    await transfer('confirm_import', { previewId: preview.id });
     const after = (await invoke('get_library')).settings; assert.deepEqual(after, before);
     await page.waitForFunction(() => document.documentElement.dataset.theme === 'green');
     for (const view of [page, dock, settings]) assert.equal(await view.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|is_visible', {})), false);

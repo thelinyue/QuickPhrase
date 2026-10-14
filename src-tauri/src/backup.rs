@@ -22,14 +22,28 @@ struct Backup {
     #[serde(default, rename = "recycleBin")]
     recycle_bin: Vec<RecycleRecord>,
 }
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PendingImport {
     pub preview: ImportPreview,
     pub library: Library,
     pub images: HashMap<String, Vec<u8>>,
     pub recycle_bin: Vec<RecycleRecord>,
+    pub materials: HashMap<String, PathBuf>,
+    #[serde(skip)]
+    pub material_dir: Option<std::sync::Arc<tempfile::TempDir>>,
+    #[serde(default)]
+    pub settings_scope: SettingsScope,
 }
-#[derive(Clone, Serialize)]
+/// 账号包只携带便携设置；分类和共享库包没有可恢复的个人设置。
+#[derive(Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SettingsScope {
+    #[default]
+    Device,
+    Portable,
+    None,
+}
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportPreview {
     pub id: String,
@@ -44,16 +58,27 @@ pub struct ImportPreview {
     pub rows: Vec<PreviewRow>,
     pub notes: Vec<String>,
 }
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PreviewRow {
     pub category: String,
     pub title: String,
     pub text: String,
 }
 
-/// 备份采用可移植 JSON + 图片的 ZIP。读取时不解压到任意路径，图片只写入受控素材目录。
+/// 备份采用可移植 JSON 与实际素材的 ZIP。读取时不解压到任意路径，素材只写入受控目录。
 /// 预览保存解析后的内容，确认时再事务导入，避免“预览一个文件、实际导入另一个文件”。
 pub fn preview(path: &Path) -> Result<PendingImport> {
+    if !path
+        .extension()
+        .is_some_and(|s| s.eq_ignore_ascii_case("xlsx"))
+    {
+        if let Some(backup) = preview_v2(path)? {
+            return Ok(backup);
+        }
+        if let Some(private) = preview_private(path)? {
+            return Ok(private);
+        }
+    }
     let size = fs::metadata(path).map_err(io_error)?.len();
     if size > MAX_IMPORT_BYTES {
         return Err("导入文件超过128MB，请拆分后导入。".into());
@@ -125,9 +150,669 @@ pub fn preview(path: &Path) -> Result<PendingImport> {
         library,
         images,
         recycle_bin,
+        materials: HashMap::new(),
+        material_dir: None,
+        settings_scope: SettingsScope::Device,
     })
 }
 type BackupContents = (Library, HashMap<String, Vec<u8>>, Vec<RecycleRecord>);
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupV2 {
+    format: String,
+    version: u32,
+    source: String,
+    scope: String,
+    settings_scope: SettingsScope,
+    library: Library,
+    recycle_bin: Vec<RecycleRecord>,
+    assets: Vec<ArchiveAsset>,
+}
+#[derive(Serialize, Deserialize)]
+struct ArchiveAsset {
+    path: String,
+    kind: String,
+    size: u64,
+}
+
+/// 新包只读取清单内的素材，逐项落盘；旧 library.json 和 private.json 仍走原解析器。
+fn preview_v2(path: &Path) -> Result<Option<PendingImport>> {
+    let mut zip = match ZipArchive::new(fs::File::open(path).map_err(io_error)?) {
+        Ok(z) => z,
+        Err(_) => return Ok(None),
+    };
+    let (value, metadata_size): (serde_json::Value, u64) = {
+        let entry = match zip.by_name("library.json") {
+            Ok(entry) => entry,
+            Err(_) => return Ok(None),
+        };
+        let size = entry.size();
+        if size > 32 * 1024 * 1024 {
+            return Err("备份元数据超过32MB。".into());
+        }
+        let value = serde_json::from_reader(entry.take(32 * 1024 * 1024))
+            .map_err(|_| "备份内容无效。".to_owned())?;
+        (value, size)
+    };
+    if value["version"] == 1 {
+        return Ok(None);
+    }
+    if value["version"] != 2 || value["format"] != "shanyu-backup" {
+        return Err("此备份版本不受支持，请升级闪语后导入。".into());
+    }
+    if metadata_size > 32 * 1024 * 1024 {
+        return Err("备份元数据超过32MB。".into());
+    }
+    let mut package: BackupV2 =
+        serde_json::from_value(value).map_err(|_| "备份内容无效。".to_owned())?;
+    if !["private", "team"].contains(&package.source.as_str())
+        || !["full", "category"].contains(&package.scope.as_str())
+        || ((package.source == "team" || package.scope == "category")
+            && (package.settings_scope != SettingsScope::None
+                || !package.recycle_bin.is_empty()
+                || !package.library.common_phrases.is_empty()))
+    {
+        return Err("备份的数据范围无效。".into());
+    }
+    let mut allowed = HashSet::from(["library.json".to_owned()]);
+    for asset in &package.assets {
+        if !asset
+            .path
+            .strip_prefix("assets/")
+            .is_some_and(|v| uuid::Uuid::parse_str(v).is_ok())
+            || !["image", "file"].contains(&asset.kind.as_str())
+            || asset.size == 0
+            || asset.size > MAX_IMPORT_BYTES
+            || !allowed.insert(asset.path.clone())
+        {
+            return Err("备份素材清单无效或重复。".into());
+        }
+    }
+    let mut names = HashSet::new();
+    for index in 0..zip.len() {
+        let entry = zip.by_index(index).map_err(io_error)?;
+        let name = entry.name().map_err(io_error)?.into_owned();
+        if entry.enclosed_name().is_none()
+            || name.contains('\\')
+            || entry.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000)
+            || !allowed.contains(&name)
+            || !names.insert(name)
+            || entry.size() > MAX_IMPORT_BYTES
+        {
+            return Err("备份包包含不安全、重复或超限的项目。".into());
+        }
+    }
+    let dir = std::sync::Arc::new(tempfile::tempdir().map_err(io_error)?);
+    let mut materials = HashMap::new();
+    for block in package
+        .library
+        .phrases
+        .iter()
+        .chain(package.recycle_bin.iter().flat_map(|r| &r.phrases))
+        .flat_map(|p| &p.segments)
+        .flat_map(|s| &s.blocks)
+    {
+        let (path, kind) = match block {
+            Block::Image { path, .. } => (path, "image"),
+            Block::File { path, .. } => (path, "file"),
+            _ => continue,
+        };
+        let asset = package
+            .assets
+            .iter()
+            .find(|a| &a.path == path && a.kind == kind)
+            .ok_or("备份缺少话术素材清单。")?;
+        if materials.contains_key(path) {
+            continue;
+        }
+        let entry = zip.by_name(path).map_err(|_| "备份素材缺失。".to_owned())?;
+        if entry.size() != asset.size {
+            return Err("备份素材大小不符。".into());
+        }
+        let target = dir.path().join(id());
+        let mut file = fs::File::create(&target).map_err(io_error)?;
+        let copied =
+            std::io::copy(&mut entry.take(MAX_IMPORT_BYTES + 1), &mut file).map_err(io_error)?;
+        if copied != asset.size {
+            return Err("备份素材不完整。".into());
+        }
+        if kind == "image" {
+            decode_image(&fs::read(&target).map_err(io_error)?)?;
+        }
+        materials.insert(path.clone(), target);
+    }
+    package.library.data_dir.clear();
+    let mut pending = PendingImport {
+        preview: ImportPreview {
+            id: id(),
+            kind: "backup".into(),
+            filename: path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into(),
+            categories: 0,
+            phrases: 0,
+            common_phrases: 0,
+            files: 0,
+            images: 0,
+            recycled: 0,
+            rows: vec![],
+            notes: vec![],
+        },
+        library: package.library,
+        recycle_bin: package.recycle_bin,
+        images: HashMap::new(),
+        materials,
+        material_dir: Some(dir),
+        settings_scope: package.settings_scope,
+    };
+    recount(&mut pending);
+    Ok(Some(pending))
+}
+
+pub fn recount(pending: &mut PendingImport) {
+    let lib = &pending.library;
+    pending.preview.categories = lib.categories.len();
+    pending.preview.phrases = lib.phrases.len();
+    pending.preview.common_phrases = lib.common_phrases.len();
+    pending.preview.files = lib.files.len();
+    pending.preview.recycled = pending.recycle_bin.len();
+    pending.preview.images = lib
+        .phrases
+        .iter()
+        .chain(pending.recycle_bin.iter().flat_map(|r| &r.phrases))
+        .flat_map(|p| &p.segments)
+        .flat_map(|s| &s.blocks)
+        .filter_map(|b| {
+            if let Block::Image { path, .. } = b {
+                Some(path.as_str())
+            } else {
+                None
+            }
+        })
+        .collect::<HashSet<_>>()
+        .len();
+    pending.preview.rows = lib
+        .phrases
+        .iter()
+        .take(20)
+        .map(|p| PreviewRow {
+            category: lib
+                .categories
+                .iter()
+                .find(|c| c.id == p.root_id)
+                .map(|c| c.name.clone())
+                .unwrap_or_default(),
+            title: p.title.clone(),
+            text: p.text().chars().take(120).collect(),
+        })
+        .collect();
+}
+
+/// 预览按提交时的层级映射说明歧义；同级多项同名不随意选择第一项。
+pub fn note_merge_ambiguity(pending: &mut PendingImport, existing: &[Category], merge: bool) {
+    const NOTE: &str = "个分类存在多个同级同名项，将独立导入。";
+    pending.preview.notes.retain(|n| !n.ends_with(NOTE));
+    if !merge {
+        return;
+    }
+    let mut categories = existing.to_vec();
+    let mut map = HashMap::new();
+    let mut ambiguous = 0;
+    for c in pending
+        .library
+        .categories
+        .iter()
+        .filter(|c| c.parent_id.is_none())
+        .chain(
+            pending
+                .library
+                .categories
+                .iter()
+                .filter(|c| c.parent_id.is_some()),
+        )
+    {
+        let parent = c.parent_id.as_ref().and_then(|p| map.get(p).cloned());
+        let matches: Vec<_> = categories
+            .iter()
+            .filter(|v| {
+                v.kind == c.kind && v.parent_id == parent && v.name.eq_ignore_ascii_case(&c.name)
+            })
+            .collect();
+        if matches.len() == 1 {
+            map.insert(c.id.clone(), matches[0].id.clone());
+        } else {
+            if matches.len() > 1 {
+                ambiguous += 1;
+            }
+            map.insert(c.id.clone(), c.id.clone());
+            let mut inserted = c.clone();
+            inserted.parent_id = parent;
+            categories.push(inserted);
+        }
+    }
+    if ambiguous > 0 {
+        pending.preview.notes.push(format!("{ambiguous} {NOTE}"));
+    }
+}
+
+/// 普通导入的副本编号只在预览时分配，批次持久化后重试不能再生成另一套编号。
+pub fn prepare_ids(pending: &mut PendingImport) -> Result<()> {
+    let mut categories = HashMap::new();
+    let mut phrases = HashMap::new();
+    let mut seen = HashSet::new();
+    for c in &pending.library.categories {
+        if !seen.insert(c.id.clone()) {
+            return Err("导入文件包含重复分类编号。".into());
+        }
+    }
+    for c in pending
+        .library
+        .categories
+        .iter()
+        .chain(pending.recycle_bin.iter().flat_map(|r| &r.categories))
+    {
+        categories.entry(c.id.clone()).or_insert_with(id);
+    }
+    seen.clear();
+    for p in &pending.library.phrases {
+        if !seen.insert(p.id.clone()) {
+            return Err("导入文件包含重复话术编号。".into());
+        }
+    }
+    for p in pending
+        .library
+        .phrases
+        .iter()
+        .chain(pending.recycle_bin.iter().flat_map(|r| &r.phrases))
+    {
+        phrases.entry(p.id.clone()).or_insert_with(id);
+    }
+    for c in pending.library.categories.iter_mut().chain(
+        pending
+            .recycle_bin
+            .iter_mut()
+            .flat_map(|r| &mut r.categories),
+    ) {
+        c.id = categories[&c.id].clone();
+        c.parent_id = c
+            .parent_id
+            .as_ref()
+            .map(|p| {
+                categories
+                    .get(p)
+                    .cloned()
+                    .ok_or("导入分类缺少上级。".to_owned())
+            })
+            .transpose()?;
+    }
+    for p in pending
+        .library
+        .phrases
+        .iter_mut()
+        .chain(pending.recycle_bin.iter_mut().flat_map(|r| &mut r.phrases))
+    {
+        p.id = phrases[&p.id].clone();
+        p.root_id = categories
+            .get(&p.root_id)
+            .cloned()
+            .ok_or("导入话术缺少一级分类。")?;
+        p.group_id = p
+            .group_id
+            .as_ref()
+            .map(|g| {
+                categories
+                    .get(g)
+                    .cloned()
+                    .ok_or("导入话术缺少二级分类。".to_owned())
+            })
+            .transpose()?;
+    }
+    for f in &mut pending.library.files {
+        f.id = id();
+        f.category_id = categories
+            .get(&f.category_id)
+            .cloned()
+            .ok_or("导入文件关联缺少分类。")?;
+    }
+    for c in &mut pending.library.common_phrases {
+        c.id = id();
+    }
+    for r in &mut pending.recycle_bin {
+        r.id = id();
+    }
+    Ok(())
+}
+
+/// 将预览依赖的实际内容复制到批次目录；确认时不再读取原ZIP或可能被改写的外部附件。
+pub fn freeze_materials(
+    pending: &mut PendingImport,
+    dir: &Path,
+    check: &impl Fn() -> Result<()>,
+) -> Result<()> {
+    fs::create_dir_all(dir).map_err(io_error)?;
+    let mut frozen = HashMap::new();
+    for block in pending
+        .library
+        .phrases
+        .iter_mut()
+        .chain(pending.recycle_bin.iter_mut().flat_map(|r| &mut r.phrases))
+        .flat_map(|p| &mut p.segments)
+        .flat_map(|s| &mut s.blocks)
+    {
+        let (path, image) = match block {
+            Block::Image { path, .. } => (path, true),
+            Block::File { path, .. } => (path, false),
+            _ => continue,
+        };
+        check()?;
+        if frozen.contains_key(path) {
+            continue;
+        }
+        let target = dir.join(id());
+        if let Some(bytes) = pending.images.get(path) {
+            fs::write(&target, bytes).map_err(io_error)?;
+        } else {
+            let source = pending
+                .materials
+                .get(path)
+                .cloned()
+                .unwrap_or_else(|| PathBuf::from(&*path));
+            copy_material(&source, &target, check)?;
+        }
+        if image {
+            decode_image(&fs::read(&target).map_err(io_error)?)?;
+        }
+        frozen.insert(path.clone(), target);
+    }
+    pending.materials = frozen;
+    pending.images.clear();
+    pending.material_dir = None;
+    Ok(())
+}
+
+pub fn copy_material(source: &Path, target: &Path, check: &impl Fn() -> Result<()>) -> Result<()> {
+    let mut input = fs::File::open(source).map_err(|_| "源文件缺失或素材未缓存。".to_owned())?;
+    let before = input.metadata().map_err(io_error)?;
+    if !before.is_file() || before.len() == 0 || before.len() > MAX_IMPORT_BYTES {
+        return Err("单个素材需为1字节至128MB。".into());
+    }
+    let mut output = fs::File::create(target).map_err(io_error)?;
+    let mut size = 0u64;
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        check()?;
+        let n = input.read(&mut buf).map_err(io_error)?;
+        if n == 0 {
+            break;
+        }
+        size += n as u64;
+        if size > MAX_IMPORT_BYTES {
+            return Err("单个素材超过128MB。".into());
+        }
+        output.write_all(&buf[..n]).map_err(io_error)?;
+    }
+    let after = input.metadata().map_err(io_error)?;
+    if size != before.len()
+        || after.len() != before.len()
+        || after.modified().ok() != before.modified().ok()
+    {
+        return Err("素材在处理期间发生变化，请重试。".into());
+    }
+    Ok(())
+}
+/// 个人备份按素材逐个落临时文件，整个库不受旧ZIP总计128MB限制；每项仍限制128MB。
+/// 只接收固定清单中的UUID路径，临时目录由PendingImport持有，取消预览会自动清理。
+fn preview_private(path: &Path) -> Result<Option<PendingImport>> {
+    use shanyu_team_model::private as wire;
+    let mut zip = match ZipArchive::new(fs::File::open(path).map_err(io_error)?) {
+        Ok(z) => z,
+        Err(_) => return Ok(None),
+    };
+    let snapshot: wire::Snapshot = {
+        let entry = match zip.by_name("private.json") {
+            Ok(e) => e,
+            Err(_) => return Ok(None),
+        };
+        if entry.size() > 32 * 1024 * 1024 {
+            return Err("个人备份元数据超过32MB。".into());
+        }
+        serde_json::from_reader(entry.take(32 * 1024 * 1024))
+            .map_err(|_| "个人备份内容无效。".to_owned())?
+    };
+    let mut names = HashSet::new();
+    for i in 0..zip.len() {
+        let entry = zip.by_index(i).map_err(io_error)?;
+        let name = entry.name().map_err(io_error)?.into_owned();
+        if entry.enclosed_name().is_none()
+            || entry.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000)
+            || !names.insert(name.clone())
+            || !(name == "private.json"
+                || name
+                    .strip_prefix("assets/")
+                    .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok()))
+        {
+            return Err("个人备份包含不安全或重复路径。".into());
+        }
+        if entry.size() > MAX_IMPORT_BYTES {
+            return Err("个人备份单个素材超过128MB。".into());
+        }
+    }
+    let material_dir = std::sync::Arc::new(tempfile::tempdir().map_err(io_error)?);
+    let mut materials = HashMap::new();
+    let mut library = Library {
+        categories: vec![],
+        phrases: vec![],
+        files: vec![],
+        common_phrases: vec![],
+        settings: Settings::default(),
+        data_dir: String::new(),
+    };
+    let mut recycled = vec![];
+    let mut records = HashSet::new();
+    let mut images = 0;
+    for record in snapshot.records {
+        if !records.insert((record.kind, record.id.clone())) {
+            return Err("个人备份包含重复记录。".into());
+        }
+        let Some(value) = record.value else { continue };
+        match record.kind {
+            wire::Kind::Category => {
+                let c: shanyu_team_model::Category =
+                    serde_json::from_value(value).map_err(|_| "个人备份分类无效。".to_owned())?;
+                library.categories.push(Category {
+                    id: c.id,
+                    name: c.name,
+                    kind: "phrase".into(),
+                    parent_id: c.parent_id,
+                    position: c.position,
+                    background: c.background,
+                });
+            }
+            wire::Kind::Phrase => {
+                let p: wire::Phrase =
+                    serde_json::from_value(value).map_err(|_| "个人备份话术无效。".to_owned())?;
+                library.phrases.push(private_phrase(
+                    p,
+                    &snapshot.assets,
+                    &mut zip,
+                    material_dir.path(),
+                    &mut materials,
+                    &mut images,
+                )?);
+            }
+            wire::Kind::Common => library.common_phrases.push(
+                serde_json::from_value(value).map_err(|_| "个人备份常用短语无效。".to_owned())?,
+            ),
+            wire::Kind::Recycle => {
+                let r: wire::Recycle = serde_json::from_value(value)
+                    .map_err(|_| "个人备份回收记录无效。".to_owned())?;
+                let mut phrases = vec![];
+                for p in r.phrases {
+                    phrases.push(private_phrase(
+                        p,
+                        &snapshot.assets,
+                        &mut zip,
+                        material_dir.path(),
+                        &mut materials,
+                        &mut images,
+                    )?);
+                }
+                recycled.push(RecycleRecord {
+                    id: r.id,
+                    kind: r.kind,
+                    label: r.label,
+                    location: r.location,
+                    deleted_at: r.deleted_at,
+                    categories: r
+                        .categories
+                        .into_iter()
+                        .map(|c| Category {
+                            id: c.id,
+                            name: c.name,
+                            kind: "phrase".into(),
+                            parent_id: c.parent_id,
+                            position: c.position,
+                            background: c.background,
+                        })
+                        .collect(),
+                    phrases,
+                });
+            }
+            wire::Kind::Setting => {
+                if !wire::validate_setting(&record.id, &value) {
+                    return Err("个人备份设置无效。".into());
+                }
+                let mut settings = serde_json::to_value(&library.settings).map_err(io_error)?;
+                settings[&record.id] = value;
+                library.settings = serde_json::from_value(settings)
+                    .map_err(|_| "个人备份设置无效。".to_owned())?;
+            }
+        }
+    }
+    library.settings.validate()?;
+    let preview = ImportPreview {
+        id: id(),
+        kind: "backup".into(),
+        filename: path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
+        categories: library.categories.len(),
+        phrases: library.phrases.len(),
+        common_phrases: library.common_phrases.len(),
+        files: 0,
+        images,
+        recycled: recycled.len(),
+        rows: library
+            .phrases
+            .iter()
+            .take(20)
+            .map(|p| PreviewRow {
+                category: library
+                    .categories
+                    .iter()
+                    .find(|c| c.id == p.root_id)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default(),
+                title: p.title.clone(),
+                text: p.text().chars().take(120).collect(),
+            })
+            .collect(),
+        notes: vec![
+            "个人备份包含话术附件；确认后导入当前个人库，生成独立副本。".into(),
+            "设备设置和独立文件库不受影响。".into(),
+        ],
+    };
+    Ok(Some(PendingImport {
+        preview,
+        library,
+        images: HashMap::new(),
+        recycle_bin: recycled,
+        materials,
+        material_dir: Some(material_dir),
+        settings_scope: SettingsScope::Portable,
+    }))
+}
+fn private_phrase(
+    p: shanyu_team_model::private::Phrase,
+    assets: &[shanyu_team_model::private::Asset],
+    zip: &mut ZipArchive<fs::File>,
+    dir: &Path,
+    materials: &mut HashMap<String, PathBuf>,
+    images: &mut usize,
+) -> Result<Phrase> {
+    let mut segments = vec![];
+    for segment in p.segments {
+        let mut blocks = vec![];
+        for b in segment.blocks {
+            let expected_kind = match &b {
+                shanyu_team_model::Block::Image { .. } => "image",
+                shanyu_team_model::Block::File { .. } => "file",
+                _ => "",
+            };
+            blocks.push(match b {
+                shanyu_team_model::Block::Text { text } => Block::Text { text },
+                shanyu_team_model::Block::Image { asset_id, name }
+                | shanyu_team_model::Block::File { asset_id, name } => {
+                    let asset = assets
+                        .iter()
+                        .find(|a| a.id == asset_id)
+                        .ok_or("个人备份素材清单缺失。")?;
+                    if uuid::Uuid::parse_str(&asset.id).is_err()
+                        || asset.kind != expected_kind
+                        || asset.size > MAX_IMPORT_BYTES
+                    {
+                        return Err("个人备份素材无效。".into());
+                    }
+                    let key = format!("private-asset:{}", asset.id);
+                    if !materials.contains_key(&key) {
+                        let entry = zip
+                            .by_name(&format!("assets/{}", asset.id))
+                            .map_err(|_| "个人备份缺少素材。".to_owned())?;
+                        if entry.size() != asset.size {
+                            return Err("个人备份素材大小不符。".into());
+                        }
+                        let target = dir.join(&asset.id);
+                        let mut output = fs::File::create(&target).map_err(io_error)?;
+                        let copied =
+                            std::io::copy(&mut entry.take(MAX_IMPORT_BYTES + 1), &mut output)
+                                .map_err(io_error)?;
+                        if copied != asset.size {
+                            return Err("个人备份素材不完整。".into());
+                        }
+                        drop(output);
+                        if asset.kind == "image" {
+                            decode_image(&fs::read(&target).map_err(io_error)?)?;
+                            *images += 1;
+                        }
+                        materials.insert(key.clone(), target);
+                    }
+                    if asset.kind == "image" {
+                        Block::Image { path: key, name }
+                    } else {
+                        Block::File { path: key, name }
+                    }
+                }
+            });
+        }
+        segments.push(Segment { blocks });
+    }
+    Ok(Phrase {
+        id: p.id,
+        root_id: p.root_id,
+        group_id: p.group_id,
+        title: p.title,
+        color: p.color,
+        background: p.background,
+        shortcut: p.shortcut,
+        position: p.position,
+        segments,
+    })
+}
 fn read_backup(path: &Path) -> Result<BackupContents> {
     let mut zip = ZipArchive::new(fs::File::open(path).map_err(io_error)?)
         .map_err(|e| format!("无法读取完整备份包：{e}"))?;
@@ -157,7 +842,7 @@ fn read_backup(path: &Path) -> Result<BackupContents> {
             .by_name("library.json")
             .map_err(|_| "备份包缺少library.json。")?;
         serde_json::from_reader(entry.take(MAX_IMPORT_BYTES))
-            .map_err(|e| format!("备份内容无法读取：{e}"))?
+            .map_err(|_| "备份内容无效。".to_owned())?
     };
     if backup.format != "shanyu-backup" || backup.version != 1 {
         return Err("此备份格式或版本不受支持。".into());
@@ -295,16 +980,44 @@ fn find_excel_category(
     id
 }
 
+#[cfg(test)]
 pub fn apply(
     store: &mut Store,
     pending: &PendingImport,
     merge: bool,
     restore_settings: bool,
 ) -> Result<()> {
+    apply_inner(store, pending, merge, restore_settings, None)
+}
+pub fn apply_prepared(
+    store: &mut Store,
+    pending: &PendingImport,
+    merge: bool,
+    restore_settings: bool,
+) -> Result<()> {
+    if store.imported(&pending.preview.id)? {
+        return Ok(());
+    }
+    apply_inner(
+        store,
+        pending,
+        merge,
+        restore_settings,
+        Some(&pending.preview.id),
+    )
+}
+fn apply_inner(
+    store: &mut Store,
+    pending: &PendingImport,
+    merge: bool,
+    restore_settings: bool,
+    batch: Option<&str>,
+) -> Result<()> {
     let mut library = pending.library.clone();
     let mut recycled = pending.recycle_bin.clone();
     let mut created = vec![];
     let mut remapped = HashMap::new();
+    let mut material_batch = crate::private_local::MaterialBatch::default();
     let work = (|| -> Result<()> {
         for (original, bytes) in &pending.images {
             let path = store.dir.join("images").join(format!("{}.png", id()));
@@ -321,101 +1034,245 @@ pub fn apply(
             .flat_map(|p| &mut p.segments)
             .flat_map(|s| &mut s.blocks)
         {
+            let image = matches!(b, Block::Image { .. });
+            if let Block::Image { path, name } | Block::File { path, name } = b {
+                if let Some(source) = pending.materials.get(path) {
+                    let folder = if image {
+                        store.dir.join("images")
+                    } else {
+                        store.dir.join("assets").join(id())
+                    };
+                    fs::create_dir_all(&folder).map_err(io_error)?;
+                    let safe_name: String = name
+                        .chars()
+                        .map(|c| {
+                            if c.is_control() || "\\/:*?\"<>|".contains(c) {
+                                '_'
+                            } else {
+                                c
+                            }
+                        })
+                        .collect();
+                    let target = if image {
+                        folder.join(format!("{}.png", id()))
+                    } else {
+                        folder.join(if safe_name.trim_end_matches(['.', ' ']).is_empty() {
+                            "素材"
+                        } else {
+                            safe_name.trim_end_matches(['.', ' '])
+                        })
+                    };
+                    created.push(target.clone());
+                    if image {
+                        decode_image(&fs::read(source).map_err(io_error)?)?
+                            .save(&target)
+                            .map_err(io_error)?;
+                    } else {
+                        fs::copy(source, &target).map_err(io_error)?;
+                    }
+                    *path = external_path(&target);
+                    continue;
+                }
+            }
             if let Block::Image { path, .. } = b {
                 *path = remapped.get(path).cloned().ok_or("导入图片缺少素材。")?;
             }
         }
-        store.import(&library, merge, restore_settings, &recycled)
+        for p in library
+            .phrases
+            .iter_mut()
+            .chain(recycled.iter_mut().flat_map(|r| &mut r.phrases))
+        {
+            material_batch.append(crate::private_local::safe_materials(store, p)?);
+        }
+        if let Some(batch) = batch {
+            store.import_prepared(&library, merge, restore_settings, &recycled, batch)
+        } else {
+            store.import(&library, merge, restore_settings, &recycled)
+        }
     })();
     if work.is_err() {
         for path in created {
-            if let Err(e) = fs::remove_file(path) {
+            if let Err(e) = fs::remove_file(&path) {
                 log::warn!("导入失败后的临时图片清理失败：{e}");
             }
+            if let Some(dir) = path.parent().filter(|dir| {
+                dir.file_name()
+                    .is_some_and(|name| uuid::Uuid::parse_str(&name.to_string_lossy()).is_ok())
+            }) {
+                let _ = fs::remove_dir(dir);
+            }
         }
+    } else {
+        material_batch.keep();
     }
     work
 }
 
-pub fn export(store: &Store, path: &Path, kind: &str, category: Option<&str>) -> Result<()> {
-    let mut library = store.library()?;
-    // 全库完整备份包含回收站及其图片；按分类导出和 Excel 仍只导出活动内容。
-    let mut recycled = if kind == "backup" && category.filter(|c| !c.is_empty()).is_none() {
-        store.recycle_records()?
-    } else {
-        vec![]
-    };
-    if let Some(root) = category.filter(|c| !c.is_empty()) {
-        if !library
-            .categories
-            .iter()
-            .any(|c| c.id == root && c.parent_id.is_none())
-        {
-            return Err("要导出的一级分类已不存在，请刷新后重试。".into());
+/// 导出基于一次固定的本机快照。网络补齐由调用方处理，不在数据库锁内传输。
+pub struct ExportSnapshot {
+    pub library: Library,
+    pub recycled: Vec<RecycleRecord>,
+    pub source: String,
+    pub settings_scope: SettingsScope,
+}
+impl ExportSnapshot {
+    pub fn filter(&mut self, kind: &str, category: Option<&str>) -> Result<()> {
+        if let Some(root) = category.filter(|c| !c.is_empty()) {
+            if !self
+                .library
+                .categories
+                .iter()
+                .any(|c| c.id == root && c.parent_id.is_none())
+            {
+                return Err("要导出的一级分类已不存在，请刷新后重试。".into());
+            }
+            self.library
+                .categories
+                .retain(|c| c.id == root || c.parent_id.as_deref() == Some(root));
+            self.library.phrases.retain(|p| p.root_id == root);
+            self.library.files.retain(|f| f.category_id == root);
+            self.library.common_phrases.clear();
+            self.recycled.clear();
+            self.settings_scope = SettingsScope::None;
         }
-        library
-            .categories
-            .retain(|c| c.id == root || c.parent_id.as_deref() == Some(root));
-        library.phrases.retain(|p| p.root_id == root);
-        library.files.retain(|f| f.category_id == root);
-        library.common_phrases.clear();
+        if kind == "excel" {
+            self.recycled.clear();
+        }
+        if self.settings_scope == SettingsScope::None {
+            self.library.settings = Settings::default();
+        }
+        self.library.data_dir.clear();
+        Ok(())
     }
-    let mut tmp = tempfile::NamedTempFile::new_in(path.parent().ok_or("导出路径无效。")?)
+}
+#[cfg(test)]
+pub fn export(store: &Store, path: &Path, kind: &str, category: Option<&str>) -> Result<()> {
+    let mut snapshot = ExportSnapshot {
+        library: store.library()?,
+        recycled: store.recycle_records()?,
+        source: "private".into(),
+        settings_scope: SettingsScope::Device,
+    };
+    snapshot.filter(kind, category)?;
+    let temp = write_export(snapshot, path, kind, category.is_some(), &|| Ok(()))?;
+    temp.persist(path).map_err(io_error)?;
+    Ok(())
+}
+/// 成品写在目标目录的临时文件中，调用方核验库身份和授权后才替换用户选择的文件。
+pub fn write_export(
+    mut snapshot: ExportSnapshot,
+    path: &Path,
+    kind: &str,
+    category: bool,
+    check: &impl Fn() -> Result<()>,
+) -> Result<tempfile::NamedTempFile> {
+    let mut temp = tempfile::NamedTempFile::new_in(path.parent().ok_or("导出路径无效。")?)
         .map_err(io_error)?;
+    check()?;
     if kind == "excel" {
-        if !library.phrases.iter().any(|p| !p.text().trim().is_empty()) {
-            return Err("没有可导出的文字话术。图片和文件话术请使用完整备份。".into());
+        if !snapshot
+            .library
+            .phrases
+            .iter()
+            .any(|p| !p.text().trim().is_empty())
+        {
+            return Err("没有可导出的文字话术。图片和附件请使用话术包。".into());
         }
-        write_excel(&library, tmp.path())?;
+        write_excel(&snapshot.library, temp.path())?;
     } else if kind == "backup" {
-        let mut zip = ZipWriter::new(tmp.as_file_mut());
+        let mut zip = ZipWriter::new(temp.as_file_mut());
         let options =
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-        let mut included = HashSet::new();
-        for b in library
+        let mut included: HashMap<(String, String), String> = HashMap::new();
+        let mut assets = vec![];
+        for block in snapshot
+            .library
             .phrases
             .iter_mut()
-            .chain(recycled.iter_mut().flat_map(|r| &mut r.phrases))
+            .chain(snapshot.recycled.iter_mut().flat_map(|r| &mut r.phrases))
             .flat_map(|p| &mut p.segments)
             .flat_map(|s| &mut s.blocks)
         {
-            if let Block::Image { path, .. } = b {
-                let source = PathBuf::from(&*path);
-                let name = format!(
-                    "images/{}",
-                    source
-                        .file_name()
-                        .ok_or("图片素材路径无效。")?
-                        .to_string_lossy()
-                );
-                if included.insert(name.clone()) {
-                    let bytes = fs::read(&source)
-                        .map_err(|e| format!("图片素材无法备份：{}：{e}", source.display()))?;
-                    zip.start_file(&name, options).map_err(io_error)?;
-                    zip.write_all(&bytes).map_err(io_error)?;
+            let (path, asset_kind) = match block {
+                Block::Image { path, .. } => (path, "image"),
+                Block::File { path, .. } => (path, "file"),
+                _ => continue,
+            };
+            check()?;
+            let key = (path.clone(), asset_kind.to_owned());
+            if let Some(name) = included.get(&key) {
+                *path = name.clone();
+                continue;
+            }
+            let mut file = fs::File::open(&*path)
+                .map_err(|_| "源文件缺失或素材未缓存，无法完成导出。".to_owned())?;
+            let expected = file.metadata().map_err(io_error)?.len();
+            if expected == 0 || expected > MAX_IMPORT_BYTES {
+                return Err("单个素材需为1字节至128MB。".into());
+            }
+            if asset_kind == "image" {
+                decode_image(&fs::read(&*path).map_err(io_error)?)?;
+            }
+            let name = format!("assets/{}", id());
+            zip.start_file(&name, options).map_err(io_error)?;
+            let mut size = 0u64;
+            let mut buf = [0u8; 64 * 1024];
+            loop {
+                check()?;
+                let n = file.read(&mut buf).map_err(io_error)?;
+                if n == 0 {
+                    break;
                 }
-                *path = name;
+                size += n as u64;
+                if size > MAX_IMPORT_BYTES {
+                    return Err("素材超过128MB。".into());
+                }
+                zip.write_all(&buf[..n]).map_err(io_error)?;
+            }
+            if size != expected {
+                return Err("素材在导出期间发生变化，请重新导出。".into());
+            }
+            assets.push(ArchiveAsset {
+                path: name.clone(),
+                kind: asset_kind.into(),
+                size,
+            });
+            included.insert(key, name.clone());
+            *path = name;
+        }
+        let package = BackupV2 {
+            format: "shanyu-backup".into(),
+            version: 2,
+            source: snapshot.source,
+            scope: if category { "category" } else { "full" }.into(),
+            settings_scope: snapshot.settings_scope,
+            library: snapshot.library,
+            recycle_bin: snapshot.recycled,
+            assets,
+        };
+        let mut metadata = serde_json::to_value(&package).map_err(io_error)?;
+        if let Some(settings) = metadata["library"]["settings"].as_object_mut() {
+            match package.settings_scope {
+                SettingsScope::Portable => settings
+                    .retain(|key, _| shanyu_team_model::private::SETTINGS.contains(&key.as_str())),
+                SettingsScope::None => settings.clear(),
+                SettingsScope::Device => {}
             }
         }
-        library.data_dir.clear();
+        let metadata = serde_json::to_vec(&metadata).map_err(io_error)?;
+        if metadata.len() > 32 * 1024 * 1024 {
+            return Err("备份元数据超过32MB，请按分类导出。".into());
+        }
         zip.start_file("library.json", options).map_err(io_error)?;
-        serde_json::to_writer(
-            &mut zip,
-            &Backup {
-                format: "shanyu-backup".into(),
-                version: 1,
-                library,
-                recycle_bin: recycled,
-            },
-        )
-        .map_err(io_error)?;
+        zip.write_all(&metadata).map_err(io_error)?;
         zip.finish().map_err(io_error)?;
     } else {
         return Err("导出类型无效。".into());
     }
-    tmp.as_file().sync_all().map_err(io_error)?;
-    tmp.persist(path).map_err(io_error)?;
-    Ok(())
+    check()?;
+    temp.as_file().sync_all().map_err(io_error)?;
+    Ok(temp)
 }
 fn write_excel(library: &Library, path: &Path) -> Result<()> {
     let mut book = rust_xlsxwriter::Workbook::new();
@@ -569,6 +1426,114 @@ pub fn import_pasted_images(dir: &Path, images: &[Vec<u8>]) -> Result<Vec<Block>
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn personal_archive(path: &Path, missing: bool, unsafe_path: bool) {
+        use shanyu_team_model::private as wire;
+        let root = id();
+        let phrase = id();
+        let file = id();
+        let image = id();
+        let mut png = std::io::Cursor::new(vec![]);
+        image::DynamicImage::new_rgba8(2, 3)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let png = png.into_inner();
+        let snapshot = wire::Snapshot {
+            generation: id(),
+            version: 1,
+            records: vec![
+                wire::Record {
+                    kind: wire::Kind::Category,
+                    id: root.clone(),
+                    version: 1,
+                    value: Some(
+                        serde_json::json!({"id":root,"name":"私人分类","parentId":null,"position":0,"background":""}),
+                    ),
+                },
+                wire::Record {
+                    kind: wire::Kind::Phrase,
+                    id: phrase.clone(),
+                    version: 1,
+                    value: Some(
+                        serde_json::json!({"id":phrase,"rootId":root,"groupId":null,"title":"个人备份","color":"","background":"","shortcut":"","position":0,"segments":[{"blocks":[{"kind":"image","assetId":image,"name":"图.png"},{"kind":"file","assetId":file,"name":"原附件.txt"}]}]}),
+                    ),
+                },
+                wire::Record {
+                    kind: wire::Kind::Setting,
+                    id: "theme".into(),
+                    version: 1,
+                    value: Some(serde_json::json!("blue")),
+                },
+            ],
+            assets: vec![
+                wire::Asset {
+                    id: image.clone(),
+                    kind: "image".into(),
+                    name: "图.png".into(),
+                    size: png.len() as u64,
+                },
+                wire::Asset {
+                    id: file.clone(),
+                    kind: "file".into(),
+                    name: "原附件.txt".into(),
+                    size: 6,
+                },
+            ],
+        };
+        let mut zip = ZipWriter::new(fs::File::create(path).unwrap());
+        let options = SimpleFileOptions::default();
+        zip.start_file("private.json", options).unwrap();
+        zip.write_all(&serde_json::to_vec(&snapshot).unwrap())
+            .unwrap();
+        zip.start_file(format!("assets/{image}"), options).unwrap();
+        zip.write_all(&png).unwrap();
+        if !missing {
+            zip.start_file(format!("assets/{file}"), options).unwrap();
+            zip.write_all("附件".as_bytes()).unwrap();
+        }
+        if unsafe_path {
+            zip.start_file("../外部.txt", options).unwrap();
+            zip.write_all(b"unsafe").unwrap();
+        }
+        zip.finish().unwrap();
+    }
+    #[test]
+    fn personal_backup_restores_actual_image_and_attachment_without_device_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("personal.zip");
+        personal_archive(&path, false, false);
+        let pending = preview(&path).unwrap();
+        assert!(pending.material_dir.is_some());
+        assert_eq!(pending.materials.len(), 2);
+        assert_eq!(pending.library.settings.theme, "blue");
+        let mut store = Store::open(&dir.path().join("restore")).unwrap();
+        let mut settings = store.settings().unwrap();
+        settings.pinned = true;
+        store.save_settings(&settings).unwrap();
+        apply(&mut store, &pending, false, false).unwrap();
+        let lib = store.library().unwrap();
+        assert!(lib.settings.pinned);
+        assert_eq!(lib.phrases.len(), 1);
+        let blocks = &lib.phrases[0].segments[0].blocks;
+        let Block::Image { path, .. } = &blocks[0] else {
+            panic!()
+        };
+        assert_eq!(image::open(path).unwrap().width(), 2);
+        assert!(Path::new(path).starts_with(store.dir.join("images")));
+        let Block::File { path, .. } = &blocks[1] else {
+            panic!()
+        };
+        assert_eq!(fs::read_to_string(path).unwrap(), "附件");
+        assert_eq!(Path::new(path).file_name().unwrap(), "原附件.txt");
+    }
+    #[test]
+    fn incomplete_or_unsafe_personal_archive_never_modifies_library() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("personal.zip");
+        personal_archive(&path, true, false);
+        assert!(preview(&path).err().unwrap().contains("缺少素材"));
+        personal_archive(&path, false, true);
+        assert!(preview(&path).err().unwrap().contains("不安全"));
+    }
     #[test]
     fn pasted_images_use_local_png_and_failed_batch_leaves_no_assets() {
         let dir = tempfile::tempdir().unwrap();
@@ -750,8 +1715,13 @@ mod tests {
                 text: "之前".into(),
             },
         );
+        let attachment = dir.path().join("原文件.txt");
+        fs::write(&attachment, b"actual attachment").unwrap();
+        store
+            .add_files("local-files", vec![external_path(&attachment)])
+            .unwrap();
         blocks.push(Block::File {
-            path: dir.path().join("原文件.txt").to_string_lossy().into(),
+            path: external_path(&attachment),
             name: "原文件.txt".into(),
         });
         let p = Phrase {
@@ -834,6 +1804,14 @@ mod tests {
         assert_eq!(p.segments.len(), 2);
         assert!(matches!(p.segments[0].blocks[1], Block::Image { .. }));
         assert!(matches!(p.segments[0].blocks[2], Block::File { .. }));
+        if let Block::File { path, .. } = &p.segments[0].blocks[2] {
+            assert_ne!(path, &external_path(&attachment));
+            assert_eq!(fs::read(path).unwrap(), b"actual attachment");
+        }
+        assert_eq!(
+            restored.library().unwrap().files[0].path,
+            external_path(&attachment)
+        );
     }
     #[test]
     fn excel_template_can_be_previewed() {
@@ -843,6 +1821,273 @@ mod tests {
         let p = preview(&path).unwrap();
         assert_eq!(p.preview.phrases, 1);
         assert_eq!(p.library.phrases[0].title, "欢迎语");
+    }
+    #[test]
+    fn prepared_batch_rolls_back_materials_and_retries_once_after_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = dir.path().join("template.xlsx");
+        excel_template(&template).unwrap();
+        let mut pending = preview(&template).unwrap();
+        let attachment = dir.path().join("source.txt");
+        fs::write(&attachment, b"frozen attachment").unwrap();
+        let image = dir.path().join("source.png");
+        image::RgbaImage::new(2, 2).save(&image).unwrap();
+        pending.library.phrases[0].segments[0].blocks.extend([
+            Block::File {
+                path: external_path(&attachment),
+                name: "source.txt".into(),
+            },
+            Block::Image {
+                path: external_path(&image),
+                name: "source.png".into(),
+            },
+        ]);
+        pending.library.common_phrases.push(CommonPhrase {
+            id: "old".into(),
+            text: "常用短语".into(),
+            position: 0,
+        });
+        prepare_ids(&mut pending).unwrap();
+        let phrase_id = pending.library.phrases[0].id.clone();
+        freeze_materials(&mut pending, &dir.path().join("frozen"), &|| Ok(())).unwrap();
+        fs::write(&attachment, b"changed after preview").unwrap();
+        let pending: PendingImport =
+            serde_json::from_slice(&serde_json::to_vec(&pending).unwrap()).unwrap();
+        let target = dir.path().join("target");
+        let mut store = Store::open(&target).unwrap();
+        store.conn.execute_batch("CREATE TRIGGER reject_common BEFORE INSERT ON common_phrases BEGIN SELECT RAISE(ABORT,'模拟失败'); END;").unwrap();
+        assert!(apply_prepared(&mut store, &pending, false, false).is_err());
+        assert!(store.library().unwrap().phrases.is_empty());
+        assert!(store.categories().unwrap().is_empty());
+        assert!(!store.imported(&pending.preview.id).unwrap());
+        assert!(crate::private_local::dirty(&store).unwrap().is_empty());
+        assert_eq!(fs::read_dir(target.join("images")).unwrap().count(), 0);
+        assert_eq!(fs::read_dir(target.join("assets")).unwrap().count(), 0);
+        assert_eq!(fs::read(&attachment).unwrap(), b"changed after preview");
+        store
+            .conn
+            .execute_batch("DROP TRIGGER reject_common;")
+            .unwrap();
+        apply_prepared(&mut store, &pending, false, false).unwrap();
+        assert!(store.imported(&pending.preview.id).unwrap());
+        assert!(!crate::private_local::dirty(&store).unwrap().is_empty());
+        let library = store.library().unwrap();
+        assert_eq!(library.phrases[0].id, phrase_id);
+        let Block::File { path, .. } = &library.phrases[0].segments[0].blocks[1] else {
+            panic!()
+        };
+        assert_eq!(fs::read(path).unwrap(), b"frozen attachment");
+        drop(store);
+        let mut store = Store::open(&target).unwrap();
+        let image_count = fs::read_dir(target.join("images")).unwrap().count();
+        apply_prepared(&mut store, &pending, false, false).unwrap();
+        assert_eq!(store.library().unwrap().phrases.len(), 1);
+        assert_eq!(store.common_phrases().unwrap().len(), 1);
+        assert_eq!(
+            fs::read_dir(target.join("images")).unwrap().count(),
+            image_count
+        );
+    }
+    #[test]
+    fn prepared_merge_keeps_ambiguous_categories_independent() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = dir.path().join("template.xlsx");
+        excel_template(&template).unwrap();
+        let mut pending = preview(&template).unwrap();
+        prepare_ids(&mut pending).unwrap();
+        let root = pending.library.categories[0].id.clone();
+        let mut store = crate::store::test_store(&dir.path().join("data")).unwrap();
+        store
+            .save_category(Category {
+                id: String::new(),
+                name: "常用".into(),
+                kind: "phrase".into(),
+                parent_id: None,
+                position: 0,
+                background: String::new(),
+            })
+            .unwrap();
+        note_merge_ambiguity(&mut pending, &store.categories().unwrap(), true);
+        assert!(pending
+            .preview
+            .notes
+            .iter()
+            .any(|n| n.contains("多个同级同名项")));
+        apply_prepared(&mut store, &pending, true, false).unwrap();
+        assert_eq!(
+            store
+                .categories()
+                .unwrap()
+                .iter()
+                .filter(|c| c.name == "常用")
+                .count(),
+            3
+        );
+        assert_eq!(store.library().unwrap().phrases[0].root_id, root);
+    }
+    #[test]
+    fn prepared_settings_restore_desired_config_without_applying_send_actions() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = dir.path().join("template.xlsx");
+        excel_template(&template).unwrap();
+        let mut pending = preview(&template).unwrap();
+        prepare_ids(&mut pending).unwrap();
+        pending.library.settings.theme = "blue".into();
+        pending.library.settings.enter = "ctrl-enter".into();
+        let mut store = Store::open(&dir.path().join("target")).unwrap();
+        apply_prepared(&mut store, &pending, false, true).unwrap();
+        assert_eq!(store.settings().unwrap().enter, "enter");
+        assert_eq!(store.settings().unwrap().theme, "blue");
+        let desired = crate::private_local::local_records(&store).unwrap();
+        assert_eq!(
+            desired[&(shanyu_team_model::private::Kind::Setting, "enter".into())],
+            Some(serde_json::json!("ctrl-enter"))
+        );
+        let mut second = preview(&template).unwrap();
+        prepare_ids(&mut second).unwrap();
+        // 明确恢复旧发送值，应替换待确认值，而不是因已应用值相同忽略本次恢复。
+        apply_prepared(&mut store, &second, false, true).unwrap();
+        let desired = crate::private_local::local_records(&store).unwrap();
+        assert_eq!(
+            desired[&(shanyu_team_model::private::Kind::Setting, "enter".into())],
+            Some(serde_json::json!("enter"))
+        );
+        assert_eq!(store.library().unwrap().phrases.len(), 2);
+    }
+    #[test]
+    fn portable_and_category_packages_omit_device_or_personal_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = dir.path().join("template.xlsx");
+        excel_template(&template).unwrap();
+        let library = preview(&template).unwrap().library;
+        for scope in [SettingsScope::Portable, SettingsScope::None] {
+            let path = dir.path().join("package.zip");
+            let snapshot = ExportSnapshot {
+                library: library.clone(),
+                recycled: vec![],
+                source: "private".into(),
+                settings_scope: scope,
+            };
+            write_export(
+                snapshot,
+                &path,
+                "backup",
+                scope == SettingsScope::None,
+                &|| Ok(()),
+            )
+            .unwrap()
+            .persist(&path)
+            .unwrap();
+            let mut zip = ZipArchive::new(fs::File::open(&path).unwrap()).unwrap();
+            let metadata: serde_json::Value =
+                serde_json::from_reader(zip.by_name("library.json").unwrap()).unwrap();
+            assert!(metadata["library"]["settings"].get("startup").is_none());
+            assert!(metadata["library"]["settings"].get("dock").is_none());
+            assert!(metadata["library"]["settings"].get("pinned").is_none());
+            if scope == SettingsScope::None {
+                assert!(metadata["library"]["settings"]
+                    .as_object()
+                    .unwrap()
+                    .is_empty());
+            } else {
+                assert_eq!(metadata["library"]["settings"]["enter"], "enter");
+            }
+            drop(zip);
+            assert!(preview(&path).unwrap().settings_scope == scope);
+        }
+    }
+    #[test]
+    fn export_missing_material_and_cancellation_preserve_existing_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = dir.path().join("template.xlsx");
+        excel_template(&template).unwrap();
+        let mut library = preview(&template).unwrap().library;
+        library.phrases[0].segments[0].blocks.push(Block::File {
+            path: external_path(&dir.path().join("missing.txt")),
+            name: "missing.txt".into(),
+        });
+        let path = dir.path().join("existing.zip");
+        fs::write(&path, b"previous complete backup").unwrap();
+        let snapshot = || ExportSnapshot {
+            library: library.clone(),
+            recycled: vec![],
+            source: "private".into(),
+            settings_scope: SettingsScope::Device,
+        };
+        assert!(write_export(snapshot(), &path, "backup", false, &|| Ok(())).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"previous complete backup");
+        library.phrases[0].segments[0].blocks.pop();
+        let snapshot = ExportSnapshot {
+            library,
+            recycled: vec![],
+            source: "private".into(),
+            settings_scope: SettingsScope::Device,
+        };
+        let calls = std::cell::Cell::new(0);
+        assert!(write_export(snapshot, &path, "backup", false, &|| {
+            calls.set(calls.get() + 1);
+            if calls.get() > 1 {
+                Err("操作已取消。".into())
+            } else {
+                Ok(())
+            }
+        })
+        .is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"previous complete backup");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+    #[test]
+    fn legacy_backup_remains_readable_and_v2_errors_do_not_echo_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let template = dir.path().join("template.xlsx");
+        excel_template(&template).unwrap();
+        let library = preview(&template).unwrap().library;
+        let path = dir.path().join("legacy.zip");
+        let mut zip = ZipWriter::new(fs::File::create(&path).unwrap());
+        zip.start_file("library.json", SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(
+            &serde_json::to_vec(&Backup {
+                format: "shanyu-backup".into(),
+                version: 1,
+                library: library.clone(),
+                recycle_bin: vec![],
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        zip.finish().unwrap();
+        assert_eq!(preview(&path).unwrap().library.phrases.len(), 1);
+        let snapshot = ExportSnapshot {
+            library,
+            recycled: vec![],
+            source: "private".into(),
+            settings_scope: SettingsScope::Device,
+        };
+        write_export(snapshot, &path, "backup", false, &|| Ok(()))
+            .unwrap()
+            .persist(&path)
+            .unwrap();
+        let mut metadata: serde_json::Value = serde_json::from_reader(
+            ZipArchive::new(fs::File::open(&path).unwrap())
+                .unwrap()
+                .by_name("library.json")
+                .unwrap(),
+        )
+        .unwrap();
+        metadata["library"]["settings"]["enter"] =
+            serde_json::json!("private-body-must-not-appear");
+        // 将类型破坏成含正文的对象，解析错误仅显示固定中文提示。
+        metadata["library"]["phrases"][0]["position"] =
+            serde_json::json!({"text":"private-body-must-not-appear"});
+        let mut zip = ZipWriter::new(fs::File::create(&path).unwrap());
+        zip.start_file("library.json", SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(&serde_json::to_vec(&metadata).unwrap())
+            .unwrap();
+        zip.finish().unwrap();
+        assert!(preview(&path).err().unwrap().contains("备份内容无效"));
+        assert!(!preview(&path).err().unwrap().contains("private-body"));
     }
     #[test]
     fn category_export_excludes_other_roots_and_independent_common_phrases() {

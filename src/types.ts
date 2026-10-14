@@ -1,6 +1,8 @@
-export type Block = { kind: 'text'; text: string } | { kind: 'image' | 'file'; path: string; name: string };
+export type Block = { kind: 'text'; text: string } | { kind: 'image' | 'file'; path: string; name: string; companyAssetId?: string; companySessionEpoch?: number };
 export interface Segment { blocks: Block[] }
-export interface Phrase { id: string; rootId: string; groupId: string | null; title: string; color: string; background: string; shortcut: string; position: number; segments: Segment[] }
+export type ContentRef = { source: 'team'; teamId: string; id: string; revision: number; lifecycleVersion: number } | { source: 'private'; libraryId: string; id: string; revision: number; teamId?: never; lifecycleVersion?: never };
+export const contentKey = (p: Phrase) => p.contentRef?.source === 'private' ? `private:${p.contentRef.libraryId}:phrase:${p.contentRef.id}:${p.contentRef.revision}` : p.id;
+export interface Phrase { id: string; rootId: string; groupId: string | null; title: string; color: string; background: string; shortcut: string; position: number; segments: Segment[]; contentRef?: ContentRef; ready?: boolean }
 export interface Category { id: string; name: string; kind: 'phrase' | 'file'; parentId: string | null; position: number; background: string }
 /** 选择器按同级列表顺序区分重名分类；显示序号不写入名称，操作仍提交独立 ID。 */
 export function categoryLabel(category: Category, categories: Category[]) {
@@ -11,9 +13,27 @@ export interface LinkedFile { id: string; categoryId: string; path: string; name
 export interface CommonPhrase { id: string; text: string; position: number }
 export interface RecycleItem { id: string; kind: 'phrase' | 'primary-category' | 'secondary-category'; label: string; location: string; deletedAt: number; phraseCount: number }
 export interface RecycleRecord extends Omit<RecycleItem, 'phraseCount'> { categories: Category[]; phrases: Phrase[] }
-export interface Settings { startup: boolean; tray: boolean; enter: 'enter' | 'ctrl-enter'; interval: number; exitSearch: boolean; autoHide: boolean; hideDelay: number; showNumbers: boolean; showPreview: boolean; showTitle: boolean; showSearch: boolean; showCommon: boolean; dockCommon: boolean; fontSize: number; expand: boolean; dock: boolean; dockSide: 'left' | 'right'; searchMode: 'fuzzy' | 'exact'; searchHotkey: string; windowHotkey: string; commonHotkey: string; customHotkeys: boolean; sequenceHotkeys: boolean; sequenceDirectSend: boolean; sequenceBindings: string[]; globalPhraseHotkeys: boolean; pinned: boolean; categoryHeight: number; phraseDoubleClick: 'insert' | 'send'; commonSingleClick: 'select' | 'insert' | 'send'; dockSearch: boolean; freeResize: boolean; rememberDock: boolean; theme: 'default' | 'green' | 'blue' | 'black' | 'pink' | 'lavender' | 'orange'; titleColor: string; phraseCategoryColor: string; fileCategoryColor: string; filesFirst: boolean; fileCategoryHeight: number; commonHeight: number; dockCommonRows: number }
-export interface Library { categories: Category[]; phrases: Phrase[]; files: LinkedFile[]; commonPhrases: CommonPhrase[]; settings: Settings; dataDir: string }
-export interface SearchHit { id: string; kind: 'phrase' | 'file'; phrase: Phrase | null; file: LinkedFile | null }
+export interface Settings { startup: boolean; tray: boolean; enter: 'enter' | 'ctrl-enter'; interval: number; exitSearch: boolean; autoHide: boolean; hideDelay: number; showNumbers: boolean; showPreview: boolean; showTitle: boolean; showSearch: boolean; showCommon: boolean; dockCommon: boolean; fontSize: number; expand: boolean; dock: boolean; dockSide: 'left' | 'right'; searchMode: 'fuzzy' | 'exact'; searchHotkey: string; windowHotkey: string; commonHotkey: string; customHotkeys: boolean; sequenceHotkeys: boolean; sequenceDirectSend: boolean; sequenceBindings: string[]; globalPhraseHotkeys: boolean; pinned: boolean; categoryHeight: number; phraseDoubleClick: 'insert' | 'send'; commonSingleClick: 'select' | 'insert' | 'send'; dockSearch: boolean; freeResize: boolean; rememberDock: boolean; theme: 'default' | 'green' | 'blue' | 'black' | 'pink' | 'lavender' | 'orange'; titleColor: string; phraseCategoryColor: string; fileCategoryColor: string; filesFirst: boolean; teamsFirst: boolean; fileCategoryHeight: number; commonHeight: number; dockCommonRows: number }
+export interface Library { categories: Category[]; phrases: Phrase[]; files: LinkedFile[]; commonPhrases: CommonPhrase[]; settings: Settings; dataDir: string; libraryId?: string; privateRevisions?: Record<string, number>; privateReady?: Record<string, boolean>; ownerLabel?: string }
+export interface SearchHit { id: string; kind: 'phrase' | 'file'; phrase: Phrase | null; file: LinkedFile | null; sourceLabel?: string; teamId?: string; privateKey?: string }
+export type TeamRole = 'member' | 'editor' | 'manager';
+export const teamRoleLabel = (role: TeamRole) => role === 'manager' ? '库管理员' : role === 'editor' ? '编辑者' : '查看者';
+export interface CompanyFilePermissions { canUpload: boolean; canRecycle: boolean; canRestore: boolean; version: number; uploadVersion: number }
+export interface TeamUser { id: string; username: string; admin: boolean; disabled: boolean; mustChangePassword: boolean; displayName: string; contact: string; canCreateTeams: boolean; companyFilePermissions?: CompanyFilePermissions; memberships?: { teamId: string; name: string; role: TeamRole }[] }
+export interface TeamInfo { teamId: string; name: string; version: number; editable: boolean; role: TeamRole; membershipVersion: number; lifecycleVersion: number; memberCount?: number }
+export interface TeamStatus { sessionEpoch?: number; server: string; username: string; user: TeamUser | null; teams: TeamInfo[]; offline: boolean; privateSync?: boolean; companyFiles?: boolean; companyFilePermissions?: boolean }
+export interface CompanyFile { assetId: string; name: string; size: number; uploadedBy: string; uploaderName: string; uploaderUsername?: string; createdAt: number; deletedAt: number | null; deletedBy?: string | null; deleterUsername?: string; cached: boolean }
+export interface CompanyUpload { id: string; name: string; size: number }
+export interface CompanyView { version: number; files: CompanyFile[]; uploads: CompanyUpload[] }
+export interface CompanyTransfer { sessionEpoch: number; assetId: string; name: string; direction: 'upload' | 'download'; done: number; total: number; status: string; revision: number }
+export interface TeamView { team: TeamInfo; categories: Category[]; phrases: Phrase[]; offline: boolean }
+export interface TeamMembership { userId: string; teamId: string; role: TeamRole }
+export interface TeamMemberIdentity { userId: string; username: string; displayName: string; disabled: boolean }
+export interface TeamMember extends TeamMembership, TeamMemberIdentity {}
+export interface TeamMembers { membershipVersion: number; lifecycleVersion: number; memberCount: number; phraseCount: number; members: TeamMember[] }
+export interface DeletedTeam { teamId: string; name: string; lifecycleVersion: number; deletedAt: number; deletedBy: string; memberCount: number; phraseCount: number }
+export interface TeamAssetCleanup { teamId: string; name: string; pendingAssets: number }
+export interface TeamRecycle { id: string; teamId: string; label: string; deletedAt: number; categories: Category[]; phrases: { title: string; segments: { blocks: ({ kind: 'text'; text: string } | { kind: 'image' | 'file'; assetId: string; name: string })[] }[] }[] }
 export interface TargetContext { hwnd: number; focus: number; pid: number }
 export interface ShortcutCandidates { shortcut: string; phrases: Phrase[]; selectedIndex: number; target: TargetContext }
 export interface DeliveryReport { status: 'submitted' | 'interrupted' | 'failed'; completedSegments: number; completedBlocks: number; error: string | null }

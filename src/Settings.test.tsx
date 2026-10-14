@@ -14,6 +14,37 @@ const library: Library = { categories: [], phrases: ['P1', 'P2'].map(id => ({ id
 const deletions = () => vi.mocked(call).mock.calls.filter(([command]) => command === 'delete_local_content');
 const submit = () => fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
 
+it('类目点击不保存，选择另一项才交换，两组排序独立', async () => {
+  render(<SettingsWindow library={{ ...library, settings: { ...library.settings, filesFirst: false, fontSize: 12 } }} initialTab="界面设置" />);
+  const first = screen.getByRole('combobox', { name: '类目第1位' }) as HTMLSelectElement;
+  const second = screen.getByRole('combobox', { name: '类目第2位' }) as HTMLSelectElement;
+  const privateFirst = screen.getByRole('combobox', { name: '话术库第1位' }) as HTMLSelectElement;
+  fireEvent.click(first); fireEvent.change(first, { target: { value: '话术' } });
+  expect(call).not.toHaveBeenCalledWith('save_settings', expect.anything());
+  expect(Array.from(first.options).map(o => o.textContent)).toEqual(['话术', '本地文件']);
+  fireEvent.change(first, { target: { value: '本地文件' } });
+  await waitFor(() => expect([first.value, second.value]).toEqual(['本地文件', '话术']));
+  expect(call).toHaveBeenCalledWith('save_settings', expect.objectContaining({ settings: expect.objectContaining({ filesFirst: true }) }));
+  fireEvent.change(privateFirst, { target: { value: '共享库' } });
+  await waitFor(() => expect(privateFirst.value).toBe('共享库'));
+  expect([first.value, second.value]).toEqual(['本地文件', '话术']);
+  expect(call).toHaveBeenCalledWith('save_settings', expect.objectContaining({ settings: expect.objectContaining({ filesFirst: true, teamsFirst: true }) }));
+  fireEvent.change(second, { target: { value: '本地文件' } });
+  await waitFor(() => expect([first.value, second.value]).toEqual(['话术', '本地文件']));
+  expect(privateFirst.value).toBe('共享库');
+});
+
+it('排序保存失败保留原顺序和焦点', async () => {
+  render(<SettingsWindow library={{ ...library, settings: { ...library.settings, filesFirst: false, fontSize: 12 } }} initialTab="界面设置" />);
+  const first = screen.getByRole('combobox', { name: '类目第1位' }) as HTMLSelectElement;
+  first.focus();
+  vi.mocked(call).mockRejectedValueOnce(new Error('保存失败'));
+  fireEvent.change(first, { target: { value: '本地文件' } });
+  await screen.findByText(/保存失败/);
+  expect(first.value).toBe('话术');
+  expect(document.activeElement).toBe(first);
+});
+
 describe('应用版本', () => {
   it('关于页面与侧栏显示实际 RC 版本', async () => {
     vi.mocked(getVersion).mockResolvedValue('0.1.1-rc.2');
@@ -66,21 +97,21 @@ describe('十项序号与快捷键设置', () => {
 });
 
 describe('本地缓存管理', () => {
-  it('只展示本地功能；私人话术默认回收，取消不删除', async () => {
+  it('缓存操作只影响个人库；我的话术默认回收，取消不删除', async () => {
     render(<SettingsWindow library={library} initialTab="缓存管理" />);
-    expect(screen.queryByText(/云端|公司话术|小组话术/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '私人话术' }));
-    expect(screen.getByText(/全部 2 条私人话术/)).toBeTruthy();
+    expect(screen.queryByText(/云端|公司话术/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '我的话术' }));
+    expect(screen.getByText(/全部 2 条我的话术/)).toBeTruthy();
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
     expect(deletions()).toHaveLength(0); expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '私人话术' })); submit();
+    fireEvent.click(screen.getByRole('button', { name: '我的话术' })); submit();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(deletions()).toEqual([['delete_local_content', { kind: 'phrase', ids: ['P1', 'P2'], recycle: true }]]);
   });
   it('明确取消回收选项才能永久删除话术', async () => {
     render(<SettingsWindow library={library} initialTab="缓存管理" />);
-    fireEvent.click(screen.getByRole('button', { name: '私人话术' }));
+    fireEvent.click(screen.getByRole('button', { name: '我的话术' }));
     fireEvent.click(screen.getByRole('checkbox')); submit();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(deletions()).toEqual([['delete_local_content', { kind: 'phrase', ids: ['P1', 'P2'], recycle: false }]]);
@@ -101,18 +132,18 @@ describe('本地缓存管理', () => {
   it('其他窗口改变列表时保留确认范围，错误留在窗口内，不报告成功', async () => {
     vi.mocked(call).mockImplementation(async command => { if (command === 'delete_local_content') throw new Error('内容列表已变化，请关闭确认窗口后重新操作。'); return 0; });
     const { rerender } = render(<SettingsWindow library={library} initialTab="缓存管理" />);
-    fireEvent.click(screen.getByRole('button', { name: '私人话术' }));
+    fireEvent.click(screen.getByRole('button', { name: '我的话术' }));
     rerender(<SettingsWindow library={{ ...library, phrases: [...library.phrases, { ...library.phrases[0], id: 'P3' }] }} initialTab="缓存管理" />); submit();
     await screen.findByRole('alert'); expect(screen.queryByRole('status')).toBeNull();
     expect(deletions()[0][1]?.ids).toEqual(['P1', 'P2']);
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
-    fireEvent.click(screen.getByRole('button', { name: '私人话术' }));
-    expect(screen.getByText(/全部 3 条私人话术/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '我的话术' }));
+    expect(screen.getByText(/全部 3 条我的话术/)).toBeTruthy();
   });
   it('空库禁用内容删除，缓存清理只调用对应缓存类型并更新统计', async () => {
     vi.mocked(call).mockImplementation(async command => command === 'cache_info' ? 1048576 : 0);
     render(<SettingsWindow library={{ ...library, phrases: [], commonPhrases: [] }} initialTab="缓存管理" />);
-    for (const name of ['私人话术', '常用短语']) expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
+    for (const name of ['我的话术', '常用短语']) expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
     await screen.findByText('可重新生成的缓存：1.00 MB');
     for (const [name, kind] of [['清理缩略图', 'thumbnails'], ['清理临时文件', 'temp']]) {
       fireEvent.click(screen.getByRole('button', { name }));

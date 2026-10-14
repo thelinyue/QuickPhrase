@@ -174,9 +174,9 @@ try {
     assert.equal(await recycle.locator('.recycle-detail').evaluate(el => getComputedStyle(el).overflowY), 'auto');
     await recycle.screenshot({ path: path.join(evidence, 'recycle-phrase-detail.png') });
   });
-  await check('还原弹窗只有私人话术，取消不改数据；确认完整恢复原ID及内容', async () => {
+  await check('还原弹窗只有我的话术，取消不改数据；确认完整恢复原ID及内容', async () => {
     await click(recycle.getByRole('button', { name: '还原', exact: true })); await recycle.locator('dialog').waitFor();
-    assert.ok((await recycle.locator('dialog').textContent()).includes('私人话术')); assert.ok(!(await recycle.locator('dialog').textContent()).includes('公司话术'));
+    assert.ok((await recycle.locator('dialog').textContent()).includes('我的话术')); assert.ok(!(await recycle.locator('dialog').textContent()).includes('公司话术'));
     await recycle.screenshot({ path: path.join(evidence, 'restore-dialog.png') }); await click(recycle.locator('dialog').getByRole('button', { name: '取消', exact: true })); assert.equal((await invoke('get_recycle_bin')).length, 1);
     await click(recycle.getByRole('button', { name: '还原', exact: true })); await form(recycle); await recycle.getByText('回收站为空', { exact: true }).waitFor();
     assert.deepEqual((await invoke('get_library')).phrases.find(p => p.id === imageId), originalImage);
@@ -322,8 +322,8 @@ try {
   };
   await check('缓存页按参考图分区，展示本地删除与缓存清理入口，窗口保持隐藏', async () => {
     assert.deepEqual(await cacheView.locator('.cache-settings h2').allTextContents(), ['一键删除（请谨慎操作）', '清理本地缓存']);
-    assert.deepEqual(await cacheView.locator('.cache-settings .setting-buttons button').allTextContents(), ['私人话术', '常用短语', '清理缩略图', '清理临时文件']);
-    assert.equal(await cacheView.getByText(/云端|公司话术|小组话术|表情/).count(), 0);
+    assert.deepEqual(await cacheView.locator('.cache-settings .setting-buttons button').allTextContents(), ['我的话术', '常用短语', '清理缩略图', '清理临时文件']);
+    assert.equal(await cacheView.getByText(/云端|公司话术|共享库话术|表情/).count(), 0);
     await click(cacheView.getByRole('button', { name: '打开本地缓存文件夹', exact: true }));
     assert.deepEqual((await requests(cacheView)).filter(c => c.cmd === 'open_directory').at(-1).args, { kind: 'cache' });
     const buttons = await cacheView.locator('.setting-buttons button').evaluateAll(els => els.map(el => { const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; }));
@@ -331,20 +331,20 @@ try {
     assert.equal(await invoke('plugin:window|is_visible', {}, cacheView), false);
     await cacheView.screenshot({ path: path.join(evidence, 'cache-management-aligned.png') });
   });
-  await check('两类整库删除均需确认，取消保留全部内容；私人话术默认勾选回收', async () => {
+  await check('两类整库删除均需确认，取消保留全部内容；我的话术默认勾选回收', async () => {
     const before = await currentLibrary();
-    for (const label of ['私人话术', '常用短语']) {
+    for (const label of ['我的话术', '常用短语']) {
       await click(cacheView.getByRole('button', { name: label, exact: true })); await cacheView.locator('dialog[open]').waitFor();
-      if (label === '私人话术') { assert.equal(await cacheView.locator('input[name="recycle"]').isChecked(), true); await cacheView.screenshot({ path: path.join(evidence, 'cache-delete-phrases-confirm.png') }); }
+      if (label === '我的话术') { assert.equal(await cacheView.locator('input[name="recycle"]').isChecked(), true); await cacheView.screenshot({ path: path.join(evidence, 'cache-delete-phrases-confirm.png') }); }
       else { assert.ok((await cacheView.locator('dialog').textContent()).includes('删除后无法恢复')); await cacheView.screenshot({ path: path.join(evidence, 'cache-delete-common-confirm.png') }); }
       await click(cacheView.getByRole('button', { name: '取消', exact: true })); await cacheView.locator('dialog').waitFor({ state: 'detached' });
     }
     assert.deepEqual(await currentLibrary(), before); assert.equal((await requests(cacheView)).filter(c => c.cmd === 'delete_local_content').length, 0);
   });
   await check('确认期间另一窗口新增内容，两类旧确认均拒绝删除并保留错误提示', async () => {
-    for (const label of ['私人话术', '常用短语']) {
+    for (const label of ['我的话术', '常用短语']) {
       await click(cacheView.getByRole('button', { name: label, exact: true })); await cacheView.locator('dialog[open]').waitFor();
-      if (label === '私人话术') await phrase('确认期间新增', cacheRoot);
+      if (label === '我的话术') await phrase('确认期间新增', cacheRoot);
       else await invoke('save_common_phrase', { phrase: { id: '', text: '确认期间新增', position: 0 } });
       const before = await currentLibrary(), recycled = await currentRecycle();
       await cacheView.locator('dialog form').evaluate(el => el.requestSubmit()); await cacheView.getByRole('alert').waitFor();
@@ -361,9 +361,9 @@ try {
     assert.deepEqual(await fs.readdir(path.join(evidence, 'data', 'thumbnails')), []); assert.deepEqual(await fs.readdir(path.join(evidence, 'data', 'temp')), []);
     assert.equal(await invoke('cache_info'), 0); assert.deepEqual(await currentLibrary(), before); assert.deepEqual(await currentRecycle(), recycled); await assertAssetsRetained();
   });
-  await check('删除全部私人话术默认进入回收站，保留其他本地内容并可完整还原', async () => {
+  await check('删除全部我的话术默认进入回收站，保留其他本地内容并可完整还原', async () => {
     const before = await currentLibrary(), oldRecords = await currentRecycle();
-    await click(cacheView.getByRole('button', { name: '私人话术', exact: true })); await form(cacheView);
+    await click(cacheView.getByRole('button', { name: '我的话术', exact: true })); await form(cacheView);
     const after = await currentLibrary(); assert.equal(after.phrases.length, 0);
     for (const key of ['categories', 'commonPhrases', 'files', 'settings']) assert.deepEqual(after[key], before[key]); await assertAssetsRetained();
     const records = await currentRecycle(); const added = records.filter(r => !oldRecords.some(old => old.id === r.id));
@@ -380,10 +380,10 @@ try {
   });
   await check('话术明确取消回收后永久删除，空库禁用入口，最小设置窗口布局无溢出', async () => {
     const before = await currentLibrary(), oldRecords = await currentRecycle();
-    await click(cacheView.getByRole('button', { name: '私人话术', exact: true })); await click(cacheView.locator('input[name="recycle"]')); await form(cacheView);
+    await click(cacheView.getByRole('button', { name: '我的话术', exact: true })); await click(cacheView.locator('input[name="recycle"]')); await form(cacheView);
     const after = await currentLibrary(); assert.equal(after.phrases.length, 0);
     for (const key of ['categories', 'files', 'settings']) assert.deepEqual(after[key], before[key]); assert.deepEqual(await currentRecycle(), oldRecords); await assertAssetsRetained();
-    await cacheView.waitForFunction(() => [...document.querySelectorAll('.cache-settings button')].find(el => el.textContent === '私人话术')?.disabled);
+    await cacheView.waitForFunction(() => [...document.querySelectorAll('.cache-settings button')].find(el => el.textContent === '我的话术')?.disabled);
     if (await cacheView.getByRole('status').count()) await click(cacheView.getByRole('status'));
     await cacheView.setViewportSize({ width: 480, height: 480 }); const geometry = await cacheView.locator('.settings-content').evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth })); assert.ok(geometry.scroll <= geometry.width + 1);
     await cacheView.screenshot({ path: path.join(evidence, 'cache-management-empty-compact.png') });

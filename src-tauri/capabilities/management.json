@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "management-close",
+  "description": "管理窗口完成未保存确认后关闭自身；Tauri关闭监听内部需要销毁权限",
+  "windows": ["user-management", "team-management", "company-files"],
+  "permissions": ["core:window:allow-destroy"]
+}

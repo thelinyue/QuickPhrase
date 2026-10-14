@@ -1,10 +1,18 @@
 mod backup;
+mod company_commands;
 mod delivery;
 mod file_library;
 mod model;
 mod native;
+mod private_commands;
+mod private_local;
+mod private_sync;
 mod recycle;
 mod store;
+mod team;
+mod team_commands;
+mod team_credentials;
+mod transfer;
 
 use delivery::{DeliveryReport, Mode};
 use model::*;
@@ -22,12 +30,51 @@ use tauri::{Emitter, Manager, State};
 /// 编辑窗口只提交完整话术，不直接修改数据库或驱动外部窗口。
 struct AppState {
     store: Mutex<Store>,
-    pending: Mutex<Option<backup::PendingImport>>,
+    device_store: Mutex<Store>,
+    private_sync: Arc<private_sync::PrivateSync>,
+    transfer: transfer::TransferState,
     delivery: Arc<delivery::DeliveryState>,
     native: Arc<NativeState>,
+    teams: Arc<team::TeamClient>,
+    sequence_generation: Mutex<u64>,
 }
 fn changed(app: &tauri::AppHandle, state: &AppState) -> Result<()> {
-    let library = state.store.lock().unwrap().library()?;
+    refreshed(app, state)?;
+    state.private_sync.wake();
+    Ok(())
+}
+/// 远端落盘只刷新视图与绑定；再次唤醒同步会让空队列不断拉取快照。
+fn refreshed(app: &tauri::AppHandle, state: &AppState) -> Result<()> {
+    let mut library = {
+        let store = state.store.lock().unwrap();
+        let device = state.device_store.lock().unwrap();
+        let settings = private_commands::combined_settings(&store, &device)?;
+        private_sync::binding_library(&store, settings)?
+    };
+    if *state.native.settings.read().unwrap() != library.settings {
+        if let Err(error) = state.native.apply_settings(&library.settings) {
+            let store = state.store.lock().unwrap();
+            if !private_local::bound(&store) {
+                return Err(error);
+            }
+            // 系统占用快捷键时只保留本机生效配置，不清空已同步的云端配置，也不阻塞正文。
+            let applied = state.native.settings.read().unwrap().clone();
+            let mut value = serde_json::to_value(store.settings()?).map_err(store::db_error)?;
+            let old = serde_json::to_value(&applied).map_err(store::db_error)?;
+            for key in shanyu_team_model::private::SETTINGS {
+                value[*key] = old[*key].clone();
+            }
+            store
+                .conn
+                .execute(
+                    "UPDATE settings SET content=?1 WHERE id=1",
+                    [value.to_string()],
+                )
+                .map_err(store::db_error)?;
+            library = private_sync::binding_library(&store, applied)?;
+            let _ = app.emit("native-error", error);
+        }
+    }
     state.native.update_bindings(&library)?;
     app.emit("library-changed", ())
         .map_err(|e| format!("界面刷新通知失败：{e}"))
@@ -36,21 +83,29 @@ fn shortcut_conflict(settings: &Settings, phrases: &[Phrase]) -> Result<()> {
     for p in phrases.iter().filter(|p| !p.shortcut.is_empty()) {
         let s = native::parse_shortcut(&p.shortcut)?;
         if settings.shortcut_reserved(&s) {
-            return Err(format!(
-                "话术「{}」的快捷键与导航或已启用的序号快捷键冲突，请先修改。",
-                p.label()
-            ));
+            return Err("话术快捷键与导航或已启用的序号快捷键冲突，请先修改。".into());
         }
     }
     Ok(())
 }
 #[tauri::command]
-fn get_library(state: State<AppState>) -> Result<Library> {
-    state.store.lock().unwrap().library()
+fn get_library(state: State<AppState>) -> Result<private_commands::ClientLibrary> {
+    private_commands::library(&state)
 }
 #[tauri::command]
 fn search_content(state: State<AppState>, query: String) -> Result<Vec<store::SearchHit>> {
-    state.store.lock().unwrap().search(&query)
+    let store = state.store.lock().unwrap();
+    let mut hits = store.search(&query)?;
+    let device = state.device_store.lock().unwrap();
+    if store.dir != device.dir {
+        hits.extend(
+            device
+                .search(&query)?
+                .into_iter()
+                .filter(|hit| hit.kind == "file"),
+        );
+    }
+    Ok(hits)
 }
 /// 编辑器确认快捷键只校验、不写库；完整保存在事务中再次检查，防止其他窗口并发修改。
 #[tauri::command]
@@ -110,11 +165,28 @@ fn set_shortcut_input(
                 Ordering::Acquire,
             );
         }
-        if window.label() == "settings" {
-            state
+        match window.label() {
+            "company-files" => state
                 .native
-                .settings_window
-                .store(handle, Ordering::Release);
+                .management_windows
+                .company
+                .store(handle, Ordering::Release),
+            "settings" => state
+                .native
+                .management_windows
+                .settings
+                .store(handle, Ordering::Release),
+            "team-management" => state
+                .native
+                .management_windows
+                .teams
+                .store(handle, Ordering::Release),
+            "user-management" => state
+                .native
+                .management_windows
+                .users
+                .store(handle, Ordering::Release),
+            _ => {}
         }
         if active && !search.unwrap_or(false) {
             state.native.cancel_candidates();
@@ -128,11 +200,29 @@ fn sync_sequence_map(
     window: tauri::Window,
     ids: Vec<Option<String>>,
     loading: bool,
+    generation: Option<u64>,
 ) -> Result<()> {
     if window.label() != "main" {
         return Err("序号列表只能由主窗口同步。".into());
     }
-    *state.native.sequence_map.write().unwrap() = (ids.into_iter().take(10).collect(), loading);
+    let mut current = state.sequence_generation.lock().unwrap();
+    if let Some(generation) = generation {
+        if generation < *current {
+            return Ok(());
+        }
+        *current = generation;
+    }
+    let ids = ids
+        .into_iter()
+        .take(10)
+        .map(|id| {
+            id.filter(|id| {
+                shanyu_team_model::ContentRef::from_key(id).is_none()
+                    || state.teams.phrase(id, false).is_ok()
+            })
+        })
+        .collect();
+    *state.native.sequence_map.write().unwrap() = (ids, loading);
     Ok(())
 }
 #[tauri::command]
@@ -168,7 +258,9 @@ async fn submit_shortcut_candidate(
     // 先取走候选，再核对活动记录；已删除或改绑的候选失败后也能退出，长按不会重复提交。
     let (id, target) = state.native.take_candidate(index)?;
     {
-        let current = state.store.lock().unwrap().phrase(&id)?;
+        let store = state.store.lock().unwrap();
+        let resolved = private_local::resolve_key(&store, &id, "phrase")?;
+        let current = store.phrase(&resolved)?;
         if !native::parse_shortcut(&current.shortcut)
             .is_ok_and(|shortcut| shortcut.canonical() == payload.shortcut)
         {
@@ -240,7 +332,13 @@ fn show_phrase_preview(
     }
     #[cfg(windows)]
     {
-        let phrase = state.store.lock().unwrap().phrase(&id)?;
+        let phrase = if shanyu_team_model::ContentRef::from_key(&id).is_some() {
+            state.teams.phrase(&id, false)?
+        } else {
+            let store = state.store.lock().unwrap();
+            let id = private_local::resolve_key(&store, &id, "phrase")?;
+            store.phrase(&id)?
+        };
         state.native.show_preview(&window, phrase, anchor)
     }
     #[cfg(not(windows))]
@@ -285,16 +383,21 @@ fn save_phrase(
     state: State<AppState>,
     phrase: Phrase,
     after_id: Option<String>,
+    expected_revision: Option<u64>,
+    library_id: Option<String>,
 ) -> Result<String> {
     shortcut_conflict(
         &state.native.settings.read().unwrap(),
         std::slice::from_ref(&phrase),
     )?;
-    let id = state
-        .store
-        .lock()
-        .unwrap()
-        .save_phrase(phrase, after_id.as_deref())?;
+    let mut store = private_commands::active_store(&state, library_id.as_deref())?;
+    if expected_revision.is_some_and(|v| {
+        private_local::revision(&store, "phrase", &phrase.id).is_ok_and(|r| r != v)
+    }) {
+        return Err("话术已更新，请核对新版；当前草稿已保留。".into());
+    }
+    let id = store.save_phrase(phrase, after_id.as_deref())?;
+    drop(store);
     changed(&app, &state)?;
     Ok(id)
 }
@@ -303,8 +406,13 @@ fn save_category(
     app: tauri::AppHandle,
     state: State<AppState>,
     category: Category,
+    library_id: Option<String>,
 ) -> Result<String> {
-    let id = state.store.lock().unwrap().save_category(category)?;
+    let id = if category.kind == "file" {
+        state.device_store.lock().unwrap().save_category(category)?
+    } else {
+        private_commands::active_store(&state, library_id.as_deref())?.save_category(category)?
+    };
     changed(&app, &state)?;
     Ok(id)
 }
@@ -313,8 +421,17 @@ fn save_common_phrase(
     app: tauri::AppHandle,
     state: State<AppState>,
     phrase: CommonPhrase,
+    library_id: Option<String>,
+    expected_revision: Option<u64>,
 ) -> Result<String> {
-    let id = state.store.lock().unwrap().save_common_phrase(phrase)?;
+    let store = private_commands::active_store(&state, library_id.as_deref())?;
+    if expected_revision
+        .is_some_and(|rev| private_local::revision(&store, "common", &phrase.id).ok() != Some(rev))
+    {
+        return Err("短语已更新，请核对后重试；草稿已保留。".into());
+    }
+    let id = store.save_common_phrase(phrase)?;
+    drop(store);
     changed(&app, &state)?;
     Ok(id)
 }
@@ -323,8 +440,9 @@ fn reorder_common_phrases(
     app: tauri::AppHandle,
     state: State<AppState>,
     ids: Vec<String>,
+    library_id: Option<String>,
 ) -> Result<()> {
-    state.store.lock().unwrap().reorder_common(&ids)?;
+    private_commands::active_store(&state, library_id.as_deref())?.reorder_common(&ids)?;
     changed(&app, &state)
 }
 #[tauri::command]
@@ -335,8 +453,9 @@ fn delete_category(
     keep_phrases: Option<bool>,
     target_id: Option<String>,
     recycle: Option<bool>,
+    library_id: Option<String>,
 ) -> Result<()> {
-    state.store.lock().unwrap().delete_category(
+    private_commands::category_store(&state, &id, library_id.as_deref())?.delete_category(
         &id,
         keep_phrases.unwrap_or(false),
         target_id.as_deref(),
@@ -351,11 +470,9 @@ fn move_copy_category(
     id: String,
     target_id: String,
     copy: bool,
+    library_id: Option<String>,
 ) -> Result<usize> {
-    let count = state
-        .store
-        .lock()
-        .unwrap()
+    let count = private_commands::category_store(&state, &id, library_id.as_deref())?
         .move_copy_category(&id, &target_id, copy)?;
     changed(&app, &state)?;
     Ok(count)
@@ -367,12 +484,21 @@ fn reorder_categories(
     ids: Vec<String>,
     kind: String,
     parent_id: Option<String>,
+    library_id: Option<String>,
 ) -> Result<()> {
-    state
-        .store
-        .lock()
-        .unwrap()
-        .reorder_categories(&ids, &kind, parent_id.as_deref())?;
+    if kind == "file" {
+        state
+            .device_store
+            .lock()
+            .unwrap()
+            .reorder_categories(&ids, &kind, parent_id.as_deref())?;
+    } else {
+        private_commands::active_store(&state, library_id.as_deref())?.reorder_categories(
+            &ids,
+            &kind,
+            parent_id.as_deref(),
+        )?;
+    }
     changed(&app, &state)
 }
 #[tauri::command]
@@ -382,12 +508,21 @@ fn delete_item(
     id: String,
     kind: String,
     recycle: Option<bool>,
+    library_id: Option<String>,
 ) -> Result<()> {
-    state
-        .store
-        .lock()
-        .unwrap()
-        .delete_item(&id, &kind, recycle.unwrap_or(true))?;
+    if kind == "file" {
+        state
+            .device_store
+            .lock()
+            .unwrap()
+            .delete_item(&id, &kind, false)?;
+    } else {
+        private_commands::active_store(&state, library_id.as_deref())?.delete_item(
+            &id,
+            &kind,
+            recycle.unwrap_or(true),
+        )?;
+    }
     changed(&app, &state)
 }
 #[tauri::command]
@@ -405,13 +540,21 @@ fn delete_local_content(
     kind: String,
     ids: Vec<String>,
     recycle: Option<bool>,
+    library_id: Option<String>,
 ) -> Result<usize> {
-    let count =
+    let count = if kind == "file" {
         state
-            .store
+            .device_store
             .lock()
             .unwrap()
-            .delete_local_content(&kind, &ids, recycle.unwrap_or(true))?;
+            .delete_local_content(&kind, &ids, false)?
+    } else {
+        private_commands::active_store(&state, library_id.as_deref())?.delete_local_content(
+            &kind,
+            &ids,
+            recycle.unwrap_or(true),
+        )?
+    };
     changed(&app, &state)?;
     Ok(count)
 }
@@ -425,23 +568,30 @@ fn restore_recycled(
     state: State<AppState>,
     ids: Vec<String>,
     without_shortcuts: Option<bool>,
+    library_id: Option<String>,
 ) -> Result<usize> {
-    let count = state
-        .store
-        .lock()
-        .unwrap()
+    let count = private_commands::active_store(&state, library_id.as_deref())?
         .restore_recycled(&ids, without_shortcuts.unwrap_or(false))?;
     changed(&app, &state)?;
     Ok(count)
 }
 #[tauri::command]
-fn remove_recycled(app: tauri::AppHandle, state: State<AppState>, ids: Vec<String>) -> Result<()> {
-    state.store.lock().unwrap().remove_recycled(&ids)?;
+fn remove_recycled(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    ids: Vec<String>,
+    library_id: Option<String>,
+) -> Result<()> {
+    private_commands::active_store(&state, library_id.as_deref())?.remove_recycled(&ids)?;
     changed(&app, &state)
 }
 #[tauri::command]
-fn empty_recycle(app: tauri::AppHandle, state: State<AppState>) -> Result<()> {
-    state.store.lock().unwrap().empty_recycle()?;
+fn empty_recycle(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    library_id: Option<String>,
+) -> Result<()> {
+    private_commands::active_store(&state, library_id.as_deref())?.empty_recycle()?;
     changed(&app, &state)
 }
 #[tauri::command]
@@ -451,7 +601,7 @@ fn rename_linked_file(
     id: String,
     name: String,
 ) -> Result<()> {
-    state.store.lock().unwrap().rename_file(&id, &name)?;
+    state.device_store.lock().unwrap().rename_file(&id, &name)?;
     changed(&app, &state)
 }
 #[tauri::command]
@@ -461,7 +611,11 @@ fn move_linked_files(
     ids: Vec<String>,
     category_id: String,
 ) -> Result<()> {
-    state.store.lock().unwrap().move_files(&ids, &category_id)?;
+    state
+        .device_store
+        .lock()
+        .unwrap()
+        .move_files(&ids, &category_id)?;
     changed(&app, &state)
 }
 #[tauri::command]
@@ -470,7 +624,7 @@ fn remove_linked_files(
     state: State<AppState>,
     ids: Vec<String>,
 ) -> Result<()> {
-    state.store.lock().unwrap().remove_files(&ids)?;
+    state.device_store.lock().unwrap().remove_files(&ids)?;
     changed(&app, &state)
 }
 #[tauri::command]
@@ -481,7 +635,7 @@ fn reorder_files(
     category_id: String,
 ) -> Result<()> {
     state
-        .store
+        .device_store
         .lock()
         .unwrap()
         .reorder_files(&ids, &category_id)?;
@@ -495,7 +649,7 @@ fn copy_linked_files(
 ) -> Result<()> {
     let _guard = state.delivery.acquire()?;
     let paths = state
-        .store
+        .device_store
         .lock()
         .unwrap()
         .linked_files(&ids)?
@@ -512,7 +666,7 @@ fn copy_linked_files(
 }
 #[tauri::command]
 fn open_linked_file(state: State<AppState>, id: String, reveal: Option<bool>) -> Result<()> {
-    let files = state.store.lock().unwrap().linked_files(&[id])?;
+    let files = state.device_store.lock().unwrap().linked_files(&[id])?;
     native::open_file(&files[0].path, reveal.unwrap_or(false))
 }
 #[tauri::command]
@@ -523,11 +677,9 @@ fn move_copy_phrase(
     root_id: String,
     group_id: Option<String>,
     copy: bool,
+    library_id: Option<String>,
 ) -> Result<String> {
-    let id = state
-        .store
-        .lock()
-        .unwrap()
+    let id = private_commands::active_store(&state, library_id.as_deref())?
         .move_copy(&id, root_id, group_id, copy)?;
     changed(&app, &state)?;
     Ok(id)
@@ -539,8 +691,18 @@ fn sort_item(
     id: String,
     kind: String,
     position: usize,
+    library_id: Option<String>,
 ) -> Result<()> {
-    state.store.lock().unwrap().sort(&id, &kind, position)?;
+    if kind == "file" {
+        state
+            .device_store
+            .lock()
+            .unwrap()
+            .sort(&id, &kind, position)?;
+    } else {
+        private_commands::active_store(&state, library_id.as_deref())?
+            .sort(&id, &kind, position)?;
+    }
     changed(&app, &state)
 }
 #[tauri::command]
@@ -553,7 +715,11 @@ fn add_files(
     if paths.is_empty() {
         return Err("请先选择文件。".into());
     }
-    state.store.lock().unwrap().add_files(&category_id, paths)?;
+    state
+        .device_store
+        .lock()
+        .unwrap()
+        .add_files(&category_id, paths)?;
     changed(&app, &state)
 }
 #[tauri::command]
@@ -565,20 +731,32 @@ fn relink_file(
     category_id: String,
 ) -> Result<()> {
     state
-        .store
+        .device_store
         .lock()
         .unwrap()
         .relink(&id, &path, &category_id)?;
     changed(&app, &state)
 }
 #[tauri::command(async)]
-fn import_images(state: State<AppState>, paths: Vec<String>) -> Result<Vec<Block>> {
-    let dir = state.store.lock().unwrap().dir.clone();
+fn import_images(
+    state: State<AppState>,
+    paths: Vec<String>,
+    library_id: Option<String>,
+) -> Result<Vec<Block>> {
+    let dir = private_commands::active_store(&state, library_id.as_deref())?
+        .dir
+        .clone();
     backup::import_images(&dir, &paths)
 }
 #[tauri::command(async)]
-fn import_pasted_images(state: State<AppState>, images: Vec<Vec<u8>>) -> Result<Vec<Block>> {
-    let dir = state.store.lock().unwrap().dir.clone();
+fn import_pasted_images(
+    state: State<AppState>,
+    images: Vec<Vec<u8>>,
+    library_id: Option<String>,
+) -> Result<Vec<Block>> {
+    let dir = private_commands::active_store(&state, library_id.as_deref())?
+        .dir
+        .clone();
     backup::import_pasted_images(&dir, &images)
 }
 #[tauri::command(async)]
@@ -609,12 +787,32 @@ async fn deliver_content(
     if state.native.target.lock().unwrap().as_ref() != Some(&target) {
         return Err("目标上下文已变化，请重新聚焦输入区后返回闪语。".into());
     }
+    let shared = if kind == "phrase" && shanyu_team_model::ContentRef::from_key(&id).is_some() {
+        Some(state.teams.check_delivery(&app, &id).await?)
+    } else {
+        None
+    };
     let (settings, segments) = {
         let store = state.store.lock().unwrap();
         let settings = store.settings()?;
+        let private_id = if shared.is_none() && kind == "phrase" {
+            Some(private_local::resolve_key(&store, &id, "phrase")?)
+        } else {
+            None
+        };
         let segments = match kind.as_str() {
-            "phrase" => store.phrase(&id)?.segments,
+            "phrase" => match shared {
+                Some(phrase) => phrase.segments,
+                None => {
+                    let phrase = store.phrase(private_id.as_deref().unwrap())?;
+                    if !private_local::materials_ready(&store, &phrase) {
+                        return Err("素材未缓存，请下载后重新触发。".into());
+                    }
+                    phrase.segments
+                }
+            },
             "common" => {
+                let id = private_local::resolve_key(&store, &id, "common")?;
                 let phrase = store
                     .common_phrases()?
                     .into_iter()
@@ -625,7 +823,10 @@ async fn deliver_content(
                 }]
             }
             "file" => {
-                let file = store
+                let file = state
+                    .device_store
+                    .lock()
+                    .unwrap()
                     .library()?
                     .files
                     .into_iter()
@@ -659,6 +860,7 @@ async fn deliver_content(
     .await
     .map_err(|e| format!("发送任务无法完成：{e}"));
     let _ = event_app.emit("delivery-busy", false);
+    state.teams.end_delivery();
     if let Ok(report) = &result {
         if let Some(e) = &report.error {
             log::error!("发送中断：{e}");
@@ -673,7 +875,13 @@ fn cancel_delivery(state: State<AppState>) {
 #[tauri::command]
 fn copy_phrase_text(app: tauri::AppHandle, state: State<AppState>, id: String) -> Result<()> {
     let _guard = state.delivery.acquire()?;
-    let text = state.store.lock().unwrap().phrase(&id)?.text();
+    let text = if shanyu_team_model::ContentRef::from_key(&id).is_some() {
+        state.teams.phrase(&id, false)?.text()
+    } else {
+        let store = state.store.lock().unwrap();
+        let id = private_local::resolve_key(&store, &id, "phrase")?;
+        store.phrase(&id)?.text()
+    };
     let owner = app
         .get_webview_window("main")
         .ok_or("主窗口不存在。")?
@@ -683,8 +891,13 @@ fn copy_phrase_text(app: tauri::AppHandle, state: State<AppState>, id: String) -
     native::copy_text(owner, &text)
 }
 #[tauri::command]
-fn save_settings(app: tauri::AppHandle, state: State<AppState>, settings: Settings) -> Result<()> {
-    let store = state.store.lock().unwrap();
+fn save_settings(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    settings: Settings,
+    library_id: Option<String>,
+) -> Result<()> {
+    let store = private_commands::active_store(&state, library_id.as_deref())?;
     let old = store.settings()?;
     settings.validate()?;
     let mut reserved = settings.clone();
@@ -697,69 +910,23 @@ fn save_settings(app: tauri::AppHandle, state: State<AppState>, settings: Settin
         let _ = state.native.apply_settings(&old);
         return Err(e);
     }
+    {
+        let device = state.device_store.lock().unwrap();
+        if device.dir != store.dir {
+            let mut values = serde_json::to_value(device.settings()?).map_err(store::db_error)?;
+            let incoming = serde_json::to_value(&settings).map_err(store::db_error)?;
+            for (key, value) in incoming.as_object().unwrap() {
+                if !shanyu_team_model::private::SETTINGS.contains(&key.as_str()) {
+                    values[key] = value.clone();
+                }
+            }
+            let device_settings: Settings =
+                serde_json::from_value(values).map_err(store::db_error)?;
+            device.save_settings(&device_settings)?;
+        }
+    }
     drop(store);
     changed(&app, &state)
-}
-#[tauri::command(async)]
-fn preview_import(state: State<AppState>, path: String) -> Result<backup::ImportPreview> {
-    let parsed = backup::preview(Path::new(&path))?;
-    let preview = parsed.preview.clone();
-    *state.pending.lock().unwrap() = Some(parsed);
-    Ok(preview)
-}
-#[tauri::command(async)]
-fn confirm_import(
-    app: tauri::AppHandle,
-    state: State<AppState>,
-    preview_id: String,
-    merge: bool,
-    restore_settings: bool,
-) -> Result<()> {
-    let pending = state
-        .pending
-        .lock()
-        .unwrap()
-        .take()
-        .ok_or("请先选择文件并预览。")?;
-    if pending.preview.id != preview_id {
-        *state.pending.lock().unwrap() = Some(pending);
-        return Err("此预览已失效，请重新预览。".into());
-    }
-    let result = (|| -> Result<()> {
-        let mut store = state.store.lock().unwrap();
-        let old = store.settings()?;
-        let restore = restore_settings && pending.preview.kind == "backup";
-        if restore {
-            shortcut_conflict(&pending.library.settings, &store.library()?.phrases)?;
-            state.native.apply_settings(&pending.library.settings)?;
-        }
-        if let Err(e) = backup::apply(&mut store, &pending, merge, restore) {
-            if restore {
-                let _ = state.native.apply_settings(&old);
-            }
-            return Err(e);
-        }
-        Ok(())
-    })();
-    if let Err(e) = result {
-        *state.pending.lock().unwrap() = Some(pending);
-        return Err(e);
-    }
-    changed(&app, &state)
-}
-#[tauri::command(async)]
-fn export_data(
-    state: State<AppState>,
-    path: String,
-    kind: String,
-    category_id: Option<String>,
-) -> Result<()> {
-    backup::export(
-        &state.store.lock().unwrap(),
-        Path::new(&path),
-        &kind,
-        category_id.as_deref(),
-    )
 }
 #[tauri::command(async)]
 fn export_template(path: String) -> Result<()> {
@@ -885,12 +1052,19 @@ pub fn run() {
             let dir = std::env::var_os("SHANYU_TEST_DATA_DIR")
                 .map(std::path::PathBuf::from)
                 .unwrap_or(dir);
-            let store = Store::open(&dir).map_err(std::io::Error::other)?;
-            let settings = store.settings().map_err(std::io::Error::other)?;
+            let device_store = Store::open(&dir).map_err(std::io::Error::other)?;
+            let private_sync = private_sync::PrivateSync::new(&dir);
+            let store = private_sync
+                .startup(&device_store)
+                .map_err(std::io::Error::other)?;
+            let settings = private_commands::combined_settings(&store, &device_store)
+                .map_err(std::io::Error::other)?;
             app.asset_protocol_scope()
                 .allow_directory(dir.join("images"), true)?;
             app.asset_protocol_scope()
                 .allow_directory(dir.join("thumbnails"), true)?;
+            app.asset_protocol_scope()
+                .allow_directory(dir.join("private"), true)?;
             if let Ok(file) = fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -906,13 +1080,21 @@ pub fn run() {
                 delivery.cancelled.clone(),
             ));
             native
-                .update_bindings(&store.library().map_err(std::io::Error::other)?)
+                .update_bindings(
+                    &private_sync::binding_library(&store, settings.clone())
+                        .map_err(std::io::Error::other)?,
+                )
                 .map_err(std::io::Error::other)?;
+            let teams = team::TeamClient::new(&dir).map_err(std::io::Error::other)?;
             app.manage(AppState {
                 store: Mutex::new(store),
-                pending: Mutex::new(None),
+                device_store: Mutex::new(device_store),
+                private_sync: private_sync.clone(),
+                transfer: transfer::TransferState::default(),
                 delivery,
                 native: native.clone(),
+                teams,
+                sequence_generation: Mutex::new(0),
             });
             tauri::WebviewWindowBuilder::new(
                 app,
@@ -965,6 +1147,8 @@ pub fn run() {
             .general_autofill_enabled(false)
             .build()?;
             native.start(app.handle()).map_err(std::io::Error::other)?;
+            team_commands::start(app.handle());
+            private_sync.start(app.handle().clone());
             for label in ["main", "common-dock"] {
                 if let Some(window) = app.get_webview_window(label) {
                     native::install_webview_shortcuts(&window, native.clone())
@@ -1033,9 +1217,16 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let Some(state) = window.try_state::<AppState>() {
-                if window.label() == "settings" {
+                let management_window = match window.label() {
+                    "company-files" => Some(&state.native.management_windows.company),
+                    "settings" => Some(&state.native.management_windows.settings),
+                    "team-management" => Some(&state.native.management_windows.teams),
+                    "user-management" => Some(&state.native.management_windows.users),
+                    _ => None,
+                };
+                if let Some(management_window) = management_window {
                     if matches!(event, tauri::WindowEvent::Destroyed) {
-                        let handle = state.native.settings_window.swap(0, Ordering::AcqRel);
+                        let handle = management_window.swap(0, Ordering::AcqRel);
                         let _ = state.native.shortcut_input.compare_exchange(
                             handle,
                             0,
@@ -1049,10 +1240,7 @@ pub fn run() {
                             Ordering::Acquire,
                         );
                     } else if let Ok(handle) = window.hwnd() {
-                        state
-                            .native
-                            .settings_window
-                            .store(handle.0 as i64, Ordering::Release);
+                        management_window.store(handle.0 as i64, Ordering::Release);
                     }
                 }
             }
@@ -1067,6 +1255,48 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            company_commands::get_company_files,
+            company_commands::prepare_company_upload,
+            company_commands::upload_company_file,
+            company_commands::query_company_upload,
+            company_commands::get_company_transfers,
+            company_commands::clear_company_transfers,
+            company_commands::download_company_file,
+            company_commands::cancel_company_transfer,
+            company_commands::manage_company_file,
+            company_commands::save_company_private_phrase,
+            company_commands::save_company_file_as,
+            private_commands::get_private_status,
+            private_commands::get_private_settings,
+            private_commands::preview_private_sync,
+            private_commands::confirm_private_sync,
+            private_commands::cancel_private_sync_preview,
+            private_commands::pause_private_sync,
+            private_commands::use_local_private_library,
+            private_commands::get_private_conflicts,
+            private_commands::resolve_private_conflict,
+            private_commands::apply_private_settings,
+            private_commands::download_private_materials,
+            private_commands::backup_private_server,
+            team_commands::get_team_status,
+            team_commands::get_team_view,
+            team_commands::team_login,
+            team_commands::team_logout,
+            team_commands::team_refresh,
+            team_commands::team_change_password,
+            team_commands::save_team_phrase,
+            team_commands::save_team_category,
+            team_commands::delete_team_content,
+            team_commands::get_team_recycle,
+            team_commands::restore_team_record,
+            team_commands::purge_team_record,
+            team_commands::prepare_team_phrase,
+            team_commands::preload_team_images,
+            team_commands::copy_team_to_private,
+            team_commands::publish_private_to_team,
+            team_commands::team_admin,
+            team_commands::backup_team_server,
+            team_commands::search_scoped_content,
             get_library,
             search_content,
             save_phrase,
@@ -1115,9 +1345,14 @@ pub fn run() {
             cancel_delivery,
             copy_phrase_text,
             save_settings,
-            preview_import,
-            confirm_import,
-            export_data,
+            transfer::preview_import,
+            transfer::confirm_import,
+            transfer::export_data,
+            transfer::cancel_data_transfer,
+            transfer::get_import_pending,
+            transfer::discard_import,
+            transfer::check_import_result,
+            transfer::refresh_import_preview,
             export_template,
             cache_info,
             clear_cache,
