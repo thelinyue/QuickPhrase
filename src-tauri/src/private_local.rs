@@ -535,10 +535,8 @@ mod tests {
     use super::*;
     #[test]
     fn reopening_during_background_writes_preserves_library() {
-        use std::sync::{
-            atomic::{AtomicBool, Ordering},
-            Arc, Barrier,
-        };
+        use std::sync::{Arc, Barrier};
+        const ROUNDS: i64 = 40;
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).unwrap();
         let root = store
@@ -552,39 +550,40 @@ mod tests {
             })
             .unwrap();
         let writer = Store::open(dir.path()).unwrap();
-        let stop = Arc::new(AtomicBool::new(false));
         let ready = Arc::new(Barrier::new(2));
+        let finished = Arc::new(Barrier::new(2));
         let background = {
-            let stop = stop.clone();
             let ready = ready.clone();
+            let finished = finished.clone();
             let root = root.clone();
             std::thread::spawn(move || -> Result<i64> {
-                ready.wait();
-                let mut commits = 0;
-                while !stop.load(Ordering::Acquire) {
-                    writer
-                        .conn
-                        .execute(
-                            "UPDATE categories SET position=position+1 WHERE id=?1",
-                            [&root],
-                        )
-                        .map_err(db_error)?;
-                    commits += 1;
-                    std::thread::yield_now();
+                for _ in 0..ROUNDS {
+                    let tx =
+                        Transaction::new_unchecked(&writer.conn, TransactionBehavior::Immediate)
+                            .map_err(db_error)?;
+                    tx.execute(
+                        "UPDATE categories SET position=position+1 WHERE id=?1",
+                        [&root],
+                    )
+                    .map_err(db_error)?;
+                    // 每轮真实持有写锁后才开始重开；有限事务验证等待与保留，避免无限抢锁导致饥饿。
+                    ready.wait();
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    tx.commit().map_err(db_error)?;
+                    finished.wait();
                 }
-                Ok(commits)
+                Ok(ROUNDS)
             })
         };
-        ready.wait();
         // 登录、预览会重开仍在同步的账号库，初始化不能在读后升级锁时直接失败。
         let mut opening_error = None;
-        for _ in 0..40 {
+        for _ in 0..ROUNDS {
+            ready.wait();
             if let Err(error) = Store::open(dir.path()) {
-                opening_error = Some(error);
-                break;
+                opening_error.get_or_insert(error);
             }
+            finished.wait();
         }
-        stop.store(true, Ordering::Release);
         let commits = background.join().unwrap().unwrap();
         assert!(opening_error.is_none(), "账号库重开失败：{opening_error:?}");
         let categories = store.categories().unwrap();

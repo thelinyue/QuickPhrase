@@ -1717,6 +1717,8 @@ mod tests {
         );
         let attachment = dir.path().join("原文件.txt");
         fs::write(&attachment, b"actual attachment").unwrap();
+        // Windows CI 的 TEMP 可能使用 8.3 短路径；关联按规范路径保存，往返仍精确核对该源文件。
+        let attachment = attachment.canonicalize().unwrap();
         store
             .add_files("local-files", vec![external_path(&attachment)])
             .unwrap();
