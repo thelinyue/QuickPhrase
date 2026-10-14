@@ -373,7 +373,8 @@ mod window {
                     caret,
                     work,
                     (370.0 * scale).round() as i32,
-                    ((54 + 30 * payload.phrases.len().min(10)) as f64 * scale).round() as i32,
+                    // 与候选 WebView 的32像素行、32像素表头、28像素底栏及2像素边框一致。
+                    ((62 + 32 * payload.phrases.len().min(10)) as f64 * scale).round() as i32,
                     gap,
                 );
                 SetWindowPos(

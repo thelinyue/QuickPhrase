@@ -25,9 +25,20 @@ export function ShortcutCandidatesWindow() {
   if (!payload) return <div className="shortcut-candidates-window" />;
   return <section className="shortcut-candidates-window" aria-label="快捷键候选" onContextMenu={e => e.preventDefault()}>
     <header><strong>{payload.shortcut}</strong><span>{payload.phrases.length} 条候选</span><button aria-label="取消候选" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => void call('cancel_shortcut_candidates').catch(e => setError(String(e)))}>×</button></header>
-    <div ref={list} className="shortcut-candidates-list" role="listbox" aria-label="候选话术">{payload.phrases.map((phrase, index) => <button key={phrase.id} role="option" aria-selected={index === payload.selectedIndex} data-candidate={phrase.id} tabIndex={-1} title={textOf(phrase)} onMouseDown={e => e.preventDefault()} onClick={() => void call('select_shortcut_candidate', { index }).catch(e => setError(String(e)))}>
-      <span className="candidate-number">{index < 10 ? (index + 1) % 10 : ''}</span><span className="candidate-label">{labelOf(phrase)}</span>
-    </button>)}</div>
-    <footer>{error || '数字 / 空格 插入　↑↓ 选择　Enter 发送　Esc 取消'}</footer>
+    <div ref={list} className="shortcut-candidates-list" role="listbox" aria-label="候选话术">{payload.phrases.map((phrase, index) => {
+      // 仅压缩显示用的空白；完整正文保留在提示中，不改变原生发送载荷。
+      const text = textOf(phrase), title = phrase.title.replace(/\s+/g, ' ').trim();
+      const summary = text.replace(/\s+/g, ' ').trim() || labelOf({ ...phrase, title: '' });
+      const hasContent = !!text.trim() || phrase.segments.some(segment => segment.blocks.some(block => block.kind !== 'text'));
+      const preview = hasContent && summary !== title ? summary : '';
+      return <button key={phrase.id} role="option" aria-selected={index === payload.selectedIndex} data-candidate={phrase.id} tabIndex={-1} title={text || summary} onMouseDown={e => e.preventDefault()} onClick={() => void call('select_shortcut_candidate', { index }).catch(e => setError(String(e)))}>
+        <span className="candidate-number">{index < 10 ? (index + 1) % 10 : ''}</span><span className="candidate-content">
+          {title && <span className={`candidate-label${preview ? ' has-preview' : ''}`}>{title}</span>}
+          {preview && <span className="candidate-preview">{preview}</span>}
+          {!title && !preview && <span className="candidate-label">{labelOf(phrase)}</span>}
+        </span>
+      </button>;
+    })}</div>
+    <footer className={error ? 'candidate-error' : undefined}>{error || '数字 / 空格 插入　↑↓ 选择　Enter 发送　Esc 取消'}</footer>
   </section>;
 }

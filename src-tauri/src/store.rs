@@ -1644,7 +1644,10 @@ mod tests {
     fn old_library_and_settings_receive_new_panel_defaults() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).unwrap();
+        assert_eq!(store.settings().unwrap().font_size, 14);
         let mut legacy = serde_json::to_value(store.library().unwrap()).unwrap();
+        // 新库采用14号字体，旧备份中已保存的12号字体仍然保留。
+        legacy["settings"]["fontSize"] = serde_json::json!(12);
         legacy.as_object_mut().unwrap().remove("commonPhrases");
         for key in [
             "showSearch",
@@ -1675,6 +1678,7 @@ mod tests {
             category.as_object_mut().unwrap().remove("background");
         }
         let library: Library = serde_json::from_value(legacy).unwrap();
+        assert_eq!(library.settings.font_size, 12);
         assert!(library.common_phrases.is_empty());
         assert!(library.settings.show_title);
         assert_eq!(library.settings.category_height, 31);

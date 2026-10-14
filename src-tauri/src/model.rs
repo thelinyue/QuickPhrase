@@ -181,7 +181,7 @@ impl Default for Settings {
             show_search: true,
             show_common: true,
             dock_common: true,
-            font_size: 12,
+            font_size: 14,
             expand: true,
             dock: true,
             dock_side: "right".into(),

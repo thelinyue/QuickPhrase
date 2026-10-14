@@ -16,6 +16,35 @@ const library: Library = { categories: [], phrases: ['P1', 'P2'].map(id => ({ id
 const deletions = () => vi.mocked(call).mock.calls.filter(([command]) => command === 'delete_local_content');
 const submit = () => fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
 
+describe('青羽默认主题', () => {
+  const settings = { ...library.settings, theme: 'default' as const, fontSize: 14, titleColor: '#ff5100', phraseCategoryColor: '', fileCategoryColor: '' };
+  const title = () => screen.getByRole('button', { name: '设置 话术标题 字体颜色' }).querySelector('span') as HTMLElement;
+  it('默认色板展示中性标题，切换主题不改写颜色设置', async () => {
+    render(<SettingsWindow library={{ ...library, settings }} initialTab="界面设置" />);
+    const theme = screen.getByRole('combobox', { name: '主题风格' }) as HTMLSelectElement;
+    expect(theme.options.length).toBe(7);
+    expect(theme.selectedOptions[0].textContent).toBe('青羽（默认）');
+    expect(title().style.color).toBe('rgb(38, 49, 59)');
+    fireEvent.change(theme, { target: { value: 'green' } });
+    await waitFor(() => expect(call).toHaveBeenCalled());
+    expect(title().style.color).toBe('rgb(38, 49, 59)');
+    expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...settings, theme: 'green' }, libraryId: undefined });
+    expect(settings.titleColor).toBe('#ff5100');
+  });
+  it('自定义标题色在切换主题后保留，恢复默认继续保存历史标记', async () => {
+    const custom = { ...settings, titleColor: '#0000ff', phraseCategoryColor: '#ff9800' };
+    render(<SettingsWindow library={{ ...library, settings: custom }} initialTab="界面设置" />);
+    expect(title().style.color).toBe('rgb(0, 0, 255)');
+    fireEvent.change(screen.getByRole('combobox', { name: '主题风格' }), { target: { value: 'blue' } });
+    await waitFor(() => expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...custom, theme: 'blue' }, libraryId: undefined }));
+    expect(title().style.color).toBe('rgb(0, 0, 255)');
+    fireEvent.click(screen.getByRole('button', { name: '设置 话术标题 字体颜色' }));
+    fireEvent.click(screen.getByRole('button', { name: '恢复默认颜色' }));
+    await waitFor(() => expect(title().style.color).toBe('rgb(38, 49, 59)'));
+    expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...custom, theme: 'blue', titleColor: '#ff5100' }, libraryId: undefined });
+  });
+});
+
 describe('更换本地数据目录', () => {
   beforeEach(() => {
     vi.mocked(open).mockResolvedValue(null);

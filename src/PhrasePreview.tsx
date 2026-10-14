@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'r
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { call } from './api';
-import { Icon } from './ui';
+import { Icon, phraseTitleColor } from './ui';
 import { contentKey, labelOf, type Phrase } from './types';
 
 interface PreviewPayload { phrase: Phrase; fontSize: number; titleColor: string; theme: string; maxHeight: number }
@@ -82,7 +82,7 @@ export function PhrasePreviewWindow() {
   if (!preview) return null;
   const phrase = preview.phrase;
   return <section className="phrase-preview-window" ref={root} role="region" aria-label="话术正文预览">
-    <header><strong style={{ color: phrase.color && phrase.color !== '#ff5100' ? phrase.color : preview.titleColor || undefined, background: phrase.background || undefined }}>{labelOf(phrase)}</strong>
+    <header><strong style={{ color: phraseTitleColor(phrase.color, preview.titleColor), background: phrase.background || undefined }}>{labelOf(phrase)}</strong>
       {phrase.shortcut && <span className="row-shortcut">{phrase.shortcut.replaceAll('+', ',')}</span>}
     </header>
     <div className="phrase-preview-body"><div className="phrase-preview-content"><PhrasePreviewContent phrase={phrase} /></div></div>

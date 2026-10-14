@@ -170,11 +170,11 @@ try {
     assert.equal(await page.locator('.category-tabs').evaluate(el => getComputedStyle(el).flexWrap), 'wrap');
     assert.ok((await page.locator('.list-area').boundingBox()).height > 400);
   });
-  await check('一级分类右键与右上角菜单共用分类与账号入口，32像素行高、文字留白与直角对齐', async () => {
+  await check('一级分类右键与右上角菜单共用分类与账号入口，32像素行高、文字留白与8像素圆角', async () => {
     const menu = await openMenu(page.getByRole('button', { name: '常用', exact: true }), true);
     assert.deepEqual(menu.map(i => i.text), primaryLabels); assert.equal(menu.find(i => i.text === '删除').enabled, true);
     const geometry = await page.locator('.category-context-menu').evaluate(el => { const style = getComputedStyle(el); return { width: el.getBoundingClientRect().width, radius: style.borderRadius, rows: [...el.querySelectorAll('button')].map(b => ({ height: b.getBoundingClientRect().height, padding: getComputedStyle(b).paddingLeft })) }; });
-    assert.equal(geometry.width, 176); assert.equal(geometry.radius, '0px'); assert.ok(geometry.rows.every(r => r.height === 32 && r.padding === '23px'));
+    assert.equal(geometry.width, 176); assert.equal(geometry.radius, '8px'); assert.ok(geometry.rows.every(r => r.height === 32 && r.padding === '23px'));
     await page.screenshot({ path: path.join(evidence, 'primary-category-menu.png') });
     const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight })); await page.setViewportSize({ width: 300, height: 400 });
     await page.getByRole('button', { name: '常用', exact: true }).evaluate(el => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 298, clientY: 398 })));
@@ -379,20 +379,20 @@ try {
   const hover = async row => { const box = await row.boundingBox(); assert.ok(box); await page.mouse.move(box.x + box.width - 6, box.y + box.height / 2); };
   // 鼠标事件仅由 CDP 发送到隐藏 WebView，不移动系统鼠标，也不改变外部窗口焦点。
   const leaveRows = () => page.mouse.move(315, 12);
-  await check('话术单击选中为图2淡黄，悬停为图1米黄，移出恢复且发送列不跳动', async () => {
+  await check('默认主题选中为薄荷绿，悬停为浅绿，移出恢复且发送列不跳动', async () => {
     const a = page.locator(`.content-list [data-row="${selectedPhrase}"]`), b = page.locator(`.content-list [data-row="${hoveredPhrase}"]`);
     await click(a); await leaveRows();
-    const selected = await appearance(a); assert.equal(selected.background, 'rgb(255, 255, 204)'); assert.equal(selected.send, 'hidden');
+    const selected = await appearance(a); assert.equal(selected.background, 'rgb(232, 242, 237)'); assert.equal(selected.send, 'hidden');
     const normal = await appearance(b); assert.equal(normal.selected, 'false');
     await page.screenshot({ path: path.join(evidence, 'phrase-selected.png') });
-    await hover(b); const hovered = await appearance(b); assert.equal(hovered.background, 'rgb(255, 237, 197)'); assert.equal(hovered.send, 'visible');
-    assert.deepEqual(hovered.positions, normal.positions); assert.equal((await appearance(a)).background, 'rgb(255, 255, 204)');
+    await hover(b); const hovered = await appearance(b); assert.equal(hovered.background, 'rgb(240, 243, 242)'); assert.equal(hovered.send, 'visible');
+    assert.deepEqual(hovered.positions, normal.positions); assert.equal((await appearance(a)).background, 'rgb(232, 242, 237)');
     await page.screenshot({ path: path.join(evidence, 'phrase-selected-and-hovered.png') });
-    await hover(a); assert.equal((await appearance(a)).background, 'rgb(255, 237, 197)');
-    await leaveRows(); const restored = await appearance(a); assert.equal(restored.background, 'rgb(255, 255, 204)'); assert.equal(restored.selected, 'true'); assert.deepEqual(restored.positions, selected.positions);
+    await hover(a); assert.equal((await appearance(a)).background, 'rgb(240, 243, 242)');
+    await leaveRows(); const restored = await appearance(a); assert.equal(restored.background, 'rgb(232, 242, 237)'); assert.equal(restored.selected, 'true'); assert.deepEqual(restored.positions, selected.positions);
     assert.equal((await appearance(b)).background, 'rgba(0, 0, 0, 0)'); assert.equal((await appearance(b)).send, 'hidden');
   });
-  await check('点击空白取消话术与短语选中，切换两处区域不残留黄色', async () => {
+  await check('点击空白取消话术与短语选中，切换两处区域不残留选中底色', async () => {
     const row = page.locator(`.content-list [data-row="${selectedPhrase}"]`), common = page.locator('.main-window [data-common]').first();
     await click(row); await leaveRows(); assert.equal((await appearance(row)).selected, 'true');
     await click(common); await leaveRows(); assert.equal((await appearance(row)).selected, 'false');
@@ -408,13 +408,13 @@ try {
     await setInput(page, '.search-bar input', '色验证');
     await page.waitForFunction(() => document.querySelectorAll('#search-results .content-row').length === 2);
     const a = page.locator('#search-results .content-row').nth(0), b = page.locator('#search-results .content-row').nth(1);
-    await leaveRows(); assert.equal((await appearance(a)).background, 'rgb(255, 255, 204)');
-    await hover(b); assert.equal((await appearance(b)).background, 'rgb(255, 237, 197)'); assert.equal((await appearance(a)).selected, 'true');
+    await leaveRows(); assert.equal((await appearance(a)).background, 'rgb(232, 242, 237)');
+    await hover(b); assert.equal((await appearance(b)).background, 'rgb(240, 243, 242)'); assert.equal((await appearance(a)).selected, 'true');
     await page.screenshot({ path: path.join(evidence, 'search-selected-and-hovered.png') });
     await leaveRows();
     await page.locator('.search-bar input').evaluate(el => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })));
     await page.waitForFunction(() => document.querySelectorAll('#search-results .content-row')[1].getAttribute('aria-selected') === 'true');
-    assert.equal((await appearance(b)).background, 'rgb(255, 255, 204)'); assert.equal((await appearance(a)).background, 'rgba(0, 0, 0, 0)');
+    assert.equal((await appearance(b)).background, 'rgb(232, 242, 237)'); assert.equal((await appearance(a)).background, 'rgba(0, 0, 0, 0)');
     await click(page.getByRole('button', { name: '清空搜索', exact: true }));
   });
   await check('完整备份不合并导入保留重名分类，原始分类和话术不被覆盖', async () => {
@@ -464,7 +464,7 @@ try {
     const sizes = await page.locator('.category-tabs').evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth, lines: new Set(Array.from(el.querySelectorAll('button')).map(b => b.getBoundingClientRect().y)).size })); assert.ok(sizes.scroll <= sizes.width + 1); assert.ok(sizes.lines > 1);
     assert.ok((await page.locator('.content-list').boundingBox()).height > 100); await page.screenshot({ path: path.join(evidence, 'category-auto-wrap.png') });
   });
-  await check('列表设置双键快捷键、删除取消及冲突提示，搜索复用逗号蓝色标签', async () => {
+  await check('列表设置双键快捷键、删除取消及冲突提示，搜索复用逗号格式标签', async () => {
     await click(page.locator('.category-tabs button[title="111（同名 2）"]'));
     const a = page.locator(`.content-list [data-row="${selectedPhrase}"]`);
     const menu = async row => { await row.evaluate(el => { const r = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 100, clientY: r.top + 10 })); }); await click(page.getByRole('menuitem', { name: '自定义快捷键', exact: true })); await page.getByLabel('第一个按键', { exact: true }).waitFor(); };
@@ -567,7 +567,7 @@ try {
     await click(settings.getByRole('button', { name: '界面设置', exact: true }));
     const theme = settings.getByLabel('主题风格', { exact: true }); assert.equal(await theme.locator('option').count(), 7);
     await theme.selectOption('green'); await page.waitForFunction(() => document.documentElement.dataset.theme === 'green'); await dock.waitForFunction(() => document.documentElement.dataset.theme === 'green');
-    assert.equal(await page.locator('.main-titlebar').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(85, 154, 120)');
+    assert.equal(await page.locator('.main-titlebar').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(247, 248, 249)');
     await settings.getByLabel('话术字体大小', { exact: true }).selectOption('16');
     await page.waitForFunction(() => getComputedStyle(document.querySelector('.content-list')).fontSize === '16px');
     await click(settings.getByRole('button', { name: '设置 话术标题 字体颜色', exact: true })); assert.equal(await settings.getByRole('group', { name: '标题字体色色板' }).getByRole('button').count(), 8);
@@ -644,7 +644,7 @@ try {
     await choose(settings, '模糊匹配'); const input = dock.getByRole('textbox', { name: '底部搜索话术、本地文件', exact: true });
     await input.fill('悬停 色验证'); await dock.locator('.dock-search-results [data-row]').first().waitFor(); assert.ok(await dock.locator('.dock-search-results mark').count());
     await input.press('Enter'); await dock.waitForFunction(() => window.__categoryQA.deliveries.length === 3); assert.equal(await dock.evaluate(() => window.__categoryQA.deliveries[2].mode), 'insert'); assert.equal(await input.inputValue(), '悬停 色验证');
-    await choose(settings, '精确匹配'); await dock.getByText('没有找到匹配的内容', { exact: true }).waitFor();
+    await choose(settings, '精确匹配'); await dock.getByText('没有找到匹配的话术', { exact: true }).waitFor();
     await input.fill('悬停色验证'); await dock.locator('.dock-search-results [data-row]').first().waitFor();
     const hit = dock.locator('.dock-search-results [data-row]').first(); const id = await hit.getAttribute('data-row');
     const library = await invoke('get_library'); const contentId = `private:${library.libraryId}:phrase:${id}:${library.privateRevisions[`phrase:${id}`]}`;

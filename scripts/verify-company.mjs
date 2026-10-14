@@ -228,6 +228,8 @@ try {
     await cloud.getByRole('button', { name: '上传时间倒序' }).click(); await cloud.getByRole('button', { name: '上传时间正序' }).waitFor();
     await cloud.getByRole('textbox', { name: '搜索云文件' }).fill('价格表'); await until(async () => await cloud.locator('tbody tr').count() === 1); await cloud.getByRole('textbox', { name: '搜索云文件' }).fill('');
     await cloud.getByRole('button', { name: '上传时间正序' }).click(); await cloud.getByText('共3页 23条').waitFor();
+    await cloud.locator('.company-list').evaluate(el => { el.scrollTop = 0; });
+    assert.ok(await cloud.locator('.company-list').evaluate(el => { const bottom = el.getBoundingClientRect().bottom - 1; return [...el.querySelectorAll('tbody tr')].length === 10 && [...el.querySelectorAll('tbody tr')].every(row => row.getBoundingClientRect().bottom <= bottom); }), '默认窗口应完整显示十条记录及分页');
     await cloud.screenshot({ path: path.join(evidence, 'company-manager.png') });
     await resizeCloud(760, 480);
     assert.ok(await cloud.locator('.company-pagination').evaluate(el => { const b = el.getBoundingClientRect(); return b.bottom <= innerHeight && b.right <= innerWidth; }));

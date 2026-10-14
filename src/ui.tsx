@@ -46,7 +46,12 @@ const paths: Record<string, string> = {
   play: 'M6 3l11 7-11 7z',
 };
 export function Icon({ name }: { name: string }) { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d={paths[name] || paths.document} /></svg>; }
-/** 自定义标签背景为浅色时使用深色文字，避免白底白字；默认标签保持参考图配色。 */
+/** 空值和历史橙色均表示默认标题色，由当前主题的 CSS 接管。
+ * 单条话术自定义色优先于全局自定义色；只解析显示值，不改写库中的旧记录。 */
+export function phraseTitleColor(color?: string, defaultColor?: string) {
+  return [color, defaultColor].find(value => value && value.toLowerCase() !== '#ff5100');
+}
+/** 自定义标签背景为浅色时使用深色文字，避免白底白字；默认标签由当前主题接管。 */
 export function categoryTextColor(background: string) {
   const [r, g, b] = [1, 3, 5].map(i => parseInt(background.slice(i, i + 2), 16));
   return (r * 299 + g * 587 + b * 114) / 1000 > 160 ? '#171717' : '#ffffff';

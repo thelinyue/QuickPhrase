@@ -13,6 +13,25 @@ function Harness({ action }: { action: (id: string, mode: string) => void }) {
   return <>{['A', 'B'].map((id, i) => <PhraseRow key={id} phrase={phrase(id)} index={i} selected={selected === id} busy={busy} settings={settings} onSelect={() => select(id)} onContext={() => {}} onDeliver={mode => { if (!busy) { action(id, mode); setBusy(true); } }} />)}</>;
 }
 describe('话术行发送规则', () => {
+  it.each(['', '#ff5100', '#FF5100'])('默认标题色 %s 由主题接管，不修改话术记录', color => {
+    const item = { ...phrase('B'), color };
+    render(<PhraseRow phrase={item} index={0} selected={false} busy={false} settings={{ ...settings, theme: 'default', titleColor: '#ff5100' }} onSelect={() => {}} onContext={() => {}} onDeliver={() => {}} />);
+    expect((screen.getByText('B', { selector: '.row-title' }) as HTMLElement).style.color).toBe('');
+    expect(item.color).toBe(color);
+  });
+  it('单条自定义色优先于全局色，恢复默认后跟随全局且文件标题由样式接管', () => {
+    const item = { ...phrase('B'), color: '#ca9663', background: '#fff2bc' };
+    const props = { index: 0, selected: false, busy: false, settings: { ...settings, theme: 'default' as const, titleColor: '#0000ff' }, onSelect: vi.fn(), onContext: vi.fn(), onDeliver: vi.fn() };
+    const view = render(<PhraseRow {...props} phrase={item} query="正文" />);
+    const title = () => screen.getByText('B', { selector: '.row-title' }) as HTMLElement;
+    expect(title().style.color).toBe('rgb(202, 150, 99)');
+    expect(title().style.background).toBe('rgb(255, 242, 188)');
+    view.rerender(<PhraseRow {...props} phrase={{ ...item, color: '#ff5100' }} />);
+    expect(title().style.color).toBe('rgb(0, 0, 255)');
+    view.rerender(<PhraseRow {...props} file={{ id: 'F', categoryId: 'files', name: '附件.txt', path: 'C:/附件.txt', position: 0, missing: false }} />);
+    expect((screen.getByText('附件.txt', { selector: '.row-title' }) as HTMLElement).style.color).toBe('');
+    expect(item.color).toBe('#ca9663');
+  });
   it('用户开启双击发送后列表和搜索提交send，文件双击与Enter仍只插入', async () => {
     const action = vi.fn(); const props = { index: 0, selected: false, busy: false, settings: { ...settings, phraseDoubleClick: 'send' as const }, onSelect: vi.fn(), onContext: vi.fn(), onDeliver: action };
     const view = render(<PhraseRow {...props} phrase={phrase('B')} />);

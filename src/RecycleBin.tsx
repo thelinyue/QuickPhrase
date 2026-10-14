@@ -135,17 +135,18 @@ function RecycleContent({ library, team, status, version, onBusy }: { library: L
       </>}
       {(detail || item?.teamRecord) && <button className="recycle-permanent" disabled={!available} onClick={() => void begin('remove')}>永久删除该记录</button>}
     </main></div>
-    {action && <RecycleAction title={action === 'restore' ? `还原${actionItem ? label(actionItem) : '话术'}` : action === 'remove' ? '永久删除' : '清空当前回收站'} busy={busy} error={error} close={() => { if (!busyRef.current) setAction(null); }} submit={submit}><p>来源：{source}</p>{action === 'restore' ? <><p>还原「{actionItem?.label}」到原分类。</p><p>原分类：{restoreLocation || '无分类信息'}</p><p className="recycle-action-hint">{team ? '原分类归属冲突、版本变化或素材缺失时不执行还原，请刷新后重试。' : '原分类不存在或二级分类已移动时重建原位置，保留已有分类的当前设置。'}</p>{!team && <label><input type="checkbox" checked={withoutShortcuts} disabled={busy} onChange={e => setWithoutShortcuts(e.target.checked)} />恢复时不恢复快捷键</label>}</> : <p>{action === 'empty' ? `确定删除此来源的 ${clearIds.length} 条回收记录？包含搜索结果之外的记录，确认后新增的记录保留。` : `确定永久删除「${actionItem?.label || ''}」？`}删除后无法恢复，外部附件源文件保留。</p>}</RecycleAction>}
+    {action && <RecycleAction title={action === 'restore' ? `还原${actionItem ? label(actionItem) : '话术'}` : action === 'remove' ? '永久删除' : '清空当前回收站'} danger={action !== 'restore'} busy={busy} error={error} close={() => { if (!busyRef.current) setAction(null); }} submit={submit}><p>来源：{source}</p>{action === 'restore' ? <><p>还原「{actionItem?.label}」到原分类。</p><p>原分类：{restoreLocation || '无分类信息'}</p><p className="recycle-action-hint">{team ? '原分类归属冲突、版本变化或素材缺失时不执行还原，请刷新后重试。' : '原分类不存在或二级分类已移动时重建原位置，保留已有分类的当前设置。'}</p>{!team && <label><input type="checkbox" checked={withoutShortcuts} disabled={busy} onChange={e => setWithoutShortcuts(e.target.checked)} />恢复时不恢复快捷键</label>}</> : <p>{action === 'empty' ? `确定删除此来源的 ${clearIds.length} 条回收记录？包含搜索结果之外的记录，确认后新增的记录保留。` : `确定永久删除「${actionItem?.label || ''}」？`}删除后无法恢复，外部附件源文件保留。</p>}</RecycleAction>}
     <Feedback message={message} clear={() => setMessage('')} />
   </>;
 }
 
-function RecycleAction({ title, children, busy, error, close, submit }: { title: string; children: ReactNode; busy: boolean; error: string; close: () => void; submit: () => Promise<void> }) {
+/** 危险配色由当前操作决定，不靠标题文字推断；还原与删除继续共用原有提交及关闭保护。 */
+function RecycleAction({ title, children, danger, busy, error, close, submit }: { title: string; children: ReactNode; danger: boolean; busy: boolean; error: string; close: () => void; submit: () => Promise<void> }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     ref.current?.showModal();
     return () => { if (previous?.isConnected) previous.focus(); };
   }, []);
-  return <dialog ref={ref} aria-label={title} className="recycle-action" onCancel={e => { e.preventDefault(); close(); }}><header><img className="app-symbol" src="/shanyu.png" alt="" draggable={false} /><span>{title}</span><button aria-label="关闭确认窗口" disabled={busy} onClick={close}><Icon name="close" /></button></header><form onSubmit={e => { e.preventDefault(); void submit(); }}><div>{children}{error && <p className="validation-error" role="alert">{error}</p>}</div><footer><button type="button" className="secondary-button" disabled={busy} onClick={close}>取消</button><button className="primary-button" disabled={busy}>确定</button></footer></form></dialog>;
+  return <dialog ref={ref} aria-label={title} className={`recycle-action${danger ? ' danger-dialog' : ''}`} onCancel={e => { e.preventDefault(); close(); }}><header><img className="app-symbol" src="/shanyu.png" alt="" draggable={false} /><span>{title}</span><button aria-label="关闭确认窗口" disabled={busy} onClick={close}><Icon name="close" /></button></header><form onSubmit={e => { e.preventDefault(); void submit(); }}><div>{children}{error && <p className="validation-error" role="alert">{error}</p>}</div><footer><button type="button" className="secondary-button" disabled={busy} onClick={close}>取消</button><button className="primary-button" disabled={busy}>确定</button></footer></form></dialog>;
 }

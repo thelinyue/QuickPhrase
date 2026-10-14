@@ -11,6 +11,27 @@ beforeEach(() => { Element.prototype.scrollIntoView=vi.fn(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const payload: ShortcutCandidates = { shortcut:'Q+W',selectedIndex:0,target:{hwnd:1,focus:2,pid:3},phrases:Array.from({length:12},(_,i)=>({id:String(i),rootId:'R',groupId:null,title:`话术${i+1}`,shortcut:'Q+W',position:i,color:'',background:'',segments:[]})) };
 describe('原生候选快照绘制', () => {
+  it('显示正文摘要、合并空白并保留完整提示，空标题和重复正文不重复显示', async () => {
+    const phrases = [
+      { ...payload.phrases[0], title: '问候', segments: [{ blocks: [{ kind: 'text' as const, text: '您好\n  欢迎' }] }, { blocks: [{ kind: 'text' as const, text: '咨询' }] }] },
+      { ...payload.phrases[1], title: '', segments: [{ blocks: [{ kind: 'text' as const, text: '完整正文'.repeat(30) }] }] },
+      { ...payload.phrases[2], title: '相同 内容', segments: [{ blocks: [{ kind: 'text' as const, text: ' 相同\n内容 ' }] }] },
+      { ...payload.phrases[3], title: '附件', segments: [{ blocks: [{ kind: 'file' as const, path: 'a.pdf', name: '说明.pdf' }, { kind: 'image' as const, path: 'a.png', name: '示例.png' }] }] },
+    ];
+    vi.mocked(call).mockImplementation(async name => name === 'get_shortcut_candidates' ? { ...payload, phrases } : null);
+    render(<ShortcutCandidatesWindow />);
+    const rows = await screen.findAllByRole('option');
+    expect(rows[0].querySelector('.candidate-preview')?.textContent).toBe('您好 欢迎 咨询');
+    expect(rows[0].getAttribute('title')).toBe('您好\n  欢迎\n咨询');
+    expect(rows[1].querySelector('.candidate-label')).toBeNull();
+    expect(rows[1].querySelector('.candidate-preview')?.textContent).toBe('完整正文'.repeat(30));
+    expect(rows[2].querySelector('.candidate-preview')).toBeNull();
+    expect(rows[3].querySelector('.candidate-preview')?.textContent).toBe('文件：说明.pdf · 图片：示例.png');
+    await act(async () => handler.fn({ payload: { ...payload, phrases: [phrases[3]], selectedIndex: 0 } }));
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(screen.getByRole('option').getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByText('您好 欢迎 咨询')).toBeNull();
+  });
   it('仅一项也绘制候选，查询后监听选择事件，候选多于十项仍可选', async () => {
     vi.mocked(call).mockImplementation(async name=>name==='get_shortcut_candidates'?{...payload,phrases:payload.phrases.slice(0,1)}:null);
     render(<ShortcutCandidatesWindow />); await screen.findByRole('option',{name:/话术1$/});

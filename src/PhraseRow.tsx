@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react';
-import { FileIcon, Highlight, Icon, useEnterSubmit } from './ui';
+import { FileIcon, Highlight, Icon, phraseTitleColor, useEnterSubmit } from './ui';
 import { usePhraseHover } from './PhrasePreview';
 import { labelOf, textOf, type Phrase, type LinkedFile, type Settings } from './types';
 
@@ -25,7 +25,7 @@ export function PhraseRow({ phrase, file, index, selected, busy, settings, query
     </button>
     <span className="row-icon" title={file ? undefined : hasImage ? '含图片话术' : '文字话术'}>{file ? <FileIcon path={file.path} /> : <Icon name={hasImage ? 'image' : 'document'} />}</span>
     {settings.showNumbers && <span className="row-index">{index + 1}.</span>}
-    {title && (file || settings.showTitle !== false || !phrase || !textOf(phrase).trim() || terms.some(t => title.toLowerCase().includes(t))) && <span className="row-title" title={file ? title : undefined} style={{ color: file ? '#181818' : phrase?.color && phrase.color !== '#ff5100' ? phrase.color : settings.titleColor || undefined, background: phrase?.background || undefined }}><Highlight text={title} query={query} /></span>}
+    {title && (file || settings.showTitle !== false || !phrase || !textOf(phrase).trim() || terms.some(t => title.toLowerCase().includes(t))) && <span className="row-title" title={file ? title : undefined} style={{ color: file ? undefined : phraseTitleColor(phrase?.color, settings.titleColor), background: phrase?.background || undefined }}><Highlight text={title} query={query} /></span>}
     {phrase && (settings.showPreview || matchedFiles) && <span className="row-preview">{settings.showPreview && <Highlight text={textOf(phrase).replace(/\s+/g, ' ')} query={query} />}{matchedFiles && <>{settings.showPreview && ' · '}<Highlight text={matchedFiles} query={query} /></>}</span>}
     {file?.missing && <span className="row-status">文件失效</span>}
     {phrase?.ready === false && <span className="row-status">未缓存</span>}

@@ -102,7 +102,19 @@ try {
     await poll(async()=>(await native(['-Handle',String(candidateHandle)])).visible,'候选窗口显示');
     const actual=await native(['-Handle',String(candidateHandle)]);assert.equal(actual.foreground,hostInfo.hwnd);assert.equal(actual.visible,true);assert.equal(actual.toolWindow,true);assert.equal(actual.appWindow,false);assert.equal(actual.noActivate,true);
     assert.ok(actual.rect.left>=actual.workArea.left&&actual.rect.top>=actual.workArea.top&&actual.rect.right<=actual.workArea.right&&actual.rect.bottom<=actual.workArea.bottom,'候选完整限制在屏幕工作区内');
-    assert.equal((await receipt()).draft,'已有草稿：');await candidates.screenshot({path:path.join(evidence,'candidates-native.png')});await captureScales(candidates,'candidates',370,354);await key(27);await noCandidate();await record('Esc取消保留草稿');
+    // 读取实际原生矩形与WebView视口，防止前端行高更新后原生窗口仍沿用旧高度。
+    for (const count of [12, 1]) {
+      if(count===1)await opened(()=>key(122,['-Ctrl','-Shift']));
+      const geometry=await native(['-Handle',String(candidateHandle)]), scale=await invoke('plugin:window|scale_factor',{},candidates), height=62+32*Math.min(count,10);
+      assert.equal(geometry.rect.right-geometry.rect.left,Math.round(370*scale));assert.equal(geometry.rect.bottom-geometry.rect.top,Math.round(height*scale));
+      await poll(()=>candidates.evaluate(height=>innerWidth===370&&innerHeight===height,height),'候选视口尺寸');
+      assert.equal(await candidates.locator('header').evaluate(el=>el.getBoundingClientRect().height),32);assert.equal(await candidates.locator('footer').evaluate(el=>el.getBoundingClientRect().height),28);
+      assert.equal(await candidates.locator('[data-candidate]').first().evaluate(el=>el.getBoundingClientRect().height),32);
+      receipts.push({name:'实际候选窗口尺寸',count,scale,rect:geometry.rect,width:370,height});
+      assert.equal((await receipt()).draft,'已有草稿：');await candidates.screenshot({path:path.join(evidence,count===12?'candidates-native.png':'candidate-single-native.png')});
+      if(count===12)await captureScales(candidates,'candidates',370,height);
+      await key(27);await noCandidate();await record('Esc取消保留草稿');
+    }
   });
   await test('数字1与0、空格插入；Enter直接发送；超过十项可选择且选择不限时',async()=>{
     for(const [selection,expected] of [[49,'正文1'],[48,'正文10']]){await prepare();await opened();await key(selection);await submitted(`已有草稿：${expected}`);await record(`数字${selection-48}插入`);}
