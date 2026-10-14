@@ -2,6 +2,14 @@
 
 ## 0.2.3 短路径修正与发布复验（2026-10-14）
 
+0.2.3于2026-10-14 21:56:48（北京时间）正式发布：[GitHub Release](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.3)为非草稿、非预发布。来源提交为 `f9bf9c4c5d892440f3289f32f3a30fac25288ae2`，远端标签指向该提交。[主分支CI](https://github.com/thelinyue/QuickPhrase/actions/runs/38573004875)、[标签CI](https://github.com/thelinyue/QuickPhrase/actions/runs/38573926210)和[手动正式发布](https://github.com/thelinyue/QuickPhrase/actions/runs/38573936995)全部成功，旧标签和既有资产未覆盖。
+
+五个资产均通过匿名公开下载：安装器13,855,040字节、ZIP13,296,086字节，以及manifest、SHA256清单和Minisign签名。安装器、ZIP和manifest的SHA256全部匹配清单；ZIP包含QuickPhrase.exe及四份政策文件，程序和安装器版本均为0.2.3、Windows签名状态为NotSigned。manifest来源提交、正式通道、Windows x64、版本说明和资产名已核对，官方latest清单与固定v0.2.3清单完全一致。安装器SHA256为 `8065271CDD662348899A6C2706427DC64BDCE0BC27166672FFBAD7605D875CCC`。
+
+[公开下载核验](../.build/public-release-0.2.3/verification.json)及[产品公钥复验](../.build/release-023-signature.log)通过，签名、manifest与安装器均由产品验证器核对；[默认代理](../.build/release-023-network-default.log)和[备用代理](../.build/release-023-network-backup.log)均下载到0.2.3且与直连官方清单一致，没有执行公开安装器。公共代理单次可用不保证长期稳定。首次部署本版仍需手动安装，后续签名版本才可由应用内升级。
+
+0.2.3本地Tauri Release／Inno重建及[隔离安装6组](../.build/installer-1791985060081/report.json)全部通过，覆盖新装／卸载、免安装转安装／卸载和0.2.0改名升级／卸载，保留数据、原程序目录并清理测试注册及启动项。该安装检查使用本机编译的0.2.3，不将其当作公开下载程序已运行或用户安装版已升级。用户原安装保持运行，真实企业微信、用户在线升级、实体拖拽／选择器、Windows10、系统DPI、多屏及真实局域网／HTTPS代理未验证项仍保留。
+
 0.2.2提交 `98e2ed5` 和标签已推送，但发布工作流 `38571049215` 及两条CI均在Rust测试阶段失败，未创建GitHub Release或公开资产。GitHub Windows运行器的 `RUNNER~1` 与 `runneradmin` 指向同一目录，原先只按文本组件判断，导致素材路径未迁移、旧定位记录显示短名称。保留0.2.2标签和失败记录，不移动标签或覆盖旧资产，修复使用0.2.3继续发布。
 
 新增只读Windows短名称回归在本机先失败后通过，覆盖已有短名称、缺失素材后缀和父目录跳转拒绝。修正使用 `GetLongPathNameW` 展开可访问祖先，保留缺失后缀，不解析链接；旧定位记录统一为实际目录名。素材改写和清理继续按目录组件判断，链接拒绝、外部源文件保护、数据库事务和中断恢复边界保持有效。
