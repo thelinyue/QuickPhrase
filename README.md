@@ -2,6 +2,8 @@
 
 Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.0。
 
+正式下载：[v0.2.0 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.0) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.0/Shanyu-Setup-0.2.0-x64.exe) · [便携 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.0/Shanyu-0.2.0-win-x64.zip)。安装器和程序未代码签名；[Hub 公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
+
 ## 使用
 
 1. 聚焦目标输入区，再打开闪语。

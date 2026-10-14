@@ -16,7 +16,11 @@ Windows WebView2／Rust IPC／SQLite／HTTP／SSE隔离联调通过：[云文件
 
 真实企业微信发送矩阵及Windows11新装／升级／卸载矩阵全部通过，确认来源为负责人在本会话的明确确认；本记录没有代替负责人编造逐项人工日志。本轮未完成Windows10、系统DPI／多显示器、真实局域网／HTTPS代理及旧共享库客户端连接新Hub实测。Windows界面脚本的浏览器缩放截图不能替代系统DPI验收。
 
-发布按先Hub公开镜像、后Windows客户端执行；安装器及ZIP未代码签名，沿用既有SHA256清单和manifest，不移动既有标签或替换既有版本资产。本轮不自动替换用户安装或现有WSL部署。实际远端提交、CI、匿名下载和镜像结果在发布完成后追加。
+发布已按先Hub公开镜像、后Windows客户端完成；安装器及ZIP未代码签名，沿用既有SHA256清单和manifest，既有标签和版本资产保持不变。本轮保留用户安装及现有WSL部署。
+
+客户端正式标签 `v0.2.0` 指向[源码 5eef37c](https://github.com/thelinyue/QuickPhrase/commit/5eef37c297186637e5beaf3db597ea6fa85a5ca2)，[Windows CI](https://github.com/thelinyue/QuickPhrase/actions/runs/38514838822)、[标签 CI](https://github.com/thelinyue/QuickPhrase/actions/runs/38515301502)和[正式发布流程](https://github.com/thelinyue/QuickPhrase/actions/runs/38515330632)全部通过。[正式 Release](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.0)非草稿、非预发布，`releases/latest` 已指向本版。四个资产均匿名下载成功，安装器13,556,614字节、ZIP 12,844,844字节；既有SHA256清单匹配，manifest记录上述源码及 `signed:false`。安装器和程序产品版本均0.2.0，数值文件版本均0.2.0.0，程序本体为x64，均未签名；ZIP包含实际程序及四份政策文档。[下载核验报告](../.build/public-release-0.2.0-1791955485558/report.json)记录范围，本轮仅下载核验，未执行安装。
+
+Hub正式标签 `v0.2.0` 指向[源码 a599ed2](https://github.com/thelinyue/QuickPhrase-Hub/commit/a599ed288ce259b3ea8344382a5405c9123563e8)，[Hub CI](https://github.com/thelinyue/QuickPhrase-Hub/actions/runs/38511529550)及[镜像发布／匿名容器验收](https://github.com/thelinyue/QuickPhrase-Hub/actions/runs/38512060283)通过。[镜像包](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)已公开；最初匿名拉取失败后由负责人设置Public，仅重跑失败验收作业，未重新发布或覆盖镜像。本机另用空Docker凭据配置匿名拉取成功，确认版本0.2.0、`USER 0:0`及 `linux/amd64`；公开README匿名访问和Compose配置已核验。
 
 以下为原有历史记录，保留当时称呼、状态和验收边界。
 
