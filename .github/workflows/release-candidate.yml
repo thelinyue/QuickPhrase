@@ -8,11 +8,6 @@ on:
         description: Candidate SemVer
         required: true
         default: 0.2.1-rc.1
-      confirmWeComAcceptance:
-        description: Confirm current WeCom manual matrix
-        required: true
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -32,9 +27,8 @@ jobs:
       - name: Validate candidate requirements
         env:
           RELEASE_VERSION: ${{ inputs.version }}
-          CONFIRM_WECOM: ${{ inputs.confirmWeComAcceptance }}
         run: |
-          ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel prerelease -GitRef $env:GITHUB_REF -ConfirmWeComAcceptance:($env:CONFIRM_WECOM -eq 'true')
+          ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel prerelease -GitRef $env:GITHUB_REF
 
   quality:
     needs: validate
@@ -82,9 +76,8 @@ jobs:
       - name: Build and package unsigned candidate
         env:
           RELEASE_VERSION: ${{ inputs.version }}
-          CONFIRM_WECOM: ${{ inputs.confirmWeComAcceptance }}
         run: |
-          ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel prerelease -GitRef $env:GITHUB_REF -ConfirmWeComAcceptance:($env:CONFIRM_WECOM -eq 'true')
+          ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel prerelease -GitRef $env:GITHUB_REF
           ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION
           ./scripts/package-release.ps1 -Version $env:RELEASE_VERSION
 

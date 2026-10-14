@@ -55,24 +55,19 @@ test('拒绝 Cargo 源码版本不一致', t => {
 test('手动流程不能省略版本', t => {
   rejected(fixture(t), ['-Channel', 'stable'], '手动发布必须提供版本');
 });
-test('候选保留企业微信人工确认', t => { rejected(fixture(t), candidate, '尚未确认企业微信人工矩阵'); });
+test('候选版本和来源正确即可通过，无需人工确认参数', t => { accepted(fixture(t), candidate); });
 test('候选拒绝非 master 来源', t => {
-  rejected(fixture(t), [...candidate.slice(0, 4), '-GitRef', 'refs/heads/other', '-ConfirmWeComAcceptance'], '候选构建只能从 master');
+  rejected(fixture(t), [...candidate.slice(0, 4), '-GitRef', 'refs/heads/other'], '候选构建只能从 master');
 });
 test('候选拒绝稳定版本', t => {
-  rejected(fixture(t), ['-Version', '0.1.1', '-Channel', 'prerelease', '-GitRef', 'refs/heads/master', '-ConfirmWeComAcceptance'], '候选构建必须使用 rc.N');
-});
-test('候选正确版本和确认可通过', t => { accepted(fixture(t), [...candidate, '-ConfirmWeComAcceptance']); });
-test('正式版保留两项人工确认', t => {
-  const dir = fixture(t); rejected(dir, stable, '尚未确认企业微信人工矩阵');
-  rejected(dir, [...stable, '-ConfirmWeComAcceptance'], '尚未确认 Windows 11 安装矩阵');
+  rejected(fixture(t), ['-Version', '0.1.1', '-Channel', 'prerelease', '-GitRef', 'refs/heads/master'], '候选构建必须使用 rc.N');
 });
 test('正式版拒绝错误标签名称', t => {
-  rejected(fixture(t), [...stable.slice(0, 4), '-GitRef', 'refs/tags/v0.1.2', '-ConfirmWeComAcceptance', '-ConfirmWin11Acceptance'], '正式发布必须从 refs/tags/v0.1.1');
+  rejected(fixture(t), [...stable.slice(0, 4), '-GitRef', 'refs/tags/v0.1.2'], '正式发布必须从 refs/tags/v0.1.1');
 });
-test('正式版要求标签存在且指向当前提交', t => {
+test('正式版无需人工确认参数，仍要求标签存在且指向当前提交', t => {
   const dir = fixture(t); git(dir, ['init', '--quiet', '-b', 'master']); git(dir, ['add', '.']); git(dir, ['commit', '--quiet', '-m', 'fixture']);
-  const args = [...stable, '-ConfirmWeComAcceptance', '-ConfirmWin11Acceptance'];
+  const args = stable;
   rejected(dir, args, '正式标签不存在或没有指向当前源码提交');
   git(dir, ['tag', 'v0.1.1']); accepted(dir, args);
   git(dir, ['commit', '--quiet', '--allow-empty', '-m', 'new source']);

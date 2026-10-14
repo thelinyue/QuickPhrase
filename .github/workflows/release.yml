@@ -1,4 +1,4 @@
-# 正式发布手动检出已有版本标签，保留人工验收和未签名声明。
+# 正式发布手动检出已有版本标签，保留自动检查和未签名声明。
 name: release
 
 on:
@@ -8,16 +8,6 @@ on:
         description: Stable SemVer
         required: true
         default: 0.2.1
-      confirmWeComAcceptance:
-        description: Confirm current WeCom manual matrix
-        required: true
-        type: boolean
-        default: false
-      confirmWin11Acceptance:
-        description: Confirm Windows 11 installation matrix
-        required: true
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -38,10 +28,8 @@ jobs:
       - name: Validate stable release requirements
         env:
           RELEASE_VERSION: ${{ inputs.version }}
-          CONFIRM_WECOM: ${{ inputs.confirmWeComAcceptance }}
-          CONFIRM_WIN11: ${{ inputs.confirmWin11Acceptance }}
         run: |
-          ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel stable -GitRef "refs/tags/v$env:RELEASE_VERSION" -ConfirmWeComAcceptance:($env:CONFIRM_WECOM -eq 'true') -ConfirmWin11Acceptance:($env:CONFIRM_WIN11 -eq 'true')
+          ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel stable -GitRef "refs/tags/v$env:RELEASE_VERSION"
 
   quality:
     needs: validate
@@ -94,10 +82,8 @@ jobs:
       - name: Validate and build unsigned release
         env:
           RELEASE_VERSION: ${{ inputs.version }}
-          CONFIRM_WECOM: ${{ inputs.confirmWeComAcceptance }}
-          CONFIRM_WIN11: ${{ inputs.confirmWin11Acceptance }}
         run: |
-          ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel stable -GitRef "refs/tags/v$env:RELEASE_VERSION" -ConfirmWeComAcceptance:($env:CONFIRM_WECOM -eq 'true') -ConfirmWin11Acceptance:($env:CONFIRM_WIN11 -eq 'true')
+          ./scripts/check-release.ps1 -Version $env:RELEASE_VERSION -Channel stable -GitRef "refs/tags/v$env:RELEASE_VERSION"
           ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION
           ./scripts/package-release.ps1 -Version $env:RELEASE_VERSION
 
