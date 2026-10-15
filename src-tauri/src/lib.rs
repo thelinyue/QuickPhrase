@@ -1,4 +1,5 @@
 mod backup;
+mod common_menu;
 mod company_commands;
 mod data_directory;
 mod delivery;
@@ -1281,6 +1282,26 @@ pub fn run() {
             // Rust 创建的常驻窗口也关闭表单建议，与主窗口和动态编辑窗口一致。
             .general_autofill_enabled(false)
             .build()?;
+            // 短语菜单单独承载，窄底栏不会裁切；只管理短语，不承担聊天投递。
+            let menu = tauri::WebviewWindowBuilder::new(
+                app,
+                "common-menu",
+                tauri::WebviewUrl::App("index.html#common-menu".into()),
+            )
+            .title("短语菜单 · 闪语")
+            .inner_size(144.0, 130.0)
+            .decorations(false)
+            .shadow(true)
+            .resizable(false)
+            .skip_taskbar(true)
+            .always_on_top(true)
+            .focused(false)
+            .visible(false)
+            .general_autofill_enabled(false)
+            .build()?;
+            native
+                .common_menu_handle
+                .store(menu.hwnd()?.0 as i64, Ordering::Release);
             // 无激活浮层可以滚动和关闭，查看正文不会替换当前聊天输入目标。
             tauri::WebviewWindowBuilder::new(
                 app,
@@ -1477,6 +1498,10 @@ pub fn run() {
                 return handler(invoke);
             }
             let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+                common_menu::open_common_menu,
+                common_menu::get_common_menu,
+                common_menu::choose_common_menu,
+                common_menu::close_common_menu,
                 updater::get_update_status,
                 updater::save_update_config,
                 updater::check_update,

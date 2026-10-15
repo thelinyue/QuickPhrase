@@ -71,7 +71,7 @@ pub fn standalone_bounds(
     }
 }
 
-/// 两段高度使用同一 DPI 换算；输入行的物理位置恒为目标底边，不随搜索结果数量跳动。
+/// 两段高度使用同一 DPI 换算；基础短语区从目标底边开始，输入行不随向上搜索覆盖层跳动。
 pub fn bottom_bounds(
     target: &windows::Win32::Foundation::RECT,
     height: i32,
@@ -120,7 +120,7 @@ mod tests {
         }
     }
     #[test]
-    fn search_expansion_keeps_input_at_target_bottom_at_each_dpi() {
+    fn search_expansion_keeps_base_area_at_target_bottom_at_each_dpi() {
         use windows::Win32::Foundation::RECT;
         let target = RECT {
             left: -1200,
@@ -137,6 +137,28 @@ mod tests {
                 );
                 assert_eq!((rect.left, rect.right), (target.left, target.right));
                 assert_eq!(rect.bottom, target.bottom + 58 * dpi as i32 / 96);
+            }
+        }
+    }
+    #[test]
+    fn overlapping_search_preserves_input_position_with_multiline_phrases() {
+        use windows::Win32::Foundation::RECT;
+        let target = RECT {
+            left: -1200,
+            top: 30,
+            right: -200,
+            bottom: 800,
+        };
+        for dpi in [96, 120, 144, 192] {
+            let scale = f64::from(dpi) / 96.0;
+            for common in [0, 28, 55, 82, 150] {
+                let expected = target.bottom + (f64::from(common) * scale).round() as i32;
+                for overlay in [0, 28, 90, 281] {
+                    let above = i32::max(overlay - common, 0);
+                    let rect = bottom_bounds(&target, common + 30 + above, above, dpi);
+                    let input = rect.top + (f64::from(above + common) * scale).round() as i32;
+                    assert!((input - expected).abs() <= 1);
+                }
             }
         }
     }

@@ -25,7 +25,7 @@ it('只有内容完成首帧且原生窗口可见后才保存本机已展示状�
 it('指引显示当前快捷键及点击设置，查看主题不提交投递或示例数据', () => {
   render(<UsageGuideWindow settings={{ searchHotkey: '8', windowHotkey: '9', commonHotkey: '0', phraseDoubleClick: 'send', commonSingleClick: 'insert' } as Settings} />);
   expect(screen.getByText(/当前话术双击设置为直接发送/)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '搜索与快捷键' })); expect(screen.getByText('Alt+8')).toBeTruthy(); expect(screen.getByText(/当前单击设置为添加到输入区/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '搜索与快捷键' })); expect(screen.getByText('Alt+8')).toBeTruthy(); expect(screen.getByText(/单击添加到输入区，双击不重复插入/)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '本地文件与云文件' })); expect(screen.getByText(/单文件需为1字节至128MB/)).toBeTruthy();
   expect(call).not.toHaveBeenCalled();
 });

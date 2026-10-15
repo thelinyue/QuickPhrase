@@ -75,7 +75,7 @@ pub fn get_private_settings(state: State<AppState>) -> Result<Vec<SettingChange>
     let settings = serde_json::to_value(store.settings()?).map_err(db_error)?;
     let mut changes = vec![];
     for ((kind, key), value) in local::local_records(&store)? {
-        if kind == wire::Kind::Setting {
+        if kind == wire::Kind::Setting && key != "commonSingleClick" {
             if let Some(next) = value {
                 if settings[&key] != next {
                     changes.push(SettingChange {
@@ -326,7 +326,7 @@ pub fn apply_private_settings(
     local::scope(&store, Some(&library_id))?;
     let mut settings = serde_json::to_value(store.settings()?).map_err(db_error)?;
     for ((kind, key), value) in local::local_records(&store)? {
-        if kind == wire::Kind::Setting {
+        if kind == wire::Kind::Setting && key != "commonSingleClick" {
             if let Some(v) = value {
                 settings[&key] = v;
             }

@@ -322,8 +322,8 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .search-backdrop { position: absolute; inset: 40px 0 76px; background: #26313b70; z-index: 2; }
 .search-panel { position: absolute; bottom: 10px; width: 100%; max-height: min(298px, calc(100% - 10px)); display: flex; flex-direction: column; background: var(--theme-surface, #fff); z-index: 3; padding-bottom: 7px; }
 .search-panel::after { content: ""; width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 8px solid white; position: absolute; bottom: -8px; left: calc(50% - 8px); }
-.search-panel > header { height: 31px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; color: var(--theme-muted, #8098ae); padding: 0 7px; }
-.search-panel > header button { border: 0; background: var(--theme-surface, white); color: var(--theme-muted, #666); padding: 0 4px; font-size: 16px; }
+.search-panel > header, .dock-result-panel > header { height: 31px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; color: var(--theme-muted, #8098ae); padding: 0 7px; }
+.search-panel > header button, .dock-result-panel > header button { border: 0; background: var(--theme-surface, white); color: var(--theme-muted, #666); padding: 0 4px; font-size: 16px; }
 #search-results { min-height: 0; max-height: 228px; overflow-y: auto; }
 .search-kind { height: 24px; flex-shrink: 0; color: var(--theme-muted, #9babb8); padding: 3px 14px; }
 mark { background: var(--theme-selection); color: inherit; font-weight: 600; }
@@ -341,22 +341,32 @@ mark { background: var(--theme-selection); color: inherit; font-weight: 600; }
 .common-phrase-list button:disabled { opacity: .55; }
 .add-common { flex-shrink: 0; width: 25px; height: 25px; border: 1px solid var(--theme-line, #dde4ec); background: var(--theme-surface, #fff); color: var(--theme-muted, #8b9aa7); padding: 0; font-size: 20px; line-height: 22px; }
 .common-empty { color: var(--theme-muted, #8b9aa7); line-height: 25px; padding: 0 5px; }
-.common-phrases.compact { display: flex; flex-wrap: wrap; align-items: center; align-content: start; gap: 3px 5px; min-height: 28px; max-height: 150px; padding: 2px 3px; border: 1px solid var(--theme-line, #dbe3e9); background: var(--theme-panel, #ebe9e9); overflow-y: auto; scrollbar-width: thin; }
+.common-phrases.compact { display: flex; flex-wrap: wrap; align-items: center; align-content: start; gap: 3px 5px; min-height: 28px; max-height: 150px; padding: 1px 3px; border: 1px solid var(--theme-line, #dbe3e9); background: var(--theme-panel, #ebe9e9); overflow-y: auto; scrollbar-width: thin; }
 .compact .common-phrase-list button { flex-shrink: 0; max-width: min(360px, 100%); height: 24px; padding: 2px 7px; }
-.compact .add-common { order: -1; }
+.compact .add-common { order: -1; width: 24px; height: 24px; }
 .common-dock-toggle { order: -3; height: 24px; width: 22px; padding: 0; background: transparent; border: 0; color: var(--theme-muted, #777); display: grid; place-items: center; }
-.common-label { display: flex; align-items: center; gap: 5px; flex-shrink: 0; border: 0; color: var(--theme-muted, #7e94a5); background: transparent; padding: 0 3px; height: 25px; order: -2; }
+.common-label { display: flex; align-items: center; gap: 5px; flex-shrink: 0; border: 0; color: var(--theme-muted, #7e94a5); background: transparent; padding: 0 3px; height: 24px; order: -2; }
 .common-menu-arrow { border: 4px solid transparent; border-bottom: 0; border-top-color: var(--theme-line, #899ead); }
-.common-dock-content { width: 100%; display: flex; flex-direction: column; max-height: 420px; }
-/* 只让结果区缩小并滚动，历史、输入与短语保留完整高度，禁止原生窗口裁掉底部按钮。 */
-.dock-search-upper { display: flex; flex-direction: column; min-height: 0; flex-shrink: 1; background: var(--theme-surface, #fff); }
+.common-dock-content { width: 100%; display: grid; grid-template-rows: minmax(0, auto) auto; max-height: 420px; }
+/* 搜索覆盖短语而不移除基础布局；浮层更高时向上扩展，输入行固定在基础区域下方。 */
+.dock-common-slot { grid-area: 1 / 1; align-self: end; min-width: 0; }
+.dock-search-upper { grid-area: 1 / 1; align-self: end; z-index: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; max-height: 390px; background: var(--theme-surface, #fff); }
+.dock-search-upper[hidden] { display: none; }
+/* 结果与历史互斥；尖角留在测量区域内，切换面板时输入行屏幕坐标保持不变。 */
+.dock-search-upper:has(.dock-result-panel) { padding-bottom: 10px; background: var(--theme-accent, #4b6479); }
+.dock-result-panel { position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--theme-surface, #fff); }
+.dock-result-panel::after { content: ""; position: absolute; bottom: -8px; left: calc(50% - 8px); border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 8px solid var(--theme-surface, #fff); }
+.dock-search-upper .search-history { flex-wrap: wrap; padding: 2px 4px; }
+.dock-search-upper .search-history-label { order: 0; }
+.dock-search-upper .clear-search-history { order: 1; }
+.dock-search-upper .search-history-items { order: 2; flex-basis: 100%; overflow-x: hidden; }
 .dock-search-tabs { display: flex; flex-shrink: 0; height: 25px; border-top: 1px solid var(--theme-line, #70a7db); border-bottom: 1px solid var(--theme-line, #dbe3e9); }
 .dock-search-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 0 14px; background: transparent; color: var(--theme-title, #315470); }
 .dock-search-tabs button[aria-selected="true"] { border-bottom-color: var(--blue); color: var(--blue); }
 .dock-search-results { background: var(--theme-surface, #fff); min-height: 0; max-height: 228px; overflow-y: auto; font-size: var(--phrase-size); flex-shrink: 1; }
 .dock-search-results .no-results { padding: 8px 14px; }
 .search-history-label { flex-shrink: 0; line-height: 22px; color: var(--theme-muted, #8098ae); }
-.dock-search-bar { gap: 5px; }
+.dock-search-bar { grid-area: 2 / 1; height: 30px; gap: 5px; }
 .dock-search-bar > svg { flex-shrink: 0; margin: 0; }
 .dock-search-bar > button { display: grid; place-items: center; flex-shrink: 0; padding: 0; }
 .dock-search-bar > .dock-search-toggle { width: 22px; height: 24px; border: 0; background: transparent; color: var(--theme-muted, #777); }
@@ -969,3 +979,10 @@ button[role="menuitem"]:focus { filter: none; }
 .account-panel-body > .dialog-fields { overflow: visible; }
 /* 使用名单保持白底，滚动区域取得键盘焦点时不染色；按钮仍沿用统一焦点反馈。 */
 .account-panel-body:has(.member-users), .account-panel-body:has(.member-users):focus-visible { background: var(--theme-surface); }
+
+/* 两处常用短语共享独立菜单窗口，明确覆盖通用弹层圆角，按参考图保持直角和文字列。 */
+.common-menu-window { position: relative; width: 100%; height: 100vh; padding: 0; border: 1px solid var(--theme-line, #ddd); background: var(--theme-panel, #f2f2f2); color: var(--theme-text, #171717); font-size: 12px; border-radius: 0; overflow: hidden; }
+.common-menu-window button { display: block; width: 100%; height: 32px; padding: 0 12px 0 23px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; white-space: nowrap; font-size: inherit; }
+.common-menu-window button:hover, .common-menu-window button:focus-visible { background: var(--theme-hover, #e0eaf4); outline: none; }
+.common-menu-window button:disabled { color: var(--theme-muted, #999); background: transparent; }
+.common-menu-error { position: absolute; inset: auto 0 0; background: var(--theme-panel, #f2f2f2); color: #a4262c; font-size: 11px; padding: 3px; }

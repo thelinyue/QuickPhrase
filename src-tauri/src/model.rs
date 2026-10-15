@@ -151,8 +151,9 @@ pub struct Settings {
     pub pinned: bool,
     /// 一级分类栏的显示设置不改变分类归属；旧设置与旧备份自动使用默认值。
     pub category_height: u16,
-    /// 只在用户主动修改后改变点击行为；旧版设置继续双击插入、短语单击选中。
+    /// 话术双击仍可配置；常用短语始终单击插入。
     pub phrase_double_click: String,
+    /// 仅兼容旧设置、备份和同步协议，不再控制交互或作为待应用偏好显示。
     pub common_single_click: String,
     pub dock_search: bool,
     pub free_resize: bool,
@@ -205,7 +206,7 @@ impl Default for Settings {
             pinned: false,
             category_height: 31,
             phrase_double_click: "insert".into(),
-            common_single_click: "select".into(),
+            common_single_click: "insert".into(),
             dock_search: false,
             free_resize: true,
             remember_dock: true,

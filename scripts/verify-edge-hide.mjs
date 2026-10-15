@@ -39,17 +39,17 @@ const hidden = async side => poll(async () => {
 const expanded = async side => poll(async () => {
   const m = main(await inspect()); return Math.abs(side === 'right' ? m.frame.right - m.work.right : m.frame.left - m.work.left) <= 1 && m;
 }, side + '展开');
-const drag = async side => {
+const drag = async (side, overshoot = 0) => {
   await invoke('window_action', { action: 'show' }); await delay(250);
   await control('raise', { handle: handles.main });
   await control('focus', { handle: handles.main });
   const m = main(await inspect()), box = await page.locator('.main-titlebar .titlebar-spacer').boundingBox(), scale = m.dpi / 96;
   const fromX = Math.round(m.client.x + (box.x + box.width / 2) * scale), fromY = Math.round(m.client.y + (box.y + box.height / 2) * scale);
-  const dx = side === 'right' ? m.work.right - m.frame.right : m.work.left - m.frame.left;
+  const dx = side === 'right' ? m.work.right - m.frame.right + overshoot : m.work.left - m.frame.left - overshoot;
   await control('pointer', { x: fromX, y: fromY });
   assert.equal((await inspect()).windowAtCursor, handles.main, '拖动起点必须命中隔离主窗口');
   await control('drag', { handle: handles.main, fromX, fromY, x: fromX + dx, y: fromY });
-  snapshots.push({ name: 'drag-' + side, state: await inspect() });
+  snapshots.push({ name: 'drag-' + side, overshoot, state: await inspect() });
   await delay(180); await away();
 };
 try {
@@ -78,6 +78,17 @@ try {
       snapshots.push({ name: side, hidden: h, expanded: e }); await away(); await hidden(side);
     });
   }
+  await check('左右拖过屏幕边缘13及40像素仍收起，展开后可见边框对齐工作区', async () => {
+    for (const side of ['right', 'left']) {
+      for (const overshoot of [13, 40]) {
+        await drag(side, overshoot); const h = await hidden(side);
+        await atEdge(side); const e = await expanded(side);
+        assert.equal(e.rect.right - e.rect.left, h.rect.right - h.rect.left);
+        snapshots.push({ name: 'overshoot-' + side, overshoot, hidden: h, expanded: e });
+        await away(); await hidden(side);
+      }
+    }
+  });
   await check('0和1秒等待均生效，显式唤起及输入期间保持展开', async () => {
     await save({ edgeRevealDelay: 1000 }); await atEdge('left'); await delay(650); await hidden('left'); await expanded('left');
     await away(); await hidden('left'); await save({ edgeRevealDelay: 0 }); await atEdge('left'); await expanded('left');

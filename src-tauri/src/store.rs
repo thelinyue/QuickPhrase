@@ -1757,7 +1757,7 @@ mod tests {
         assert!(library.settings.show_title);
         assert_eq!(library.settings.category_height, 31);
         assert_eq!(library.settings.phrase_double_click, "insert");
-        assert_eq!(library.settings.common_single_click, "select");
+        assert_eq!(library.settings.common_single_click, "insert");
         assert!(!library.settings.dock_search);
         assert!(library.settings.free_resize && library.settings.remember_dock);
         assert_eq!(library.settings.theme, "default");

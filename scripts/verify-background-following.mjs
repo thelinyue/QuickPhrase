@@ -125,8 +125,8 @@ try {
       const setInput = value => dock.locator('.search-bar input').evaluate((el, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); }, value);
       const anchored = async () => {
         const state = await inspect(), bar = windowOf(state, 'bar'), target = state.windows[0];
-        const geometry = await dock.evaluate(() => ({ offset: document.querySelector('.dock-search-bar').getBoundingClientRect().top, height: document.querySelector('.common-dock-content').getBoundingClientRect().height }));
-        return Math.abs(bar.frame.top + Math.round(geometry.offset * bar.dpi / 96) - target.frame.bottom) <= 1 && bar.clientRect.bottom - bar.clientRect.top >= Math.ceil(geometry.height * bar.dpi / 96) && state;
+        const geometry = await dock.evaluate(() => ({ offset: document.querySelector('.dock-search-bar').getBoundingClientRect().top, height: document.querySelector('.common-dock-content').getBoundingClientRect().height, common: document.querySelector('.dock-common-slot').getBoundingClientRect().height }));
+        return Math.abs(bar.frame.top + Math.round((geometry.offset - geometry.common) * bar.dpi / 96) - target.frame.bottom) <= 1 && bar.clientRect.bottom - bar.clientRect.top >= Math.ceil(geometry.height * bar.dpi / 96) && state;
       };
       await poll(anchored, '空搜索锚点');
       await setInput('定位验证'); await dock.locator('.dock-search-results .content-row').waitFor();

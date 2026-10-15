@@ -36,7 +36,7 @@ function DockIllustration({ settings }: { settings: Settings }) {
     <div className="dock-preview" data-side={settings.dockSide} role="img" aria-label={`闪语位于聊天窗口${side}${bottom ? `，底部显示${bottom}` : '，底部面板已关闭'}`}>
       <div className="dock-preview-sidebar" aria-hidden="true"><strong>闪语</strong><i /><i /><i /><i /></div>
       <div className="dock-preview-chat" aria-hidden="true"><strong>聊天窗口</strong><div className="dock-preview-messages"><i /><i /></div><span>输入区</span></div>
-      {bottom && <div className="dock-preview-bottom" aria-hidden="true">{settings.dockSearch && <div className="dock-preview-search">搜索</div>}{settings.dockCommon && <div className="dock-preview-common">常用短语</div>}</div>}
+      {bottom && <div className="dock-preview-bottom" aria-hidden="true">{settings.dockCommon && <div className="dock-preview-common">常用短语</div>}{settings.dockSearch && <div className="dock-preview-search">搜索</div>}</div>}
     </div><p className="settings-hint">底部搜索与常用短语可在“界面设置”中开关。</p>
   </figure>;
 }
@@ -120,7 +120,6 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '', in
     <Row label="搜索匹配方式">{radio('searchMode', 'fuzzy', '模糊匹配')}{radio('searchMode', 'exact', '精确匹配')}</Row>
     <Row label="搜索结果使用后">{radio('exitSearch', true, '退出搜索结果界面')}{radio('exitSearch', false, '保留搜索结果界面')}</Row>
     <Row label="话术双击" hint="保留目标现有草稿；直接发送作用于输入区的最终内容。">{radio('phraseDoubleClick', 'insert', '输入到编辑区')}{radio('phraseDoubleClick', 'send', '直接发送')}</Row>
-    <Row label="常用短语单击" hint="默认单击选中、双击插入。单击改为插入或发送后，双击不重复提交。">{radio('commonSingleClick', 'select', '仅选中')}{radio('commonSingleClick', 'insert', '输入到编辑区')}{radio('commonSingleClick', 'send', '直接发送')}</Row>
     <Row label="悬浮时贴边自动隐藏">{checkbox('edgeAutoHide', '开启', '悬浮时贴边自动隐藏')}</Row>
     <Row label="贴边隐藏防误触" hint="独立主窗口贴屏幕左右边缘时隐藏，鼠标停留指定时长后展开。">{radio('edgeRevealDelay', 0, '不等待', !settings.edgeAutoHide)}{radio('edgeRevealDelay', 500, '等0.5秒', !settings.edgeAutoHide)}{radio('edgeRevealDelay', 1000, '等1秒', !settings.edgeAutoHide)}</Row>
     <Row label="分段发送间隔" hint="两段之间的间隔，默认500毫秒。"><div className="interval-presets">{radio('interval', 100, <span>间隔小<small>（100毫秒）</small></span>)}{radio('interval', 500, <span>间隔正常<small>（500毫秒）</small></span>)}{radio('interval', 1000, <span>间隔大<small>（1000毫秒）</small></span>)}</div><label>自定义{number('interval', '自定义分段间隔', 0, 10000)}毫秒</label></Row></div>;

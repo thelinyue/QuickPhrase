@@ -29,7 +29,7 @@ export function UsageGuideWindow({ settings }: { settings?: Settings }) {
   </> : topic === '搜索与快捷键' ? <>
     <h2>更快找到常用内容</h2><p>按 <kbd>{hotkey('searchHotkey', 'Q')}</kbd> 打开并聚焦搜索，输入标题或正文关键词；上下键选择结果，Enter 添加到输入区，Esc 退出搜索。</p>
     <p><kbd>{hotkey('windowHotkey', 'W')}</kbd> 显示／隐藏侧栏，<kbd>{hotkey('commonHotkey', 'E')}</kbd> 定位到常用短语。快捷键可在“快捷键”设置页修改。</p>
-    <h3>常用短语</h3><p>点击“＋”添加不超过16字的单行短语，右键修改、删除或排序。当前单击设置为{settings?.commonSingleClick === 'insert' ? '添加到输入区' : settings?.commonSingleClick === 'send' ? '直接发送' : '仅选中，双击插入'}；Enter 直接发送。</p>
+    <h3>常用短语</h3><p>点击“＋”添加不超过16字的单行短语，右键修改、删除或排序。单击添加到输入区，双击不重复插入；Enter 直接发送。</p>
     <h3>话术快捷键</h3><p>可在话术右键菜单设置专用快捷键，也可在设置中开启序号快捷键。同键候选用上下键选择，空格插入，Enter 直接发送，Esc 取消。目标变化时取消候选。</p>
     <button className="secondary-button" onClick={() => void openWindow('settings', '', '', '快捷键').catch(e => setMessage(String(e)))}>打开快捷键设置</button>
   </> : topic === '窗口吸附' ? <>

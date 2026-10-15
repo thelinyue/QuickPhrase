@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { Menu, type MenuItemOptions } from '@tauri-apps/api/menu';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { Menu } from '@tauri-apps/api/menu';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
 import { listen } from '@tauri-apps/api/event';
-import { confirm } from '@tauri-apps/plugin-dialog';
+import { useCommonMenu } from './CommonMenu';
 import { call, closeWindow, openWindow, useTeams } from './api';
 import { Icon, Titlebar, useEnterSubmit } from './ui';
 import { PhraseRow } from './PhraseRow';
@@ -22,17 +22,16 @@ export function commonNavigationIndex(rects: Pick<DOMRect, 'left' | 'top' | 'wid
 }
 
 /** 两种布局共用短语和操作；新增按钮与短语一起自适应换行，空列表不占提示行。
- * 横条使用原生菜单，避免菜单被窄窗口裁切。
- * 默认单击选中、双击插入；用户配置单击插入或发送后，双击不会再重复提交。 */
+ * 管理菜单由独立窗口承载，避免被窄底栏裁切。
+ * 两处均单击插入；双击的第二次 click 和 dblclick 不再投递。 */
 export function CommonPhraseBar({ library, compact = false, busy, onDeliver, onError, onHide }: {
   library: Library; compact?: boolean; busy: boolean;
   onDeliver: (id: string, mode: 'insert' | 'send', triggerKey?: number) => void; onError: (message: string) => void; onHide?: () => void;
 }) {
-  const [selected, setSelected] = useState(''); const menuRef = useRef<Menu | null>(null); const barRef = useRef<HTMLElement>(null);
+  const [selected, setSelected] = useState(''); const barRef = useRef<HTMLElement>(null);
+  const openMenu = useCommonMenu(library, onError);
   const send = (id: string, mode: 'insert' | 'send', triggerKey?: number) => { const key = library.libraryId ? `private:${library.libraryId}:common:${id}:${library.privateRevisions?.[`common:${id}`] || 0}` : id; if (triggerKey === undefined) onDeliver(key, mode); else onDeliver(key, mode, triggerKey); };
-  const singleClick = library.settings.commonSingleClick || 'select';
   const enterSubmit = useEnterSubmit();
-  useEffect(() => () => { void menuRef.current?.close().catch(() => {}); }, []);
   // 选中只属于当前短语栏；点击其他区域或移出焦点后恢复普通背景，避免残留黄色。
   useEffect(() => {
     const clear = (e: globalThis.MouseEvent) => { if (!(e.target as Element).closest('[data-common]') || !barRef.current?.contains(e.target as Node)) setSelected(''); };
@@ -43,23 +42,21 @@ export function CommonPhraseBar({ library, compact = false, busy, onDeliver, onE
   async function popup(e: MouseEvent, phrase?: CommonPhrase) {
     e.preventDefault(); e.stopPropagation();
     if (phrase) setSelected(phrase.id);
-    const items: MenuItemOptions[] = phrase ? [
-      { text: '添加到输入区', enabled: !busy, action: () => send(phrase.id, 'insert') },
-      { text: '直接发送', enabled: !busy, action: () => send(phrase.id, 'send') },
-      { text: '修改这个短语', action: () => run(() => openWindow('common-editor', phrase.id)) },
-      { text: '删除这个短语', action: () => run(async () => { if (await confirm(`删除「${phrase.text}」？`, { title: '删除常用短语', kind: 'warning' })) await call('delete_item', { id: phrase.id, kind: 'common' }); }) },
-    ] : [];
-    items.push({ text: '新增个人短语', action: () => run(add) }, { text: '快速排序', enabled: library.commonPhrases.length > 1, action: () => run(() => openWindow('common-sort')) });
-    await menuRef.current?.close();
-    const menu = await Menu.new({ items }); menuRef.current = menu;
-    await menu.popup(new LogicalPosition(e.clientX, e.clientY));
+    const trigger = e.currentTarget as HTMLElement;
+    const box = trigger.getBoundingClientRect();
+    const anchored = e.type === 'click' || (e.clientX === 0 && e.clientY === 0);
+    await openMenu(trigger, anchored ? box.left : e.clientX, anchored ? box.bottom : e.clientY, phrase);
   }
-  return <section ref={barRef} className={`common-phrases${compact ? ' compact' : ''}`} style={{ maxHeight: compact ? Math.min(150, library.settings.dockCommonRows ? library.settings.dockCommonRows * 27 + 6 : 150) : library.settings.commonHeight || 144 }} aria-label="常用短语" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget) || !e.relatedTarget?.closest('[data-common]')) setSelected(''); }} onContextMenu={e => run(() => popup(e))}>
+  return <section ref={barRef} className={`common-phrases${compact ? ' compact' : ''}`} style={{ maxHeight: compact ? Math.min(150, library.settings.dockCommonRows ? library.settings.dockCommonRows * 27 + 1 : 150) : library.settings.commonHeight || 144 }} aria-label="常用短语" tabIndex={-1} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget) || !e.relatedTarget?.closest('[data-common]')) setSelected(''); }} onContextMenu={e => run(() => popup(e))}>
     {compact && <button className="common-dock-toggle" title="隐藏短语" aria-label="隐藏短语" disabled={busy || !onHide} onClick={onHide}><Icon name="eye" /></button>}
-    {compact && <button className="common-label" title="常用短语菜单" onClick={e => run(() => popup(e))}>常用短语<span className="common-menu-arrow" /></button>}
+    {compact && <button className="common-label" aria-label="常用短语菜单" title="常用短语菜单" onClick={e => run(() => popup(e))}>常用短语<span className="common-menu-arrow" /></button>}
     <div className="common-phrase-list" role="listbox" aria-label="常用短语列表">{library.commonPhrases.map(phrase => <button key={phrase.id} role="option" aria-selected={selected === phrase.id} data-common={phrase.id} title={phrase.text} disabled={busy}
-      onClick={e => { setSelected(phrase.id); if (!busy && singleClick !== 'select' && e.detail < 2) send(phrase.id, singleClick); }} onDoubleClick={() => { if (!busy && singleClick === 'select') send(phrase.id, 'insert'); }} onContextMenu={e => run(() => popup(e, phrase))}
+      onClick={e => { setSelected(phrase.id); if (!busy && e.detail < 2) send(phrase.id, 'insert'); }} onContextMenu={e => run(() => popup(e, phrase))}
       onFocus={() => setSelected(phrase.id)} onKeyDown={e => {
+        if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+          e.preventDefault(); const box = e.currentTarget.getBoundingClientRect();
+          const trigger = e.currentTarget; run(() => openMenu(trigger, box.left, box.bottom, phrase)); return;
+        }
         if (e.nativeEvent.isComposing || e.keyCode === 229 || e.altKey || e.ctrlKey || e.shiftKey || e.metaKey) return;
         if (e.key === 'Enter') { e.preventDefault(); if (!busy && enterSubmit()) send(phrase.id, 'send', 13); }
         if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
@@ -100,7 +97,10 @@ export function CommonDockWindow({ library }: { library: Library }) {
   const content = useRef<HTMLElement>(null);
   const [query, setQuery] = useState(''); const [storedResults, setResults] = useState<SearchHit[]>([]); const [index, setIndex] = useState(0); const [searching, setSearching] = useState(false);
   const [collapsed, setCollapsed] = useState(false); const [kind, setKind] = useState<'phrase' | 'file'>('phrase');
+  const [searchActive, setSearchActive] = useState(false);
   const upperRef = useRef<HTMLDivElement>(null);
+  const commonRef = useRef<HTMLDivElement>(null); const resultMenuOpen = useRef(false);
+  const overlayOpen = searchActive && library.settings.dockSearch && !collapsed;
   const composing = useRef(false); const [compositionVersion, endComposition] = useState(0); const menuRef = useRef<Menu | null>(null);
   // 状态通知不等于内容更新；只比较内容与已有版本，成员同步时间变化不清空列表。
   const searchScope = JSON.stringify([library.libraryId, teamStatus.server, teamStatus.user?.id, teamStatus.sessionEpoch, teamStatus.user?.mustChangePassword, teamStatus.memberPhraseSync, members?.subscription, teamStatus.teams.map(t => [t.teamId, t.membershipVersion, t.lifecycleVersion])]);
@@ -118,7 +118,14 @@ export function CommonDockWindow({ library }: { library: Library }) {
   const chooseHistory = (value: string) => { composing.current = false; setQuery(value); setResults([]); setIndex(0); setSearching(true); repeatSearch(v => v + 1); searchRef.current?.focus(); };
   const previousLibrary = useRef(library.libraryId);
   useEffect(() => { if (previousLibrary.current !== library.libraryId) { previousLibrary.current = library.libraryId; clearSearch(); } }, [library.libraryId]);
-  useEffect(() => { if (!library.settings.dockSearch) { clearSearch(); setCollapsed(false); } }, [library.settings.dockSearch]);
+  useEffect(() => { if (!library.settings.dockSearch) { clearSearch(); setCollapsed(false); setSearchActive(false); } }, [library.settings.dockSearch]);
+  useEffect(() => {
+    const blur = () => { if (!resultMenuOpen.current) setSearchActive(false); };
+    // OS 切窗保留 DOM activeElement，再点原输入框时不一定重新触发 focusin。
+    const focus = () => { if (document.activeElement?.closest('.dock-search-upper,.dock-search-bar')) setSearchActive(true); };
+    window.addEventListener('blur', blur); window.addEventListener('focus', focus);
+    return () => { window.removeEventListener('blur', blur); window.removeEventListener('focus', focus); };
+  }, []);
   useEffect(() => () => { void menuRef.current?.close().catch(() => {}); }, []);
   useEffect(() => {
     if (collapsed || !library.settings.dockSearch || !query.trim() || composing.current) { if (!query.trim()) setResults([]); return; }
@@ -134,15 +141,17 @@ export function CommonDockWindow({ library }: { library: Library }) {
   }, [query, searchScope, searchStamp, library.settings.dockSearch, compositionVersion, searchVersion, collapsed]);
   const memberIds = JSON.stringify(results.filter(h => h.phrase?.contentRef?.source === 'member').map(h => h.id));
   useEffect(() => { const ids = JSON.parse(memberIds) as string[]; if (ids.length && !teamStatus.offline) void call('download_member_materials', { ids, attachments: false }).catch(() => {}); }, [memberIds, teamStatus.offline]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = content.current?.querySelector('.common-dock-content'); if (!element) return;
-    // Flex 先为输入、历史和短语留出空间，结果区消化剩余高度；同时报告向上展开量，原生窗口才能固定输入行。
-    const observer = new ResizeObserver(() => {
+    // 两层占同一个网格：只把浮层超出短语的部分报告为向上展开量，搜索输入的屏幕坐标不变。
+    const measure = () => {
       const height = Math.max(28, Math.min(420, Math.ceil(element.getBoundingClientRect().height)));
-      const aboveHeight = Math.min(height - 28, Math.ceil(upperRef.current?.getBoundingClientRect().height || 0));
+      const aboveHeight = Math.max(0, Math.min(height - 28, Math.ceil((upperRef.current?.getBoundingClientRect().height || 0) - (commonRef.current?.getBoundingClientRect().height || 0))));
       void call('set_common_dock_height', { height, aboveHeight }).catch(e => setMessage(String(e)));
-    });
-    observer.observe(element); if (upperRef.current) observer.observe(upperRef.current);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element); if (upperRef.current) observer.observe(upperRef.current); if (commonRef.current) observer.observe(commonRef.current);
+    measure();
     return () => observer.disconnect();
   }, []);
   useEffect(() => { let disposed = false; let off: (() => void) | undefined;
@@ -151,7 +160,7 @@ export function CommonDockWindow({ library }: { library: Library }) {
   }, []);
   useEffect(() => {
     let disposed = false; let off: (() => void) | undefined;
-    void listen<string>('ui-action', e => { if (e.payload === 'common') (content.current?.querySelector<HTMLElement>('[data-common][aria-selected="true"]') || content.current?.querySelector<HTMLElement>('[data-common],.add-common'))?.focus(); }).then(un => { if (disposed) un(); else off = un; });
+    void listen<string>('ui-action', e => { if (e.payload === 'common') { setSearchActive(false); (content.current?.querySelector<HTMLElement>('[data-common][aria-selected="true"]') || content.current?.querySelector<HTMLElement>('[data-common],.add-common'))?.focus(); } }).then(un => { if (disposed) un(); else off = un; });
     return () => { disposed = true; off?.(); };
   }, []);
   useEffect(() => { if (message) { const timer = setTimeout(() => setMessage(''), 6000); return () => clearTimeout(timer); } }, [message]);
@@ -173,7 +182,9 @@ export function CommonDockWindow({ library }: { library: Library }) {
     const usage = searchUsage();
     await menuRef.current?.close();
     const menu = await Menu.new({ items: [{ text: '添加到输入区', enabled: !busy, action: () => void deliver(hit.privateKey || hit.id, 'insert', hit.kind, undefined, usage) }, { text: '直接发送', enabled: !busy, action: () => void deliver(hit.privateKey || hit.id, 'send', hit.kind, undefined, usage) }, ...(hit.phrase?.contentRef?.source === 'member' ? [{ text: '下载全部素材', enabled: !busy && !teamStatus.offline, action: () => { void call('download_member_materials', { ids: [hit.id], attachments: true }).catch(e => setMessage(String(e))); } }] : [])] }); menuRef.current = menu;
-    await menu.popup(new LogicalPosition(e.clientX, e.clientY));
+    resultMenuOpen.current = true;
+    try { await menu.popup(new LogicalPosition(e.clientX, e.clientY)); }
+    finally { resultMenuOpen.current = false; if (!document.hasFocus()) setSearchActive(false); }
   }
   async function hideCommon() {
     if (hidingRef.current) return; hidingRef.current = true; setHiding(true);
@@ -187,23 +198,35 @@ export function CommonDockWindow({ library }: { library: Library }) {
     composing.current = false;
     if (collapsed) { setResults([]); setIndex(0); setSearching(!!query.trim()); }
     setCollapsed(value => !value);
+    setSearchActive(collapsed);
     if (collapsed) requestAnimationFrame(() => searchRef.current?.focus());
   }
-  return <section className="client-window common-dock" ref={content} onContextMenu={e => e.preventDefault()}><div className="common-dock-content">
-    <div className="dock-search-upper" ref={upperRef} id="dock-search-panel">
-    {library.settings.dockSearch && !collapsed && query.trim() && <>
+  return <section className="client-window common-dock" ref={content} onContextMenu={e => e.preventDefault()} onFocusCapture={e => {
+    setSearchActive(!!(e.target as Element).closest('.dock-search-upper,.dock-search-bar'));
+  }} onBlurCapture={e => {
+    if (e.relatedTarget && !(e.relatedTarget as Element).closest('.dock-search-upper,.dock-search-bar')) setSearchActive(false);
+  }} onPointerDownCapture={e => {
+    const target = e.target as Element;
+    if (!target.closest('.dock-search-upper,.dock-search-bar')) setSearchActive(false);
+    else { setSearchActive(!collapsed); if (!target.closest('button,input,[tabindex]')) e.preventDefault(); }
+  }}><div className="common-dock-content">
+    <div className="dock-common-slot" ref={commonRef}>
+      {library.settings.dockCommon && <CommonPhraseBar library={library} compact busy={busy || hiding} onDeliver={(id, mode, triggerKey) => { setSearchActive(false); void deliver(id, mode, 'common', triggerKey); }} onError={setMessage} onHide={() => void hideCommon()} />}
+    </div>
+    <div className="dock-search-upper" ref={upperRef} id="dock-search-panel" hidden={!overlayOpen}>
+    {overlayOpen && query.trim() && <section className="dock-result-panel" aria-label="搜索结果">
+      <header><span>搜索结果</span><button aria-label="关闭底部搜索结果" onClick={() => { clearSearch(); searchRef.current?.focus(); }}>×</button></header>
       <div className="dock-search-tabs" role="tablist" aria-label="底部搜索类型">{(['phrase', 'file'] as const).map(value => <button key={value} role="tab" id={`dock-tab-${value}`} aria-selected={kind === value} aria-controls="dock-search-results" tabIndex={kind === value ? 0 : -1} onClick={() => { setKind(value); setIndex(0); }} onKeyDown={e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = e.key === 'Home' ? 'phrase' : e.key === 'End' ? 'file' : kind === 'phrase' ? 'file' : 'phrase'; setKind(next); setIndex(0); document.getElementById(`dock-tab-${next}`)?.focus(); } }}>{value === 'phrase' ? '话术' : '本地文件'}</button>)}</div>
       <div className="dock-search-results" id="dock-search-results" role="listbox" aria-label="底部搜索结果" aria-busy={searchPending && !searchFailed}>{results.length ? results.map((hit, i) => <PhraseRow key={`${hit.teamId || ''}:${hit.kind}:${hit.id}`} sourceLabel={hit.sourceLabel} phrase={hit.phrase || undefined} file={hit.file || undefined} index={i} settings={library.settings} selected={i === index} query={query} busy={busy || searchPending} onSelect={() => setIndex(i)} onDeliver={(mode, triggerKey) => void deliver(hit.privateKey || hit.id, mode, hit.kind, triggerKey, searchUsage())} onContext={e => void resultMenu(e, hit).catch(e => setMessage(String(e)))} />) : <div className="no-results">{searchFailed ? '搜索失败，请重新输入关键词' : searchPending ? '正在搜索…' : `没有找到匹配的${kind === 'phrase' ? '话术' : '本地文件'}`}</div>}</div>
-    </>}
-    {library.settings.dockSearch && !collapsed && <SearchHistoryBar label="历史搜索" items={history.items} clearing={history.clearing} onSelect={chooseHistory} onClear={() => void history.clear()} />}
+    </section>}
+    {overlayOpen && !query.trim() && <SearchHistoryBar label="历史搜索" items={history.items} clearing={history.clearing} onSelect={chooseHistory} onClear={() => void history.clear()} />}
     </div>
-    {library.settings.dockSearch && <div className="search-bar dock-search-bar"><button className="dock-search-toggle" aria-label={collapsed ? '展开底部搜索' : '收起底部搜索'} title={collapsed ? '展开底部搜索' : '收起底部搜索'} aria-expanded={!collapsed} aria-controls="dock-search-panel" onClick={toggleSearch}><Icon name={collapsed ? 'eye-off' : 'eye'} /></button>{!collapsed && <><Icon name="search" /><input ref={searchRef} data-shortcut-search aria-label="底部搜索话术、本地文件" placeholder="搜索话术、本地文件" value={query} onChange={e => { setQuery(e.target.value); setIndex(0); setSearching(!!e.target.value.trim()); }} onCompositionStart={() => { composing.current = true; setSearching(true); }} onCompositionEnd={e => { composing.current = false; setQuery(e.currentTarget.value); endComposition(v => v + 1); }} onKeyDown={e => {
+    {library.settings.dockSearch && <div className="search-bar dock-search-bar"><button className="dock-search-toggle" aria-label={collapsed ? '展开底部搜索' : '收起底部搜索'} title={collapsed ? '展开底部搜索' : '收起底部搜索'} aria-expanded={!collapsed} aria-controls="dock-search-panel" onClick={toggleSearch}><Icon name={collapsed ? 'eye-off' : 'eye'} /></button>{!collapsed && <><Icon name="search" /><input ref={searchRef} data-shortcut-search aria-label="底部搜索话术、本地文件" placeholder="搜索话术、本地文件" value={query} onChange={e => { setSearchActive(true); setQuery(e.target.value); setIndex(0); setSearching(!!e.target.value.trim()); }} onCompositionStart={() => { composing.current = true; setSearching(true); }} onCompositionEnd={e => { composing.current = false; setQuery(e.currentTarget.value); endComposition(v => v + 1); }} onKeyDown={e => {
       if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setIndex(i => Math.max(0, Math.min(results.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))); requestAnimationFrame(() => document.querySelector('.dock-search-results .selected')?.scrollIntoView({ block: 'nearest' })); }
       if (e.key === 'Enter' && query.trim() && !searchPending && results[index] && enterSubmit()) { e.preventDefault(); const hit = results[index]; void deliver(hit.privateKey || hit.id, 'insert', hit.kind, 13, searchUsage()); }
-      if (e.key === 'Escape') { e.preventDefault(); clearSearch(); }
+      if (e.key === 'Escape') { e.preventDefault(); clearSearch(); setSearchActive(false); }
     }} />{query && <button className="dock-search-clear" aria-label="清空底部搜索" onClick={() => { clearSearch(); searchRef.current?.focus(); }}>×</button>}</>}</div>}
-    {library.settings.dockCommon && <CommonPhraseBar library={library} compact busy={busy || hiding} onDeliver={(id, mode, triggerKey) => void deliver(id, mode, 'common', triggerKey)} onError={setMessage} onHide={() => void hideCommon()} />}
     </div>
     {message && <span className="dock-status" role="status" title={message} onClick={() => setMessage('')}>{message}</span>}
   </section>;

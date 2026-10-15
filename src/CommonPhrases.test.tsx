@@ -15,7 +15,7 @@ function bar(mode: Settings['commonSingleClick'] = 'select', compact = false, bu
   render(<CommonPhraseBar library={library} compact={compact} busy={busy} onDeliver={onDeliver} onError={vi.fn()} />);
   return onDeliver;
 }
-describe('常用短语的可配置点击行为', () => {
+describe('常用短语统一单击插入', () => {
   it.each([false, true])('左右邻项和上下最近项导航，Enter发送防长按，横条=%s', compact => {
     const onDeliver=vi.fn(); const library={commonPhrases:[{id:'A',text:'第一项',position:0},{id:'B',text:'第二项',position:1},{id:'C',text:'下一行',position:2}],settings:{commonSingleClick:'select',commonHeight:144,dockCommonRows:0}} as Library;
     render(<CommonPhraseBar library={library} compact={compact} busy={false} onDeliver={onDeliver} onError={vi.fn()} />);
@@ -42,16 +42,16 @@ describe('常用短语的可配置点击行为', () => {
     fireEvent.click(phrase); fireEvent.blur(phrase, { relatedTarget: document.body });
     expect(phrase.getAttribute('aria-selected')).toBe('false');
   });
-  it('默认单击选中，双击插入一次', async () => {
+  it('默认单击插入，双击不追加重复投递', async () => {
     const action = bar(); const phrase = screen.getByRole('option', { name: '谢谢' });
-    await userEvent.click(phrase); expect(action).not.toHaveBeenCalled();
+    await userEvent.click(phrase); expect(action.mock.calls).toEqual([['B', 'insert']]); action.mockClear();
     expect(phrase.getAttribute('aria-selected')).toBe('true');
     await userEvent.dblClick(phrase); expect(action.mock.calls).toEqual([['B', 'insert']]);
   });
-  it.each(['insert', 'send'] as const)('两处面板单击配置为%s后，双击仅提交一次', async mode => {
+  it.each(['select', 'insert', 'send'] as const)('两处面板旧配置为%s时，双击仍只插入一次', async mode => {
     for (const compact of [false, true]) {
       const action = bar(mode, compact); await userEvent.dblClick(screen.getByRole('option', { name: '谢谢' }));
-      expect(action.mock.calls).toEqual([['B', mode]]); cleanup();
+      expect(action.mock.calls).toEqual([['B', 'insert']]); cleanup();
     }
   });
   it('键盘Enter直接发送，发送期间不接受重复双击', async () => {
@@ -86,7 +86,7 @@ describe('底部短语整栏隐藏', () => {
     render(<CommonDockWindow library={library} />);
     const hide = screen.getByRole('button', { name: '隐藏短语' });
     fireEvent.click(hide); fireEvent.click(hide);
-    expect(call).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(call).mock.calls.filter(([name]) => name === 'save_settings')).toHaveLength(1);
     rejectSave(new Error('设置保存失败'));
     expect((await screen.findByRole('status')).textContent).toContain('设置保存失败');
     expect(screen.getByRole('option', { name: '谢谢' })).toBeTruthy();

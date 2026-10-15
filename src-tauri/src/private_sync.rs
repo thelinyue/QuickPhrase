@@ -519,7 +519,9 @@ impl PrivateSync {
         let settings_pending = local::local_records(&store)?
             .iter()
             .filter(|((kind, id), v)| {
-                *kind == wire::Kind::Setting && v.as_ref().is_some_and(|v| settings[id] != *v)
+                *kind == wire::Kind::Setting
+                    && id != "commonSingleClick"
+                    && v.as_ref().is_some_and(|v| settings[id] != *v)
             })
             .count();
         let enabled = local::meta(&store, "enabled")? == "1";

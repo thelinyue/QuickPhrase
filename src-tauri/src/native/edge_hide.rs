@@ -30,8 +30,10 @@ struct Anchor {
 impl Anchor {
     fn new(outer: RECT, frame: RECT, work: RECT, dpi: u32) -> Option<Self> {
         let strip = (2.0 * f64::from(dpi) / 96.0).round().max(1.0) as i32;
-        let left = (frame.left - work.left).abs() <= strip;
-        let right = (frame.right - work.right).abs() <= strip;
+        // 用户拖动很容易越过边缘；只要窗口仍与本工作区相交，越界也算贴边。
+        // 仅向屏幕内保留 2 DIP 容差，首次显示的 12 DIP 边距仍不会触发。
+        let left = frame.left <= work.left + strip && frame.right > work.left;
+        let right = frame.right >= work.right - strip && frame.left < work.right;
         if (!left && !right) || frame.right - frame.left > work.right - work.left {
             return None;
         }
@@ -426,6 +428,43 @@ mod tests {
             assert!(
                 Anchor::new(rect(-342, 0, -12, 720), rect(-342, 0, -12, 720), work, dpi).is_none()
             );
+        }
+    }
+    #[test]
+    fn dragged_past_edge_still_hides_and_reveals_at_work_area_boundary() {
+        for dpi in [96, 120, 144, 192] {
+            let work = rect(-1920, 0, 0, 1032);
+            let strip = (2.0 * f64::from(dpi) / 96.0).round() as i32;
+            for overshoot in [13, 40, 120] {
+                for left in [true, false] {
+                    let x = if left {
+                        work.left - overshoot
+                    } else {
+                        -332 + overshoot
+                    };
+                    let frame = rect(x, 215, x + 332, 937);
+                    let outer = rect(x - 7, 215, x + 339, 944);
+                    let anchor = Anchor::new(outer, frame, work, dpi)
+                        .expect("拖过边缘但仍与工作区相交时应进入贴边状态");
+                    let expanded = anchor.clip(anchor.rect(0.0));
+                    assert_eq!(expanded.right - expanded.left, 332);
+                    assert_eq!(
+                        if left { expanded.left } else { expanded.right },
+                        if left { work.left } else { work.right }
+                    );
+                    let hidden = anchor.clip(anchor.rect(1.0));
+                    assert_eq!(hidden.right - hidden.left, strip);
+                    assert_eq!(anchor.rect(1.0).right - anchor.rect(1.0).left, 346);
+                }
+            }
+            for frame in [
+                rect(-1908, 215, -1576, 937),
+                rect(-344, 215, -12, 937),
+                rect(-2252, 215, -1920, 937),
+                rect(0, 215, 332, 937),
+            ] {
+                assert!(Anchor::new(frame, frame, work, dpi).is_none());
+            }
         }
     }
     #[test]

@@ -53,11 +53,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); events.clear(); menus.length = 0; });
 
 function view(dock = false, value = library) {
-  return render(dock ? <CommonDockWindow library={value} /> : <MainWindow library={value} refresh={vi.fn(async () => {})} />);
+  const result = render(dock ? <CommonDockWindow library={value} /> : <MainWindow library={value} refresh={vi.fn(async () => {})} />);
+  if (dock) fireEvent.focus(input(true));
+  return result;
 }
 function input(dock: boolean) { return screen.getByRole('textbox', { name: dock ? '底部搜索话术、本地文件' : '搜索话术、本地文件' }); }
 function results(dock: boolean) { return dock ? screen.getByRole('listbox', { name: '底部搜索结果' }) : screen.getByRole('region', { name: '搜索结果' }); }
 describe('底部搜索面板', () => {
+  it('失焦关闭浮层但保留短语和关键词，返回原输入框及Esc后重点击均可展开', async () => {
+    render(<CommonDockWindow library={{ ...library, commonPhrases: [{ id: 'C', text: '您好', position: 0 }], settings: { ...library.settings, dockCommon: true } }} />);
+    expect(screen.queryByRole('region', { name: '搜索记录' })).toBeNull();
+    fireEvent.focus(input(true)); await screen.findByRole('region', { name: '搜索记录' });
+    await search(true); fireEvent.blur(window);
+    expect(screen.queryByRole('listbox', { name: '底部搜索结果' })).toBeNull();
+    expect(input(true)).toHaveProperty('value', 'UPS'); expect(screen.getByRole('option', { name: '您好' })).toBeTruthy();
+    act(() => input(true).focus()); fireEvent.focus(window);
+    expect(screen.getByRole('listbox', { name: '底部搜索结果' })).toBeTruthy();
+    fireEvent.keyDown(input(true), { key: 'Escape' }); expect(screen.queryByRole('region', { name: '搜索记录' })).toBeNull();
+    fireEvent.pointerDown(input(true)); expect(screen.getByRole('region', { name: '搜索记录' })).toBeTruthy();
+  });
   it('标签隔离文件与话术，键盘选择和投递只使用当前标签', async () => {
     const base = vi.mocked(call).getMockImplementation()!;
     vi.mocked(call).mockImplementation(async (name, args) => name === 'search_scoped_content' ? [...hits, { id: 'file1', kind: 'file', phrase: null, file: { id: 'file1', categoryId: 'files', name: 'UPS说明.txt', path: 'C:\\UPS说明.txt', position: 0, missing: false } }] : base(name, args));
@@ -89,16 +103,25 @@ describe('底部搜索面板', () => {
     await waitFor(() => expect(document.activeElement).toBe(input(true)));
     fireEvent.keyDown(input(true), { key: 'Escape' });
     expect(input(true)).toHaveProperty('value', ''); expect(screen.queryByRole('tablist')).toBeNull();
-    expect(screen.getByRole('region', { name: '搜索记录' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: '搜索记录' })).toBeNull();
   });
-  it('搜索期间可直接点击历史重搜，清空记录不改变当前结果', async () => {
+  it('搜索结果替换历史，关闭后恢复历史并可选择其他关键词，不触发投递', async () => {
     view(true); await search(true);
+    expect(screen.queryByRole('region', { name: '搜索记录' })).toBeNull();
+    expect(screen.getByRole('region', { name: '搜索结果' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '关闭底部搜索结果' }));
+    expect(input(true)).toHaveProperty('value', ''); expect(document.activeElement).toBe(input(true));
+    expect(screen.queryByRole('region', { name: '搜索结果' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'SSH' }));
     await waitFor(() => expect(searches().at(-1)?.[1]).toMatchObject({ query: 'SSH' }));
     expect(input(true)).toHaveProperty('value', 'SSH');
+    await waitFor(() => expect(within(results(true)).getAllByRole('option')).toHaveLength(2));
+    expect(screen.queryByRole('region', { name: '搜索记录' })).toBeNull();
+    expect(deliveries()).toHaveLength(0); expect(recorded()).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: '关闭底部搜索结果' }));
     fireEvent.click(screen.getByRole('button', { name: '清空搜索记录' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: '搜索记录' })).toBeNull());
-    expect(input(true)).toHaveProperty('value', 'SSH'); expect(within(results(true)).getAllByRole('option')).toHaveLength(2);
+    expect(input(true)).toHaveProperty('value', '');
   });
   it('输入法确认不投递，发送中的重复Enter只提交一次', async () => {
     view(true); await search(true);
@@ -124,7 +147,7 @@ describe.each([false, true])('搜索记录入口，底部=%s', dock => {
     fireEvent.click(button);
     await waitFor(() => expect(within(results(dock)).getAllByRole('option')).toHaveLength(2));
     expect(input(dock)).toHaveProperty('value', 'UPS'); expect(document.activeElement).toBe(input(dock));
-    expect(Boolean(screen.queryByRole('region', { name: '搜索记录' }))).toBe(dock);
+    expect(screen.queryByRole('region', { name: '搜索记录' })).toBeNull();
     expect(searches().at(-1)?.[1]).toEqual(dock ? { query: 'UPS', scope: 'all' } : { query: 'UPS', scope: 'private', teamId: null });
     fireEvent.keyDown(input(dock), { key: 'ArrowDown' }); expect(within(results(dock)).getAllByRole('option')[1].getAttribute('aria-selected')).toBe('true');
     const count = searches().length;
@@ -198,6 +221,7 @@ describe.each([false, true])('搜索记录入口，底部=%s', dock => {
 it('主窗口和底部记录通过通知共用，清空两处更新', async () => {
   const main = render(<MainWindow library={library} refresh={vi.fn(async () => {})} />);
   const dock = render(<CommonDockWindow library={library} />);
+  fireEvent.focus(input(true));
   await waitFor(() => expect(screen.getAllByRole('region', { name: '搜索记录' })).toHaveLength(2));
   await search(false, '两窗口'); fireEvent.keyDown(input(false), { key: 'Enter' });
   await waitFor(() => expect(recorded()).toHaveLength(1));

@@ -393,6 +393,7 @@ try {
     assert.equal((await appearance(b)).background, 'rgba(0, 0, 0, 0)'); assert.equal((await appearance(b)).send, 'hidden');
   });
   await check('点击空白取消话术与短语选中，切换两处区域不残留选中底色', async () => {
+    await page.evaluate(() => { window.__categoryQA.mockDelivery = true; window.__categoryQA.deliveries = []; });
     const row = page.locator(`.content-list [data-row="${selectedPhrase}"]`), common = page.locator('.main-window [data-common]').first();
     await click(row); await leaveRows(); assert.equal((await appearance(row)).selected, 'true');
     await click(common); await leaveRows(); assert.equal((await appearance(row)).selected, 'false');
@@ -403,6 +404,7 @@ try {
     await click(common); await click(page.locator('.content-list')); await leaveRows();
     assert.equal(await common.getAttribute('aria-selected'), 'false'); assert.equal(await common.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(255, 255, 255)');
     await page.screenshot({ path: path.join(evidence, 'phrase-and-common-unselected.png') });
+    await page.evaluate(() => { window.__categoryQA.mockDelivery = false; window.__categoryQA.deliveries = []; });
   });
   await check('搜索结果复用悬停与选中样式，上下选择后移出恢复正确颜色', async () => {
     await setInput(page, '.search-bar input', '色验证');
@@ -483,7 +485,9 @@ try {
     await page.getByLabel('功能键', { exact: true }).selectOption(''); await page.getByLabel('第一个按键', { exact: true }).press('y'); await page.getByLabel('第二个按键', { exact: true }).press('c'); await submit();
     assert.equal((await invoke('get_library')).phrases.find(p => p.id === hoveredPhrase).shortcut, 'Y+C');
     await page.screenshot({ path: path.join(evidence, 'shortcut-list-labels.png') });
-    await page.locator('.search-bar input').fill('选中色验证'); await page.locator('#search-results .row-shortcut').waitFor();
+    await page.locator('.search-bar input').fill('选中色验证');
+    // 搜索快捷键沿用悬停才显示的规则，仍核对可见标签和逗号格式。
+    await page.locator('#search-results .content-row').first().hover(); await page.locator('#search-results .row-shortcut').waitFor();
     assert.equal(await page.locator('#search-results .row-shortcut').textContent(), 'Ctrl,1,2'); await page.locator('.search-bar input').press('Escape');
     await menu(b); await click(page.getByRole('button', { name: '删除话术快捷键', exact: true })); await submit();
     assert.equal((await invoke('get_library')).phrases.find(p => p.id === hoveredPhrase).shortcut, ''); assert.equal(await b.locator('.row-shortcut').count(), 0);
@@ -534,11 +538,10 @@ try {
   const number = async (label, value) => { const input = settings.getByLabel(label, { exact: true }); await setInput(settings, `[aria-label="${label}"]`, String(value)); await input.evaluate(el => el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))); await settings.waitForFunction(() => !document.querySelector('.settings-content input:disabled')); };
   await check('常用设置默认点击规则保持，配置后话术与两处短语只按指定方式提交一次', async () => {
     await click(settings.getByRole('button', { name: '常用设置', exact: true }));
-    assert.equal((await invoke('get_library')).settings.phraseDoubleClick, 'insert'); assert.equal((await invoke('get_library')).settings.commonSingleClick, 'select');
+    assert.equal((await invoke('get_library')).settings.phraseDoubleClick, 'insert'); assert.equal((await invoke('get_library')).settings.commonSingleClick, 'insert');
     const doubleRow = settings.locator('.settings-row').filter({ hasText: '话术双击' });
-    const singleRow = settings.locator('.settings-row').filter({ hasText: '常用短语单击' });
+    assert.equal(await settings.locator('.settings-row').filter({ hasText: '常用短语单击' }).count(), 0);
     await click(doubleRow.getByLabel('直接发送', { exact: true })); await page.waitForFunction(() => !document.querySelector('.settings-content input:disabled'));
-    await click(singleRow.getByLabel('直接发送', { exact: true }));
     await page.waitForFunction(() => document.querySelector('[data-row]'));
     for (const view of [page, dock]) await view.evaluate(() => { window.__categoryQA.mockDelivery = true; });
     const sample = page.locator('.content-list [data-row]').first(); const id = await sample.getAttribute('data-row');
@@ -550,11 +553,9 @@ try {
     const gesture = async view => { await view.locator(`[data-common="${shortId}"]`).evaluate(el => { for (const [type, detail] of [['click',1],['click',2],['dblclick',2]]) el.dispatchEvent(new MouseEvent(type, { bubbles: true, detail })); }); };
     await gesture(page); await page.waitForFunction(() => window.__categoryQA.deliveries.length === 2);
     await gesture(dock); await dock.waitForFunction(() => window.__categoryQA.deliveries.length === 1);
-    assert.equal(await dock.evaluate(() => window.__categoryQA.deliveries[0].mode), 'send');
-    await click(singleRow.getByLabel('输入到编辑区', { exact: true })); await settings.waitForFunction(() => !document.querySelector('.settings-content input:disabled'));
+    assert.equal(await dock.evaluate(() => window.__categoryQA.deliveries[0].mode), 'insert');
     await dock.waitForFunction(() => window.__categoryQA.library?.settings.commonSingleClick === 'insert');
     await gesture(dock); await dock.waitForFunction(() => window.__categoryQA.deliveries.length === 2); assert.equal(await dock.evaluate(() => window.__categoryQA.deliveries[1].mode), 'insert');
-    await click(singleRow.getByLabel('仅选中', { exact: true })); await settings.waitForFunction(() => !document.querySelector('.settings-content input:disabled'));
     await click(doubleRow.getByLabel('输入到编辑区', { exact: true })); await settings.waitForFunction(() => !document.querySelector('.settings-content input:disabled'));
     await choose(settings, '保留搜索结果界面'); await choose(settings, 'Ctrl+Enter 键');
     await number('自定义分段间隔', 650); const saved = (await invoke('get_library')).settings;
@@ -630,9 +631,9 @@ try {
     await number('侧边短语区域最大高度', 72); await page.waitForFunction(() => document.querySelector('.common-phrases').getBoundingClientRect().height <= 72);
     await click(page.getByRole('button', { name: '话术', exact: true }));
     for (const [label, count] of [['一行',1],['两行',2],['三行',3],['完全自适应',0]]) {
-      await choose(settings, label); await dock.waitForFunction(count => document.querySelector('.common-phrases').style.maxHeight === (count ? count * 27 + 6 : 150) + 'px', count);
+      await choose(settings, label); await dock.waitForFunction(count => document.querySelector('.common-phrases').style.maxHeight === (count ? count * 27 + 1 : 150) + 'px', count);
       assert.equal(await dock.locator('[data-common]').count(), (await invoke('get_library')).commonPhrases.length);
-      if (count) assert.ok((await dock.locator('.common-phrases').boundingBox()).height <= count * 27 + 6);
+      if (count) assert.ok((await dock.locator('.common-phrases').boundingBox()).height <= count * 27 + 1);
     }
     await number('文件分类区域高度', 31); await number('侧边短语区域最大高度', 144);
     if (await settings.getByRole('status').count()) await click(settings.getByRole('status'));

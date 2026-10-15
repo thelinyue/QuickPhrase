@@ -80,6 +80,11 @@ pub fn startup_error(message: &str) {
     }
 }
 
+/// 专用菜单不应出现在任务栏／Alt+Tab；每次打开时修正 Tauri 可能重建的扩展样式。
+pub(crate) fn prepare_common_menu(handle: i64) -> Result<()> {
+    unsafe { platform::background_window(platform::hwnd(handle)) }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetContext {
@@ -113,6 +118,8 @@ impl DisplayMode {
 /// 管理窗口可独立开关；不使用单一“最后打开窗口”句柄，避免关掉一个就提前解除暂停。
 #[derive(Default)]
 pub struct ManagementWindows {
+    /// 自定义短语菜单需要与系统菜单一样暂停快捷键和贴边收起。
+    pub common_menu: std::sync::atomic::AtomicI64,
     pub settings: std::sync::atomic::AtomicI64,
     pub teams: std::sync::atomic::AtomicI64,
     pub users: std::sync::atomic::AtomicI64,
@@ -121,7 +128,8 @@ pub struct ManagementWindows {
 impl ManagementWindows {
     /// 设置是独立窗口，不阻止主窗口贴边收起；其他管理窗口保持原有保护。
     pub(crate) fn blocks_edge_hide(&self) -> bool {
-        self.teams.load(Ordering::Acquire) != 0
+        self.common_menu.load(Ordering::Acquire) != 0
+            || self.teams.load(Ordering::Acquire) != 0
             || self.users.load(Ordering::Acquire) != 0
             || self.company.load(Ordering::Acquire) != 0
     }
@@ -131,6 +139,8 @@ impl ManagementWindows {
 }
 
 pub struct NativeState {
+    pub common_menu: Mutex<crate::common_menu::MenuState>,
+    pub common_menu_handle: std::sync::atomic::AtomicI64,
     pub target: Mutex<Option<TargetContext>>,
     pub settings: RwLock<Settings>,
     pub bindings: RwLock<Vec<(String, Shortcut)>>,
@@ -186,6 +196,8 @@ impl NativeState {
             shortcut_phrases: RwLock::new(vec![]),
             candidates: Mutex::new(candidates::CandidateState::default()),
             sequence_map: RwLock::new((vec![], true)),
+            common_menu: Mutex::new(crate::common_menu::MenuState::default()),
+            common_menu_handle: std::sync::atomic::AtomicI64::new(0),
             shortcut_input: std::sync::atomic::AtomicI64::new(0),
             search_input: std::sync::atomic::AtomicI64::new(0),
             management_windows: ManagementWindows::default(),
@@ -918,6 +930,9 @@ mod platform {
             while state.running.load(Ordering::Acquire) {
                 while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
                     if msg.message == WM_HOTKEY {
+                        if state.management_windows.common_menu.load(Ordering::Acquire) != 0 {
+                            continue;
+                        }
                         if let Some(external) = capture() {
                             *state.target.lock().unwrap() = Some(external.clone());
                             last_external = Some(external);
@@ -1040,6 +1055,9 @@ mod platform {
                 state.check_candidates();
                 let foreground = GetForegroundWindow();
                 let owned = pid(foreground) == std::process::id();
+                if let Some(app) = state.app.get() {
+                    crate::common_menu::poll(app, &state, foreground);
+                }
                 if owned && !was_owned {
                     *state.target.lock().unwrap() = last_external.clone();
                 }
@@ -1745,6 +1763,7 @@ mod tests {
             &windows.teams,
             &windows.users,
             &windows.company,
+            &windows.common_menu,
         ] {
             handle.store(1, Ordering::Release);
             assert!(windows.is_open());
@@ -1763,7 +1782,12 @@ mod tests {
         windows.settings.store(1, Ordering::Release);
         assert!(windows.is_open());
         assert!(!windows.blocks_edge_hide());
-        for handle in [&windows.teams, &windows.users, &windows.company] {
+        for handle in [
+            &windows.teams,
+            &windows.users,
+            &windows.company,
+            &windows.common_menu,
+        ] {
             handle.store(2, Ordering::Release);
             assert!(windows.blocks_edge_hide());
             handle.store(0, Ordering::Release);
