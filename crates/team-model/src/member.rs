@@ -8,10 +8,19 @@ use serde::{Deserialize, Serialize};
 pub struct Grant {
     pub id: String,
     pub owner: MemberIdentity,
-    pub recipient: MemberIdentity,
+    pub enabled: bool,
+    pub mode: ScopeMode,
     pub root_ids: Vec<String>,
     pub roots: Vec<Category>,
     pub version: u64,
+}
+
+/// 全部模式动态覆盖今后新增的一级分类；指定模式只扩展所选分类内的内容。
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ScopeMode {
+    All,
+    Selected,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -24,6 +33,8 @@ pub struct Subscription {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShareWrite {
+    pub enabled: bool,
+    pub mode: ScopeMode,
     pub root_ids: Vec<String>,
     pub expected_version: u64,
 }
@@ -38,7 +49,8 @@ pub struct Subscribe {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Overview {
-    pub outgoing: Vec<Grant>,
+    pub sharing: Option<Grant>,
+    pub users: Vec<MemberIdentity>,
     pub available: Vec<Grant>,
     pub subscription: Subscription,
     pub categories: Vec<Category>,
@@ -59,6 +71,7 @@ pub struct Snapshot {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Follow {
+    pub recipient_id: String,
     pub subscription: Subscription,
     pub snapshot: Option<Snapshot>,
 }
