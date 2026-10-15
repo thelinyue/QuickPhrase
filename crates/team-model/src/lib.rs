@@ -1,6 +1,7 @@
 //! 小组协议只传素材 ID，不传服务端路径、私人设置或个人快捷键。
 //! groupId 始终指二级分类；teamId 才是权限和缓存的隔离边界。
 use serde::{Deserialize, Serialize};
+pub mod member;
 pub mod private;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -231,6 +232,9 @@ pub struct Authorization {
 #[serde(rename_all = "camelCase")]
 pub struct Capabilities {
     pub private_sync: bool,
+    /// 成员跟随由本人按分类授权；旧 Hub 缺少能力时不开放入口。
+    #[serde(default)]
+    pub member_phrase_sync: bool,
     /// 公司文件是独立能力；旧服务端缺少此字段时关闭入口。
     #[serde(default)]
     pub company_files: bool,
