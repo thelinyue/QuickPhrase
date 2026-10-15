@@ -32,7 +32,7 @@
   --theme-danger: #b84343;
   --theme-radius: 6px;
 }
-.minimized-float { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0; border: 1px solid var(--blue); border-radius: 12px; background: var(--theme-surface); color: var(--theme-text); font-size: 14px; font-weight: 500; user-select: none; touch-action: none; }
+.minimized-float { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0; border: 0; border-radius: 6px; background: #fff; color: var(--blue); font-size: 14px; font-weight: 400; user-select: none; touch-action: none; }
 .minimized-float:hover { background: var(--theme-hover); }
 .minimized-float.pressed { background: var(--theme-selection); }
 .minimized-float img { flex: none; pointer-events: none; }
@@ -284,6 +284,8 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .row-copy { position: relative; display: flex; align-items: center; flex: 1; min-width: 0; }
 .row-copy > .row-shortcut { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); margin: 0; max-width: min(104px, calc(100% - 4px)); }
 .row-shortcut { border-radius: 4px; flex-shrink: 0; max-width: 104px; overflow: hidden; text-overflow: ellipsis; margin: 0 4px 0 3px; background: var(--theme-shortcut); color: #fff; padding: 0 4px; font-size: 11px; line-height: 18px; }
+.search-panel .row-shortcut, .dock-search-results .row-shortcut { visibility: hidden; }
+.search-panel .content-row:hover .row-shortcut, .dock-search-results .content-row:hover .row-shortcut { visibility: visible; }
 .file-row .row-title { color: var(--theme-text, #181818); max-width: none; flex: 1; }
 .row-status { flex-shrink: 0; color: var(--theme-danger, #b64e34); margin-right: 6px; font-size: 10px; }
 .row-source { max-width: 35%; overflow: hidden; text-overflow: ellipsis; }

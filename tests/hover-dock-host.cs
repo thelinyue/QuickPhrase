@@ -148,14 +148,14 @@ public static class ShanyuHoverDockHost {
                     } finally { mouse_event(4, 0, 0, 0, UIntPtr.Zero); }
                     lastPointer = new Point { x = toX, y = toY }; movedPointer = true;
                 }
-                if (action == "pointer" || action == "click" || action == "double-click") {
+                if (action == "pointer" || action == "click" || action == "double-click" || action == "right-click") {
                     lastPointer = new Point { x = (int)Number(command, "x", 0), y = (int)Number(command, "y", 0) }; pointerError = SetCursorPos(lastPointer.x, lastPointer.y) ? 0 : Marshal.GetLastWin32Error(); movedPointer = true;
                     // 真实鼠标点击不临时修改被点窗口的置顶属性，避免验收本身改变待验证的层级。
-                    for (int click = 0; click < (action == "double-click" ? 2 : action == "click" ? 1 : 0); click++) {
-                        mouse_event(2, 0, 0, 0, UIntPtr.Zero);
+                    for (int click = 0; click < (action == "double-click" ? 2 : action == "click" || action == "right-click" ? 1 : 0); click++) {
+                        mouse_event(action == "right-click" ? 8u : 2u, 0, 0, 0, UIntPtr.Zero);
                         // 留出 WebView IPC 启动原生拖动的时间，避免抬键早于 start_dragging 而残留拖动状态。
                         if (action == "double-click") System.Threading.Thread.Sleep(50);
-                        mouse_event(4, 0, 0, 0, UIntPtr.Zero);
+                        mouse_event(action == "right-click" ? 16u : 4u, 0, 0, 0, UIntPtr.Zero);
                         if (action == "double-click" && click == 0) System.Threading.Thread.Sleep(60);
                     }
                 }

@@ -83,9 +83,9 @@ fn remember(state: &NativeState, position: Position) {
 /// 坐标是虚拟桌面的物理像素；负坐标显示器和已拔掉的显示器均钳制到最近工作区。
 fn bounds(work: RECT, position: Option<Position>, dpi: u32) -> RECT {
     let width =
-        ((96.0 * f64::from(dpi) / 96.0).round() as i32).min((work.right - work.left).max(1));
+        ((88.0 * f64::from(dpi) / 96.0).round() as i32).min((work.right - work.left).max(1));
     let height =
-        ((40.0 * f64::from(dpi) / 96.0).round() as i32).min((work.bottom - work.top).max(1));
+        ((34.0 * f64::from(dpi) / 96.0).round() as i32).min((work.bottom - work.top).max(1));
     let initial = super::docking::standalone_bounds(&work, width, height, dpi);
     let position = position.unwrap_or(Position {
         x: initial.left,
@@ -146,6 +146,7 @@ impl FloatingWindow {
 
     unsafe fn should_show(state: &NativeState, main: HWND) -> bool {
         state.minimized.load(Ordering::Acquire)
+            && !state.float_dismissed.load(Ordering::Acquire)
             && state.settings.read().unwrap().show_floating_on_minimize
             && (!IsWindowVisible(main).as_bool() || IsIconic(main).as_bool())
     }
@@ -209,7 +210,7 @@ impl FloatingWindow {
             if self.schedule(state, move |state| {
                 // 同时裁剪原生窗口和命中区域，避免 CSS 圆角外仍显示方形背景或拦截鼠标。
                 // 区域成功交给系统后由系统释放；失败时仍由调用方释放。
-                let diameter = (24.0 * f64::from(dpi) / 96.0).round() as i32;
+                let diameter = (12.0 * f64::from(dpi) / 96.0).round() as i32;
                 let region = CreateRoundRectRgn(
                     0,
                     0,
@@ -222,7 +223,7 @@ impl FloatingWindow {
                     if !region.is_invalid() {
                         let _ = DeleteObject(region.into());
                     }
-                    state.notify_error("悬浮窗圆角暂时无法应用，可继续单击打开闪语。".into());
+                    state.notify_error("悬浮窗圆角暂时无法应用，可继续双击打开闪语。".into());
                 }
                 let show = Self::should_show(state, hwnd(main));
                 let flags = SWP_NOACTIVATE
@@ -287,11 +288,17 @@ mod tests {
             right: 0,
             bottom: 960,
         };
-        for dpi in [96, 144, 192] {
+        for dpi in [96, 120, 144, 192] {
             let rect = bounds(work, None, dpi);
             assert_eq!(work.right - rect.right, 12 * dpi as i32 / 96);
-            assert_eq!(rect.right - rect.left, dpi as i32);
-            assert_eq!(rect.bottom - rect.top, 40 * dpi as i32 / 96);
+            assert_eq!(
+                rect.right - rect.left,
+                (88.0 * f64::from(dpi) / 96.0).round() as i32
+            );
+            assert_eq!(
+                rect.bottom - rect.top,
+                (34.0 * f64::from(dpi) / 96.0).round() as i32
+            );
             for position in [
                 Position {
                     x: i32::MIN,

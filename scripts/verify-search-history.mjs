@@ -32,6 +32,7 @@ async function hook(target) {
       if (url.hostname !== 'ipc.localhost') return original(input, init);
       const cmd = decodeURIComponent(url.pathname.slice(1)); const args = JSON.parse(init.body), qa = window.__historyQA;
       qa.requests.push({ cmd, args });
+      if (cmd === 'search_scoped_content' && qa.searchDelay) await new Promise(resolve => setTimeout(resolve, qa.searchDelay));
       const response = value => new Response(JSON.stringify(value), { headers: { 'Tauri-Response': 'ok', 'Content-Type': 'application/json' } });
       if (cmd === 'get_target') return response({ hwnd: 1, focus: 2, pid: 3 });
       if (cmd === 'deliver_content') { qa.deliveries.push(args); return response({ status: qa.status, completedSegments: qa.status === 'submitted' ? 1 : 0, completedBlocks: qa.status === 'submitted' ? 1 : 0, error: qa.status === 'submitted' ? null : '隔离验证：操作已停止' }); }
@@ -85,6 +86,46 @@ try {
     for (const title of ['OS支持UPS型号', 'pro-ups型号', 'OS如何连接UPS', 'OS管理员权限', 'OS恢复出厂设置', 'UGOS重置系统']) await invoke('save_phrase', { libraryId, phrase: { id: '', rootId: root, groupId: null, title, color: '', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '您好，这边为您提供 UPS SSH DNS 故障检查说明及连接方式。' }] }] }, afterId: null });
     await setInput(page, 'UPS'); await waitResults(page); assert.deepEqual(await read(), []);
   });
+  await check('两处搜索仅悬停显示快捷键，相同库通知不重查，后台更新不卸载结果行', async () => {
+    let current = await invoke('get_library'); const first = current.phrases[0];
+    await invoke('save_phrase', { libraryId, phrase: { ...first, shortcut: 'Q+W' }, afterId: null });
+    await setInput(dock, 'UPS');
+    for (const target of [page, dock]) {
+      await waitResults(target);
+      const row = target.locator('.search-panel .content-row,.dock-search-results .content-row').filter({ has: target.locator('.row-shortcut') }).first();
+      await target.mouse.move(1, 1);
+      await target.waitForFunction(() => !document.querySelector('.search-panel .row-send:disabled,.dock-search-results .row-send:disabled'));
+      assert.equal(await row.locator('.row-shortcut').evaluate(el => getComputedStyle(el).visibility), 'hidden');
+      const textGeometry = () => row.evaluate(el => { const parent = el.getBoundingClientRect(), text = el.querySelector('.row-preview').getBoundingClientRect(); return { x: text.x - parent.x, y: text.y - parent.y, width: text.width, height: text.height }; });
+      const before = await textGeometry(); await row.hover();
+      assert.equal(await row.locator('.row-shortcut').evaluate(el => getComputedStyle(el).visibility), 'visible');
+      assert.deepEqual(await textGeometry(), before);
+      await target.mouse.move(1, 1);
+      await target.evaluate(() => {
+        const row = document.querySelector('.search-panel .content-row,.dock-search-results .content-row');
+        window.__historyQA.row = row; window.__historyQA.searchCount = window.__historyQA.requests.filter(r => r.cmd === 'search_scoped_content').length;
+      });
+    }
+    for (let i = 0; i < 5; i++) await invoke('plugin:event|emit', { event: 'library-changed', payload: null });
+    await delay(500);
+    for (const target of [page, dock]) {
+      assert.equal(await target.evaluate(() => window.__historyQA.requests.filter(r => r.cmd === 'search_scoped_content').length === window.__historyQA.searchCount), true);
+      assert.equal(await target.evaluate(() => window.__historyQA.row.isConnected), true);
+      await target.evaluate(() => { window.__historyQA.searchDelay = 350; });
+    }
+    current = await invoke('get_library');
+    await invoke('save_phrase', { libraryId, phrase: { ...current.phrases[0], title: current.phrases[0].title + ' 更新' }, afterId: null });
+    for (const target of [page, dock]) {
+      await target.waitForFunction(() => !!document.querySelector('.search-panel .row-send:disabled,.dock-search-results .row-send:disabled'));
+      assert.equal(await target.evaluate(() => window.__historyQA.row.isConnected), true);
+    }
+    for (const target of [page, dock]) {
+      await target.waitForFunction(() => !document.querySelector('.search-panel .row-send:disabled,.dock-search-results .row-send:disabled'));
+      assert.equal(await target.evaluate(() => window.__historyQA.row.isConnected), true);
+      await target.evaluate(() => { window.__historyQA.searchDelay = 0; });
+    }
+    await page.screenshot({ path: path.join(evidence, 'search-stable.png') });
+  });
   await check('主窗口使用成功后记录；跨窗口事件自动刷新；失败与中断不记录', async () => {
     await click(page.locator('.search-panel .row-send').first());
     await click(page.getByRole('button', { name: '清空搜索', exact: true }));
@@ -134,7 +175,8 @@ try {
     }
     const search = await page.locator('.search-bar').boundingBox(), panel = await page.locator('.search-panel').boundingBox(), backdrop = await page.locator('.search-backdrop').boundingBox();
     assert.ok(panel.y + panel.height <= search.y && search.y - panel.y - panel.height <= 12, '结果浮层直接指向搜索框');
-    assert.equal(backdrop.y, 27); assert.equal(backdrop.y + backdrop.height, search.y);
+    const titlebar = await page.locator('.main-titlebar').boundingBox();
+    assert.equal(backdrop.y, titlebar.y + titlebar.height); assert.equal(backdrop.y + backdrop.height, search.y);
     assert.equal(await page.locator('.common-phrases').count(), 0); assert.equal(await page.locator('.search-kind').textContent(), '话术');
     await page.screenshot({ path: path.join(evidence, 'main-results-compact.png') });
     await page.setViewportSize({ width: 300, height: 720 });
@@ -168,7 +210,7 @@ try {
         const bar = document.querySelector('.dock-search-bar'), result = document.querySelector('.dock-search-results');
         return { content: rect(document.querySelector('.common-dock-content')), bar: rect(bar), buttons: [...bar.querySelectorAll('button')].map(rect), result: rect(result), scroll: result.scrollHeight > result.clientHeight, common: rect(document.querySelector('.common-phrases')), geometry: window.__historyQA.geometry };
       });
-      assert.ok(bounds.content.height <= 420); assert.equal(bounds.bar.height, 30); assert.ok(bounds.result.height <= 228);
+      assert.ok(bounds.content.height <= 420); assert.equal(bounds.bar.height, 36); assert.ok(bounds.result.height <= 228);
       assert.ok(bounds.common.bottom <= bounds.content.bottom);
       assert.equal(bounds.geometry.aboveHeight, bounds.bar.y);
       for (const button of bounds.buttons) { assert.ok(Math.abs(button.y + button.height / 2 - bounds.bar.y - bounds.bar.height / 2) <= 1); assert.ok(button.x >= 0 && button.right <= bounds.content.right); }

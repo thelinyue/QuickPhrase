@@ -103,6 +103,25 @@ try {
     }
     await settingsPage.getByRole('button', { name: '关闭窗口' }).evaluate(el => el.click()); await poll(() => settingsPage.isClosed(), '关闭设置');
   });
+  await check('设置打开及设置输入期间左右贴边仍收起，设置窗口位置和焦点不变', async () => {
+    for (const side of ['left', 'right']) {
+      await save({ edgeAutoHide: true, edgeRevealDelay: 0 }); await drag(side); await hidden(side);
+      await atEdge(side); await expanded(side);
+      await page.getByRole('button', { name: '设置', exact: true }).evaluate(el => el.click());
+      const settingsPage = await poll(() => browser.contexts()[0].pages().find(p => p.url().includes('#settings')), '设置窗口');
+      const settingsWindow = await native(['-ProcessId', String(app.pid), '-Title', '设置 · 闪语']);
+      await native(['-Action', 'focus', '-Handle', String(settingsWindow.handle)]);
+      await away(); await hidden(side);
+      const before = await native(['-Handle', String(settingsWindow.handle)]);
+      // 用设置中已有输入控件验证产品的真实焦点上报，不伪造原生输入标志。
+      const input = settingsPage.locator('input:not([type=checkbox]):not([type=radio]):not([type=hidden])').first();
+      await input.focus(); await input.fill('250');
+      await atEdge(side); await expanded(side); await away(); await hidden(side);
+      const after = await native(['-Handle', String(settingsWindow.handle)]);
+      assert.deepEqual(after.rect, before.rect); assert.equal((await inspect()).foreground, settingsWindow.handle);
+      await settingsPage.getByRole('button', { name: '关闭窗口' }).evaluate(el => el.click()); await poll(() => settingsPage.isClosed(), '关闭设置');
+    }
+  });
   await check('手动隐藏与非托盘最小化清除边条，重新显示恢复完整尺寸', async () => {
     await save({ edgeAutoHide: true, edgeRevealDelay: 500, tray: false }); await drag('right'); await hidden('right');
     await invoke('window_action', { action: 'hide' }); await poll(async () => !main(await inspect()).visible, '手动隐藏');

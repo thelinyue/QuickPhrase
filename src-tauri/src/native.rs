@@ -119,11 +119,14 @@ pub struct ManagementWindows {
     pub company: std::sync::atomic::AtomicI64,
 }
 impl ManagementWindows {
-    pub(crate) fn is_open(&self) -> bool {
-        self.settings.load(Ordering::Acquire) != 0
-            || self.teams.load(Ordering::Acquire) != 0
+    /// 设置是独立窗口，不阻止主窗口贴边收起；其他管理窗口保持原有保护。
+    pub(crate) fn blocks_edge_hide(&self) -> bool {
+        self.teams.load(Ordering::Acquire) != 0
             || self.users.load(Ordering::Acquire) != 0
             || self.company.load(Ordering::Acquire) != 0
+    }
+    pub(crate) fn is_open(&self) -> bool {
+        self.settings.load(Ordering::Acquire) != 0 || self.blocks_edge_hide()
     }
 }
 
@@ -147,6 +150,8 @@ pub struct NativeState {
     display_mode: Mutex<DisplayMode>,
     /// 只有主窗口主动最小化才能置位，自动隐藏和贴边收起不创建恢复小条。
     minimized: AtomicBool,
+    /// 仅抑制当前一次最小化的小条，重新打开主窗口再最小化时清除。
+    float_dismissed: AtomicBool,
     #[cfg(windows)]
     float_window: OnceLock<i64>,
     #[cfg(windows)]
@@ -170,6 +175,7 @@ enum Control {
     Show(String),
     Hide,
     Minimize,
+    HideFloat,
 }
 impl NativeState {
     pub fn new(settings: Settings, busy: Arc<AtomicBool>, cancelled: Arc<AtomicBool>) -> Self {
@@ -187,6 +193,7 @@ impl NativeState {
             error: Mutex::new(None),
             display_mode: Mutex::new(DisplayMode::default()),
             minimized: AtomicBool::new(false),
+            float_dismissed: AtomicBool::new(false),
             #[cfg(windows)]
             float_window: OnceLock::new(),
             #[cfg(windows)]
@@ -349,6 +356,9 @@ impl NativeState {
     }
     pub fn minimize(&self) {
         self.send_control(Control::Minimize);
+    }
+    pub fn hide_float(&self) {
+        self.send_control(Control::HideFloat);
     }
     /// 正常退出时补存最后坐标，不能让工作池中的位置写入被进程退出截断。
     pub fn persist_float_position(&self) {
@@ -955,9 +965,15 @@ mod platform {
                             state.cancel_candidates();
                             continue;
                         }
+                        Control::HideFloat => {
+                            state.float_dismissed.store(true, Ordering::Release);
+                            continue;
+                        }
                         Control::Minimize => {
                             let tray = state.settings.read().unwrap().tray;
-                            state.minimized.store(true, Ordering::Release);
+                            if !state.minimized.swap(true, Ordering::AcqRel) {
+                                state.float_dismissed.store(false, Ordering::Release);
+                            }
                             dock.minimize = Some(tray);
                             dock.show_action = None;
                             if tray {
@@ -1711,7 +1727,7 @@ mod platform {
                 Control::Settings(_, ack) => {
                     let _ = ack.send(Err("此功能需要 Windows。".into()));
                 }
-                Control::Show(_) | Control::Hide | Control::Minimize => {}
+                Control::Show(_) | Control::Hide | Control::Minimize | Control::HideFloat => {}
             }
         }
     }
@@ -1740,6 +1756,18 @@ mod tests {
         assert!(windows.is_open());
         windows.users.store(0, Ordering::Release);
         assert!(!windows.is_open());
+    }
+    #[test]
+    fn settings_allows_edge_hide_but_keeps_shortcuts_suspended() {
+        let windows = ManagementWindows::default();
+        windows.settings.store(1, Ordering::Release);
+        assert!(windows.is_open());
+        assert!(!windows.blocks_edge_hide());
+        for handle in [&windows.teams, &windows.users, &windows.company] {
+            handle.store(2, Ordering::Release);
+            assert!(windows.blocks_edge_hide());
+            handle.store(0, Ordering::Release);
+        }
     }
     #[test]
     fn background_start_and_target_lifecycle_follow_without_manual_hide() {

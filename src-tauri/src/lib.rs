@@ -1063,6 +1063,33 @@ fn change_data_directory(
 fn get_minimized_float_theme(state: State<AppState>) -> String {
     state.native.settings.read().unwrap().theme.clone()
 }
+/// 悬浮页不读取整份库。永久隐藏只修改设备设置，持锁读取最新值，避免覆盖并发设置。
+#[tauri::command]
+fn hide_minimized_float(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    permanent: bool,
+) -> Result<()> {
+    if permanent {
+        let store = state.store.lock().unwrap();
+        let device = state.device_store.lock().unwrap();
+        let previous = private_commands::combined_settings(&store, &device)?;
+        let mut next = previous.clone();
+        next.show_floating_on_minimize = false;
+        let mut device_settings = device.settings()?;
+        device_settings.show_floating_on_minimize = false;
+        state.native.apply_settings(&next)?;
+        if let Err(error) = device.save_settings(&device_settings) {
+            let _ = state.native.apply_settings(&previous);
+            return Err(error);
+        }
+        drop(device);
+        drop(store);
+        refreshed(&app, &state)?;
+    }
+    state.native.hide_float();
+    Ok(())
+}
 #[tauri::command]
 fn window_action(app: tauri::AppHandle, state: State<AppState>, action: String) -> Result<()> {
     match action.as_str() {
@@ -1296,7 +1323,7 @@ pub fn run() {
                 tauri::WebviewUrl::App("index.html#minimized-float".into()),
             )
             .title("悬浮窗 · 闪语")
-            .inner_size(96.0, 40.0)
+            .inner_size(88.0, 34.0)
             .decorations(false)
             .shadow(false)
             .resizable(false)
@@ -1517,6 +1544,7 @@ pub fn run() {
                 set_shortcut_input,
                 sync_sequence_map,
                 get_minimized_float_theme,
+                hide_minimized_float,
                 get_shortcut_candidates,
                 select_shortcut_candidate,
                 submit_shortcut_candidate,

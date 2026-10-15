@@ -107,10 +107,18 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   const [selected, setSelected] = useState(''); const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const canEdit = scopeCanEdit && !library.categories.find(c => c.id === root)?.readOnly;
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]); const fileAnchor = useRef('');
-  const [query, setQuery] = useState(''); const [results, setResults] = useState<SearchHit[]>([]); const [searchIndex, setSearchIndex] = useState(0); const [searching, setSearching] = useState(false);
-  const searchStamp = teamId && kind === 'phrase' ? `${teamId}:${teamView?.team.version ?? 'loading'}` : library;
-  const [searchSource, setSearchSource] = useState<{ query: string; source: Library | string } | null>(null);
+  const [query, setQuery] = useState(''); const [storedResults, setResults] = useState<SearchHit[]>([]); const [searchIndex, setSearchIndex] = useState(0); const [searching, setSearching] = useState(false);
+  // 比较搜索实际使用的内容，忽略主题、同步时间等状态。身份与内容分开：同一来源更新可保留列表，换源不能保留。
+  const scopeTeam = teamStatus.teams.find(t => t.teamId === teamId);
+  const searchScope = JSON.stringify([privateLibrary.libraryId, teamStatus.server, teamStatus.user?.id, teamStatus.sessionEpoch, teamStatus.user?.mustChangePassword, kind, teamId, scopeTeam?.membershipVersion, scopeTeam?.lifecycleVersion, teamStatus.memberPhraseSync, members?.subscription]);
+  const searchStamp = useMemo(() => JSON.stringify([library.settings.searchMode, kind === 'file' ? library.files : library.phrases, kind === 'phrase' ? library.categories : null, kind === 'phrase' && teamId ? [scopeTeam?.version, teamView?.team.version] : null]), [library.settings.searchMode, library.files, library.phrases, library.categories, kind, teamId, scopeTeam?.version, teamView?.team.version]);
+  const [searchFailed, setSearchFailed] = useState(false);
+  const [searchSource, setSearchSource] = useState<{ query: string; scope: string; source: string; valid: boolean } | null>(null);
+  const results = searchSource?.query === query && searchSource.scope === searchScope ? storedResults : [];
+  const searchSelection = useRef<SearchHit | undefined>(undefined); searchSelection.current = results[searchIndex];
   const composing = useRef(false); const [compositionVersion, endComposition] = useState(0); const searchRef = useRef<HTMLInputElement>(null); const libraryRef = useRef(library); libraryRef.current = library;
+  const searchPending = searching || composing.current || searchSource?.query !== query || searchSource.scope !== searchScope || searchSource.source !== searchStamp || !searchSource.valid;
+  const searchGuard = useRef({ query, scope: searchScope, source: searchStamp, pending: searchPending }); searchGuard.current = { query, scope: searchScope, source: searchStamp, pending: searchPending };
   const [menu, setMenu] = useState<Menu | null>(null); const [dialog, setDialog] = useState<DialogSpec | null>(null); const [message, setMessage] = useState('');
   // 选择云文件时固定账号、库和分类，后续切换不能把附件保存到另一个目标。
   const [cloudTarget, setCloudTarget] = useState<{ epoch: number; server: string; userId: string; libraryId?: string; teamId: string; lifecycle?: number; categoryId: string; groupId: string } | null>(null);
@@ -195,6 +203,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     }
   }, [focusCommon, settings.showCommon]);
   const deliver = useCallback(async (id: string, kind: string, mode: 'insert' | 'send', triggerKey?: number, usage?: SearchUsage) => {
+    if (usage && (searchGuard.current.pending || searchGuard.current.query !== usage.query || searchGuard.current.scope !== searchScope || searchGuard.current.source !== searchStamp)) return;
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true);
     const visibleKey = kind === 'phrase' && !id.startsWith('team:') && !id.startsWith('private:') && !id.startsWith('member:') ? results.find(hit => hit.id === id)?.privateKey || (libraryRef.current.phrases.find(p => p.id === id) ? contentKey(libraryRef.current.phrases.find(p => p.id === id)!) : id) : id;
@@ -205,7 +214,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       if (report.status === 'submitted') { setMessage(mode === 'send' ? `已向目标提交 ${report.completedSegments} 段话术` : '已向目标提交插入操作'); if (settings.exitSearch) clearSearch(); if (usage) await history.record(usage); }
       else setMessage(`${report.error || '操作已停止'}${report.completedSegments ? `（已执行${report.completedSegments}段）` : ''}`);
     } catch (e) { setMessage(String(e)); } finally { busyRef.current = false; setBusy(false); }
-  }, [settings.exitSearch, results, history.record]);
+  }, [settings.exitSearch, results, history.record, searchScope, searchStamp]);
   useEffect(() => {
     let disposed = false; const unlisteners: (() => void)[] = [];
     const on = <T,>(name: string, fn: (payload: T) => void) => { void listen<T>(name, e => fn(e.payload)).then(un => disposed ? un() : unlisteners.push(un)); };
@@ -217,10 +226,16 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   }, []);
   useEffect(() => {
     if (!query.trim() || composing.current) { if (!query.trim()) setResults([]); return; }
-    let active = true; setSearching(true);
-    const timer = setTimeout(() => { void call<SearchHit[]>('search_scoped_content', { query, scope: kind === 'file' ? 'file' : teamId ? 'team' : 'private', teamId: teamId || null }).then(found => { if (active) { setResults(found); setSearchSource({ query, source: searchStamp }); setSearchIndex(i => Math.min(i, Math.max(0, found.length - 1))); setSearching(false); } }).catch(e => { if (active) { setResults([]); setSearchSource({ query, source: searchStamp }); setMessage(String(e)); setSearching(false); } }); }, 100);
+    let active = true; setSearching(true); setSearchFailed(false);
+    const timer = setTimeout(() => { void call<SearchHit[]>('search_scoped_content', { query, scope: kind === 'file' ? 'file' : teamId ? 'team' : 'private', teamId: teamId || null }).then(found => {
+      if (!active) return;
+      const selected = searchSelection.current;
+      setSearchIndex(Math.max(0, found.findIndex(hit => hit.id === selected?.id && hit.kind === selected.kind && hit.teamId === selected.teamId)));
+      setResults(previous => JSON.stringify(previous) === JSON.stringify(found) ? previous : found);
+      setSearchSource({ query, scope: searchScope, source: searchStamp, valid: true }); setSearching(false);
+    }).catch(e => { if (active) { setSearchSource(previous => previous ? { ...previous, valid: false } : null); setMessage(String(e)); setSearching(false); setSearchFailed(true); } }); }, 100);
     return () => { active = false; clearTimeout(timer); };
-  }, [query, searchStamp, compositionVersion, kind, teamId, searchVersion]);
+  }, [query, searchScope, searchStamp, compositionVersion, kind, teamId, searchVersion]);
   useEffect(() => { const close = (e: globalThis.MouseEvent) => { if (!(e.target as Element).closest('.context-menu')) setMenu(null); }; const escape = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing && !composing.current) { if (document.querySelector('.context-menu')) { setMenu(null); menuTrigger.current?.focus(); } else clearSearch(); } }; const blur = () => setMenu(null); window.addEventListener('blur', blur); document.addEventListener('pointerdown', close); document.addEventListener('keydown', escape); return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', escape); window.removeEventListener('blur', blur); }; }, []);
   const popup = (items: MenuItem[], x: number, y: number, primary = false, bottom?: number) => { menuTrigger.current = document.activeElement as HTMLElement; setMenu({ items, primary, bottom, x: Math.max(2, Math.min(x, innerWidth - (primary ? 178 : 190))), y: Math.max(2, Math.min(y, innerHeight - items.reduce((n, i) => n + (i ? 32 : 7), 4))) }); };
   // 原生分类菜单可展开到主窗口外，右键动作始终绑定被点击分类，而不是后来切换的选中项。
@@ -416,8 +431,8 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   ], anchor.left, anchor.top, false, innerHeight - anchor.top + 4); }
   const row = (p: Phrase | null, f: LinkedFile | null, index: number, isSearch = false) => {
     const id = (p?.id || f?.id)!;
-    return <PhraseRow key={id} phrase={p || undefined} file={f || undefined} index={index} settings={settings} sourceLabel={isSearch ? results.find(h => h.id === id)?.sourceLabel : undefined} selected={isSearch ? index === searchIndex : f ? selectedFiles.includes(id) : selected === id} query={isSearch ? query : undefined} busy={busy}
-      onSelect={e => { if (f && !isSearch) selectFile(f, e); else setSelected(id); if (isSearch) setSearchIndex(index); }} onDeliver={(mode, triggerKey) => void deliver(p ? (isSearch ? results.find(hit => hit.id === p.id)?.privateKey : '') || contentKey(p) : id, f ? 'file' : 'phrase', mode, triggerKey, isSearch ? searchUsage() : undefined)} onContext={e => p ? phraseMenu(p, e, isSearch) : fileMenu(f!, e, isSearch)} />;
+    return <PhraseRow key={id} phrase={p || undefined} file={f || undefined} index={index} settings={settings} sourceLabel={isSearch ? results.find(h => h.id === id)?.sourceLabel : undefined} selected={isSearch ? index === searchIndex : f ? selectedFiles.includes(id) : selected === id} query={isSearch ? query : undefined} busy={busy || (isSearch && searchPending)}
+      onSelect={e => { if (f && !isSearch) selectFile(f, e); else setSelected(id); if (isSearch) setSearchIndex(index); }} onDeliver={(mode, triggerKey) => { if (isSearch && searchGuard.current.pending) return; void deliver(p ? (isSearch ? results.find(hit => hit.id === p.id)?.privateKey : '') || contentKey(p) : id, f ? 'file' : 'phrase', mode, triggerKey, isSearch ? searchUsage() : undefined); }} onContext={e => { if (isSearch && searchPending) { e.preventDefault(); return; } p ? phraseMenu(p, e, isSearch) : fileMenu(f!, e, isSearch); }} />;
   };
   let sequence = 0; const content: ReactNode[] = []; const visible: { id: string; kind: 'phrase' | 'file'; privateKey?: string }[] = [];
   const addRow = (p: Phrase | null, f: LinkedFile | null) => { visible.push({ id: (p?.id || f?.id)!, kind: p ? 'phrase' : 'file', privateKey: p ? contentKey(p) : undefined }); content.push(row(p, f, sequence++)); };
@@ -429,7 +444,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     });
   } else library.files.filter(f => f.categoryId === fileCategory).forEach(f => addRow(null, f));
   const sequenceIds = JSON.stringify((settings.showSearch && query.trim() ? results : visible).slice(0, 10).map(item => item.kind === 'phrase' ? item.privateKey || item.id : null));
-  const sequenceLoading = !!(teamId && !teamView) || pendingScope.current !== null || !!(settings.showSearch && query.trim() && (searching || composing.current || searchSource?.query !== query || searchSource.source !== searchStamp));
+  const sequenceLoading = !!(teamId && !teamView) || pendingScope.current !== null || !!(settings.showSearch && query.trim() && searchPending);
   useEffect(() => { void call('sync_sequence_map', { ids: JSON.parse(sequenceIds), loading: sequenceLoading, generation: ++sequenceGeneration.current }).catch(e => setMessage(String(e))); }, [sequenceIds, sequenceLoading]);
   useEffect(() => { if (!teamId || !teamView) return; const ids = visible.filter(v => v.kind === 'phrase').map(v => v.id); const visibleRows = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-row]') || [])].filter(e => { const rect = e.getBoundingClientRect(); return rect.bottom > 0 && rect.top < innerHeight; }).map(e => e.dataset.row!); void call('preload_team_images', { teamId, ids: [...visibleRows, ...ids.filter(id => !visibleRows.includes(id))] }).catch(() => {}); }, [teamId, root, collapsed, sequenceIds]);
   useEffect(() => {
@@ -458,7 +473,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     {kind === 'phrase' && <div className="scope-bar">{(settings.teamsFirst ? ['team', 'private'] : ['private', 'team']).map(scope => scope === 'private' ? <button key={scope} className={`scope-name${!teamId ? ' active' : ''}`} onClick={() => changeScope('')}>个人话术</button> : <TeamSelector key={scope} status={teamStatus} teamId={teamId} onChange={changeScope} onError={setMessage} />)}<button id="top-menu" aria-label="一级分类菜单" onClick={topCategoryMenu}><Icon name="menu" /></button></div>}
     <nav className={`category-tabs${kind === 'file' ? ' files-tabs' : ' auto-wrapping'}${kind === 'phrase' || settings.fileCategoryHeight > 31 ? ' wrapping' : ''}`} style={kind === 'phrase' ? { minHeight: settings.categoryHeight } : { height: settings.fileCategoryHeight }} aria-label="一级分类">{(kind === 'phrase' ? roots : fileCats).map(c => { const background = c.background || (c.kind === 'file' ? settings.fileCategoryColor : settings.phraseCategoryColor); return <button key={c.id} title={c.readOnly ? `${c.name} · 来自${c.sourceLabel} · 只读` : categoryLabel(c, library.categories)} className={(kind === 'phrase' ? root : fileCategory) === c.id ? 'active' : ''} style={{ backgroundColor: background || undefined, color: background ? categoryTextColor(background) : undefined }} onClick={() => chooseCategory(c)} onContextMenu={e => categoryMenu(c, e)}>{c.name}{c.readOnly && <small className="member-source">{c.sourceLabel} · 只读</small>}</button>; })}<button className="add-category" aria-label="新增一级分类" disabled={kind === 'phrase' && !scopeCanEdit} onClick={() => categoryDialog()}>＋</button></nav>
     <div className="list-area"><div ref={listRef} tabIndex={0} className="content-list" role="listbox" aria-label={kind === 'phrase' ? '话术列表' : '本地文件列表'} aria-multiselectable={kind === 'file'} onKeyDown={listKey} onContextMenu={listMenu}>{content.length ? content : <div className="empty-state"><img className="empty-illustration" src={`/illustrations/${kind === 'phrase' ? 'phrase' : 'files'}-empty.png`} width="96" height="96" alt="" draggable={false} /><span>{teamId && kind === 'phrase' && !teamView ? teamError || '正在加载共享话术…' : !hasCategory ? '还没有一级分类' : kind === 'phrase' ? '这个分类还没有话术' : '还没有关联文件'}</span><button disabled={kind === 'phrase' && !canEdit} onClick={() => hasCategory ? run(newContent) : categoryDialog()}>{!hasCategory ? '新增一级分类' : kind === 'phrase' ? '新增话术' : '新增关联文件'}</button></div>}</div>
-      {settings.showSearch && query.trim() && <section className="search-panel" aria-label="搜索结果"><header><span>搜索结果</span><button aria-label="关闭搜索" onClick={clearSearch}>×</button></header><div className="search-kind">{kind === 'phrase' ? '话术' : '本地文件'}</div><div id="search-results">{sequenceLoading ? <div className="no-results">正在搜索…</div> : results.length ? results.map((hit, i) => row(hit.phrase, hit.file, i, true)) : <div className="no-results">没有找到匹配的内容</div>}</div></section>}
+      {settings.showSearch && query.trim() && <section className="search-panel" aria-label="搜索结果"><header><span>搜索结果</span><button aria-label="关闭搜索" onClick={clearSearch}>×</button></header><div className="search-kind">{kind === 'phrase' ? '话术' : '本地文件'}</div><div id="search-results" aria-busy={searchPending && !searchFailed}>{results.length ? results.map((hit, i) => row(hit.phrase, hit.file, i, true)) : <div className="no-results">{searchFailed ? '搜索失败，请重新输入关键词' : searchPending ? '正在搜索…' : '没有找到匹配的内容'}</div>}</div></section>}
     </div>
     {settings.showSearch && query.trim() && <div className="search-backdrop" onClick={clearSearch} />}
     {settings.showCommon && !(settings.showSearch && query.trim()) && <CommonPhraseBar library={library} busy={busy} onDeliver={(id, mode, triggerKey) => void deliver(id, 'common', mode, triggerKey)} onError={setMessage} />}

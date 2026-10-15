@@ -20,7 +20,7 @@ const control = async (command, args = {}) => {
   const request = { command, nonce: ++nonce, handles: Object.values(handles), ...args };
   const temporary = controls + '.tmp'; await fs.writeFile(temporary, JSON.stringify(request));
   for (let i = 0; ; i++) { try { await fs.rename(temporary, controls); break; } catch (e) { if (i > 20 || !['EACCES', 'EPERM', 'EBUSY'].includes(e.code)) throw e; await delay(20); } }
-  return poll(async () => { const state = await read(); if (state?.nonce === request.nonce && ['pointer', 'drag', 'click'].includes(command)) assert.equal(state.pointerError, 0); return state?.nonce === request.nonce && state; }, command);
+  return poll(async () => { const state = await read(); if (state?.nonce === request.nonce && ['pointer', 'drag', 'click', 'double-click', 'right-click'].includes(command)) assert.equal(state.pointerError, 0); return state?.nonce === request.nonce && state; }, command);
 };
 const inspect = () => control('inspect');
 const win = (state, name) => state.windows.find(w => w.handle === handles[name]);
@@ -38,6 +38,13 @@ const restored = () => poll(async () => { const s = await inspect(); return win(
 const show = async () => { await invoke('window_action', { action: 'show' }); return restored(); };
 const minimized = expected => poll(async () => { const s = await inspect(), main = win(s, 'main'); return (!main.visible || main.iconic) && win(s, 'float').visible === expected && s; }, '最小化及悬浮窗状态');
 const minimize = async (expected = true) => { await invoke('window_action', { action: 'minimize' }); return minimized(expected); };
+const floatMenu = async index => {
+  const f = win(await inspect(), 'float');
+  await control('right-click', { x: f.rect.left + 25, y: f.rect.top + 16 });
+  await delay(150);
+  await native(['-ProcessId', String(app.pid), '-WindowClass', '#32768', '-Screenshot', path.join(evidence, 'menu-' + index + '.png')]);
+  await native(['-Action', 'menu', '-ProcessId', String(app.pid), '-WindowClass', '#32768', '-MenuIndex', String(index)]);
+};
 async function launch() {
   const server = net.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port; await new Promise(resolve => server.close(resolve));
@@ -46,6 +53,17 @@ async function launch() {
   browser = await poll(async () => { try { return await chromium.connectOverCDP('http://127.0.0.1:' + port, { timeout: 1500 }); } catch { if (app.exitCode !== null) throw new Error('客户端提前退出'); return null; } }, 'WebView');
   page = await poll(() => browser.contexts()[0].pages().find(p => !new URL(p.url()).hash), '主页面'); await page.locator('.main-window').waitFor();
   floating = await poll(() => browser.contexts()[0].pages().find(p => p.url().includes('#minimized-float')), '独立悬浮页面'); await floating.getByRole('button', { name: '打开闪语' }).waitFor({ state: 'attached' });
+  await floating.evaluate(() => {
+    const fetch = window.fetch.bind(window);
+    window.__floatQA = { commands: [], errors: [] };
+    window.fetch = async (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input.url);
+      const cmd = decodeURIComponent(url.pathname.slice(1));
+      window.__floatQA.commands.push(cmd);
+      try { return await fetch(input, init); }
+      catch (error) { window.__floatQA.errors.push({ cmd, error: String(error) }); throw error; }
+    };
+  });
   for (const [name, title] of [['main', '闪语'], ['float', '悬浮窗 · 闪语'], ['bar', '常用短语 · 闪语']]) handles[name] = (await native(['-ProcessId', String(app.pid), '-Title', title])).handle;
 }
 async function stop() {
@@ -71,8 +89,10 @@ try {
       assert.equal(s.foreground, foreground); assert.equal(tray ? !main.visible : main.iconic, true);
       if (enabled) {
         const f = win(s, 'float'); assert.ok(f.toolWindow && !f.appWindow && f.noActivate && f.topmost);
-        assert.equal(f.clientRect.right, f.dpi); assert.equal(f.clientRect.bottom, Math.round(40 * f.dpi / 96));
+        assert.equal(f.clientRect.right, Math.round(88 * f.dpi / 96)); assert.equal(f.clientRect.bottom, Math.round(34 * f.dpi / 96));
         await control('click', { x: f.rect.left + 25, y: f.rect.top + 20 });
+        await delay(550); await minimized(true);
+        await control('double-click', { x: f.rect.left + 25, y: f.rect.top + 20 });
         const restoredState = await restored(); assert.equal(restoredState.foreground, handles.main);
       } else await show();
     });
@@ -84,18 +104,40 @@ try {
     await floating.screenshot({ path: path.join(evidence, 'float-green.png') });
     await save({ theme: 'default' }); await floating.screenshot({ path: path.join(evidence, 'float.png') });
   });
-  await check('32像素图标完整显示，原生圆角外不拦截鼠标', async () => {
+  await check('24像素图标完整显示，6DIP圆角外不拦截鼠标', async () => {
     const geometry = await floating.locator('.minimized-float').evaluate(el => {
       const image = el.querySelector('img').getBoundingClientRect();
       return { width: image.width, height: image.height, radius: getComputedStyle(el).borderTopLeftRadius, overflow: el.scrollWidth > el.clientWidth };
     });
-    assert.deepEqual(geometry, { width: 32, height: 32, radius: '12px', overflow: false });
+    assert.deepEqual(geometry, { width: 24, height: 24, radius: '6px', overflow: false });
     const f = win(await inspect(), 'float');
     for (const [x, y] of [[f.rect.left + 1, f.rect.top + 1], [f.rect.right - 2, f.rect.bottom - 2]]) {
       await control('pointer', { x, y }); assert.notEqual((await inspect()).windowAtCursor, handles.float);
     }
     await control('pointer', { x: f.rect.left + 48, y: f.rect.top + 20 });
     assert.equal((await inspect()).windowAtCursor, handles.float);
+    await native(['-Handle', String(handles.float), '-Screenshot', path.join(evidence, 'float-native.png')]);
+  });
+  await check('原生右键临时隐藏不改设置，轮询和重复最小化不恢复，下次最小化恢复', async () => {
+    const before = (await invoke('get_library')).settings;
+    await floatMenu(0); await minimized(false); await delay(400); await minimized(false);
+    assert.deepEqual((await invoke('get_library')).settings, before);
+    await minimize(false); await show(); await minimize(true);
+    await floatMenu(2); await restored(); await minimize();
+  });
+  await check('永久隐藏保存失败回滚设置并保留可用悬浮入口', async () => {
+    const db = path.join(data, 'shanyu.sqlite3');
+    await run('python', ['-c', "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(\"CREATE TRIGGER qa_fail_settings BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT, '隔离验证：设置写入失败'); END\"); c.commit()", db], { windowsHide: true });
+    try { await assert.rejects(invoke('hide_minimized_float', { permanent: true })); }
+    finally { await run('python', ['-c', "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute('DROP TRIGGER qa_fail_settings'); c.commit()", db], { windowsHide: true }); }
+    assert.equal((await invoke('get_library')).settings.showFloatingOnMinimize, true); await minimized(true);
+  });
+  await check('原生菜单永久隐藏仅修改对应开关，重启保持，设置中可重新开启', async () => {
+    const before = (await invoke('get_library')).settings;
+    await floatMenu(1); await minimized(false);
+    assert.deepEqual((await invoke('get_library')).settings, { ...before, showFloatingOnMinimize: false });
+    await stop(); await launch(); await minimize(false);
+    await save({ showFloatingOnMinimize: true }); await minimized(true);
   });
   let remembered;
   await check('真实拖动不抢焦点、不误还原，松开后记住坐标', async () => {
@@ -106,7 +148,7 @@ try {
     assert.equal(after.foreground, before.foreground);
     assert.ok(Math.abs(moved.rect.left - f.rect.left) > 60);
     remembered = { x: moved.rect.left, y: moved.rect.top };
-    await control('click', { x: moved.rect.left + 25, y: moved.rect.top + 20 }); await restored();
+    await control('double-click', { x: moved.rect.left + 25, y: moved.rect.top + 20 }); await restored();
     await minimize(); const again = win(await inspect(), 'float'); assert.equal(again.rect.left, remembered.x); assert.equal(again.rect.top, remembered.y);
   });
   await check('手动隐藏、其他窗口最小化及自动跟随隐藏不显示小条', async () => {
@@ -160,6 +202,7 @@ try {
 } catch (error) {
   console.error(error); process.exitCode = 1;
   snapshots.push({ name: 'failure', state: await inspect().catch(() => null) });
+  console.error(await floating?.evaluate(() => ({ ...window.__floatQA, title: document.querySelector('button')?.title })).catch(() => null));
   await floating?.screenshot({ path: path.join(evidence, 'failure-float.png') }).catch(() => {});
   await page?.screenshot({ path: path.join(evidence, 'failure-main.png') }).catch(() => {});
 } finally {

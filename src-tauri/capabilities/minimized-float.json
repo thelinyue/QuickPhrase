@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "minimized-float",
-  "description": "最小化悬浮窗只监听外观更新并支持原生拖动",
+  "description": "最小化悬浮窗监听外观更新，支持原生拖动与右键菜单",
   "windows": ["minimized-float"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "core:window:allow-start-dragging"]
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "core:window:allow-start-dragging", "core:menu:allow-new", "core:menu:allow-popup", "core:resources:allow-close"]
 }

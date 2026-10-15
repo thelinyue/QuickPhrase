@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { Menu, type MenuItemOptions } from '@tauri-apps/api/menu';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
 import { listen } from '@tauri-apps/api/event';
@@ -7,6 +7,7 @@ import { call, closeWindow, openWindow, useTeams } from './api';
 import { Icon, Titlebar, useEnterSubmit } from './ui';
 import { PhraseRow } from './PhraseRow';
 import { SearchHistoryBar, useSearchHistory, type SearchUsage } from './SearchHistory';
+import { useMembers } from './useMembers';
 import { categoryLabel, type CommonPhrase, type DeliveryReport, type Library, type SearchHit, type TargetContext } from './types';
 
 /** 换行短语按真实布局导航：上下先找相邻行，再选择横向中心最近的项。 */
@@ -89,22 +90,29 @@ export function CommonPhraseEditor({ library, id }: { library: Library; id: stri
 
 /** 底部搜索和短语共用目标上下文与发送锁。内容高度变化通知 Rust，跟随时不激活聊天窗口。 */
 export function CommonDockWindow({ library }: { library: Library }) {
-  const { version: teamVersion, status: teamStatus } = useTeams();
+  const { status: teamStatus } = useTeams();
+  const members = useMembers(teamStatus);
   const enterSubmit = useEnterSubmit();
   const [busy, setBusy] = useState(false); const busyRef = useRef(false); const [message, setMessage] = useState('');
   const history = useSearchHistory(library.libraryId, setMessage);
   const [searchVersion, repeatSearch] = useState(0); const searchRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    let disposed = false; let stop: (() => void) | undefined;
-    void listen('member-content-changed', () => { if (!disposed) { setResults([]); repeatSearch(v => v + 1); } }).then(fn => { if (disposed) fn(); else stop = fn; });
-    return () => { disposed = true; stop?.(); };
-  }, []);
   const searchUsage = (): SearchUsage | undefined => library.libraryId ? { query, libraryId: library.libraryId } : undefined;
   const content = useRef<HTMLElement>(null);
   const [query, setQuery] = useState(''); const [storedResults, setResults] = useState<SearchHit[]>([]); const [index, setIndex] = useState(0); const [searching, setSearching] = useState(false);
   const [collapsed, setCollapsed] = useState(false); const [kind, setKind] = useState<'phrase' | 'file'>('phrase');
   const upperRef = useRef<HTMLDivElement>(null);
   const composing = useRef(false); const [compositionVersion, endComposition] = useState(0); const menuRef = useRef<Menu | null>(null);
+  // 状态通知不等于内容更新；只比较内容与已有版本，成员同步时间变化不清空列表。
+  const searchScope = JSON.stringify([library.libraryId, teamStatus.server, teamStatus.user?.id, teamStatus.sessionEpoch, teamStatus.user?.mustChangePassword, teamStatus.memberPhraseSync, members?.subscription, teamStatus.teams.map(t => [t.teamId, t.membershipVersion, t.lifecycleVersion])]);
+  const teamContent = JSON.stringify(teamStatus.teams.map(t => [t.teamId, t.version]));
+  const searchStamp = useMemo(() => JSON.stringify([library.settings.searchMode, library.phrases, library.categories, library.files, members?.phrases, members?.categories, teamContent]), [library.settings.searchMode, library.phrases, library.categories, library.files, members?.phrases, members?.categories, teamContent]);
+  const [searchFailed, setSearchFailed] = useState(false);
+  const [searchSource, setSearchSource] = useState<{ query: string; scope: string; source: string; valid: boolean } | null>(null);
+  const searchPending = searching || composing.current || searchSource?.query !== query || searchSource.scope !== searchScope || searchSource.source !== searchStamp || !searchSource.valid;
+  const searchGuard = useRef({ query, scope: searchScope, source: searchStamp, pending: searchPending }); searchGuard.current = { query, scope: searchScope, source: searchStamp, pending: searchPending };
+  const results = searchSource?.query === query && searchSource.scope === searchScope ? storedResults.filter(hit => hit.kind === kind && (!hit.teamId || teamStatus.teams.some(t => t.teamId === hit.teamId))) : [];
+  const searchSelection = useRef<SearchHit | undefined>(undefined); searchSelection.current = results[index];
+  const searchKind = useRef(kind); searchKind.current = kind;
   const [hiding, setHiding] = useState(false); const hidingRef = useRef(false);
   const clearSearch = () => { setQuery(''); setResults([]); setIndex(0); setSearching(false); };
   const chooseHistory = (value: string) => { composing.current = false; setQuery(value); setResults([]); setIndex(0); setSearching(true); repeatSearch(v => v + 1); searchRef.current?.focus(); };
@@ -114,11 +122,16 @@ export function CommonDockWindow({ library }: { library: Library }) {
   useEffect(() => () => { void menuRef.current?.close().catch(() => {}); }, []);
   useEffect(() => {
     if (collapsed || !library.settings.dockSearch || !query.trim() || composing.current) { if (!query.trim()) setResults([]); return; }
-    let active = true; setSearching(true);
-    const timer = setTimeout(() => { void call<SearchHit[]>('search_scoped_content', { query, scope: 'all' }).then(found => { if (active) { setResults(found); setIndex(i => Math.min(i, Math.max(0, found.length - 1))); setSearching(false); } }).catch(e => { if (active) { setResults([]); setMessage(String(e)); setSearching(false); } }); }, 100);
+    let active = true; setSearching(true); setSearchFailed(false);
+    const timer = setTimeout(() => { void call<SearchHit[]>('search_scoped_content', { query, scope: 'all' }).then(found => {
+      if (!active) return;
+      const selected = searchSelection.current;
+      setIndex(Math.max(0, found.filter(hit => hit.kind === searchKind.current).findIndex(hit => hit.id === selected?.id && hit.kind === selected.kind && hit.teamId === selected.teamId)));
+      setResults(previous => JSON.stringify(previous) === JSON.stringify(found) ? previous : found);
+      setSearchSource({ query, scope: searchScope, source: searchStamp, valid: true }); setSearching(false);
+    }).catch(e => { if (active) { setSearchSource(previous => previous ? { ...previous, valid: false } : null); setMessage(String(e)); setSearching(false); setSearchFailed(true); } }); }, 100);
     return () => { active = false; clearTimeout(timer); };
-  }, [query, library, compositionVersion, teamVersion, searchVersion, collapsed]);
-  const results = storedResults.filter(hit => hit.kind === kind && (!hit.teamId || teamStatus.teams.some(t => t.teamId === hit.teamId)));
+  }, [query, searchScope, searchStamp, library.settings.dockSearch, compositionVersion, searchVersion, collapsed]);
   const memberIds = JSON.stringify(results.filter(h => h.phrase?.contentRef?.source === 'member').map(h => h.id));
   useEffect(() => { const ids = JSON.parse(memberIds) as string[]; if (ids.length && !teamStatus.offline) void call('download_member_materials', { ids, attachments: false }).catch(() => {}); }, [memberIds, teamStatus.offline]);
   useEffect(() => {
@@ -143,6 +156,7 @@ export function CommonDockWindow({ library }: { library: Library }) {
   }, []);
   useEffect(() => { if (message) { const timer = setTimeout(() => setMessage(''), 6000); return () => clearTimeout(timer); } }, [message]);
   async function deliver(id: string, mode: 'insert' | 'send', kind = 'common', triggerKey?: number, usage?: SearchUsage) {
+    if (kind !== 'common' && (searchGuard.current.pending || searchGuard.current.query !== query || searchGuard.current.scope !== searchScope || searchGuard.current.source !== searchStamp)) return;
     if (busyRef.current) return; busyRef.current = true; setBusy(true);
     try {
       const target = await call<TargetContext | null>('get_target');
@@ -155,6 +169,7 @@ export function CommonDockWindow({ library }: { library: Library }) {
   }
   async function resultMenu(e: MouseEvent, hit: SearchHit) {
     e.preventDefault(); e.stopPropagation();
+    if (searchGuard.current.pending) return;
     const usage = searchUsage();
     await menuRef.current?.close();
     const menu = await Menu.new({ items: [{ text: '添加到输入区', enabled: !busy, action: () => void deliver(hit.privateKey || hit.id, 'insert', hit.kind, undefined, usage) }, { text: '直接发送', enabled: !busy, action: () => void deliver(hit.privateKey || hit.id, 'send', hit.kind, undefined, usage) }, ...(hit.phrase?.contentRef?.source === 'member' ? [{ text: '下载全部素材', enabled: !busy && !teamStatus.offline, action: () => { void call('download_member_materials', { ids: [hit.id], attachments: true }).catch(e => setMessage(String(e))); } }] : [])] }); menuRef.current = menu;
@@ -178,14 +193,14 @@ export function CommonDockWindow({ library }: { library: Library }) {
     <div className="dock-search-upper" ref={upperRef} id="dock-search-panel">
     {library.settings.dockSearch && !collapsed && query.trim() && <>
       <div className="dock-search-tabs" role="tablist" aria-label="底部搜索类型">{(['phrase', 'file'] as const).map(value => <button key={value} role="tab" id={`dock-tab-${value}`} aria-selected={kind === value} aria-controls="dock-search-results" tabIndex={kind === value ? 0 : -1} onClick={() => { setKind(value); setIndex(0); }} onKeyDown={e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = e.key === 'Home' ? 'phrase' : e.key === 'End' ? 'file' : kind === 'phrase' ? 'file' : 'phrase'; setKind(next); setIndex(0); document.getElementById(`dock-tab-${next}`)?.focus(); } }}>{value === 'phrase' ? '话术' : '本地文件'}</button>)}</div>
-      <div className="dock-search-results" id="dock-search-results" role="listbox" aria-label="底部搜索结果">{searching ? <div className="no-results">正在搜索…</div> : results.length ? results.map((hit, i) => <PhraseRow key={hit.privateKey || `${hit.teamId || ''}:${hit.kind}:${hit.id}`} sourceLabel={hit.sourceLabel} phrase={hit.phrase || undefined} file={hit.file || undefined} index={i} settings={library.settings} selected={i === index} query={query} busy={busy} onSelect={() => setIndex(i)} onDeliver={(mode, triggerKey) => void deliver(hit.privateKey || hit.id, mode, hit.kind, triggerKey, searchUsage())} onContext={e => void resultMenu(e, hit).catch(e => setMessage(String(e)))} />) : <div className="no-results">没有找到匹配的{kind === 'phrase' ? '话术' : '本地文件'}</div>}</div>
+      <div className="dock-search-results" id="dock-search-results" role="listbox" aria-label="底部搜索结果" aria-busy={searchPending && !searchFailed}>{results.length ? results.map((hit, i) => <PhraseRow key={`${hit.teamId || ''}:${hit.kind}:${hit.id}`} sourceLabel={hit.sourceLabel} phrase={hit.phrase || undefined} file={hit.file || undefined} index={i} settings={library.settings} selected={i === index} query={query} busy={busy || searchPending} onSelect={() => setIndex(i)} onDeliver={(mode, triggerKey) => void deliver(hit.privateKey || hit.id, mode, hit.kind, triggerKey, searchUsage())} onContext={e => void resultMenu(e, hit).catch(e => setMessage(String(e)))} />) : <div className="no-results">{searchFailed ? '搜索失败，请重新输入关键词' : searchPending ? '正在搜索…' : `没有找到匹配的${kind === 'phrase' ? '话术' : '本地文件'}`}</div>}</div>
     </>}
     {library.settings.dockSearch && !collapsed && <SearchHistoryBar label="历史搜索" items={history.items} clearing={history.clearing} onSelect={chooseHistory} onClear={() => void history.clear()} />}
     </div>
-    {library.settings.dockSearch && <div className="search-bar dock-search-bar"><button className="dock-search-toggle" aria-label={collapsed ? '展开底部搜索' : '收起底部搜索'} title={collapsed ? '展开底部搜索' : '收起底部搜索'} aria-expanded={!collapsed} aria-controls="dock-search-panel" onClick={toggleSearch}><Icon name={collapsed ? 'eye-off' : 'eye'} /></button>{!collapsed && <><Icon name="search" /><input ref={searchRef} data-shortcut-search aria-label="底部搜索话术、本地文件" placeholder="搜索话术、本地文件" value={query} onChange={e => { setQuery(e.target.value); setIndex(0); setSearching(!!e.target.value.trim()); }} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={e => { composing.current = false; setQuery(e.currentTarget.value); endComposition(v => v + 1); }} onKeyDown={e => {
+    {library.settings.dockSearch && <div className="search-bar dock-search-bar"><button className="dock-search-toggle" aria-label={collapsed ? '展开底部搜索' : '收起底部搜索'} title={collapsed ? '展开底部搜索' : '收起底部搜索'} aria-expanded={!collapsed} aria-controls="dock-search-panel" onClick={toggleSearch}><Icon name={collapsed ? 'eye-off' : 'eye'} /></button>{!collapsed && <><Icon name="search" /><input ref={searchRef} data-shortcut-search aria-label="底部搜索话术、本地文件" placeholder="搜索话术、本地文件" value={query} onChange={e => { setQuery(e.target.value); setIndex(0); setSearching(!!e.target.value.trim()); }} onCompositionStart={() => { composing.current = true; setSearching(true); }} onCompositionEnd={e => { composing.current = false; setQuery(e.currentTarget.value); endComposition(v => v + 1); }} onKeyDown={e => {
       if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setIndex(i => Math.max(0, Math.min(results.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))); requestAnimationFrame(() => document.querySelector('.dock-search-results .selected')?.scrollIntoView({ block: 'nearest' })); }
-      if (e.key === 'Enter' && query.trim() && !searching && results[index] && enterSubmit()) { e.preventDefault(); const hit = results[index]; void deliver(hit.privateKey || hit.id, 'insert', hit.kind, 13, searchUsage()); }
+      if (e.key === 'Enter' && query.trim() && !searchPending && results[index] && enterSubmit()) { e.preventDefault(); const hit = results[index]; void deliver(hit.privateKey || hit.id, 'insert', hit.kind, 13, searchUsage()); }
       if (e.key === 'Escape') { e.preventDefault(); clearSearch(); }
     }} />{query && <button className="dock-search-clear" aria-label="清空底部搜索" onClick={() => { clearSearch(); searchRef.current?.focus(); }}>×</button>}</>}</div>}
     {library.settings.dockCommon && <CommonPhraseBar library={library} compact busy={busy || hiding} onDeliver={(id, mode, triggerKey) => void deliver(id, mode, 'common', triggerKey)} onError={setMessage} onHide={() => void hideCommon()} />}

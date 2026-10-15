@@ -356,14 +356,18 @@ impl EdgeHide {
                 .windows
                 .get()
                 .is_some_and(|windows| IsWindowVisible(hwnd(windows.2)).as_bool());
-        let blocked = gui.flags.0 & (GUI_INMENUMODE.0 | GUI_POPUPMENUMODE.0 | GUI_SYSTEMMENUMODE.0)
-            != 0
-            || !gui.hwndCapture.0.is_null()
+        // 同一 UI 线程也承载设置窗口：菜单、捕获和输入只在属于主窗口时阻止其收起。
+        let settings_window = state.management_windows.settings.load(Ordering::Acquire);
+        let settings_foreground = settings_window != 0 && foreground.0 as i64 == settings_window;
+        let blocked = (!settings_foreground
+            && (gui.flags.0 & (GUI_INMENUMODE.0 | GUI_POPUPMENUMODE.0 | GUI_SYSTEMMENUMODE.0)
+                != 0
+                || !gui.hwndCapture.0.is_null()))
             || GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0
             || GetAsyncKeyState(VK_RBUTTON.0 as i32) < 0
             || state.busy.load(Ordering::Acquire)
-            || state.management_windows.is_open()
-            || state.shortcut_input.load(Ordering::Acquire) != 0
+            || state.management_windows.blocks_edge_hide()
+            || (state.shortcut_input.load(Ordering::Acquire) != 0 && !settings_foreground)
             || preview_open;
         if self.reveal {
             self.reveal = false;
