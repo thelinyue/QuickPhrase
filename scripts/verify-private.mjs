@@ -36,7 +36,7 @@ async function hideWindows(view) {
 async function accountSettings() {
   await page.getByRole('button', { name: '设置', exact: true }).click();
   const view = await until(() => context.pages().find(p => !p.isClosed() && p.url().includes('#settings'))); await view.locator('.settings-sidebar').waitFor(); await hideWindows(view);
-  await view.getByRole('button', { name: '账号与同步', exact: true }).click(); return view;
+  await view.getByRole('button', { name: '账号与共享', exact: true }).click(); return view;
 }
 async function stopClient() {
   if (page && !page.isClosed()) await invoke('window_action', { action: 'exit' }).catch(() => {});
@@ -119,7 +119,7 @@ try {
     const settings = await accountSettings(); await settings.getByText('可管理：2', { exact: true }).waitFor();
     assert.equal(await settings.getByText('时间验收一', { exact: true }).count(), 0);
     await settings.screenshot({ path: path.join(evidence, 'sync-times.png') });
-    await settings.getByRole('button', { name: '共享话术管理', exact: true }).click();
+    await settings.getByRole('button', { name: '管理话术', exact: true }).click();
     const management = await until(() => context.pages().find(p => !p.isClosed() && p.url().includes('#team-management')));
     await management.getByRole('cell', { name: /时间验收一.*最近同步：/ }).waitFor();
     await management.getByRole('cell', { name: /时间验收二.*最近同步：/ }).waitFor();

@@ -23,6 +23,8 @@ use tokio_util::sync::CancellationToken;
 const LIMIT: u64 = 128 * 1024 * 1024;
 #[path = "company_client.rs"]
 mod company;
+#[path = "member_client.rs"]
+pub mod member;
 pub use company::{CompanySelection, CompanyTransfer, CompanyUpload, CompanyView};
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +83,7 @@ pub struct Status {
     pub team_sync_times: HashMap<String, u64>,
     pub offline: bool,
     pub private_sync: bool,
+    pub member_phrase_sync: bool,
     pub company_files: bool,
     pub company_file_permissions: bool,
 }
@@ -137,6 +140,9 @@ pub struct TeamClient {
     download_locks: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     company_transfers: Mutex<HashMap<String, CancellationToken>>,
     company_history: Arc<Mutex<HashMap<String, CompanyTransfer>>>,
+    member: Mutex<member::MemberState>,
+    member_refresh: AsyncMutex<()>,
+    member_wake: tokio::sync::Notify,
 }
 pub fn normalize_server(value: &str) -> Result<String> {
     let url = Url::parse(value.trim())
@@ -332,17 +338,28 @@ impl TeamClient {
         expected: u64,
         image: bool,
     ) -> Result<tempfile::NamedTempFile> {
+        self.account_download_route(
+            ctx,
+            &format!("me/private/assets/{id}"),
+            target,
+            expected,
+            image,
+        )
+        .await
+    }
+    /// 本人素材和成员素材共用流式下载、大小核对、图片解码及两个下载名额。
+    async fn account_download_route(
+        &self,
+        ctx: &AccountContext,
+        route: &str,
+        target: &Path,
+        expected: u64,
+        image: bool,
+    ) -> Result<tempfile::NamedTempFile> {
         let _permit = tokio::select! {_=ctx.cancel.cancelled()=>return Err("旧下载已取消。".into()),p=self.downloads.acquire()=>p.map_err(|_|"下载已停止。".to_owned())?};
         let active = self.active()?;
         self.with_account(ctx, || Ok(()))?;
-        let response = self
-            .response(
-                &active,
-                Method::GET,
-                &format!("me/private/assets/{id}"),
-                None,
-            )
-            .await?;
+        let response = self.response(&active, Method::GET, route, None).await?;
         let temp = tempfile::NamedTempFile::new_in(target.parent().ok_or("缓存目录无效。")?)
             .map_err(|_| "无法创建素材缓存。".to_owned())?;
         let mut file =
@@ -398,6 +415,9 @@ impl TeamClient {
             company_transfers: Mutex::new(HashMap::new()),
             company_history: Arc::new(Mutex::new(HashMap::new())),
             download_locks: Mutex::new(HashMap::new()),
+            member: Mutex::new(member::MemberState::default()),
+            member_refresh: AsyncMutex::new(()),
+            member_wake: tokio::sync::Notify::new(),
         });
         if let Err(error) = this.clean_uncommitted_uploads() {
             log::warn!("未完成的上传副本暂时无法清理：{error}");
@@ -459,6 +479,7 @@ impl TeamClient {
                 }
             }
         }
+        this.initialize_member();
         Ok(this)
     }
     fn team_dir(&self, active: &Active, team: &str) -> PathBuf {
@@ -528,6 +549,7 @@ impl TeamClient {
                     .collect(),
                 offline: active.offline,
                 private_sync: active.authorization.capabilities.private_sync,
+                member_phrase_sync: active.authorization.capabilities.member_phrase_sync,
                 company_files: active.authorization.capabilities.company_files,
                 company_file_permissions: active
                     .authorization
@@ -545,6 +567,7 @@ impl TeamClient {
                 team_sync_times: HashMap::new(),
                 offline: false,
                 private_sync: false,
+                member_phrase_sync: false,
                 company_files: false,
                 company_file_permissions: false,
             }
@@ -682,6 +705,7 @@ impl TeamClient {
             active
         };
         let mut result = Ok(());
+        self.clear_member(app);
         if let Some(active) = active {
             active.cancel.cancel();
             result = team_credentials::delete(&active.connection.partition);
@@ -885,6 +909,20 @@ impl TeamClient {
             self.invalidate_delivery(app);
         }
         self.emit(app);
+        let current = self.status();
+        if !current.member_phrase_sync
+            || current
+                .user
+                .as_ref()
+                .is_some_and(|u| u.must_change_password)
+        {
+            self.clear_member(app);
+        } else {
+            self.start_member(app.clone());
+            if active.offline {
+                self.member_wake.notify_one();
+            }
+        }
         let teams = self.status().teams;
         for t in teams {
             app.asset_protocol_scope()
@@ -1053,6 +1091,7 @@ impl TeamClient {
     }
     pub fn start(self: &Arc<Self>, app: tauri::AppHandle) {
         let Ok(active) = self.active() else { return };
+        self.start_member(app.clone());
         let this = self.clone();
         for team in &active.authorization.teams {
             let _ = app
@@ -1090,6 +1129,11 @@ impl TeamClient {
                                         let event: String = buffer.drain(..end + 2).collect();
                                         if event.lines().any(|l| l == "event: authorization") {
                                             let _ = this.refresh_authorization(&app).await;
+                                        } else if event
+                                            .lines()
+                                            .any(|l| l == "event: member-phrases")
+                                        {
+                                            this.member_wake.notify_one();
                                         } else if event
                                             .lines()
                                             .any(|l| l == "event: private-version")
@@ -2073,6 +2117,7 @@ impl TeamClient {
     }
     pub fn end_delivery(&self) {
         self.inner.lock().unwrap().delivery_team = None;
+        self.member.lock().unwrap().delivery = None;
     }
 
     pub async fn save_category(

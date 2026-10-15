@@ -3,6 +3,7 @@ mod company_commands;
 mod data_directory;
 mod delivery;
 mod file_library;
+mod member_commands;
 mod model;
 mod native;
 mod private_commands;
@@ -225,6 +226,9 @@ fn sync_sequence_map(
         .take(10)
         .map(|id| {
             id.filter(|id| {
+                if id.starts_with("member:") {
+                    return state.teams.member_phrase(id, false).is_ok();
+                }
                 shanyu_team_model::ContentRef::from_key(id).is_none()
                     || state.teams.phrase(id, false).is_ok()
             })
@@ -345,7 +349,9 @@ fn show_phrase_preview(
     }
     #[cfg(windows)]
     {
-        let phrase = if shanyu_team_model::ContentRef::from_key(&id).is_some() {
+        let phrase = if id.starts_with("member:") {
+            state.teams.member_phrase(&id, false)?
+        } else if shanyu_team_model::ContentRef::from_key(&id).is_some() {
             state.teams.phrase(&id, false)?
         } else {
             let store = state.store.lock().unwrap();
@@ -817,7 +823,9 @@ async fn deliver_content(
     if state.native.target.lock().unwrap().as_ref() != Some(&target) {
         return Err("目标上下文已变化，请重新聚焦输入区后返回闪语。".into());
     }
-    let shared = if kind == "phrase" && shanyu_team_model::ContentRef::from_key(&id).is_some() {
+    let shared = if kind == "phrase" && id.starts_with("member:") {
+        Some(state.teams.check_member_delivery(&app, &id).await?)
+    } else if kind == "phrase" && shanyu_team_model::ContentRef::from_key(&id).is_some() {
         Some(state.teams.check_delivery(&app, &id).await?)
     } else {
         None
@@ -905,7 +913,9 @@ fn cancel_delivery(state: State<AppState>) {
 #[tauri::command]
 fn copy_phrase_text(app: tauri::AppHandle, state: State<AppState>, id: String) -> Result<()> {
     let _guard = state.delivery.acquire()?;
-    let text = if shanyu_team_model::ContentRef::from_key(&id).is_some() {
+    let text = if id.starts_with("member:") {
+        state.teams.member_phrase(&id, false)?.text()
+    } else if shanyu_team_model::ContentRef::from_key(&id).is_some() {
         state.teams.phrase(&id, false)?.text()
     } else {
         let store = state.store.lock().unwrap();
@@ -1474,6 +1484,11 @@ pub fn run() {
                 team_commands::team_admin,
                 team_commands::backup_team_server,
                 team_commands::search_scoped_content,
+                member_commands::get_member_view,
+                member_commands::get_member_overview,
+                member_commands::save_member_share,
+                member_commands::set_member_subscription,
+                member_commands::download_member_materials,
                 get_library,
                 search_content,
                 save_phrase,

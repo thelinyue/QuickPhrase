@@ -27,7 +27,7 @@ it('未登录以连接表单为主，密码显示切换不改变值，提交期�
   fireEvent.submit(password.closest('form')!);
   expect(call).toHaveBeenCalledWith('team_login', { server: status.server, username: 'admin', password: 'test-password' });
   expect(password.closest('fieldset')!.disabled).toBe(true);
-  expect(screen.queryByRole('button', { name: '共享话术管理' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '管理话术' })).toBeNull();
   await act(async () => complete()); expect(password.value).toBe('');
 });
 
@@ -58,12 +58,12 @@ it('改密核对两次密码，失败保留输入，关闭清空并恢复触发�
 
 it('两个管理入口使用独立路由，用户看不到账号管理，离线无法提交管理', async () => {
   const view = render(<TeamSettings />);
-  fireEvent.click(screen.getByRole('button', { name: '共享话术管理' })); await waitFor(() => expect(openWindow).toHaveBeenCalledWith('team-management'));
+  fireEvent.click(screen.getByRole('button', { name: '管理话术' })); await waitFor(() => expect(openWindow).toHaveBeenCalledWith('team-management'));
   await waitFor(() => expect((screen.getByRole('button', { name: '账号管理' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: '账号管理' })); await waitFor(() => expect(openWindow).toHaveBeenCalledWith('user-management'));
   status = { ...status, offline: true, user: { ...status.user!, admin: false } }; view.rerender(<TeamSettings />);
   expect(screen.queryByRole('button', { name: '账号管理' })).toBeNull();
-  expect((screen.getByRole('button', { name: '共享话术管理' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: '管理话术' }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByRole('button', { name: '共享数据备份' })).toBeNull();
 });
 
@@ -84,6 +84,53 @@ it('大量共享话术仅显示数量和管理入口，不在账号页逐库展�
   render(<TeamSettings />);
   expect(screen.getByText('可管理：100')).toBeTruthy();
   expect(screen.queryByText(/团队\d/)).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '共享话术管理' }));
+  fireEvent.click(screen.getByRole('button', { name: '管理话术' }));
   await waitFor(() => expect(openWindow).toHaveBeenCalledWith('team-management'));
+});
+
+
+it('离线也可修改连接，预填地址和用户名，取消不改连接且销毁密码', async () => {
+  status = { ...status, offline: true };
+  render(<TeamSettings />);
+  const trigger = screen.getByRole('button', { name: '修改连接' }); trigger.focus(); fireEvent.click(trigger);
+  const dialog = screen.getByRole('dialog', { name: '修改连接' });
+  expect((within(dialog).getByLabelText('服务器地址') as HTMLInputElement).value).toBe(status.server);
+  expect((within(dialog).getByLabelText('用户名') as HTMLInputElement).value).toBe(status.username);
+  fireEvent.change(within(dialog).getByLabelText('密码'), { target: { value: 'temporary-password' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+  expect(call).not.toHaveBeenCalledWith('team_login', expect.anything());
+  expect(document.activeElement).toBe(trigger);
+  fireEvent.click(trigger); expect((screen.getByLabelText('密码') as HTMLInputElement).value).toBe('');
+});
+it('修改连接失败保留表单供重试，提交期间禁止重复，成功关闭', async () => {
+  const base = vi.mocked(call).getMockImplementation()!;
+  vi.mocked(call).mockImplementation((cmd, args) => cmd === 'team_login' ? Promise.reject('用户名或密码错误') : base(cmd, args));
+  render(<TeamSettings />); fireEvent.click(screen.getByRole('button', { name: '修改连接' }));
+  fireEvent.change(screen.getByLabelText('服务器地址'), { target: { value: ' http://new-hub:7823 ' } });
+  fireEvent.change(screen.getByLabelText('用户名'), { target: { value: ' 002 ' } });
+  fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'new-password' } });
+  fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
+  await screen.findByText('用户名或密码错误');
+  expect(call).toHaveBeenCalledWith('team_login', { server: 'http://new-hub:7823', username: '002', password: 'new-password' });
+  expect(screen.getByText(status.server)).toBeTruthy();
+  let complete!: () => void;
+  vi.mocked(call).mockImplementation((cmd, args) => cmd === 'team_login' ? new Promise<void>(resolve => { complete = resolve; }) : base(cmd, args));
+  fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
+  expect((screen.getByLabelText('密码').closest('fieldset') as HTMLFieldSetElement).disabled).toBe(true);
+  fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
+  expect(vi.mocked(call).mock.calls.filter(([cmd]) => cmd === 'team_login')).toHaveLength(2);
+  await act(async () => complete()); expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('正常连接隐藏重连按钮，离线才显示且只刷新当前连接', async () => {
+  const view = render(<TeamSettings />);
+  expect(screen.queryByRole('button', { name: '刷新连接' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '重新连接' })).toBeNull();
+  status = { ...status, offline: true }; view.rerender(<TeamSettings />);
+  fireEvent.click(screen.getByRole('button', { name: '重新连接' }));
+  await waitFor(() => expect(call).toHaveBeenCalledWith('team_refresh'));
+  expect(call).not.toHaveBeenCalledWith('team_login', expect.anything());
+  status = { ...status, offline: false }; view.rerender(<TeamSettings />);
+  expect(screen.queryByRole('button', { name: '重新连接' })).toBeNull();
+  expect(screen.getByRole('button', { name: '修改连接' })).toBeTruthy();
 });

@@ -94,6 +94,11 @@ export function CommonDockWindow({ library }: { library: Library }) {
   const [busy, setBusy] = useState(false); const busyRef = useRef(false); const [message, setMessage] = useState('');
   const history = useSearchHistory(library.libraryId, setMessage);
   const [searchVersion, repeatSearch] = useState(0); const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    let disposed = false; let stop: (() => void) | undefined;
+    void listen('member-content-changed', () => { if (!disposed) { setResults([]); repeatSearch(v => v + 1); } }).then(fn => { if (disposed) fn(); else stop = fn; });
+    return () => { disposed = true; stop?.(); };
+  }, []);
   const searchUsage = (): SearchUsage | undefined => library.libraryId ? { query, libraryId: library.libraryId } : undefined;
   const content = useRef<HTMLElement>(null);
   const [query, setQuery] = useState(''); const [storedResults, setResults] = useState<SearchHit[]>([]); const [index, setIndex] = useState(0); const [searching, setSearching] = useState(false);
@@ -114,6 +119,8 @@ export function CommonDockWindow({ library }: { library: Library }) {
     return () => { active = false; clearTimeout(timer); };
   }, [query, library, compositionVersion, teamVersion, searchVersion, collapsed]);
   const results = storedResults.filter(hit => hit.kind === kind && (!hit.teamId || teamStatus.teams.some(t => t.teamId === hit.teamId)));
+  const memberIds = JSON.stringify(results.filter(h => h.phrase?.contentRef?.source === 'member').map(h => h.id));
+  useEffect(() => { const ids = JSON.parse(memberIds) as string[]; if (ids.length && !teamStatus.offline) void call('download_member_materials', { ids, attachments: false }).catch(() => {}); }, [memberIds, teamStatus.offline]);
   useEffect(() => {
     const element = content.current?.querySelector('.common-dock-content'); if (!element) return;
     // Flex 先为输入、历史和短语留出空间，结果区消化剩余高度；同时报告向上展开量，原生窗口才能固定输入行。
@@ -150,7 +157,7 @@ export function CommonDockWindow({ library }: { library: Library }) {
     e.preventDefault(); e.stopPropagation();
     const usage = searchUsage();
     await menuRef.current?.close();
-    const menu = await Menu.new({ items: [{ text: '添加到输入区', enabled: !busy, action: () => void deliver(hit.privateKey || hit.id, 'insert', hit.kind, undefined, usage) }, { text: '直接发送', enabled: !busy, action: () => void deliver(hit.privateKey || hit.id, 'send', hit.kind, undefined, usage) }] }); menuRef.current = menu;
+    const menu = await Menu.new({ items: [{ text: '添加到输入区', enabled: !busy, action: () => void deliver(hit.privateKey || hit.id, 'insert', hit.kind, undefined, usage) }, { text: '直接发送', enabled: !busy, action: () => void deliver(hit.privateKey || hit.id, 'send', hit.kind, undefined, usage) }, ...(hit.phrase?.contentRef?.source === 'member' ? [{ text: '下载全部素材', enabled: !busy && !teamStatus.offline, action: () => { void call('download_member_materials', { ids: [hit.id], attachments: true }).catch(e => setMessage(String(e))); } }] : [])] }); menuRef.current = menu;
     await menu.popup(new LogicalPosition(e.clientX, e.clientY));
   }
   async function hideCommon() {

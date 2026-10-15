@@ -1,0 +1,93 @@
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { MemberSyncSettings } from './MemberSyncSettings';
+import { call } from './api';
+import type { MemberGrant, MemberOverview, TeamStatus } from './types';
+
+vi.mock('./api',()=>({call:vi.fn()}));
+vi.mock('@tauri-apps/plugin-dialog',()=>({confirm:vi.fn(async()=>true)}));
+vi.mock('@tauri-apps/api/event',()=>({listen:vi.fn(async()=>()=>{})}));
+const account: TeamStatus={server:'http://hub',username:'001',sessionEpoch:7,user:{id:'recipient',username:'001',displayName:'',contact:'',admin:false,disabled:false,mustChangePassword:false,canCreateTeams:false},teams:[],offline:false,privateSync:false,memberPhraseSync:true};
+const identity={userId:'source',username:'002',displayName:'成员',disabled:false};
+const category={id:'root',name:'本人分类',kind:'phrase' as const,parentId:null,position:0,background:''};
+const grant: MemberGrant={id:'grant',owner:identity,enabled:true,mode:'all',rootIds:['root'],roots:[category],version:2};
+let overview: MemberOverview;
+beforeEach(()=>{
+  overview={sharing:null,users:[],available:[grant],subscription:{grantId:null,version:3},categories:[category],sourceReady:true};
+  HTMLDialogElement.prototype.showModal=vi.fn(function(this:HTMLDialogElement){this.open=true;});
+  vi.mocked(call).mockImplementation(async command=>command==='get_member_overview'?structuredClone(overview):command==='get_member_view'?{categories:[],phrases:[],subscription:{grantId:null,version:3},ownerLabel:'',state:'未使用',message:'',lastSuccessfulSyncAt:null}:null);
+});
+afterEach(()=>{cleanup();vi.clearAllMocks();});
+it('开启共享先选择范围，确认前不写入，全部模式不固定当前分类',async()=>{
+  render(<MemberSyncSettings account={account}/>);
+  await waitFor(()=>expect((screen.getByRole('button',{name:'开启共享'}) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button',{name:'开启共享'}));
+  expect((screen.getByRole('radio',{name:'全部分类（包含今后新增分类）'}) as HTMLInputElement).checked).toBe(true);
+  expect(call).not.toHaveBeenCalledWith('save_member_share',expect.anything());
+  fireEvent.click(screen.getByRole('button',{name:'确认共享'}));
+  await waitFor(()=>expect(call).toHaveBeenCalledWith('save_member_share',{sessionEpoch:7,request:{enabled:true,mode:'all',rootIds:[],expectedVersion:0}}));
+});
+it('指定模式必须选择有效一级分类，删除的旧分类不会重新提交',async()=>{
+  overview.sharing={...grant,mode:'selected',rootIds:['deleted','root']};
+  render(<MemberSyncSettings account={account}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'调整范围'}));
+  const root=screen.getByRole('checkbox',{name:'本人分类'});
+  fireEvent.click(root);
+  expect((screen.getByRole('button',{name:'确认共享'}) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(root);fireEvent.click(screen.getByRole('button',{name:'确认共享'}));
+  await waitFor(()=>expect(call).toHaveBeenCalledWith('save_member_share',{sessionEpoch:7,request:{enabled:true,mode:'selected',rootIds:['root'],expectedVersion:2}}));
+});
+it('本人同步未开启也可直接使用开放话术，并按当前版本停止使用',async()=>{
+  const rendered=render(<MemberSyncSettings account={account}/>);
+  await waitFor(()=>expect((screen.getByRole('button',{name:'选择成员'}) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button',{name:'选择成员'}));
+  fireEvent.change(screen.getByRole('combobox',{name:'成员'}),{target:{value:'grant'}});
+  fireEvent.click(screen.getByRole('button',{name:'使用话术'}));
+  await waitFor(()=>expect(call).toHaveBeenCalledWith('set_member_subscription',{sessionEpoch:7,request:{grantId:'grant',expectedVersion:3}}));
+  rendered.unmount();overview.subscription={grantId:'grant',version:4};render(<MemberSyncSettings account={account}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'停止使用'}));
+  await waitFor(()=>expect(call).toHaveBeenCalledWith('set_member_subscription',{sessionEpoch:7,request:{grantId:null,expectedVersion:4}}));
+});
+it('范围与人数在同一行，打开名单同步刷新人数并排序，关闭恢复焦点',async()=>{
+  overview.sharing=grant;overview.users=[identity];
+  render(<MemberSyncSettings account={account} syncPaused/>);
+  const count=await screen.findByRole('button',{name:'1 人使用'});
+  expect(count.closest('.sync-summary')?.textContent).toBe('全部分类 · 1 人使用');
+  expect(screen.getByText('同步已暂停，共享保留最后同步内容。')).toBeTruthy();
+  overview.users=[{...identity,username:'010'}, {...identity,userId:'second',username:'003',displayName:''}];
+  count.focus();fireEvent.click(count);
+  const dialog=await screen.findByRole('dialog',{name:'使用成员（2）'});
+  expect(within(dialog).getAllByRole('row').slice(1).map(row=>within(row).getAllByRole('cell').map(cell=>cell.textContent))).toEqual([['003','本人分类'],['成员（010）','本人分类']]);
+  fireEvent.click(within(dialog).getByRole('button',{name:'关闭'}));
+  expect(document.activeElement).toBe(screen.getByRole('button',{name:'2 人使用'}));
+});
+it('零人也可打开，失败可重试，离线名单有标注且禁用写入',async()=>{
+  overview.sharing=grant;
+  render(<MemberSyncSettings account={account}/>);
+  const count=await screen.findByRole('button',{name:'0 人使用'});
+  const base=vi.mocked(call).getMockImplementation()!;
+  vi.mocked(call).mockImplementation((cmd,args)=>cmd==='get_member_overview'?Promise.reject('加载失败'):base(cmd,args));
+  fireEvent.click(count);
+  await screen.findByRole('alert');
+  vi.mocked(call).mockImplementation((cmd,args)=>cmd==='get_member_overview'?Promise.resolve({...overview,offline:true}):base(cmd,args));
+  fireEvent.click(screen.getByRole('button',{name:'重试'}));
+  const dialog=screen.getByRole('dialog');
+  await within(dialog).findByText('暂无成员使用');
+  expect(within(dialog).getByText('离线数据')).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button',{name:'关闭'}));
+  expect((screen.getByRole('button',{name:'调整范围'}) as HTMLButtonElement).disabled).toBe(true);
+});
+it('切号丢弃旧名单响应，旧 Hub 禁止开放共享',async()=>{
+  overview.sharing=grant;
+  const rendered=render(<MemberSyncSettings account={account}/>);
+  const count=await screen.findByRole('button',{name:'0 人使用'});
+  let resolve!: (value: unknown)=>void;
+  const base=vi.mocked(call).getMockImplementation()!;
+  vi.mocked(call).mockImplementation((cmd,args)=>cmd==='get_member_overview'?new Promise(r=>{resolve=r;}):base(cmd,args));
+  fireEvent.click(count);
+  rendered.rerender(<MemberSyncSettings account={{...account,sessionEpoch:8,memberPhraseSync:false,user:{...account.user!,id:'other'}}}/>);
+  await act(async()=>resolve({...overview,users:[identity]}));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByText('成员（002）')).toBeNull();
+  expect((screen.getByRole('button',{name:'开启共享'}) as HTMLButtonElement).disabled).toBe(true);
+});

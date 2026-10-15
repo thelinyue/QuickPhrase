@@ -28,7 +28,7 @@ export function AccountModal({ title, children, footer, busy, close }: { title: 
   useEffect(() => { ref.current?.showModal(); return () => { if (trigger.current?.isConnected) trigger.current.focus(); }; }, []);
   // 预览到达时仍在读取状态，控件可能暂时禁用；就绪后将焦点交给首个可操作字段或按钮。
   useEffect(() => { if (!busy && document.activeElement === ref.current) ref.current?.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),button:not(:disabled)')?.focus(); }, [busy]);
-  return <dialog ref={ref} className="small-dialog account-dialog account-panel" aria-labelledby={id} onCancel={event => { if (busy) event.preventDefault(); else close(); }}><h2 id={id}>{title}</h2><fieldset className="dialog-fields" disabled={busy}>{children}</fieldset><div className="dialog-actions">{footer}</div></dialog>;
+  return <dialog ref={ref} className="small-dialog account-dialog account-panel" aria-labelledby={id} onCancel={event => { if (busy) event.preventDefault(); else close(); }}><h2 id={id}>{title}</h2><div className="account-panel-body"><fieldset className="dialog-fields" disabled={busy}>{children}</fieldset></div><div className="dialog-actions">{footer}</div></dialog>;
 }
 
 /** 成功提示短暂显示；失败保留供核对，不能把成功文案渲染成红色错误。 */

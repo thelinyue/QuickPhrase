@@ -326,6 +326,9 @@ pub fn search_scoped_content(
         store.search(&query)?.into_iter().filter(|h|h.kind=="phrase"&&(scope=="all"||scope=="private")).map(|h|{let content_key=crate::private_local::content_key(&store,"phrase",&h.id).ok();serde_json::json!({"id":h.id,"kind":h.kind,"phrase":h.phrase,"file":h.file,"privateKey":content_key,"sourceLabel":"个人话术"})}).collect::<Vec<_>>()
     };
     drop(store);
+    if scope == "all" || scope == "private" {
+        hits.extend(state.teams.search_member(&query, exact));
+    }
     if scope == "all" || scope == "file" {
         hits.extend(state.device_store.lock().unwrap().search(&query)?.into_iter().filter(|h|h.kind=="file").map(|h|serde_json::json!({"id":h.id,"kind":h.kind,"phrase":h.phrase,"file":h.file,"sourceLabel":"本地文件"})));
     }

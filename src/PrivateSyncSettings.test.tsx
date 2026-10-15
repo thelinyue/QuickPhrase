@@ -58,7 +58,7 @@ it('暂停只改变同步状态，不切库、不退出登录，并保留最近�
   });
   render(<PrivateSyncSettings account={account} />);
   fireEvent.click(await screen.findByRole('button', { name: '暂停同步' }));
-  await screen.findByRole('button', { name: '继续同步' });
+  await screen.findByRole('button', { name: '恢复同步' });
   expect(screen.getByText('2026-10-14 15:30:26')).toBeTruthy();
   expect(screen.getByText('所属账号：linyue')).toBeTruthy();
   expect(screen.queryByRole('button', { name: '本机个人库' })).toBeNull();
@@ -70,12 +70,12 @@ it('退出或离线仍展示原所属账号和时间，禁止发起在线同步'
   await screen.findByText('未登录，内容保留在本机');
   expect(screen.getByText('所属账号：linyue')).toBeTruthy();
   expect(screen.getByText('暂无成功同步记录')).toBeTruthy();
-  expect((screen.getByRole('button', { name: '继续同步' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: '恢复同步' }) as HTMLButtonElement).disabled).toBe(true);
 });
-it('新账号独立内容首次开启，不显示继续同步', async () => {
+it('新账号独立内容首次开启，不显示恢复同步', async () => {
   vi.mocked(call).mockResolvedValue({ ...status, username: 'new-user', sameAccount: true, initialized: false });
   render(<PrivateSyncSettings account={account} />);
   await screen.findByText('所属账号：new-user');
   expect((screen.getByRole('button', { name: '开启同步' }) as HTMLButtonElement).disabled).toBe(false);
-  expect(screen.queryByRole('button', { name: '继续同步' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '恢复同步' })).toBeNull();
 });

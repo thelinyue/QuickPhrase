@@ -1,9 +1,9 @@
 export type Block = { kind: 'text'; text: string } | { kind: 'image' | 'file'; path: string; name: string; companyAssetId?: string; companySessionEpoch?: number };
 export interface Segment { blocks: Block[] }
-export type ContentRef = { source: 'team'; teamId: string; id: string; revision: number; lifecycleVersion: number } | { source: 'private'; libraryId: string; id: string; revision: number; teamId?: never; lifecycleVersion?: never };
+export type ContentRef = { source: 'team'; teamId: string; id: string; revision: number; lifecycleVersion: number } | { source: 'private'; libraryId: string; id: string; revision: number; teamId?: never; lifecycleVersion?: never } | { source: 'member'; grantId: string; grantVersion: number; subscriptionVersion: number; generation: string; id: string; revision: number; teamId?: never; lifecycleVersion?: never };
 export const contentKey = (p: Phrase) => p.contentRef?.source === 'private' ? `private:${p.contentRef.libraryId}:phrase:${p.contentRef.id}:${p.contentRef.revision}` : p.id;
 export interface Phrase { id: string; rootId: string; groupId: string | null; title: string; color: string; background: string; shortcut: string; position: number; segments: Segment[]; contentRef?: ContentRef; ready?: boolean }
-export interface Category { id: string; name: string; kind: 'phrase' | 'file'; parentId: string | null; position: number; background: string }
+export interface Category { id: string; name: string; kind: 'phrase' | 'file'; parentId: string | null; position: number; background: string; readOnly?: boolean; sourceLabel?: string }
 /** 选择器按同级列表顺序区分重名分类；显示序号不写入名称，操作仍提交独立 ID。 */
 export function categoryLabel(category: Category, categories: Category[]) {
   const matches = categories.filter(c => c.kind === category.kind && c.parentId === category.parentId && c.name.toLowerCase() === category.name.toLowerCase());
@@ -21,7 +21,11 @@ export const teamRoleLabel = (role: TeamRole) => role === 'manager' ? '库管理
 export interface CompanyFilePermissions { canUpload: boolean; canRecycle: boolean; canRestore: boolean; version: number; uploadVersion: number }
 export interface TeamUser { id: string; username: string; admin: boolean; disabled: boolean; mustChangePassword: boolean; displayName: string; contact: string; canCreateTeams: boolean; companyFilePermissions?: CompanyFilePermissions; memberships?: { teamId: string; name: string; role: TeamRole }[] }
 export interface TeamInfo { teamId: string; name: string; version: number; editable: boolean; role: TeamRole; membershipVersion: number; lifecycleVersion: number; memberCount?: number }
-export interface TeamStatus { sessionEpoch?: number; server: string; username: string; user: TeamUser | null; teams: TeamInfo[]; teamSyncTimes?: Record<string, number>; offline: boolean; privateSync?: boolean; companyFiles?: boolean; companyFilePermissions?: boolean }
+export interface TeamStatus { sessionEpoch?: number; server: string; username: string; user: TeamUser | null; teams: TeamInfo[]; teamSyncTimes?: Record<string, number>; offline: boolean; privateSync?: boolean; memberPhraseSync?: boolean; companyFiles?: boolean; companyFilePermissions?: boolean }
+export interface MemberSubscription { grantId: string | null; version: number }
+export interface MemberGrant { id: string; owner: TeamMemberIdentity; enabled: boolean; mode: 'all' | 'selected'; rootIds: string[]; roots: Category[]; version: number }
+export interface MemberOverview { sharing: MemberGrant | null; users: TeamMemberIdentity[]; offline?: boolean; available: MemberGrant[]; subscription: MemberSubscription; categories: Category[]; sourceReady: boolean }
+export interface MemberView { categories: Category[]; phrases: Phrase[]; subscription: MemberSubscription; ownerLabel: string; state: string; message: string; lastSuccessfulSyncAt: number | null }
 export interface CompanyFile { assetId: string; name: string; size: number; uploadedBy: string; uploaderName: string; uploaderUsername?: string; createdAt: number; deletedAt: number | null; deletedBy?: string | null; deleterUsername?: string; cached: boolean }
 export interface CompanyUpload { id: string; name: string; size: number }
 export interface CompanyView { version: number; files: CompanyFile[]; uploads: CompanyUpload[] }

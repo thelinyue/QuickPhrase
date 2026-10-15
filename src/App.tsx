@@ -15,13 +15,15 @@ import { TeamManagementWindow } from './TeamManagement';
 import { CompanyFilePicker, CompanyFilesWindow } from './CompanyFiles';
 import { UsageGuideWindow } from './UsageGuide';
 import { TeamSelector } from './TeamSelector';
+import { useMembers } from './useMembers';
 import { SettingsWindow } from './Settings';
 import { UpdateNotice } from './Updater';
 import { CategorySort, CommonDockWindow, CommonPhraseBar, CommonPhraseEditor, CommonPhraseSort, FileSort } from './CommonPhrases';
 import { DeletionWindow, RecycleWindow } from './RecycleBin';
-import { categoryLabel, contentKey, labelOf, type Category, type DeliveryReport, type Library, type LinkedFile, type Phrase, type SearchHit, type Settings, type TargetContext } from './types';
+import { categoryLabel, contentKey, labelOf, type Category, type DeliveryReport, type Library, type LinkedFile, type Phrase, type SearchHit, type TargetContext } from './types';
 
 type MenuItem = { label: string; action: () => unknown; enabled?: boolean } | null;
+type MainSetting = 'dock' | 'pinned' | 'showCommon' | 'showSearch';
 interface Menu { x: number; y: number; bottom?: number; items: MenuItem[]; primary?: boolean }
 export function App() {
   const { library, error, refresh } = useLibrary(); const route = location.hash.slice(1).split('?')[0];
@@ -94,22 +96,25 @@ export function App() {
 export function MainWindow({ library: privateLibrary, refresh }: { library: Library; refresh: () => Promise<void> }) {
   const { status: teamStatus, version: teamVersion } = useTeams(); const [teamId, setTeamId] = useState('');
   const { view: teamView, error: teamError } = useTeamView(teamId, teamStatus, teamVersion);
-  const library = useMemo(() => teamId ? { ...privateLibrary, categories: [...(teamView?.categories || []), ...privateLibrary.categories.filter(c => c.kind === 'file')], phrases: teamView?.phrases || [] } : privateLibrary, [privateLibrary, teamId, teamView]);
-  const canEdit = !teamId || teamView?.team.editable === true;
+  const members = useMembers(teamStatus);
+  const library = useMemo(() => teamId ? { ...privateLibrary, categories: [...(teamView?.categories || []), ...privateLibrary.categories.filter(c => c.kind === 'file')], phrases: teamView?.phrases || [] } : { ...privateLibrary, categories: [...privateLibrary.categories, ...(members?.categories || [])], phrases: [...privateLibrary.phrases, ...(members?.phrases || [])] }, [privateLibrary, teamId, teamView, members]);
+  const scopeCanEdit = !teamId || teamView?.team.editable === true;
+  const writableCategory = (id: string) => scopeCanEdit && library.categories.some(c => c.id === id && !c.readOnly);
   const scopeMemory = useRef(new Map<string, { root: string; collapsed: Set<string>; scroll: number }>());
   const pendingScope = useRef<string | null>(null);
   const sequenceGeneration = useRef(Date.now() * 1000);
   const [kind, setKind] = useState<'phrase' | 'file'>('phrase'); const [root, setRoot] = useState(() => library.categories.find(c => c.kind === 'phrase' && !c.parentId)?.id || ''); const [fileCategory, setFileCategory] = useState(() => library.categories.find(c => c.kind === 'file')?.id || '');
   const [selected, setSelected] = useState(''); const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const canEdit = scopeCanEdit && !library.categories.find(c => c.id === root)?.readOnly;
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]); const fileAnchor = useRef('');
   const [query, setQuery] = useState(''); const [results, setResults] = useState<SearchHit[]>([]); const [searchIndex, setSearchIndex] = useState(0); const [searching, setSearching] = useState(false);
-  const searchStamp = teamId && kind === 'phrase' ? `${teamId}:${teamView?.team.version ?? 'loading'}` : privateLibrary;
+  const searchStamp = teamId && kind === 'phrase' ? `${teamId}:${teamView?.team.version ?? 'loading'}` : library;
   const [searchSource, setSearchSource] = useState<{ query: string; source: Library | string } | null>(null);
   const composing = useRef(false); const [compositionVersion, endComposition] = useState(0); const searchRef = useRef<HTMLInputElement>(null); const libraryRef = useRef(library); libraryRef.current = library;
   const [menu, setMenu] = useState<Menu | null>(null); const [dialog, setDialog] = useState<DialogSpec | null>(null); const [message, setMessage] = useState('');
   // 选择云文件时固定账号、库和分类，后续切换不能把附件保存到另一个目标。
   const [cloudTarget, setCloudTarget] = useState<{ epoch: number; server: string; userId: string; libraryId?: string; teamId: string; lifecycle?: number; categoryId: string; groupId: string } | null>(null);
-  const cloudAvailable = !!teamStatus.companyFiles && !!teamStatus.user && !teamStatus.offline && !teamStatus.user.mustChangePassword && canEdit && (!teamId || teamStatus.teams.some(t => t.teamId === teamId && t.editable));
+  const cloudAvailable = !!teamStatus.companyFiles && !!teamStatus.user && !teamStatus.offline && !teamStatus.user.mustChangePassword && scopeCanEdit && (!teamId || teamStatus.teams.some(t => t.teamId === teamId && t.editable));
   const cloudContext = useRef({ teamStatus, teamId, library, privateLibrary, cloudAvailable }); cloudContext.current = { teamStatus, teamId, library, privateLibrary, cloudAvailable };
   const menuTrigger = useRef<HTMLElement | null>(null);
   const history = useSearchHistory(privateLibrary.libraryId, setMessage);
@@ -118,11 +123,16 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   const chooseHistory = (value: string) => { composing.current = false; setQuery(value); setResults([]); setSearchSource(null); setSearchIndex(0); setSearching(true); repeatSearch(v => v + 1); searchRef.current?.focus(); };
   const [shortcutPhrase, setShortcutPhrase] = useState<Phrase | null>(null);
   useEffect(() => { if (menu) (menu.primary ? document.querySelector<HTMLElement>('.context-menu') : document.querySelector<HTMLElement>('.context-menu button:not(:disabled)') || document.querySelector<HTMLElement>('.context-menu'))?.focus(); }, [menu]);
-  useEffect(() => { setMenu(null); void nativeMenuRef.current?.close().catch(() => {}); }, [teamStatus.sessionEpoch, teamStatus.server, teamStatus.user?.id, teamStatus.offline, teamStatus.companyFiles, teamStatus.user?.mustChangePassword, canEdit, cloudAvailable, teamId, privateLibrary.libraryId]);
+  useEffect(() => { setMenu(null); void nativeMenuRef.current?.close().catch(() => {}); }, [teamStatus.sessionEpoch, teamStatus.server, teamStatus.user?.id, teamStatus.offline, teamStatus.companyFiles, teamStatus.user?.mustChangePassword, scopeCanEdit, cloudAvailable, teamId, privateLibrary.libraryId]);
   const nativeMenuRef = useRef<NativeMenu | null>(null);
   useEffect(() => () => { void nativeMenuRef.current?.close().catch(() => {}); }, []);
   const [busy, setBusy] = useState(false); const busyRef = useRef(false); const settings = library.settings;
-  const [updatingSettings, setUpdatingSettings] = useState(false); const settingsBusy = useRef(false);
+  // 按钮独立等待，整份设置仍串行写入；上下文身份使切库前排队的操作立即失效。
+  const settingsContext = useMemo(() => ({ libraryId: privateLibrary.libraryId, pending: new Set<MainSetting>(), active: true }), [privateLibrary.libraryId]);
+  const settingsContextRef = useRef(settingsContext); settingsContextRef.current = settingsContext;
+  const settingsQueue = useRef(Promise.resolve());
+  const [, updateSettingsButtons] = useState(0);
+  useEffect(() => { settingsContext.active = true; return () => { settingsContext.active = false; }; }, [settingsContext]);
   const [focusCommon, setFocusCommon] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => { scopeMemory.current.clear(); }, [teamStatus.server, teamStatus.user?.id]);
@@ -158,12 +168,23 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   useEffect(() => { setCollapsed(settings.expand ? new Set() : new Set(library.categories.filter(c => c.parentId).map(c => c.id))); }, [settings.expand]);
   const run = (action: () => unknown) => { try { Promise.resolve(action()).catch(e => setMessage(String(e))); } catch (e) { setMessage(String(e)); } };
   const clearSearch = () => { setQuery(''); setResults([]); setSearchIndex(0); setSearching(false); };
-  async function changeSettings(patch: Partial<Settings>) {
-    if (settingsBusy.current) return;
-    settingsBusy.current = true; setUpdatingSettings(true);
-    try { await call('save_settings', { settings: { ...libraryRef.current.settings, ...patch } }); }
-    catch (e) { setMessage(String(e)); }
-    finally { settingsBusy.current = false; setUpdatingSettings(false); }
+  function changeSettings(key: MainSetting, value?: boolean) {
+    const context = settingsContextRef.current;
+    if (context.pending.has(key)) return;
+    context.pending.add(key); updateSettingsButtons(v => v + 1);
+    const current = () => context.active && context === settingsContextRef.current;
+    settingsQueue.current = settingsQueue.current.then(async () => {
+      try {
+        if (!current()) return;
+        // 不依赖广播到达或 React 重绘的时序，后续按钮从已保存的设置继续合并。
+        const latest = await call<Library>('get_library');
+        if (!current() || latest.libraryId !== context.libraryId) return;
+        await call('save_settings', { libraryId: context.libraryId, settings: { ...latest.settings, [key]: value ?? !latest.settings[key] } });
+        // 主动读取确认状态，广播延迟也不会让按钮恢复后仍显示旧值。
+        if (current()) await refresh();
+      } catch (e) { if (current()) setMessage(`设置保存失败：${String(e)}`); }
+      finally { context.pending.delete(key); if (current()) updateSettingsButtons(v => v + 1); }
+    });
   }
   useEffect(() => { if (settings.showSearch) searchRef.current?.focus(); else clearSearch(); }, [settings.showSearch]);
   useEffect(() => {
@@ -176,7 +197,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   const deliver = useCallback(async (id: string, kind: string, mode: 'insert' | 'send', triggerKey?: number, usage?: SearchUsage) => {
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true);
-    const visibleKey = kind === 'phrase' && !id.startsWith('team:') && !id.startsWith('private:') ? results.find(hit => hit.id === id)?.privateKey || (libraryRef.current.phrases.find(p => p.id === id) ? contentKey(libraryRef.current.phrases.find(p => p.id === id)!) : id) : id;
+    const visibleKey = kind === 'phrase' && !id.startsWith('team:') && !id.startsWith('private:') && !id.startsWith('member:') ? results.find(hit => hit.id === id)?.privateKey || (libraryRef.current.phrases.find(p => p.id === id) ? contentKey(libraryRef.current.phrases.find(p => p.id === id)!) : id) : id;
     try {
       const target = await call<TargetContext | null>('get_target');
       if (!target) throw new Error('请先聚焦目标输入区，再返回闪语使用话术。');
@@ -188,7 +209,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   useEffect(() => {
     let disposed = false; const unlisteners: (() => void)[] = [];
     const on = <T,>(name: string, fn: (payload: T) => void) => { void listen<T>(name, e => fn(e.payload)).then(un => disposed ? un() : unlisteners.push(un)); };
-    on<string>('ui-action', action => { if (action === 'search') { if (libraryRef.current.settings.showSearch) searchRef.current?.focus(); else void changeSettings({ showSearch: true }); } if (action === 'show') { clearSearch(); listRef.current?.focus(); } if (action === 'common') { setKind('phrase'); setFocusCommon(true); if (!libraryRef.current.settings.showCommon) void changeSettings({ showCommon: true }); } if (action === 'settings') run(() => openWindow('settings')); });
+    on<string>('ui-action', action => { if (action === 'search') { if (libraryRef.current.settings.showSearch) searchRef.current?.focus(); else void changeSettings('showSearch', true); } if (action === 'show') { clearSearch(); listRef.current?.focus(); } if (action === 'common') { setKind('phrase'); setFocusCommon(true); if (!libraryRef.current.settings.showCommon) void changeSettings('showCommon', true); } if (action === 'settings') run(() => openWindow('settings')); });
     on<DeliveryReport>('shortcut-delivery', report => { if (report.status === 'submitted') { if (libraryRef.current.settings.exitSearch) clearSearch(); } else setMessage(report.error || '快捷键操作已停止'); });
     on<string>('native-error', setMessage); on<boolean>('delivery-busy', value => { busyRef.current = value; setBusy(value); });
     void call<string | null>('native_status').then(e => { if (e) setMessage(e); });
@@ -209,9 +230,9 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     const next = await NativeMenu.new({ items }); nativeMenuRef.current = next;
     await next.popup(position);
   }
-  const newContent = () => openWindow(kind === 'phrase' ? 'editor' : 'file-editor', '', '', '', kind === 'phrase' ? root : fileCategory, '', kind === 'phrase' ? teamId : '');
+  const newContent = () => { if (kind === 'phrase' && !writableCategory(root)) return; return openWindow(kind === 'phrase' ? 'editor' : 'file-editor', '', '', '', kind === 'phrase' ? root : fileCategory, '', kind === 'phrase' ? teamId : ''); };
   const chooseCategory = (c: Category) => c.kind === 'phrase' ? setRoot(c.parentId || c.id) : setFileCategory(c.id);
-  const newPhrase = (c: Category) => openWindow('editor', '', '', '', c.parentId || c.id, c.parentId ? c.id : '', teamId);
+  const newPhrase = (c: Category) => { if (!writableCategory(c.id)) return; return openWindow('editor', '', '', '', c.parentId || c.id, c.parentId ? c.id : '', teamId); };
   /** 空白区域按标题的视口位置归属，折叠不改变边界；菜单打开时捕获分类，避免后续布局改变目标。 */
   function listMenu(e: MouseEvent<HTMLDivElement>) {
     if ((e.target as Element).closest('.content-row,.group-heading')) return;
@@ -224,14 +245,14 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     popup(kind === 'phrase' ? [
       { label: '新增话术', enabled: hasCategory && canEdit, action: () => openWindow('editor', '', '', '', root, groupId, teamId) },
       ...cloudItems(hasCategory ? root : '', groupId),
-      { label: '新增二级分类', enabled: hasCategory, action: () => categoryDialog(undefined, root, 'phrase') },
+      { label: '新增二级分类', enabled: hasCategory && canEdit, action: () => categoryDialog(undefined, root, 'phrase') },
     ] : [{ label: '刷新', action: refresh }], e.clientX, e.clientY);
   }
   function validCloudTarget(target: NonNullable<typeof cloudTarget>) {
     const current = cloudContext.current, status = current.teamStatus;
     return current.cloudAvailable && current.teamId === target.teamId && current.privateLibrary.libraryId === target.libraryId && status.server === target.server && status.user?.id === target.userId && (status.sessionEpoch || 0) === target.epoch
       && (!target.teamId || status.teams.some(t => t.teamId === target.teamId && t.editable && t.lifecycleVersion === target.lifecycle))
-      && current.library.categories.some(c => c.kind === 'phrase' && !c.parentId && c.id === target.categoryId)
+      && current.library.categories.some(c => c.kind === 'phrase' && !c.parentId && !c.readOnly && c.id === target.categoryId)
       && (!target.groupId || current.library.categories.some(c => c.kind === 'phrase' && c.parentId === target.categoryId && c.id === target.groupId));
   }
   function newCloudFile(categoryId: string, groupId = '') {
@@ -239,9 +260,9 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     if (!validCloudTarget(target)) { setMessage('账号、分类或编辑权限已变化，请重新选择。'); return; }
     setCloudTarget(target);
   }
-  const cloudItems = (categoryId: string, groupId = ''): MenuItem[] => teamStatus.companyFiles ? [{ label: '新增云文件', enabled: cloudAvailable && !!categoryId, action: () => newCloudFile(categoryId, groupId) }] : [];
+  const cloudItems = (categoryId: string, groupId = ''): MenuItem[] => teamStatus.companyFiles ? [{ label: '新增云文件', enabled: cloudAvailable && writableCategory(categoryId), action: () => newCloudFile(categoryId, groupId) }] : [];
   useEffect(() => { if (cloudTarget && !validCloudTarget(cloudTarget)) { setCloudTarget(null); setMessage('账号、分类或编辑权限已变化，请重新选择云文件。'); } }, [cloudTarget, teamStatus, teamId, privateLibrary.libraryId, library.categories, cloudAvailable]);
-  function categoryDialog(c?: Category, parentId: string | null = null, categoryKind = kind) { if (categoryKind === 'phrase' && !canEdit) return; setDialog({ title: c ? '重命名' : parentId ? '新增二级分类' : '新增一级分类', fields: <label>分类名称<input name="name" type="text" defaultValue={c?.name || ''} maxLength={40} required autoFocus /></label>, onSubmit: async form => { const category = c ? { ...c, name: String(form.get('name')) } : { id: '', name: String(form.get('name')), kind: categoryKind, parentId, position: library.categories.length, background: '' }; if (teamId && categoryKind === 'phrase') { await call('save_team_category', { teamId, expectedVersion: teamView!.team.version, expectedLifecycleVersion: teamView!.team.lifecycleVersion, category }); return; } const id = await call<string>('save_category', { category }); if (!c && !parentId) { if (categoryKind === 'phrase') setRoot(id); else setFileCategory(id); } await refresh(); } }); }
+  function categoryDialog(c?: Category, parentId: string | null = null, categoryKind = kind) { if (categoryKind === 'phrase' && (!scopeCanEdit || c?.readOnly || (parentId && !writableCategory(parentId)))) return; setDialog({ title: c ? '重命名' : parentId ? '新增二级分类' : '新增一级分类', fields: <label>分类名称<input name="name" type="text" defaultValue={c?.name || ''} maxLength={40} required autoFocus /></label>, onSubmit: async form => { const category = c ? { ...c, name: String(form.get('name')) } : { id: '', name: String(form.get('name')), kind: categoryKind, parentId, position: library.categories.length, background: '' }; if (teamId && categoryKind === 'phrase') { await call('save_team_category', { teamId, expectedVersion: teamView!.team.version, expectedLifecycleVersion: teamView!.team.lifecycleVersion, category }); return; } const id = await call<string>('save_category', { category }); if (!c && !parentId) { if (categoryKind === 'phrase') setRoot(id); else setFileCategory(id); } await refresh(); } }); }
   function sortDialog(id: string, kind: string, current: number, count: number) { setDialog({ title: '排序', fields: <label>分类中的位置<input type="number" name="position" min={1} max={Math.max(1, count)} defaultValue={current} required /></label>, onSubmit: async f => { await call('sort_item', { id, kind, position: Number(f.get('position')) }); await refresh(); } }); }
   async function deleteCategory(c: Category) {
     if (teamId && c.kind === 'phrase') { if (await confirm(`将「${c.name}」及其中的话术移入「${teamView?.team.name}」回收站？`, { title: '删除分类', kind: 'warning' })) await call('delete_team_content', { teamId, request: { expectedVersion: teamView!.team.version, expectedLifecycleVersion: teamView!.team.lifecycleVersion, kind: 'category', id: c.id } }); return; }
@@ -254,17 +275,18 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     if (c.parentId) {
       run(async () => { if (await confirm(`删除「${c.name}」，其中的话术移至原一级分类，不保留此分组。`, { title: '删除但保留话术', kind: 'warning' })) { await call('delete_category', { id: c.id, keepPhrases: true }); await refresh(); } });
     } else {
-      const targets = roots.filter(v => v.id !== c.id);
+      const targets = roots.filter(v => !v.readOnly && v.id !== c.id);
       setDialog({ title: '删除但保留话术', submit: '删除分类并保留话术', fields: <><p>删除「{c.name}」及二级分类，所有话术移至所选一级分类，不保留分组。</p><label>保留话术到<select name="target" required>{targets.map(v => <option key={v.id} value={v.id}>{categoryLabel(v, library.categories)}</option>)}</select></label></>, onSubmit: async f => { const targetId = String(f.get('target')); await call('delete_category', { id: c.id, keepPhrases: true, targetId }); setRoot(targetId); await refresh(); } });
     }
   }
   function transferCategory(c: Category, copy: boolean) {
-    const targets = roots.filter(v => v.id !== (c.parentId || c.id));
+    const targets = roots.filter(v => !v.readOnly && v.id !== (c.parentId || c.id));
     setDialog({ title: copy ? '复制到' : '移动到', fields: <><p>将「{c.name}」的话术和二级分组{copy ? '复制' : '移动'}到目标一级分类，同名二级分组合并到列表中第一组。{copy ? '复制的话术不保留快捷键。' : '完成后移除来源分类，保留话术快捷键。'}</p><label>目标一级分类<select name="target" required>{targets.map(v => <option key={v.id} value={v.id}>{categoryLabel(v, library.categories)}</option>)}</select></label></>, onSubmit: async f => { const targetId = String(f.get('target')); const count = await call<number>('move_copy_category', { id: c.id, targetId, copy }); if (!copy) setRoot(targetId); await refresh(); setMessage(`已${copy ? '复制' : '移动'}${count}条话术`); } });
   }
   const categorySort = (parentId: string | null, categoryKind: 'phrase' | 'file' = 'phrase') => openWindow('category-sort', '', '', categoryKind, parentId || '');
   function categoryMenu(c: Category, e: MouseEvent) {
     (e.currentTarget as HTMLElement).focus(); menuTrigger.current = e.currentTarget as HTMLElement;
+    if (c.readOnly) { e.preventDefault(); e.stopPropagation(); chooseCategory(c); popup(readOnlyCategoryItems(c), e.clientX, e.clientY); return; }
     if (teamId && c.kind === 'phrase') { e.preventDefault(); popup([{ label: '新增话术', enabled: canEdit, action: () => newPhrase(c) }, ...cloudItems(c.parentId || c.id, c.parentId ? c.id : ''), { label: '重命名', enabled: canEdit, action: () => categoryDialog(c) }, { label: '移入回收站', enabled: canEdit, action: () => deleteCategory(c) }], e.clientX, e.clientY); return; }
     e.preventDefault(); e.stopPropagation(); chooseCategory(c);
     if (c.kind === 'phrase' && !c.parentId) { showPrimaryCategoryMenu(c, e); return; }
@@ -274,7 +296,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       { label: '删除', action: () => deleteCategory(c) },
       { label: '快速排序', enabled: fileCats.length > 1, action: () => categorySort(null, 'file') },
     ], e.clientX, e.clientY); return; }
-    const targets = roots.filter(v => v.id !== (c.parentId || c.id));
+    const targets = roots.filter(v => !v.readOnly && v.id !== (c.parentId || c.id));
     const items: MenuItemOptions[] = [
       { text: '新增话术', action: () => run(() => newPhrase(c)) },
       ...(teamStatus.companyFiles ? [{ text: '新增云文件', enabled: cloudAvailable, action: () => newCloudFile(c.parentId || c.id, c.parentId ? c.id : '') }] : []),
@@ -288,10 +310,13 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     ];
     run(() => categoryPopup(items, e));
   }
-  function phraseMenu(p: Phrase, e: MouseEvent, isSearch = false) { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); setSelected(p.id); const usage = isSearch ? searchUsage() : undefined; popup([
+  function phraseMenu(p: Phrase, e: MouseEvent, isSearch = false) { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); setSelected(p.id); const usage = isSearch ? searchUsage() : undefined; const followed = library.categories.find(c => c.id === p.rootId)?.readOnly === true; popup([
     { label: '添加到输入区（双击）', action: () => deliver(contentKey(p), 'phrase', 'insert', undefined, usage) }, { label: '直接发送', action: () => deliver(contentKey(p), 'phrase', 'send', undefined, usage) },
     { label: '复制正文到剪贴板', action: () => call('copy_phrase_text', { id: contentKey(p) }) }, null,
-    ...(teamId ? [
+    ...(followed ? [
+      { label: '下载全部素材', enabled: !!teamStatus.user && !teamStatus.offline, action: () => call('download_member_materials', { ids: [contentKey(p)], attachments: true }) },
+      { label: '分类只读，由来源成员维护', enabled: false, action: () => {} },
+    ] : teamId ? [
       { label: '下载全部素材', action: () => call('prepare_team_phrase', { id: p.id }) },
       { label: '复制到个人话术', action: async () => { if (await confirm(`将「${labelOf(p)}」及其图片、文件复制到个人库？副本之后独立维护。`, { title: '复制到个人话术' })) await call('copy_team_to_private', { id: p.id }); } },
       { label: '新增话术', enabled: canEdit, action: () => openWindow('editor', '', '', '', p.rootId, p.groupId || '', teamId) }, ...cloudItems(p.rootId, p.groupId || ''),
@@ -304,7 +329,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     { label: '标题背景色', action: () => setDialog({ title: '标题背景色', fields: <><label>选择颜色<input name="color" type="color" defaultValue={p.background || '#fff2bc'} /></label><label><span><input name="reset" type="checkbox" />恢复默认背景</span></label></>, onSubmit: async f => { await call('save_phrase', { phrase: { ...p, background: f.has('reset') ? '' : String(f.get('color')) }, afterId: null }); } }) },
     { label: '自定义快捷键', action: () => setShortcutPhrase(p) },
     { label: '排序', action: () => { const siblings = library.phrases.filter(v => v.rootId === p.rootId && v.groupId === p.groupId); sortDialog(p.id, 'phrase', siblings.findIndex(v => v.id === p.id) + 1, siblings.length); } },
-    ...[false, true].map(copy => ({ label: copy ? '复制到其他分类' : '移动到其他分类', action: () => setDialog({ title: copy ? '复制话术' : '移动话术', fields: <CategoryPicker categories={library.categories} rootId={p.rootId} groupId={p.groupId} />, onSubmit: async f => { await call('move_copy_phrase', { id: p.id, rootId: f.get('root'), groupId: f.get('group') || null, copy }); await refresh(); } }) })),
+    ...[false, true].map(copy => ({ label: copy ? '复制到其他分类' : '移动到其他分类', action: () => setDialog({ title: copy ? '复制话术' : '移动话术', fields: <CategoryPicker categories={library.categories.filter(c => !c.readOnly)} rootId={p.rootId} groupId={p.groupId} />, onSubmit: async f => { await call('move_copy_phrase', { id: p.id, rootId: f.get('root'), groupId: f.get('group') || null, copy }); await refresh(); } }) })),
     { label: '删除', action: () => openWindow('delete-confirm', p.id, '', 'phrase') },
     ]),
   ], e.clientX, e.clientY); }
@@ -342,21 +367,27 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   }
   function exportCategory(c: Category) { void openWindow('settings', '', '', '导出数据', c.id, '', teamId); }
   const managementMenu = () => [
-    { label: '账号与同步', action: () => openWindow('settings', '', '', '账号与同步') },
+    { label: '账号与共享', action: () => openWindow('settings', '', '', '账号与共享') },
     ...(teamStatus.companyFiles ? [{ label: '云文件', enabled: !!teamStatus.user && !teamStatus.user.mustChangePassword, action: () => openWindow('company-files') }] : []),
     ...(teamStatus.user?.admin ? [{ label: '账号管理', enabled: !teamStatus.offline && !teamStatus.user.mustChangePassword, action: () => openWindow('user-management') }] : []),
     ...(teamStatus.user ? [{ label: '共享话术管理', enabled: !teamStatus.offline && !teamStatus.user.mustChangePassword, action: () => openWindow('team-management', '', '', 'teams', '', '', teamId) }] : []),
   ];
+  const readOnlyCategoryItems = (c: Category): MenuItem[] => [
+    { label: `来自${c.sourceLabel} · 分类只读`, enabled: false, action: () => {} },
+    { label: '成员话术', action: () => openWindow('settings', '', '', '账号与共享') },
+    { label: '新增本人一级分类', action: () => categoryDialog(undefined, null, 'phrase') },
+  ];
   function showPrimaryCategoryMenu(c: Category | undefined, e: MouseEvent) {
     // 分类菜单只承载分类相关操作，全局账号和管理入口集中在主菜单。
     (e.currentTarget as HTMLElement).focus();
+    if (c?.readOnly) { popup(readOnlyCategoryItems(c), e.clientX, e.clientY); return; }
     if (teamId) { popup([
       { label: '新增话术', enabled: canEdit && !!c, action: () => c && newPhrase(c) }, ...cloudItems(c?.id || ''), { label: '新增一级分类', enabled: canEdit, action: () => categoryDialog() }, { label: '新增二级分类', enabled: canEdit && !!c, action: () => c && categoryDialog(undefined, c.id, 'phrase') },
       { label: '重命名', enabled: canEdit && !!c, action: () => c && categoryDialog(c) }, { label: '移入回收站', enabled: canEdit && !!c, action: () => c && deleteCategory(c) },
       { label: '回收站', enabled: canEdit, action: () => openWindow('recycle-bin', '', '', '', '', '', teamId) },
       { label: '导入数据', enabled: canEdit, action: () => openWindow('settings', '', '', '导入数据', '', '', teamId) }, { label: '导出数据', action: () => openWindow('settings', '', '', '导出数据', c?.id || '', '', teamId) },
     ], e.clientX, e.clientY); return; }
-    const transfer = roots.length > 1;
+    const transfer = roots.filter(c => !c.readOnly).length > 1;
     const anchor = e.currentTarget.getBoundingClientRect();
     popup([
       { label: '新增话术', enabled: !!c, action: () => c && newPhrase(c) }, ...cloudItems(c?.id || ''),
@@ -364,7 +395,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       { label: '新增同级分类', action: () => categoryDialog(undefined, null, 'phrase') },
       { label: '重命名', enabled: !!c, action: () => c && categoryDialog(c) },
       { label: '删除', enabled: !!c, action: () => c && deleteCategory(c) },
-      { label: '快速排序一级分类', enabled: roots.length > 1, action: () => categorySort(null) },
+      { label: '快速排序一级分类', enabled: roots.filter(c => !c.readOnly).length > 1, action: () => categorySort(null) },
       { label: '复制到', enabled: !!c && transfer, action: () => c && transferCategory(c, true) },
       { label: '移动到', enabled: !!c && transfer, action: () => c && transferCategory(c, false) },
       { label: '导出该一级分类的话术', enabled: !!c, action: () => c && exportCategory(c) },
@@ -385,7 +416,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   ], anchor.left, anchor.top, false, innerHeight - anchor.top + 4); }
   const row = (p: Phrase | null, f: LinkedFile | null, index: number, isSearch = false) => {
     const id = (p?.id || f?.id)!;
-    return <PhraseRow key={id} phrase={p || undefined} file={f || undefined} index={index} settings={settings} selected={isSearch ? index === searchIndex : f ? selectedFiles.includes(id) : selected === id} query={isSearch ? query : undefined} busy={busy}
+    return <PhraseRow key={id} phrase={p || undefined} file={f || undefined} index={index} settings={settings} sourceLabel={isSearch ? results.find(h => h.id === id)?.sourceLabel : undefined} selected={isSearch ? index === searchIndex : f ? selectedFiles.includes(id) : selected === id} query={isSearch ? query : undefined} busy={busy}
       onSelect={e => { if (f && !isSearch) selectFile(f, e); else setSelected(id); if (isSearch) setSearchIndex(index); }} onDeliver={(mode, triggerKey) => void deliver(p ? (isSearch ? results.find(hit => hit.id === p.id)?.privateKey : '') || contentKey(p) : id, f ? 'file' : 'phrase', mode, triggerKey, isSearch ? searchUsage() : undefined)} onContext={e => p ? phraseMenu(p, e, isSearch) : fileMenu(f!, e, isSearch)} />;
   };
   let sequence = 0; const content: ReactNode[] = []; const visible: { id: string; kind: 'phrase' | 'file'; privateKey?: string }[] = [];
@@ -393,7 +424,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   if (kind === 'phrase') {
     library.phrases.filter(p => p.rootId === root && !p.groupId).forEach(p => addRow(p, null));
     library.categories.filter(c => c.parentId === root).forEach(c => {
-      const isCollapsed = collapsed.has(c.id); content.push(<div className={`group-heading${isCollapsed ? ' collapsed' : ''}`} key={c.id} data-group-id={c.id} tabIndex={-1} onContextMenu={e => categoryMenu(c, e)}><button className="group-toggle" aria-expanded={!isCollapsed} onClick={() => setCollapsed(previous => { const next = new Set(previous); if (next.has(c.id)) next.delete(c.id); else next.add(c.id); return next; })}><span className="group-arrow" />{c.name}</button>{canEdit && <button className="group-edit" aria-label={`编辑分类 ${c.name}`} onClick={() => categoryDialog(c)}><Icon name="pencil" /></button>}</div>);
+      const isCollapsed = collapsed.has(c.id); content.push(<div className={`group-heading${isCollapsed ? ' collapsed' : ''}`} key={c.id} data-group-id={c.id} tabIndex={-1} onContextMenu={e => categoryMenu(c, e)}><button className="group-toggle" aria-expanded={!isCollapsed} onClick={() => setCollapsed(previous => { const next = new Set(previous); if (next.has(c.id)) next.delete(c.id); else next.add(c.id); return next; })}><span className="group-arrow" />{c.name}</button>{writableCategory(c.id) && <button className="group-edit" aria-label={`编辑分类 ${c.name}`} onClick={() => categoryDialog(c)}><Icon name="pencil" /></button>}</div>);
       const phrases = library.phrases.filter(p => p.rootId === root && p.groupId === c.id); if (!isCollapsed) phrases.forEach(p => addRow(p, null));
     });
   } else library.files.filter(f => f.categoryId === fileCategory).forEach(f => addRow(null, f));
@@ -401,7 +432,12 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   const sequenceLoading = !!(teamId && !teamView) || pendingScope.current !== null || !!(settings.showSearch && query.trim() && (searching || composing.current || searchSource?.query !== query || searchSource.source !== searchStamp));
   useEffect(() => { void call('sync_sequence_map', { ids: JSON.parse(sequenceIds), loading: sequenceLoading, generation: ++sequenceGeneration.current }).catch(e => setMessage(String(e))); }, [sequenceIds, sequenceLoading]);
   useEffect(() => { if (!teamId || !teamView) return; const ids = visible.filter(v => v.kind === 'phrase').map(v => v.id); const visibleRows = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-row]') || [])].filter(e => { const rect = e.getBoundingClientRect(); return rect.bottom > 0 && rect.top < innerHeight; }).map(e => e.dataset.row!); void call('preload_team_images', { teamId, ids: [...visibleRows, ...ids.filter(id => !visibleRows.includes(id))] }).catch(() => {}); }, [teamId, root, collapsed, sequenceIds]);
-  useEffect(() => { if (teamId || !privateLibrary.libraryId) return; const visibleRows = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-row]') || [])].filter(e => { const r = e.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }).map(e => e.dataset.row!); const visibleIds = [...visibleRows, ...visible.filter(item => item.kind === 'phrase').map(item => item.id)]; const background = library.phrases.filter(p => p.rootId === root).map(p => p.id); void call('download_private_materials', { ids: [...new Set([...visibleIds, ...background])] }).catch(() => {}); }, [teamId, root, sequenceIds, privateLibrary.libraryId]);
+  useEffect(() => {
+    if (teamId || teamStatus.offline) return;
+    const ids = [...new Set([...(settings.showSearch && query.trim() ? results.filter(h => h.phrase?.contentRef?.source === 'member').map(h => h.id) : []), ...visible.filter(v => v.id.startsWith('member:')).map(v => v.id)])];
+    if (ids.length) void call('download_member_materials', { ids, attachments: false }).catch(() => {});
+  }, [teamId, root, collapsed, sequenceIds, teamStatus.offline]);
+  useEffect(() => { if (teamId || !privateLibrary.libraryId) return; const visibleRows = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-row]') || [])].filter(e => { const r = e.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }).map(e => e.dataset.row!); const visibleIds = [...visibleRows, ...visible.filter(item => item.kind === 'phrase').map(item => item.id)]; const background = privateLibrary.phrases.filter(p => p.rootId === root).map(p => p.id); void call('download_private_materials', { ids: [...new Set([...visibleIds, ...background])].filter(id => !id.startsWith('member:')) }).catch(() => {}); }, [teamId, root, sequenceIds, privateLibrary.libraryId]);
   function listKey(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.defaultPrevented || event.nativeEvent.isComposing || event.keyCode === 229 || (event.target as Element).closest('.row-send,.group-toggle,.group-edit')) return;
     if (kind === 'file' && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') { event.preventDefault(); setSelectedFiles(visible.map(item => item.id)); return; }
@@ -417,10 +453,10 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     if (event.key === 'Enter' && enterSubmit()) { event.preventDefault(); const item = visible.find(item => item.id === selected) || visible[0]; if (item) void deliver(item.id, item.kind, 'insert', 13); }
   }
   return <section className="client-window main-window" onClickCapture={e => { if (!(e.target as Element).closest('.content-row,.context-menu,dialog')) setSelected(''); }} onContextMenu={e => { if (!(e.target as Element).closest('input,textarea')) e.preventDefault(); }}>
-    <header className="main-titlebar"><img className="app-symbol" src="/shanyu.png" alt="闪语" draggable={false} /><nav className="content-tabs">{(settings.filesFirst ? ['file', 'phrase'] as const : ['phrase', 'file'] as const).map(tab => <button key={tab} className={kind === tab ? 'active' : ''} onClick={() => { setKind(tab); clearSearch(); }}>{tab === 'phrase' ? '话术' : '本地文件'}</button>)}</nav><span className="titlebar-spacer" data-tauri-drag-region /><div className="titlebar-actions"><button aria-label="吸附" title="吸附" aria-pressed={settings.dock} disabled={updatingSettings} onClick={() => void changeSettings({ dock: !settings.dock })}><Icon name={settings.dock ? 'dock' : 'dock-off'} /></button><button aria-label="置顶" title="置顶" aria-pressed={settings.pinned} disabled={updatingSettings} onClick={() => void changeSettings({ pinned: !settings.pinned })}><Icon name="pin" /></button><button aria-label="最小化" title="最小化" onClick={() => run(() => call('window_action', { action: 'minimize' }))}><Icon name="minus" /></button></div></header>
+    <header className="main-titlebar"><img className="app-symbol" src="/shanyu.png" alt="闪语" draggable={false} /><nav className="content-tabs">{(settings.filesFirst ? ['file', 'phrase'] as const : ['phrase', 'file'] as const).map(tab => <button key={tab} className={kind === tab ? 'active' : ''} onClick={() => { setKind(tab); clearSearch(); }}>{tab === 'phrase' ? '话术' : '本地文件'}</button>)}</nav><span className="titlebar-spacer" data-tauri-drag-region /><div className="titlebar-actions"><button aria-label="吸附" title="吸附" aria-pressed={settings.dock} disabled={settingsContext.pending.has('dock')} aria-busy={settingsContext.pending.has('dock')} onClick={() => changeSettings('dock')}><Icon name={settings.dock ? 'dock' : 'dock-off'} /></button><button aria-label="置顶" title="置顶" aria-pressed={settings.pinned} disabled={settingsContext.pending.has('pinned')} aria-busy={settingsContext.pending.has('pinned')} onClick={() => changeSettings('pinned')}><Icon name="pin" /></button><button aria-label="最小化" title="最小化" onClick={() => run(() => call('window_action', { action: 'minimize' }))}><Icon name="minus" /></button></div></header>
     <UpdateNotice />
     {kind === 'phrase' && <div className="scope-bar">{(settings.teamsFirst ? ['team', 'private'] : ['private', 'team']).map(scope => scope === 'private' ? <button key={scope} className={`scope-name${!teamId ? ' active' : ''}`} onClick={() => changeScope('')}>个人话术</button> : <TeamSelector key={scope} status={teamStatus} teamId={teamId} onChange={changeScope} onError={setMessage} />)}<button id="top-menu" aria-label="一级分类菜单" onClick={topCategoryMenu}><Icon name="menu" /></button></div>}
-    <nav className={`category-tabs${kind === 'file' ? ' files-tabs' : ' auto-wrapping'}${kind === 'phrase' || settings.fileCategoryHeight > 31 ? ' wrapping' : ''}`} style={kind === 'phrase' ? { minHeight: settings.categoryHeight } : { height: settings.fileCategoryHeight }} aria-label="一级分类">{(kind === 'phrase' ? roots : fileCats).map(c => { const background = c.background || (c.kind === 'file' ? settings.fileCategoryColor : settings.phraseCategoryColor); return <button key={c.id} title={categoryLabel(c, library.categories)} className={(kind === 'phrase' ? root : fileCategory) === c.id ? 'active' : ''} style={{ backgroundColor: background || undefined, color: background ? categoryTextColor(background) : undefined }} onClick={() => chooseCategory(c)} onContextMenu={e => categoryMenu(c, e)}>{c.name}</button>; })}<button className="add-category" aria-label="新增一级分类" disabled={kind === 'phrase' && !canEdit} onClick={() => categoryDialog()}>＋</button></nav>
+    <nav className={`category-tabs${kind === 'file' ? ' files-tabs' : ' auto-wrapping'}${kind === 'phrase' || settings.fileCategoryHeight > 31 ? ' wrapping' : ''}`} style={kind === 'phrase' ? { minHeight: settings.categoryHeight } : { height: settings.fileCategoryHeight }} aria-label="一级分类">{(kind === 'phrase' ? roots : fileCats).map(c => { const background = c.background || (c.kind === 'file' ? settings.fileCategoryColor : settings.phraseCategoryColor); return <button key={c.id} title={c.readOnly ? `${c.name} · 来自${c.sourceLabel} · 只读` : categoryLabel(c, library.categories)} className={(kind === 'phrase' ? root : fileCategory) === c.id ? 'active' : ''} style={{ backgroundColor: background || undefined, color: background ? categoryTextColor(background) : undefined }} onClick={() => chooseCategory(c)} onContextMenu={e => categoryMenu(c, e)}>{c.name}{c.readOnly && <small className="member-source">{c.sourceLabel} · 只读</small>}</button>; })}<button className="add-category" aria-label="新增一级分类" disabled={kind === 'phrase' && !scopeCanEdit} onClick={() => categoryDialog()}>＋</button></nav>
     <div className="list-area"><div ref={listRef} tabIndex={0} className="content-list" role="listbox" aria-label={kind === 'phrase' ? '话术列表' : '本地文件列表'} aria-multiselectable={kind === 'file'} onKeyDown={listKey} onContextMenu={listMenu}>{content.length ? content : <div className="empty-state"><img className="empty-illustration" src={`/illustrations/${kind === 'phrase' ? 'phrase' : 'files'}-empty.png`} width="96" height="96" alt="" draggable={false} /><span>{teamId && kind === 'phrase' && !teamView ? teamError || '正在加载共享话术…' : !hasCategory ? '还没有一级分类' : kind === 'phrase' ? '这个分类还没有话术' : '还没有关联文件'}</span><button disabled={kind === 'phrase' && !canEdit} onClick={() => hasCategory ? run(newContent) : categoryDialog()}>{!hasCategory ? '新增一级分类' : kind === 'phrase' ? '新增话术' : '新增关联文件'}</button></div>}</div>
       {settings.showSearch && query.trim() && <section className="search-panel" aria-label="搜索结果"><header><span>搜索结果</span><button aria-label="关闭搜索" onClick={clearSearch}>×</button></header><div className="search-kind">{kind === 'phrase' ? '话术' : '本地文件'}</div><div id="search-results">{sequenceLoading ? <div className="no-results">正在搜索…</div> : results.length ? results.map((hit, i) => row(hit.phrase, hit.file, i, true)) : <div className="no-results">没有找到匹配的内容</div>}</div></section>}
     </div>
@@ -433,7 +469,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       if (e.key === 'Enter' && query.trim() && !sequenceLoading && results[searchIndex] && enterSubmit()) { e.preventDefault(); const item = results[searchIndex]; void deliver(item.privateKey || item.id, item.kind, 'insert', 13, searchUsage()); }
       if (e.key === 'Escape') { e.preventDefault(); clearSearch(); e.currentTarget.blur(); listRef.current?.focus(); }
     }} />{query && <button aria-label="清空搜索" onClick={clearSearch}>×</button>}</div>}
-    <footer className="main-footer"><button aria-label="主菜单" onClick={mainMenu}><Icon name="menu" /></button><button aria-label={settings.showCommon ? '隐藏常用短语' : '显示常用短语'} title={settings.showCommon ? '隐藏常用短语' : '显示常用短语'} aria-pressed={settings.showCommon} disabled={updatingSettings} onClick={() => void changeSettings({ showCommon: !settings.showCommon })}><Icon name={settings.showCommon ? 'eye' : 'eye-off'} /></button><button aria-label={settings.showSearch ? '隐藏搜索框' : '显示搜索框'} title={settings.showSearch ? '隐藏搜索框' : '显示搜索框'} aria-controls="search-bar" aria-expanded={settings.showSearch} aria-pressed={settings.showSearch} disabled={updatingSettings} onClick={() => void changeSettings({ showSearch: !settings.showSearch })}><Icon name={settings.showSearch ? 'eye' : 'eye-off'} /></button>{busy && <button className="stop-delivery" onClick={() => run(() => call('cancel_delivery'))}>停止</button>}<span className="footer-spacer" data-tauri-drag-region /><span className="brand-name">闪语</span><button aria-label="设置" title="设置" className="settings-button" onClick={() => run(() => openWindow('settings'))}><Icon name="settings" /></button></footer>
+    <footer className="main-footer"><button aria-label="主菜单" onClick={mainMenu}><Icon name="menu" /></button><button aria-label={settings.showCommon ? '隐藏常用短语' : '显示常用短语'} title={settings.showCommon ? '隐藏常用短语' : '显示常用短语'} aria-pressed={settings.showCommon} disabled={settingsContext.pending.has('showCommon')} aria-busy={settingsContext.pending.has('showCommon')} onClick={() => changeSettings('showCommon')}><Icon name={settings.showCommon ? 'eye' : 'eye-off'} /></button><button aria-label={settings.showSearch ? '隐藏搜索框' : '显示搜索框'} title={settings.showSearch ? '隐藏搜索框' : '显示搜索框'} aria-controls="search-bar" aria-expanded={settings.showSearch} aria-pressed={settings.showSearch} disabled={settingsContext.pending.has('showSearch')} aria-busy={settingsContext.pending.has('showSearch')} onClick={() => changeSettings('showSearch')}><Icon name={settings.showSearch ? 'eye' : 'eye-off'} /></button>{busy && <button className="stop-delivery" onClick={() => run(() => call('cancel_delivery'))}>停止</button>}<span className="footer-spacer" data-tauri-drag-region /><span className="brand-name">闪语</span><button aria-label="设置" title="设置" className="settings-button" onClick={() => run(() => openWindow('settings'))}><Icon name="settings" /></button></footer>
     {menu && <div className={`context-menu${menu.primary ? ' category-context-menu' : ''}`} role="menu" tabIndex={-1} style={menu.bottom === undefined ? { left: menu.x, top: menu.y } : { left: menu.x, bottom: menu.bottom, maxHeight: Math.max(0, innerHeight - menu.bottom - 2) }} onKeyDown={e => {
       if (e.key === 'Tab') { setMenu(null); return; }
       if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;

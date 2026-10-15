@@ -64,12 +64,12 @@ try {
   await startClient();
   let teamA, teamB, privateId, employeePrivateId, shared, externalAsset, employee, recipient, ownTeam, ownSnapshot, managementView, userView;
   await check('HTTP登录、环境变量管理员首次改密和字符串账号管理', async () => {
-    await click(page.getByRole('button', { name: '设置', exact: true })); const accountView = await view('settings'); await accountView.locator('.settings-sidebar').waitFor(); await hideDynamicWindows(accountView); await click(accountView.getByRole('button', { name: '账号与同步', exact: true }));
+    await click(page.getByRole('button', { name: '设置', exact: true })); const accountView = await view('settings'); await accountView.locator('.settings-sidebar').waitFor(); await hideDynamicWindows(accountView); await click(accountView.getByRole('button', { name: '账号与共享', exact: true }));
     await accountView.getByLabel('服务器地址', { exact: true }).fill(base); await accountView.getByLabel('用户名', { exact: true }).fill('qa-admin');
     await accountView.screenshot({ path: path.join(evidence, 'account-login.png') });
     await accountView.getByLabel('密码', { exact: true }).fill(initialPassword); await accountView.locator('.team-connection').evaluate(el => el.requestSubmit());
     await accountView.getByRole('dialog', { name: '修改初始密码', exact: true }).waitFor();
-    const status = await invoke('get_team_status'); assert.ok(status.user.mustChangePassword); assert.equal(status.teams.length, 0); assert.ok(await accountView.getByRole('button', { name: '共享话术管理', exact: true }).isDisabled());
+    const status = await invoke('get_team_status'); assert.ok(status.user.mustChangePassword); assert.equal(status.teams.length, 0); assert.ok(await accountView.getByRole('button', { name: '管理话术', exact: true }).isDisabled());
     await accountView.screenshot({ path: path.join(evidence, 'first-password.png') });
     await accountView.getByLabel('当前密码', { exact: true }).fill(initialPassword); await accountView.getByLabel('新密码', { exact: true }).fill(password); await accountView.getByLabel('确认新密码', { exact: true }).fill(password); await accountView.locator('dialog form').evaluate(el => el.requestSubmit());
     await until(() => invoke('get_team_status'), value => value.user && !value.user.mustChangePassword);
@@ -93,7 +93,7 @@ try {
       await click(reopened.getByRole('button', { name: label === 'user-management' ? '新建账号' : '新建共享话术', exact: true }));
       const input = reopened.locator('dialog input').first(); await input.fill('窗口关闭验收'); await input.focus();
       assert.equal(await input.evaluate(el => getComputedStyle(el).outlineStyle), 'none');
-      const closeBox = await reopened.locator('.dialog-window-close').boundingBox(); assert.ok(closeBox.x + closeBox.width === width && closeBox.y === 0);
+      const closeBox = await reopened.locator('.dialog-window-close').boundingBox(); assert.ok(Math.abs(closeBox.x + closeBox.width - (width - 4)) < 1 && Math.abs(closeBox.y - 4) < 1);
       await reopened.screenshot({ path: path.join(evidence, label + '-dialog-close.png') });
       await reopened.locator('.dialog-window-close').click({ timeout: 4000 }); await until(() => reopened.isClosed());
     }
@@ -349,9 +349,19 @@ try {
     managementView = await view('team-management'); await managementView.locator('.management-groups').waitFor(); await hideDynamicWindows(managementView);
   });
   await check('设置保留连接与管理入口；退出清理凭据与缓存', async () => {
-    await click(page.getByRole('button', { name: '设置', exact: true })); const settings = await view('settings'); await settings.locator('.settings-sidebar').waitFor(); await hideDynamicWindows(settings); await click(settings.getByRole('button', { name: '账号与同步', exact: true }));
+    await click(page.getByRole('button', { name: '设置', exact: true })); const settings = await view('settings'); await settings.locator('.settings-sidebar').waitFor(); await hideDynamicWindows(settings); await click(settings.getByRole('button', { name: '账号与共享', exact: true }));
     await settings.locator('.team-settings').waitFor(); await settings.screenshot({ path: path.join(evidence, 'team-settings.png') });
-    const content = await settings.locator('.settings-content').evaluate(el => ({ height: el.clientHeight, scroll: el.scrollHeight })); assert.ok(content.scroll <= content.height + 1);
+    const identityLayout = await settings.locator('.account-user').evaluate(el => { const name = el.querySelector('.account-user-name').getBoundingClientRect(), role = el.querySelector('small').getBoundingClientRect(); return { delta: Math.abs(name.top - role.top), overlap: name.right > role.left, title: el.querySelector('.account-user-name').title }; });
+    assert.ok(identityLayout.delta < 4); assert.equal(identityLayout.overlap, false); assert.ok(identityLayout.title);
+    assert.ok(await settings.locator('.shared-library-settings .sync-row').evaluate(el => { const label = el.querySelector('strong').getBoundingClientRect(), button = el.querySelector('button').getBoundingClientRect(); return Math.abs(label.top + label.height / 2 - button.top - button.height / 2) < 3 && el.scrollWidth <= el.clientWidth; }));
+    const content = settings.locator('.settings-content');
+    const layout = await content.evaluate(el => ({ height: el.clientHeight, scroll: el.scrollHeight, width: el.clientWidth, scrollWidth: el.scrollWidth, overflowY: getComputedStyle(el).overflowY }));
+    assert.ok(layout.scroll >= layout.height); assert.ok(['auto', 'scroll'].includes(layout.overflowY)); assert.ok(layout.scrollWidth <= layout.width + 1);
+    // 账号页增加成员跟随与分享后允许纵向滚动，底部管理入口和顶部账号操作都必须可达。
+    for (const name of ['管理话术', '账号管理', '退出登录']) {
+      const button = settings.getByRole('button', { name, exact: true }); await button.scrollIntoViewIfNeeded();
+      const area = await content.boundingBox(), box = await button.boundingBox(); assert.ok(box.y >= area.y && box.y + box.height <= area.y + area.height + 1);
+    }
     for (const [target, name, width, height] of [[settings, 'account', 594, 620], [userView, 'users', 620, 620], [managementView, 'groups', 680, 600]]) {
       const cdp = await context.newCDPSession(target);
       for (const scale of [1.5, 2]) {

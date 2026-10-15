@@ -25,6 +25,7 @@ const hook = async view => view.evaluate(() => {
     const cmd = decodeURIComponent(url.pathname.slice(1)); let args = JSON.parse(init.body);
     const response = (value, state = 'ok') => new Response(JSON.stringify(value), { headers: { 'Tauri-Response': state, 'Content-Type': 'application/json' } });
     // 仅给底部搜索种入带来源与未缓存状态的显示样本，不执行任何投递。
+    if (cmd === 'resize_phrase_preview') (window.__illustrationQA.previewSizes ||= []).push(args.height);
     if (cmd === 'search_scoped_content' && window.__illustrationQA.searchFixture) return response(window.__illustrationQA.searchFixture);
     if (['plugin:window|show', 'plugin:window|set_focus', 'plugin:menu|popup', 'copy_phrase_text', 'copy_linked_files', 'open_linked_file', 'open_directory', 'native_status'].includes(cmd)) return response(null);
     if (['deliver_content', 'get_target'].includes(cmd)) throw new Error('插画验收禁止执行系统发送');
@@ -388,7 +389,7 @@ try {
     await invoke('plugin:event|emit', { event: 'shortcut-candidates', payload: { shortcut: 'Ctrl+1', phrases: [item], selectedIndex: 0, target: { hwnd: 0, focus: 0, pid: 0 } } }); await candidates.locator('.candidate-error').waitFor({ state: 'detached' });
   });
   await check('主题默认正文、标题、提示与七种主题实心按钮白字对比度达到4.5比1', async () => {
-    const palette = await page.evaluate(() => { const s = getComputedStyle(document.documentElement); return Object.fromEntries(['surface', 'panel', 'text', 'muted', 'title', 'accent', 'selection', 'hover'].map(key => [key, s.getPropertyValue('--theme-' + key).trim()])); });
+    const palette = await page.evaluate(() => { const probe = document.createElement('span'); document.body.append(probe); const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1; const ctx = canvas.getContext('2d'); const palette = Object.fromEntries(['surface', 'panel', 'text', 'muted', 'title', 'accent', 'selection', 'hover'].map(key => { probe.style.color = 'var(--theme-' + key + ')'; ctx.fillStyle = getComputedStyle(probe).color; ctx.fillRect(0, 0, 1, 1); return [key, '#' + [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3).map(v => v.toString(16).padStart(2, '0')).join('')]; })); probe.remove(); return palette; });
     const luminance = hex => { const digits = hex.slice(1); const normalized = digits.length === 3 ? [...digits].map(c => c + c).join('') : digits; const values = [0, 2, 4].map(i => parseInt(normalized.slice(i, i + 2), 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return values[0] * .2126 + values[1] * .7152 + values[2] * .0722; };
     for (const [foreground, background] of [[palette.text, palette.surface], [palette.muted, palette.panel], [palette.muted, palette.selection], [palette.title, palette.hover], [palette.title, palette.selection], ...['#4b6479', '#3e7256', '#30697e', '#45515b', '#965672', '#686294', '#9b5f30'].map(color => ['#ffffff', color])]) {
       const [light, dark] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
@@ -399,6 +400,87 @@ try {
     await preview.setViewportSize({ width: 300, height: 180 }); await screenshot(preview, 'theme-default-preview');
     await candidates.setViewportSize({ width: 370, height: 94 }); await screenshot(candidates, 'theme-default-candidates');
     await settings.setViewportSize({ width: 594, height: 620 }); await click(settings.getByRole('button', { name: '界面设置', exact: true })); await settings.locator('.settings-content').evaluate(el => { el.scrollTop = 0; }); await screenshot(settings, 'theme-default-settings');
+  });
+  await check('预览短文贴合、长文可超过480像素、受剩余高度限制且标题换行重测', async () => {
+    const sizePreview = async (text, maxHeight, title = '自适应预览') => {
+      await preview.setViewportSize({ width: 300, height: 180 });
+      await preview.evaluate(() => window.__illustrationQA.previewSizes = []);
+      await invoke('plugin:event|emit', { event: 'phrase-preview', payload: { phrase: { ...item, title, segments: [{ blocks: [{ kind: 'text', text }] }] }, fontSize: 14, titleColor: '#ff5100', theme: 'default', maxHeight } });
+      await preview.waitForFunction(() => window.__illustrationQA.previewSizes.length > 0);
+      // 显示快照不建立原生鼠标会话，以实际测量请求调整视口并检查正文可见范围。
+      for (let i = 0; i < 3; i++) {
+        const height = await preview.evaluate(() => window.__illustrationQA.previewSizes.at(-1));
+        await preview.setViewportSize({ width: 300, height: Math.ceil(height) }); await delay(80);
+      }
+      return preview.evaluate(() => ({ height: innerHeight, scrolls: document.querySelector('.phrase-preview-body').scrollHeight > document.querySelector('.phrase-preview-body').clientHeight }));
+    };
+    const short = await sizePreview('简短回复', 800); assert.ok(short.height < 100); assert.equal(short.scrolls, false); await screenshot(preview, 'preview-adaptive-short');
+    const medium = await sizePreview(Array.from({ length: 24 }, (_, i) => `第${i + 1}行：排查步骤`).join('\n'), 800); assert.ok(medium.height > 480 && medium.height < 800); assert.equal(medium.scrolls, false); await screenshot(preview, 'preview-adaptive-tall');
+    const longText = Array.from({ length: 60 }, (_, i) => `第${i + 1}行：排查步骤`).join('\n');
+    const limited = await sizePreview(longText, 310); assert.equal(limited.height, 310); assert.equal(limited.scrolls, true); await screenshot(preview, 'preview-adaptive-limited');
+    const wrapped = await sizePreview('简短回复', 800, '较长标题需要换行并计入预览高度'.repeat(4)); assert.ok(wrapped.height > short.height); assert.equal(wrapped.scrolls, false);
+  });
+  await check('四个按钮保存期间只有当前按钮变淡，其他按钮可继续操作', async () => {
+    await patchSettings({ dock: false, pinned: false, showCommon: true, showSearch: true });
+    const pin = page.getByRole('button', { name: '置顶', exact: true });
+    await page.evaluate(() => {
+      const original = window.fetch.bind(window); window.__illustrationQA.holdSave = true;
+      window.fetch = async (input, init) => {
+        if (window.__illustrationQA.holdSave && new URL(typeof input === 'string' ? input : input.url).pathname.endsWith('/save_settings')) {
+          window.__illustrationQA.holdSave = false;
+          await new Promise(resolve => window.__illustrationQA.releaseSave = resolve);
+        }
+        return original(input, init);
+      };
+    });
+    const selectors = ['.titlebar-actions button[aria-label="吸附"]', '.main-footer button[aria-controls="search-bar"]', '.main-footer button[title="隐藏常用短语"]'];
+    const before = await Promise.all(selectors.map(selector => styles(page, selector)));
+    await click(pin); await page.waitForFunction(() => window.__illustrationQA.releaseSave);
+    assert.equal(await pin.isDisabled(), true);
+    for (let i = 0; i < selectors.length; i++) { assert.equal(await page.locator(selectors[i]).isEnabled(), true); assert.deepEqual(await styles(page, selectors[i]), before[i]); assert.equal(await page.locator(selectors[i]).evaluate(el => getComputedStyle(el).opacity), '1'); }
+    await click(page.getByRole('button', { name: '隐藏常用短语', exact: true }));
+    await page.evaluate(() => window.__illustrationQA.releaseSave());
+    await page.waitForFunction(() => document.querySelector('.titlebar-actions button[aria-label="置顶"]').getAttribute('aria-pressed') === 'true' && document.querySelector('.main-footer button[title="显示常用短语"]')?.disabled === false);
+    const saved = await invoke('get_library'); assert.equal(saved.settings.pinned, true); assert.equal(saved.settings.showCommon, false);
+    await patchSettings({ pinned: false, showCommon: true });
+  });
+  await check('全部独立窗口继承主题，七色实时覆盖标题栏、来源栏及辅助表面', async () => {
+    await patchSettings({ theme: 'pink' });
+    const routes = [['editor', 480, 480], ['file-editor', 450, 230], ['settings', 480, 480], ['user-management', 480, 440], ['team-management', 560, 440], ['company-files', 760, 480], ['usage-guide', 620, 440], ['common-editor', 360, 160], ['common-sort', 380, 350], ['category-sort', 380, 350], ['file-sort', 380, 350], ['recycle-bin', 640, 400], ['delete-confirm', 384, 256]];
+    const windows = [];
+    for (const [route, width, height] of routes) {
+      let target = context.pages().find(p => !p.isClosed() && p.url().includes('#' + route));
+      if (!target) {
+        const query = new URLSearchParams({ libraryId: initial.libraryId, categoryId: phraseRoot });
+        await invoke('plugin:webview|create_webview_window', { options: { label: route, url: `index.html#${route}?${query}`, title: route, width, height, decorations: false, visible: false, focus: false, skipTaskbar: true } });
+        target = await view(route, '.standard-titlebar');
+      }
+      await target.setViewportSize({ width, height }); await hook(target); views.add(target); windows.push([route, target]);
+      await target.waitForFunction(() => document.documentElement.dataset.theme === 'pink');
+      assert.equal((await styles(target, '.standard-titlebar')).background, 'rgb(150, 86, 114)');
+    }
+    for (const theme of ['default', 'green', 'blue', 'black', 'pink', 'lavender', 'orange']) {
+      await patchSettings({ theme }); await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
+      const accent = (await styles(page, '.main-titlebar')).background;
+      await click(page.locator('.content-tabs').getByRole('button', { name: '话术', exact: true }));
+      assert.notEqual((await styles(page, '.scope-bar')).background, 'rgb(255, 255, 255)');
+      assert.equal((await styles(page, '.scope-name.active')).background, accent);
+      assert.equal((await styles(page, '.scope-name.active')).color, 'rgb(255, 255, 255)');
+      for (const [route, target] of windows) {
+        await target.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
+        assert.equal((await styles(target, '.standard-titlebar')).background, accent, route);
+        assert.equal((await styles(target, '.standard-titlebar')).color, 'rgb(255, 255, 255)', route);
+        assert.equal((await styles(target, '.standard-titlebar button')).color, 'rgb(255, 255, 255)', route);
+        assert.ok(await target.locator('.client-window').evaluate(el => el.scrollWidth <= el.clientWidth + 1), route);
+        if (theme === 'default' || theme === 'pink') await screenshot(target, `all-windows-${theme}-${route}`);
+      }
+      await candidates.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
+      assert.equal((await styles(candidates, 'header')).background, accent);
+      await preview.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
+      assert.notEqual((await styles(preview, 'header')).background, 'rgb(255, 255, 255)');
+    }
+    await patchSettings({ theme: 'default' }); await page.waitForFunction(() => document.documentElement.dataset.theme === 'default');
+    await screenshot(page, 'all-windows-default-main');
   });
   const report = { date: new Date().toISOString(), scope: 'illustrations-and-theme', checks: results.length, results, limits: ['真实WebView2与SQLite使用隔离数据，窗口保持隐藏；较小尺寸通过CDP视口验证', '七种主题逐一检查六处界面并保存截图；预览与候选种入显示快照，未重验实体快捷键、真实发送、系统DPI、多显示器和安装流程'] };
   await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify({ evidence, checks: results.length }, null, 2));

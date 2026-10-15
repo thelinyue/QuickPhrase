@@ -70,13 +70,15 @@ export function PhrasePreviewWindow() {
     document.documentElement.dataset.theme = preview.theme;
     document.documentElement.style.setProperty('--phrase-size', `${preview.fontSize}px`);
     const element = root.current;
+    const header = element.querySelector('header')!;
     element.querySelector('.phrase-preview-body')!.scrollTop = 0;
     const measure = () => {
       const content = element.querySelector<HTMLElement>('.phrase-preview-content')!;
-      const height = content.scrollHeight + element.querySelector('header')!.getBoundingClientRect().height + 2;
+      // 向上取整保留行高小数；标题换行和图片加载同样触发重新测量。
+      const height = Math.ceil(Math.max(content.scrollHeight, content.getBoundingClientRect().height) + header.getBoundingClientRect().height + 2);
       void call('resize_phrase_preview', { id: preview.phrase.id, height: Math.min(height, preview.maxHeight) }).catch(() => {});
     };
-    const observer = new ResizeObserver(measure); observer.observe(element.querySelector('.phrase-preview-content')!); measure();
+    const observer = new ResizeObserver(measure); observer.observe(element.querySelector('.phrase-preview-content')!); observer.observe(header); measure();
     return () => observer.disconnect();
   }, [preview]);
   if (!preview) return null;

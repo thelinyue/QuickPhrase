@@ -9,6 +9,7 @@ import { chromium } from 'playwright';
 // 真实 WebView 和 Win32 窗口使用隔离数据库。宿主不访问剪贴板，发送回调仅记录身份。
 const repo = process.cwd(), evidence = path.join(repo, '.build', 'hover-docking-' + Date.now());
 const dpiTest = process.argv.includes('--dpi');
+const previewOnly = process.argv.includes('--preview-only');
 await fs.mkdir(evidence, { recursive: true });
 const run = promisify(execFile), results = [], snapshots = [];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -33,7 +34,7 @@ const assertDockOrder = state => {
   assert.ok(windowOf(state, mainHandle).zOrder < windowOf(state, barHandle).zOrder, '侧栏先于底栏显示');
 };
 const invoke = (cmd, args = {}, view = page) => view.evaluate(({ cmd, args }) => window.__TAURI_INTERNALS__.invoke(cmd, args), { cmd, args });
-const check = async (name, fn) => { await fn(); results.push({ name, passed: true }); console.log('通过：' + name); };
+const check = async (name, fn) => { if (previewOnly && !['首次短文预览', '快速掠过', '鼠标进入浮层', '屏幕右下边缘'].some(prefix => name.startsWith(prefix))) return; await fn(); results.push({ name, passed: true }); console.log('通过：' + name); };
 const row = id => page.locator('[data-row="' + id + '"]').first();
 async function hover(locator, view = page, handle = mainHandle) {
   const box = await locator.boundingBox(), state = windowOf(await inspect(), handle), scale = state.dpi / 96;
@@ -401,9 +402,9 @@ try {
     assert.equal(popup.rect.top - state.cursor.y, gap);
     assert.equal(await preview.evaluate(() => innerWidth), 300);
     const appearance = await preview.locator('.phrase-preview-window').evaluate(el => ({ border: getComputedStyle(el).borderColor, header: getComputedStyle(el.querySelector('header')).backgroundColor, buttons: el.querySelectorAll('button').length, footers: el.querySelectorAll('footer').length }));
-    assert.equal(appearance.border, 'rgb(23, 23, 23)'); assert.equal(appearance.header, 'rgba(0, 0, 0, 0)'); assert.equal(appearance.buttons, 0); assert.equal(appearance.footers, 0);
+    assert.equal(appearance.border, 'rgb(75, 100, 121)'); assert.ok(!['rgba(0, 0, 0, 0)', 'rgb(255, 255, 255)'].includes(appearance.header), '预览辅助区域使用主题浅底'); assert.equal(appearance.buttons, 0); assert.equal(appearance.footers, 0);
     assert.ok(popup.rect.right <= popup.work.right && popup.rect.bottom <= popup.work.bottom);
-    assert.ok(popup.rect.bottom - popup.rect.top <= 480 * popup.dpi / 96 + 1);
+    assert.ok(Math.abs(popup.rect.bottom - (popup.work.bottom - Math.round(8 * popup.dpi / 96))) <= 1, '长文使用鼠标下方全部可用高度');
     assert.equal(await preview.getByText('第 2 段', { exact: true }).count(), 1); assert.equal(await preview.getByText('排查说明.txt', { exact: true }).count(), 1);
     await preview.screenshot({ path: path.join(evidence, 'long-preview.png') }); snapshots.push({ name: 'long-preview', main, popup, foreground: state.foreground, foregroundPid: state.foregroundPid });
   });
@@ -428,7 +429,7 @@ try {
     await hover(row(longId)); await poll(popupVisible, '边缘预览');
     const state = await inspect(), popup = windowOf(state, previewHandle), gap = Math.round(12 * popup.dpi / 96);
     assert.equal(popup.rect.left - state.cursor.x, gap); assert.equal(popup.rect.top - state.cursor.y, gap);
-    assert.ok(popup.rect.right > work.right && popup.rect.bottom > work.bottom, '保持固定方向，超出屏幕的部分由系统裁切');
+    assert.ok(popup.rect.right > work.right && popup.rect.bottom <= work.bottom, '保持固定方向，水平方向仍裁切，垂直方向限制在下方可用空间');
     assert.equal(popup.noActivate, true); assert.equal(state.foreground, hostHandle);
     snapshots.push({ name: 'fixed-direction-at-edge', cursor: state.cursor, popup });
     await page.keyboard.press('Escape'); await poll(async () => !await popupVisible(), '关闭边缘预览');
@@ -533,6 +534,6 @@ try {
   if (browser) await browser.close().catch(() => {});
   for (const process of [app, host]) if (process && process.exitCode === null) { await delay(150); if (process.exitCode === null) process.kill(); }
   const dpiPassed = results.some(result => result.passed && result.name.startsWith('固定目标 DPI'));
-  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ date: new Date().toISOString(), scope: 'full', results, snapshots, limits: [dpiPassed ? '实际企业微信和200%系统缩放未操作；分屏场景是否执行以专项结果为准' : '实际企业微信、多显示器和150%/200%系统缩放未操作', '原生窗口与鼠标检查仅操作隔离宿主和隔离客户端，无剪贴板或聊天发送'] }, null, 2));
+  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ date: new Date().toISOString(), scope: previewOnly ? 'preview-only' : 'full', results, snapshots, limits: [dpiPassed ? '实际企业微信和200%系统缩放未操作；分屏场景是否执行以专项结果为准' : '实际企业微信、多显示器和150%/200%系统缩放未操作', '原生窗口与鼠标检查仅操作隔离宿主和隔离客户端，无剪贴板或聊天发送'] }, null, 2));
   console.log('悬停与吸附记录：' + path.join(evidence, 'report.json'));
 }

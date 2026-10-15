@@ -24,7 +24,8 @@ function SequenceBinding({ index, value, disabled, save, error }: { index: numbe
   }} /><button type="button" aria-label={`关闭序号${index + 1}快捷键`} disabled={disabled || !value} onClick={() => void record('')}>关闭</button></div>;
 }
 
-const tabs = ['常用设置', '界面设置', '吸附设置', '账号与同步', '导入数据', '导出数据', '快捷键', '缓存管理', '关于'];
+const tabs = ['常用设置', '界面设置', '吸附设置', '账号与共享', '导入数据', '导出数据', '快捷键', '缓存管理', '关于'];
+const accountTab = (tab: string) => ['共享话术', '账号与同步'].includes(tab) ? '账号与共享' : tab;
 function Row({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) { return <div className="settings-row" title={hint}><span className="settings-label">{label}</span><div className="settings-options">{children}</div>{hint && <p className="settings-hint">{hint}</p>}</div>; }
 
 /** 位置示意只读取现有设置，用布局表达侧栏与底部面板的关系，不操作真实聊天窗口。 */
@@ -43,7 +44,7 @@ function DockIllustration({ settings }: { settings: Settings }) {
 /** 设置只展示本地可用功能；保存完成后通知各窗口，原生窗口行为也使用同一份设置。
  * 点击行为的新字段使用旧规则作为默认值，升级或恢复旧备份不会自动启用直接发送。 */
 export function SettingsWindow({ library, initialTab, initialCategoryId = '', initialTeamId = '' }: { library: Library; initialTab: string; initialCategoryId?: string; initialTeamId?: string }) {
-  const [tab, setTab] = useState(tabs.includes(initialTab === '共享话术' ? '账号与同步' : initialTab) ? (initialTab === '共享话术' ? '账号与同步' : initialTab) : tabs[0]); const [settings, setSettings] = useState(library.settings); const [message, setMessage] = useState(''); const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState(tabs.includes(accountTab(initialTab)) ? accountTab(initialTab) : tabs[0]); const [settings, setSettings] = useState(library.settings); const [message, setMessage] = useState(''); const [saving, setSaving] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [dataDirectory, setDataDirectory] = useState<{ path: string; message: string } | null>(null);
   const [choosingDirectory, setChoosingDirectory] = useState(false);
@@ -89,7 +90,7 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '', in
   useEffect(() => {
     let disposed = false; let unlisten: (() => void) | undefined;
     void listen<{ tab: string; categoryId: string; teamId?: string }>('settings-navigation', e => {
-      if (tabs.includes(e.payload.tab)) setTab(e.payload.tab);
+      if (tabs.includes(accountTab(e.payload.tab))) setTab(accountTab(e.payload.tab));
       if (e.payload.categoryId) setColorCategory(e.payload.categoryId);
       if (['导入数据', '导出数据'].includes(e.payload.tab)) { setTransferTeam(e.payload.teamId || ''); setTransferCategory(e.payload.categoryId || ''); }
     }).then(fn => disposed ? fn() : unlisten = fn).catch(e => setMessage(String(e)));
@@ -156,6 +157,6 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '', in
     <div className="setting-block"><h2 className="settings-heading">一键删除（请谨慎操作）</h2><div className="setting-buttons"><button className="secondary-button" disabled={!library.phrases.length} onClick={() => deleteLocal('phrase')}>个人话术</button><button className="secondary-button" disabled={!library.commonPhrases.length} onClick={() => deleteLocal('common')}>常用短语</button></div></div>
     <div className="setting-block"><h2 className="settings-heading">清理本地缓存</h2><div className="setting-buttons"><button className="secondary-button" onClick={() => void clear('thumbnails')}>清理缩略图</button><button className="secondary-button" onClick={() => void clear('temp')}>清理临时文件</button></div><p className="settings-hint">可重新生成的缓存：{(cache / 1024 / 1024).toFixed(2)} MB</p><p className="settings-hint">清理缓存会保留话术、图片素材和关联的原文件。</p></div></div>;
   else content = <><div className="about-brand"><img src="/shanyu.png" width="64" height="64" alt="" draggable={false} /><div><h2 className="settings-heading">闪语 QuickPhrase</h2><p>Windows 本地话术工具{appVersion && ` · v${appVersion}`}</p></div></div><div className="setting-block"><p>快速找到话术，添加到输入区，按需直接发送。</p><p>支持本地文件、图片附件和分段话术。</p></div><UpdateSettings /><div className="setting-block"><p>本地数据目录</p><p className="data-path">{dataDirectory?.path || '正在读取…'}</p><div className="setting-buttons"><button className="secondary-button" onClick={() => folder('data')}>打开数据文件夹</button><button className="secondary-button" disabled={!dataDirectory?.path || choosingDirectory || saving} onClick={() => void chooseDataDirectory()}>{choosingDirectory ? '选择中…' : '更换目录'}</button></div>{dataDirectory?.message && <p role="status">{dataDirectory.message}</p>}<p className="settings-hint">升级与卸载会保留本地数据。</p></div></>;
-  if (tab === '账号与同步') content = <TeamSettings />;
+  if (tab === '账号与共享') content = <TeamSettings />;
   return <section className="client-window settings-window"><Titlebar title="设置" minimize /><div className="settings-layout"><aside className="settings-sidebar"><nav>{tabs.map(t => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav><div className="settings-brand"><span>闪语</span><small>本地话术工具{appVersion && ` · ${appVersion}`}</small></div></aside><div className="settings-content">{content}</div></div>{dialog && <FormDialog spec={dialog} close={() => setDialog(null)} />}<Feedback message={message} clear={() => setMessage('')} /></section>;
 }

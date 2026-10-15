@@ -81,6 +81,11 @@ mod platform {
             bottom: y + height,
         }
     }
+    /// 固定右下方展开，只使用鼠标下方的客户区高度；不设480 DIP上限，也不反向挪动。
+    fn available_height(pointer: POINT, work: RECT, scale: f64, vertical_inset: i32) -> f64 {
+        let gap = (12.0 * scale).round() as i32;
+        (work.bottom - pointer.y - gap - vertical_inset).max(0) as f64 / scale
+    }
     impl PreviewState {
         unsafe fn hide(&mut self, preview: HWND) {
             self.payload = None;
@@ -188,13 +193,17 @@ mod platform {
                 .map_err(|e| format!("无法准备话术预览窗口：{e}"))?;
             }
             let (_, vertical_inset) = unsafe { client_insets(preview_handle)? };
+            let max_height = available_height(pointer, work, scale, vertical_inset);
+            if max_height < 1.0 {
+                self.hide_preview(None);
+                return Ok(());
+            }
             let payload = PreviewPayload {
                 phrase,
                 font_size: settings.font_size,
                 title_color: settings.title_color,
                 theme: settings.theme,
-                max_height: 480.0_f64.min((work.bottom - work.top) as f64 / scale * 0.65)
-                    - vertical_inset as f64 / scale,
+                max_height,
             };
             *self.preview.lock().unwrap() = PreviewState {
                 payload: Some(payload.clone()),
@@ -271,6 +280,38 @@ mod platform {
     #[cfg(test)]
     mod tests {
         use super::*;
+        #[test]
+        fn preview_height_uses_remaining_work_area_at_each_scale() {
+            for origin in [-1080, 0, 1080] {
+                let work = RECT {
+                    left: 0,
+                    top: origin,
+                    right: 1920,
+                    bottom: origin + 1040,
+                };
+                for scale in [1.0, 1.5, 2.0] {
+                    let gap = (12.0_f64 * scale).round() as i32;
+                    let pointer = POINT {
+                        x: 100,
+                        y: origin + 100,
+                    };
+                    let available = available_height(pointer, work, scale, 2);
+                    assert_eq!(available, (940 - gap - 2) as f64 / scale);
+                    if scale == 1.0 {
+                        assert!(available > 480.0);
+                    }
+                    for y in [origin + 990, origin + 1040 - gap, origin + 1050] {
+                        let remaining = available_height(POINT { x: 100, y }, work, scale, 2);
+                        assert!(remaining >= 0.0);
+                        if remaining > 0.0 {
+                            assert!(y + gap + (remaining * scale).ceil() as i32 + 2 <= work.bottom);
+                        } else {
+                            assert!(y + gap + 2 >= work.bottom);
+                        }
+                    }
+                }
+            }
+        }
         #[test]
         fn preview_keeps_pointer_direction_even_at_screen_edges() {
             for origin in [-1920, 0, 1920] {

@@ -10,6 +10,17 @@ pub(crate) fn db_error(e: impl std::fmt::Display) -> String {
     format!("数据库操作失败：{e}")
 }
 
+/// 成员分类及其内容属于独立只读来源，不能让其显示用主键落入个人写入或批量操作。
+fn writable_ids<'a>(ids: impl IntoIterator<Item = &'a str>) -> Result<()> {
+    if ids
+        .into_iter()
+        .any(|id| id.starts_with("member:") || id.starts_with("member-category:"))
+    {
+        return Err("成员话术的分类为只读，请在本人分类中操作。".into());
+    }
+    Ok(())
+}
+
 /// 本地库只通过本模块写入。分类、话术、分段和块使用外键与事务保持一致；
 /// 外部文件仅保存路径关联，任何删除操作都不会删除源文件。
 pub struct Store {
@@ -342,6 +353,12 @@ impl Store {
         after_id: Option<&str>,
         copies: &[(String, String)],
     ) -> Result<String> {
+        writable_ids([
+            p.id.as_str(),
+            p.root_id.as_str(),
+            p.group_id.as_deref().unwrap_or(""),
+            after_id.unwrap_or(""),
+        ])?;
         let materials = crate::private_local::safe_materials(self, &mut p)?;
         validate_phrase(&p)?;
         self.validate_images(&p)?;
@@ -426,6 +443,7 @@ impl Store {
         Ok(())
     }
     pub fn save_category(&self, mut c: Category) -> Result<String> {
+        writable_ids([c.id.as_str(), c.parent_id.as_deref().unwrap_or("")])?;
         c.name = c.name.trim().into();
         if c.name.is_empty()
             || c.name.chars().count() > 40
@@ -482,6 +500,7 @@ impl Store {
         target_id: Option<&str>,
         recycle: bool,
     ) -> Result<()> {
+        writable_ids([category_id, target_id.unwrap_or("")])?;
         let c = self
             .categories()?
             .into_iter()
@@ -566,6 +585,7 @@ impl Store {
         target_id: &str,
         copy: bool,
     ) -> Result<usize> {
+        writable_ids([category_id, target_id])?;
         let library = self.library()?;
         let source = library
             .categories
@@ -679,6 +699,7 @@ impl Store {
         kind: &str,
         parent_id: Option<&str>,
     ) -> Result<()> {
+        writable_ids(ids.iter().map(String::as_str).chain(parent_id))?;
         if let Some(parent) = parent_id {
             let valid: i64 = self.conn.query_row("SELECT count(*) FROM categories WHERE id=?1 AND kind='phrase' AND parent_id IS NULL", [parent], |r| r.get(0)).map_err(db_error)?;
             if valid == 0 || kind != "phrase" {
@@ -710,6 +731,7 @@ impl Store {
         tx.commit().map_err(db_error)
     }
     pub fn delete_item(&mut self, item_id: &str, kind: &str, recycle: bool) -> Result<()> {
+        writable_ids([item_id])?;
         let table = match kind {
             "phrase" => "phrases",
             "file" => "files",
@@ -741,6 +763,7 @@ impl Store {
         ids: &[String],
         recycle: bool,
     ) -> Result<usize> {
+        writable_ids(ids.iter().map(String::as_str))?;
         let table = match kind {
             "phrase" => "phrases",
             "common" => "common_phrases",
@@ -790,6 +813,7 @@ impl Store {
         group_id: Option<String>,
         copy: bool,
     ) -> Result<String> {
+        writable_ids([item_id, root_id.as_str(), group_id.as_deref().unwrap_or("")])?;
         let mut p = self.phrase(item_id)?;
         p.root_id = root_id;
         p.group_id = group_id;
@@ -800,6 +824,7 @@ impl Store {
         self.save_phrase(p, None)
     }
     pub fn sort(&mut self, item_id: &str, kind: &str, position: usize) -> Result<()> {
+        writable_ids([item_id])?;
         let library = self.library()?;
         let (table, mut ids): (&str, Vec<String>) = match kind {
             "common" => {
@@ -881,6 +906,7 @@ impl Store {
         tx.commit().map_err(db_error)
     }
     pub fn add_files(&mut self, category: &str, paths: Vec<String>) -> Result<()> {
+        writable_ids([category])?;
         let tx = self.conn.transaction().map_err(db_error)?;
         check_file_category(&tx, category)?;
         let position: i64 = tx
@@ -913,6 +939,7 @@ impl Store {
         tx.commit().map_err(db_error)
     }
     pub fn relink(&self, item_id: &str, path: &str, category: &str) -> Result<()> {
+        writable_ids([item_id, category])?;
         check_file_category(&self.conn, category)?;
         let path = Path::new(path)
             .canonicalize()
@@ -1360,6 +1387,53 @@ mod tests {
                 }],
             }],
         }
+    }
+    #[test]
+    fn member_category_namespace_is_rejected_before_personal_side_effects() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = test_store(dir.path()).unwrap();
+        let own = store.save_phrase(sample(), None).unwrap();
+        let before = serde_json::to_value(store.library().unwrap()).unwrap();
+        let followed = "member-category:grant:common";
+        let reference = "member:grant:1:1:generation:phrase:1";
+        let mut phrase = sample();
+        phrase.id = reference.into();
+        assert!(store
+            .save_phrase(phrase, None)
+            .unwrap_err()
+            .contains("只读"));
+        let mut phrase = sample();
+        phrase.root_id = followed.into();
+        assert!(store
+            .save_phrase(phrase, None)
+            .unwrap_err()
+            .contains("只读"));
+        let mut phrase = sample();
+        phrase.group_id = Some(followed.into());
+        assert!(store.save_phrase(phrase, None).is_err());
+        assert!(store.save_phrase(sample(), Some(reference)).is_err());
+        let mut category = store.categories().unwrap()[0].clone();
+        category.id = followed.into();
+        assert!(store.save_category(category).is_err());
+        assert!(store.move_copy(&own, followed.into(), None, false).is_err());
+        assert!(store
+            .move_copy(reference, "common".into(), None, true)
+            .is_err());
+        assert!(store.move_copy_category("common", followed, true).is_err());
+        assert!(store.delete_category(followed, false, None, true).is_err());
+        assert!(store.delete_item(reference, "phrase", true).is_err());
+        assert!(store.sort(reference, "phrase", 1).is_err());
+        assert!(store
+            .reorder_categories(&[followed.into()], "phrase", None)
+            .is_err());
+        assert!(store
+            .delete_local_content("phrase", &[reference.into()], true)
+            .is_err());
+        assert_eq!(
+            serde_json::to_value(store.library().unwrap()).unwrap(),
+            before
+        );
+        assert!(store.recycle_records().unwrap().is_empty());
     }
     #[test]
     fn persistence_and_unicode_limit() {
