@@ -12,6 +12,8 @@ mod private_local;
 mod private_sync;
 mod recycle;
 mod search_history;
+mod search_history_confirm;
+mod search_match;
 mod startup;
 mod store;
 mod team;
@@ -155,6 +157,11 @@ fn set_shortcut_input(
             .hwnd()
             .map_err(|e| format!("无法暂停快捷键录入监听：{e}"))?
             .0 as i64;
+        // WebView2 失去原生前台时可能仍报告 document.hasFocus；后台通知不得重新暂停贴边收起。
+        let active = active
+            && unsafe {
+                windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as i64 == handle
+            };
         if active {
             state.native.shortcut_input.store(handle, Ordering::Release);
         } else {
@@ -1041,6 +1048,7 @@ fn change_data_directory(
             "team-management",
             "user-management",
             "delete-confirm",
+            "search-history-confirm",
         ]
         .contains(&label.as_str())
     }) {
@@ -1452,8 +1460,25 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            search_history_confirm::window_event(window, event);
             if let Some(state) = window.try_state::<AppState>() {
+                if matches!(event, tauri::WindowEvent::Focused(false)) {
+                    if let Ok(handle) = window.hwnd() {
+                        // 原生失焦立即释放本窗口的输入标记，不清除另一窗口刚取得的输入锁。
+                        for input in [&state.native.shortcut_input, &state.native.search_input] {
+                            let _ = input.compare_exchange(
+                                handle.0 as i64,
+                                0,
+                                Ordering::AcqRel,
+                                Ordering::Acquire,
+                            );
+                        }
+                    }
+                }
                 let management_window = match window.label() {
+                    "search-history-confirm" => {
+                        Some(&state.native.management_windows.search_history_confirm)
+                    }
                     "company-files" => Some(&state.native.management_windows.company),
                     "settings" => Some(&state.native.management_windows.settings),
                     "team-management" => Some(&state.native.management_windows.teams),
@@ -1498,6 +1523,8 @@ pub fn run() {
                 return handler(invoke);
             }
             let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+                search_history_confirm::open_search_history_confirm,
+                search_history_confirm::close_search_history_confirm,
                 common_menu::open_common_menu,
                 common_menu::get_common_menu,
                 common_menu::choose_common_menu,

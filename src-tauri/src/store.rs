@@ -298,31 +298,28 @@ impl Store {
         tx.commit().map_err(db_error)
     }
     pub fn search(&self, query: &str) -> Result<Vec<SearchHit>> {
+        self.search_matching(&crate::search_match::SearchQuery::new(
+            query,
+            self.settings()?.search_mode == "exact",
+        ))
+    }
+    pub(crate) fn search_matching(
+        &self,
+        query: &crate::search_match::SearchQuery,
+    ) -> Result<Vec<SearchHit>> {
         let library = self.library()?;
-        let query = query.trim().to_lowercase();
-        if query.is_empty() {
-            return Ok(Vec::new());
-        }
-        let terms = if library.settings.search_mode == "exact" {
-            vec![query.as_str()]
-        } else {
-            query.split_whitespace().collect()
-        };
-        let matches = |s: String| {
-            let lower = s.to_lowercase();
-            terms.iter().all(|t| lower.contains(t))
-        };
         let mut found = Vec::new();
         for p in library.phrases {
             let mut content = format!("{} {}", p.title, p.text());
             for s in &p.segments {
                 for b in &s.blocks {
                     if let Block::File { name, .. } = b {
+                        content.push(' ');
                         content.push_str(name);
                     }
                 }
             }
-            if matches(content) {
+            if query.matches(&content) {
                 found.push(SearchHit {
                     kind: "phrase".into(),
                     id: p.id.clone(),
@@ -332,7 +329,7 @@ impl Store {
             }
         }
         for f in library.files {
-            if matches(f.name.clone()) {
+            if query.matches(&f.name) {
                 found.push(SearchHit {
                     kind: "file".into(),
                     id: f.id.clone(),
@@ -1884,7 +1881,29 @@ mod tests {
             name: "技术手册.pdf".into(),
         });
         s.save_phrase(p.clone(), None).unwrap();
-        assert_eq!(s.search("技术手册").unwrap().len(), 1);
+        for query in ["技术手册", "JISHUSHOUCE", "jssc", "jishu PDF"] {
+            assert_eq!(s.search(query).unwrap().len(), 1, "{query}");
+        }
+        let file = dir.path().join("UPS技术2026.pdf");
+        std::fs::write(&file, "测试").unwrap();
+        s.add_files("local-files", vec![file.to_string_lossy().into()])
+            .unwrap();
+        for query in ["UPS技术2026", "UPSjishu2026", "UPSjs2026"] {
+            assert_eq!(
+                s.search(query)
+                    .unwrap()
+                    .iter()
+                    .filter(|h| h.kind == "file")
+                    .count(),
+                1
+            );
+        }
+        let mut settings = s.settings().unwrap();
+        settings.search_mode = "exact".into();
+        s.save_settings(&settings).unwrap();
+        assert!(s.search("jishu PDF").unwrap().is_empty());
+        assert_eq!(s.search("JISHUSHOUCE.pdf").unwrap().len(), 1);
+        assert_eq!(s.search("UPSjs2026").unwrap().len(), 1);
         p.group_id = Some("local-files".into());
         assert!(s.save_phrase(p, None).is_err());
     }

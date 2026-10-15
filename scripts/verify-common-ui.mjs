@@ -73,6 +73,117 @@ try {
       return fetch(input, init);
     };
   });
+  await check('主窗口历史默认隐藏，点击搜索才显示，内部选择可用且离开或窗口失焦收起', async () => {
+    // 安装版可能占用默认快捷键，先关闭隔离实例的冲突提示，避免挡住搜索点击点。
+    if (await page.getByRole('status').count()) await clickNative(page, 'main', page.getByRole('status'));
+    assert.equal(await page.locator('.search-history').count(), 0);
+    await page.screenshot({ path: path.join(evidence, 'main-history-idle.png') });
+    const input = page.locator('#search-bar input'), before = await input.boundingBox();
+    await clickNative(page, 'main', input); await page.locator('.search-history').waitFor();
+    assert.equal((await input.boundingBox()).y, before.y);
+    await page.screenshot({ path: path.join(evidence, 'main-history-active.png') });
+    await clickNative(page, 'main', page.locator('.titlebar-spacer')); await page.locator('.search-history').waitFor({ state: 'detached' });
+    await clickNative(page, 'main', input); await page.locator('.search-history').waitFor();
+    await control('focus'); await page.locator('.search-history').waitFor({ state: 'detached' });
+    await clickNative(page, 'main', input); await page.locator('.search-history').waitFor();
+    await clickNative(page, 'main', page.locator('.search-history').getByRole('button', { name: '搜索测试', exact: true }));
+    await page.locator('.search-panel .content-row').first().waitFor();
+    assert.equal(await input.inputValue(), '搜索测试'); assert.equal(await page.locator('.search-history').count(), 0);
+    assert.equal(await page.evaluate(() => window.__commonQA.deliveries.length), 0);
+    await clickNative(page, 'main', page.getByRole('button', { name: '关闭搜索', exact: true })); await page.locator('.search-history').waitFor();
+    await control('focus'); await page.locator('.search-history').waitFor({ state: 'detached' });
+  });
+  await check('主窗口300/330/600 DIP覆盖浮层不改变列表与搜索框，遮罩不穿透', async () => {
+    await save({ dock: false, pinned: true, edgeAutoHide: false, dockCommon: false, dockSearch: false });
+    await invoke('window_action', { action: 'show' });
+    await control('raise', { handle: handles.main });
+    for (const width of [300, 330, 600]) {
+      const w = windowOf(await inspect(), 'main'), scale = w.dpi / 96;
+      await control('move', { handle: handles.main, x: 80, y: 80, width: Math.round(width * scale) + w.rect.right - w.rect.left - w.clientRect.right, height: 720 });
+      await control('focus', { handle: handles.main }); await delay(150);
+      const rects = () => page.evaluate(() => Object.fromEntries(['.list-area', '#search-bar', '.common-phrases'].map(selector => { const r = document.querySelector(selector).getBoundingClientRect(); return [selector, { x: r.x, y: r.y, width: r.width, height: r.height }]; })));
+      const before = await rects();
+      await clickNative(page, 'main', page.locator('#search-bar input'));
+      await page.locator('.main-search-history').waitFor();
+      assert.deepEqual(await rects(), before);
+      const geometry = await page.locator('.main-search-history').evaluate(el => {
+        const r = el.getBoundingClientRect(), title = document.querySelector('.main-titlebar').getBoundingClientRect(), search = document.querySelector('#search-bar').getBoundingClientRect(), header = el.querySelector('header'), items = el.querySelector('.search-history-items');
+        return { width: r.width, top: r.top, bottom: r.bottom, titleBottom: title.bottom, inputTop: search.top, headerFits: header.scrollWidth === header.clientWidth, tagsHeight: items.clientHeight, hit: document.elementFromPoint(r.x + 5, r.y + 5).closest('.main-search-history') !== null };
+      });
+      assert.ok(Math.abs(geometry.width - width) <= 2); assert.ok(geometry.top >= geometry.titleBottom && geometry.bottom + 10 <= geometry.inputTop + 1);
+      assert.ok(geometry.headerFits && geometry.hit && geometry.tagsHeight <= 76);
+      await page.screenshot({ path: path.join(evidence, 'main-history-' + width + '.png') });
+      await clickNative(page, 'main', page.locator('.search-history').getByRole('button', { name: '搜索测试', exact: true }));
+      await page.locator('.search-panel .content-row').first().waitFor(); assert.deepEqual(await rects(), before);
+      await clickNative(page, 'main', page.getByRole('button', { name: '关闭搜索', exact: true }));
+      assert.deepEqual(await rects(), before);
+      const count = await page.evaluate(() => window.__commonQA.deliveries.length);
+      await clickNative(page, 'main', page.locator('.search-backdrop'));
+      await page.locator('.main-search-history').waitFor({ state: 'detached' });
+      assert.equal(await page.evaluate(() => window.__commonQA.deliveries.length), count);
+      snapshots.push({ width, mainGeometry: geometry, rectangles: before });
+    }
+  });
+  await check('独立清空确认取消、失败留窗、重复提交保护、实时清空与安全焦点恢复', async () => {
+    const openConfirm = async () => {
+      await clickNative(page, 'main', page.locator('#search-bar input'));
+      await clickNative(page, 'main', page.getByRole('button', { name: '清空搜索记录' }));
+      const dialog = await poll(() => pages.pages().find(p => p.url().includes('#search-history-confirm')), '清空确认');
+      await dialog.getByRole('button', { name: '取消', exact: true }).waitFor();
+      handles.confirm = (await native(['-ProcessId', String(app.pid), '-Title', '提示'])).handle;
+      return dialog;
+    };
+    let dialog = await openConfirm();
+    assert.equal(await dialog.evaluate(() => document.activeElement.textContent), '取消');
+    const box = await dialog.locator('.search-history-confirm').boundingBox(); assert.equal(box.width, 384); assert.equal(box.height, 256);
+    const firstHandle = handles.confirm;
+    await invoke('open_search_history_confirm', { libraryId }); assert.equal(handles.confirm, firstHandle);
+    assert.equal(pages.pages().filter(p => p.url().includes('#search-history-confirm')).length, 1);
+    await dialog.screenshot({ path: path.join(evidence, 'clear-history-confirm.png') });
+    await clickNative(dialog, 'confirm', dialog.getByRole('button', { name: '取消', exact: true }));
+    await poll(() => dialog.isClosed(), '取消关闭');
+    assert.equal((await invoke('get_search_history', { libraryId })).length, 10);
+    await page.locator('.main-search-history').waitFor(); assert.equal(await page.evaluate(() => document.activeElement.matches('#search-bar input')), true);
+    dialog = await openConfirm();
+    await dialog.evaluate(() => {
+      const fetch = window.fetch.bind(window); window.__clearQA = { fail: true, count: 0 };
+      window.fetch = async (input, init) => {
+        const url = new URL(typeof input === 'string' ? input : input.url);
+        if (url.hostname === 'ipc.localhost' && url.pathname === '/clear_search_history') {
+          window.__clearQA.count++;
+          if (window.__clearQA.fail) { await new Promise(r => setTimeout(r, 300)); return new Response(JSON.stringify('隔离测试：磁盘写入失败'), { headers: { 'Tauri-Response': 'error', 'Content-Type': 'application/json' } }); }
+        }
+        return fetch(input, init);
+      };
+    });
+    await clickNative(dialog, 'confirm', dialog.getByRole('button', { name: '确定', exact: true }), 'double-click');
+    await dialog.getByRole('alert').waitFor();
+    assert.equal(await dialog.evaluate(() => window.__clearQA.count), 1);
+    assert.equal((await invoke('get_search_history', { libraryId })).length, 10);
+    await invoke('record_search_history', { libraryId, query: '确认打开后新增' });
+    await dialog.evaluate(() => { window.__clearQA.fail = false; });
+    await clickNative(dialog, 'confirm', dialog.getByRole('button', { name: '确定', exact: true }));
+    await poll(() => dialog.isClosed(), '清空成功关闭');
+    assert.deepEqual(await invoke('get_search_history', { libraryId }), []);
+    await page.locator('.main-search-history').waitFor(); assert.equal(await page.getByRole('button', { name: '清空搜索记录' }).isDisabled(), true);
+    assert.equal(await dock.locator('.search-history-items button').count(), 0);
+    await page.screenshot({ path: path.join(evidence, 'main-history-empty.png') });
+    await invoke('record_search_history', { libraryId, query: '取消保留' });
+    dialog = await openConfirm(); await control('focus');
+    await invoke('close_search_history_confirm', {}, dialog).catch(e => { if (!dialog.isClosed()) throw e; }); await poll(() => dialog.isClosed(), '外部焦点关闭');
+    assert.notEqual((await inspect()).foreground, handles.main);
+    dialog = await openConfirm();
+    const dataDir = (await invoke('get_library')).dataDir;
+    await run('python', ['-c', "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(\"UPDATE sync_meta SET value='isolated-new-library' WHERE key='libraryId'\"); c.commit()", path.join(dataDir, 'shanyu.sqlite3')], { windowsHide: true });
+    await poll(() => dialog.isClosed(), '切库失效');
+    await run('python', ['-c', "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(\"UPDATE sync_meta SET value=? WHERE key='libraryId'\",(sys.argv[2],)); c.commit()", path.join(dataDir, 'shanyu.sqlite3'), libraryId], { windowsHide: true });
+    assert.deepEqual(await invoke('get_search_history', { libraryId }), ['取消保留']);
+    dialog = await openConfirm(); await invoke('window_action', { action: 'hide' }); await poll(() => dialog.isClosed(), '来源隐藏关闭');
+    for (const query of ['搜索测试', '连接问题', '设备状态', '使用帮助', '文件处理', '网络诊断', '共享权限', '存储空间', '登录异常', '同步进度']) await invoke('record_search_history', { libraryId, query });
+    delete handles.confirm;
+    await control('unpin', { handle: handles.main }); await save({ dock: true, pinned: false, dockCommon: true, dockSearch: true });
+    await invoke('window_action', { action: 'show' }); await control('focus');
+  });
   await check('宽窄底栏保留多行配置，聚焦历史及结果展开时输入框屏幕坐标不变', async () => {
     for (const width of [988, 360]) {
       await control('move', { x: 30, y: 40, width, height: 620 }); await control('focus'); await delay(250);
@@ -145,7 +256,7 @@ try {
     await clickNative(dock, 'dock', dock.locator('[data-common]').first(), 'right-click'); await menuShown();
     await control('focus'); await menuHidden();
   });
-  await check('贴边展开后菜单暂停收起，屏幕右侧菜单避让且Esc后恢复自动隐藏', async () => {
+  await check('贴边展开后菜单及清空确认暂停收起，屏幕右侧避让且Esc后恢复自动隐藏', async () => {
     await save({ dock: false, pinned: true, edgeAutoHide: true, edgeRevealDelay: 0 });
     await invoke('window_action', { action: 'show' }); await delay(250);
     await control('raise', { handle: handles.main }); await control('focus', { handle: handles.main });
@@ -160,13 +271,25 @@ try {
     await control('pointer', { x: m.work.left + 50, y: 20 }); await delay(400);
     assert.equal(windowOf(await inspect(), 'main').frame.right, m.work.right);
     const popup = windowOf(await inspect(), 'menu'); assert.ok(popup.frame.right <= popup.work.right && popup.frame.bottom <= popup.work.bottom);
+    await control('pointer', { x: m.work.right - 30, y: m.frame.top + 100 });
     await menu.getByRole('menuitem').first().press('Escape'); await menuHidden();
+    await control('pointer', { x: m.work.right - 1, y: m.frame.top + 80 });
+    await poll(async () => windowOf(await inspect(), 'main').frame.right === m.work.right, '清空前贴边展开');
+    await clickNative(page, 'main', page.locator('#search-bar input'));
+    await clickNative(page, 'main', page.getByRole('button', { name: '清空搜索记录' }));
+    const dialog = await poll(() => pages.pages().find(p => p.url().includes('#search-history-confirm')), '贴边清空确认');
+    await dialog.getByRole('button', { name: '取消', exact: true }).waitFor();
+    await control('pointer', { x: m.work.left + 50, y: 20 }); await delay(400);
+    assert.equal(windowOf(await inspect(), 'main').frame.right, m.work.right);
+    await dialog.getByRole('button', { name: '取消', exact: true }).press('Escape');
+    await poll(() => dialog.isClosed(), 'Esc取消清空确认');
     await control('focus');
-    await poll(async () => { const w = windowOf(await inspect(), 'main'); return w.work.right - w.clip.left <= 2 * scale + 1; }, '菜单关闭后自动收起');
+    await poll(async () => { const w = windowOf(await inspect(), 'main'); return w.work.right - w.clip.left <= 2 * scale + 1; }, '确认关闭后自动收起');
   });
 } catch (error) {
   results.push({ passed: false, error: String(error), stack: error.stack }); process.exitCode = 1; console.error(error);
   snapshots.push({ name: 'failure', state: await inspect().catch(() => null) });
+  snapshots.push({ name: 'search-focus', state: await page?.evaluate(() => ({ focused: document.hasFocus(), active: document.activeElement?.tagName, history: !!document.querySelector('.search-history') })).catch(() => null) });
   await dock?.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});
 } finally {
   await invoke('window_action', { action: 'exit' }).catch(() => {});

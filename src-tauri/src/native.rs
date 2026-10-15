@@ -120,6 +120,7 @@ impl DisplayMode {
 pub struct ManagementWindows {
     /// 自定义短语菜单需要与系统菜单一样暂停快捷键和贴边收起。
     pub common_menu: std::sync::atomic::AtomicI64,
+    pub search_history_confirm: std::sync::atomic::AtomicI64,
     pub settings: std::sync::atomic::AtomicI64,
     pub teams: std::sync::atomic::AtomicI64,
     pub users: std::sync::atomic::AtomicI64,
@@ -129,6 +130,7 @@ impl ManagementWindows {
     /// 设置是独立窗口，不阻止主窗口贴边收起；其他管理窗口保持原有保护。
     pub(crate) fn blocks_edge_hide(&self) -> bool {
         self.common_menu.load(Ordering::Acquire) != 0
+            || self.search_history_confirm.load(Ordering::Acquire) != 0
             || self.teams.load(Ordering::Acquire) != 0
             || self.users.load(Ordering::Acquire) != 0
             || self.company.load(Ordering::Acquire) != 0
@@ -140,6 +142,7 @@ impl ManagementWindows {
 
 pub struct NativeState {
     pub common_menu: Mutex<crate::common_menu::MenuState>,
+    pub search_history_confirm: Mutex<Option<crate::search_history_confirm::Session>>,
     pub common_menu_handle: std::sync::atomic::AtomicI64,
     pub target: Mutex<Option<TargetContext>>,
     pub settings: RwLock<Settings>,
@@ -197,6 +200,7 @@ impl NativeState {
             candidates: Mutex::new(candidates::CandidateState::default()),
             sequence_map: RwLock::new((vec![], true)),
             common_menu: Mutex::new(crate::common_menu::MenuState::default()),
+            search_history_confirm: Mutex::new(None),
             common_menu_handle: std::sync::atomic::AtomicI64::new(0),
             shortcut_input: std::sync::atomic::AtomicI64::new(0),
             search_input: std::sync::atomic::AtomicI64::new(0),
@@ -930,7 +934,13 @@ mod platform {
             while state.running.load(Ordering::Acquire) {
                 while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
                     if msg.message == WM_HOTKEY {
-                        if state.management_windows.common_menu.load(Ordering::Acquire) != 0 {
+                        if state.management_windows.common_menu.load(Ordering::Acquire) != 0
+                            || state
+                                .management_windows
+                                .search_history_confirm
+                                .load(Ordering::Acquire)
+                                != 0
+                        {
                             continue;
                         }
                         if let Some(external) = capture() {
@@ -1057,6 +1067,7 @@ mod platform {
                 let owned = pid(foreground) == std::process::id();
                 if let Some(app) = state.app.get() {
                     crate::common_menu::poll(app, &state, foreground);
+                    crate::search_history_confirm::poll(app, &state);
                 }
                 if owned && !was_owned {
                     *state.target.lock().unwrap() = last_external.clone();
@@ -1764,6 +1775,7 @@ mod tests {
             &windows.users,
             &windows.company,
             &windows.common_menu,
+            &windows.search_history_confirm,
         ] {
             handle.store(1, Ordering::Release);
             assert!(windows.is_open());
@@ -1787,6 +1799,7 @@ mod tests {
             &windows.users,
             &windows.company,
             &windows.common_menu,
+            &windows.search_history_confirm,
         ] {
             handle.store(2, Ordering::Release);
             assert!(windows.blocks_edge_hide());

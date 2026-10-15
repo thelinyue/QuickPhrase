@@ -986,3 +986,23 @@ button[role="menuitem"]:focus { filter: none; }
 .common-menu-window button:hover, .common-menu-window button:focus-visible { background: var(--theme-hover, #e0eaf4); outline: none; }
 .common-menu-window button:disabled { color: var(--theme-muted, #999); background: transparent; }
 .common-menu-error { position: absolute; inset: auto 0 0; background: var(--theme-panel, #f2f2f2); color: #a4262c; font-size: 11px; padding: 3px; }
+
+/* 主搜索浮层只覆盖内容区；列表、常用短语和搜索框始终保留原来的布局尺寸。 */
+.main-search-content { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.main-search-content > .search-backdrop { inset: 0; }
+.main-search-content:has(> .search-backdrop)::after { content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 10px; background: var(--theme-accent, var(--blue)); z-index: 2; }
+.main-search-content > .search-panel { border-radius: 0; }
+.main-search-history { position: absolute; bottom: 10px; left: 0; right: 0; z-index: 3; max-height: calc(100% - 10px); flex-direction: column; padding: 6px 7px; border: 1px solid var(--theme-line, #dbe3e9); gap: 4px; box-shadow: 0 8px 24px #26313b1a; }
+.main-search-history > header { display: flex; align-items: flex-start; gap: 4px; width: 100%; flex-shrink: 0; font-size: 12px; line-height: 22px; color: var(--theme-muted, #8098ae); }
+.main-search-history > header > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.main-search-history > .search-history-items { flex: 0 1 auto; width: 100%; min-height: 0; }
+.main-search-history::after, .main-search-content > .search-panel::after { content: ""; position: absolute; bottom: -8px; left: calc(50% - 8px); border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 8px solid var(--theme-surface, #fff); }
+.search-history-confirm { height: 100vh; display: flex; flex-direction: column; background: var(--theme-surface, #fff); }
+.search-history-confirm > header { display: flex; align-items: center; height: 40px; flex-shrink: 0; padding-left: 14px; background: var(--theme-accent, var(--blue)); color: white; }
+.search-history-confirm > header > span { flex: 1; }
+.search-history-confirm > header button { width: 40px; height: 40px; border: 0; background: transparent; color: inherit; }
+.search-history-confirm > main { flex: 1; min-height: 0; overflow: auto; padding: 26px 28px 16px; text-align: center; }
+.search-history-confirm h2 { color: #d93025; font-size: 18px; margin: 0 0 14px; }
+.search-history-confirm p { margin: 0; }
+.search-history-confirm [role=alert] { color: #c62828; font-size: 12px; margin-top: 10px; }
+.search-history-confirm > footer { display: flex; justify-content: flex-end; gap: 12px; padding: 12px 24px; }

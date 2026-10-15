@@ -68,11 +68,21 @@ pub fn record_search_history(
 pub fn clear_search_history(
     app: tauri::AppHandle,
     state: State<AppState>,
+    window: tauri::Window,
     library_id: String,
 ) -> Result<()> {
-    let store = private_commands::active_store(&state, Some(&library_id))?;
-    clear(&store)?;
-    drop(store);
+    let confirmation = window.label() == crate::search_history_confirm::LABEL;
+    if confirmation {
+        crate::search_history_confirm::begin(&app, &state, &library_id)?;
+    }
+    let result = (|| {
+        let store = private_commands::active_store(&state, Some(&library_id))?;
+        clear(&store)
+    })();
+    if confirmation {
+        crate::search_history_confirm::end(&state);
+    }
+    result?;
     app.emit("search-history-changed", library_id)
         .map_err(|_| "搜索记录已清空，但界面刷新通知失败。".into())
 }
@@ -155,6 +165,23 @@ mod tests {
         clear(&b).unwrap();
         assert_eq!(read(&a.conn).unwrap(), ["账号A"]);
         assert!(read(&b.conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn failed_clear_keeps_all_records_until_explicit_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        record(&store, "打开确认前").unwrap();
+        record(&store, "打开确认后").unwrap();
+        store.conn.execute_batch("CREATE TRIGGER fail_clear BEFORE DELETE ON sync_meta WHEN old.key='searchHistory' BEGIN SELECT RAISE(ABORT,'测试清空失败'); END;").unwrap();
+        assert!(clear(&store).is_err());
+        assert_eq!(read(&store.conn).unwrap(), ["打开确认后", "打开确认前"]);
+        store
+            .conn
+            .execute_batch("DROP TRIGGER fail_clear;")
+            .unwrap();
+        clear(&store).unwrap();
+        assert!(read(&store.conn).unwrap().is_empty());
     }
 
     #[test]

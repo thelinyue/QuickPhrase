@@ -747,16 +747,10 @@ impl TeamClient {
         })?;
         Ok(phrase)
     }
-    pub fn search_member(&self, query: &str, exact: bool) -> Vec<serde_json::Value> {
-        let query = query.trim().to_lowercase();
-        if query.is_empty() {
-            return vec![];
-        }
-        let terms = if exact {
-            vec![query.as_str()]
-        } else {
-            query.split_whitespace().collect()
-        };
+    pub fn search_member(
+        &self,
+        query: &crate::search_match::SearchQuery,
+    ) -> Vec<serde_json::Value> {
         let Ok(view) = self.member_view() else {
             return vec![];
         };
@@ -764,7 +758,7 @@ impl TeamClient {
             let filenames = p.phrase.segments.iter().flat_map(|s| &s.blocks).filter_map(|b| match b {
                 local::Block::Image { name, .. } | local::Block::File { name, .. } => Some(name.as_str()), _ => None }).collect::<Vec<_>>().join(" ");
             let text = format!("{} {} {}", p.phrase.title, p.phrase.text(), filenames).to_lowercase();
-            terms.iter().all(|term| text.contains(term)).then(|| serde_json::json!({"id":p.phrase.id,"kind":"phrase","phrase":p,"file":null,"sourceLabel":format!("来自{}",view.owner_label)}))
+            query.matches(&text).then(|| serde_json::json!({"id":p.phrase.id,"kind":"phrase","phrase":p,"file":null,"sourceLabel":format!("来自{}",view.owner_label)}))
         }).collect()
     }
 }
@@ -848,6 +842,16 @@ mod tests {
         .unwrap();
         client.initialize_member();
         let view = client.member_view().unwrap();
+        for exact in [false, true] {
+            for query in ["成员话术", "CHENGYUANHUASHU", "cyhs", "lixianneirong"] {
+                assert_eq!(
+                    client
+                        .search_member(&crate::search_match::SearchQuery::new(query, exact))
+                        .len(),
+                    1
+                );
+            }
+        }
         assert_eq!(view.state, "离线");
         assert_eq!(view.last_successful_sync_at, Some(1234));
         assert!(view.categories[0].read_only);
@@ -885,6 +889,9 @@ mod tests {
             .cancel
             .cancel();
         assert!(client.member_phrase(&reference.key(), false).is_err());
+        assert!(client
+            .search_member(&crate::search_match::SearchQuery::new("cyhs", false))
+            .is_empty());
     }
     #[test]
     fn legacy_cache_cannot_be_reused_without_recipient_binding() {

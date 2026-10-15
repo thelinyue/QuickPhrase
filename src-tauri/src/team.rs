@@ -2462,17 +2462,12 @@ impl TeamClient {
         temp.persist(path).map_err(io_error)?;
         Ok(())
     }
-    pub fn search(&self, query: &str, exact: bool, team: Option<&str>) -> Vec<serde_json::Value> {
+    pub fn search(
+        &self,
+        query: &crate::search_match::SearchQuery,
+        team: Option<&str>,
+    ) -> Vec<serde_json::Value> {
         let teams = self.status().teams;
-        let query = query.trim().to_lowercase();
-        if query.is_empty() {
-            return vec![];
-        }
-        let terms = if exact {
-            vec![query.as_str()]
-        } else {
-            query.split_whitespace().collect()
-        };
         let mut hits = vec![];
         for t in teams {
             if team.is_some_and(|id| id != t.team_id) {
@@ -2499,7 +2494,7 @@ impl TeamClient {
                         .join(" ")
                 )
                 .to_lowercase();
-                if terms.iter().all(|v| content.contains(v)) {
+                if query.matches(&content) {
                     hits.push(serde_json::json!({"id":p.phrase.id,"kind":"phrase","phrase":p,"file":null,"sourceLabel":t.name,"teamId":t.team_id}));
                 }
             }
@@ -2985,6 +2980,67 @@ mod tests {
             );
         }
         assert!(client.accept_snapshot(&ctx, snapshot(&ctx, 1)).is_err());
+    }
+    #[test]
+    fn pinyin_search_preserves_team_and_authorization_scope() {
+        let (_dir, client, ctx) = setup();
+        let mut next = snapshot(&ctx, 1);
+        next.phrases.push(wire::Phrase {
+            id: local::id(),
+            root_id: local::id(),
+            group_id: None,
+            title: "技术手册UPS2026".into(),
+            color: String::new(),
+            background: String::new(),
+            position: 0,
+            revision: 1,
+            segments: vec![wire::Segment {
+                blocks: vec![wire::Block::Text {
+                    text: "售后服务".into(),
+                }],
+            }],
+        });
+        client.accept_snapshot(&ctx, next).unwrap();
+        for exact in [false, true] {
+            for input in [
+                "技术手册",
+                "JISHUSHOUCEups2026",
+                "JSSCups2026",
+                "shouhoufuwu",
+            ] {
+                let query = crate::search_match::SearchQuery::new(input, exact);
+                assert_eq!(client.search(&query, Some(&ctx.team)).len(), 1);
+                assert!(client.search(&query, Some("other-team")).is_empty());
+            }
+        }
+        assert_eq!(
+            client
+                .search(
+                    &crate::search_match::SearchQuery::new("jssc shfw", false),
+                    None
+                )
+                .len(),
+            1
+        );
+        assert!(client
+            .search(
+                &crate::search_match::SearchQuery::new("jssc shfw", true),
+                None
+            )
+            .is_empty());
+        client
+            .inner
+            .lock()
+            .unwrap()
+            .active
+            .as_mut()
+            .unwrap()
+            .authorization
+            .teams
+            .clear();
+        assert!(client
+            .search(&crate::search_match::SearchQuery::new("jssc", false), None)
+            .is_empty());
     }
     #[test]
     fn incomplete_assets_block_whole_phrase_and_revision_cannot_silently_change() {

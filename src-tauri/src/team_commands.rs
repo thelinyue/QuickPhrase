@@ -311,7 +311,8 @@ pub async fn backup_team_server(state: State<'_, AppState>, path: String) -> Res
 }
 
 /// 主搜索限定当前来源；底部 dock 搜索才合并全部授权共享话术和本地文件。
-#[tauri::command]
+/// 数据读取与按需拼音转换在工作线程执行，不阻塞 Windows 窗口消息。
+#[tauri::command(async)]
 pub fn search_scoped_content(
     state: State<AppState>,
     query: String,
@@ -319,23 +320,23 @@ pub fn search_scoped_content(
     team_id: Option<String>,
 ) -> Result<Vec<serde_json::Value>> {
     let store = state.store.lock().unwrap();
-    let exact = store.settings()?.search_mode == "exact";
+    let query =
+        crate::search_match::SearchQuery::new(&query, store.settings()?.search_mode == "exact");
     let mut hits = if scope == "team" {
         vec![]
     } else {
-        store.search(&query)?.into_iter().filter(|h|h.kind=="phrase"&&(scope=="all"||scope=="private")).map(|h|{let content_key=crate::private_local::content_key(&store,"phrase",&h.id).ok();serde_json::json!({"id":h.id,"kind":h.kind,"phrase":h.phrase,"file":h.file,"privateKey":content_key,"sourceLabel":"个人话术"})}).collect::<Vec<_>>()
+        store.search_matching(&query)?.into_iter().filter(|h|h.kind=="phrase"&&(scope=="all"||scope=="private")).map(|h|{let content_key=crate::private_local::content_key(&store,"phrase",&h.id).ok();serde_json::json!({"id":h.id,"kind":h.kind,"phrase":h.phrase,"file":h.file,"privateKey":content_key,"sourceLabel":"个人话术"})}).collect::<Vec<_>>()
     };
     drop(store);
     if scope == "all" || scope == "private" {
-        hits.extend(state.teams.search_member(&query, exact));
+        hits.extend(state.teams.search_member(&query));
     }
     if scope == "all" || scope == "file" {
-        hits.extend(state.device_store.lock().unwrap().search(&query)?.into_iter().filter(|h|h.kind=="file").map(|h|serde_json::json!({"id":h.id,"kind":h.kind,"phrase":h.phrase,"file":h.file,"sourceLabel":"本地文件"})));
+        hits.extend(state.device_store.lock().unwrap().search_matching(&query)?.into_iter().filter(|h|h.kind=="file").map(|h|serde_json::json!({"id":h.id,"kind":h.kind,"phrase":h.phrase,"file":h.file,"sourceLabel":"本地文件"})));
     }
     if scope == "all" || scope == "team" {
         hits.extend(state.teams.search(
             &query,
-            exact,
             if scope == "team" {
                 Some(team_id.as_deref().ok_or("请选择共享话术。")?)
             } else {

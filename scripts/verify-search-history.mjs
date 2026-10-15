@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import net from 'node:net';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { chromium } from 'playwright';
 
 // 使用隐藏的实际 Windows 客户端及独立数据库。搜索、记录、事件和高度 IPC 实际执行，
@@ -152,9 +153,9 @@ try {
       const geometry = await target.locator('.search-history').evaluate(el => {
         const items = el.querySelector('.search-history-items'), buttons = [...items.querySelectorAll('button')];
         const long = buttons.find(b => b.title.length > 50);
-        return { height: el.getBoundingClientRect().height, wrap: getComputedStyle(items).flexWrap, rows: new Set(buttons.map(b => b.offsetTop)).size, scroll: items.scrollHeight > items.clientHeight, horizontalOverflow: items.scrollWidth > items.clientWidth, long: { title: long.title, textOverflow: getComputedStyle(long).textOverflow, clipped: long.scrollWidth > long.clientWidth } };
+        return { height: el.getBoundingClientRect().height, tagsHeight: items.clientHeight, headerHeight: el.querySelector('header')?.getBoundingClientRect().height || 0, wrap: getComputedStyle(items).flexWrap, rows: new Set(buttons.map(b => b.offsetTop)).size, scroll: items.scrollHeight > items.clientHeight, horizontalOverflow: items.scrollWidth > items.clientWidth, long: { title: long.title, textOverflow: getComputedStyle(long).textOverflow, clipped: long.scrollWidth > long.clientWidth } };
       });
-      assert.ok(geometry.height <= (target === dock ? 107 : 84));
+      assert.ok(geometry.tagsHeight <= 76); assert.ok(geometry.height <= (target === dock ? 107 : geometry.headerHeight + 76 + 18));
       assert.equal(geometry.wrap, 'wrap'); assert.ok(geometry.rows > 1); assert.ok(geometry.scroll); assert.equal(geometry.horizontalOverflow, false);
       assert.equal(geometry.long.textOverflow, 'ellipsis'); assert.ok(geometry.long.clipped);
     }
@@ -180,7 +181,7 @@ try {
     assert.ok(panel.y + panel.height <= search.y && search.y - panel.y - panel.height <= 12, '结果浮层直接指向搜索框');
     const titlebar = await page.locator('.main-titlebar').boundingBox();
     assert.equal(backdrop.y, titlebar.y + titlebar.height); assert.equal(backdrop.y + backdrop.height, search.y);
-    assert.equal(await page.locator('.common-phrases').count(), 0); assert.equal(await page.locator('.search-kind').textContent(), '话术');
+    assert.equal(await page.locator('.common-phrases').count(), 1); assert.equal(await page.locator('.search-kind').textContent(), '话术');
     const dockPanel = await dock.locator('.dock-result-panel').boundingBox(), dockInput = await dock.locator('.dock-search-bar').boundingBox();
     assert.equal(dockInput.y - dockPanel.y - dockPanel.height, 10, '底部结果尖角位于搜索框上方的间隙内');
     assert.equal(await dock.locator('.dock-result-panel > header').textContent(), '搜索结果×');
@@ -267,6 +268,30 @@ try {
     await invoke('save_settings', { libraryId, settings: { ...current.settings, showSearch: false, dockSearch: false } });
     for (const target of [page, dock]) { await target.locator('.search-history').waitFor({ state: 'detached' }); assert.equal(await invoke('plugin:window|is_visible', {}, target), false); }
     assert.deepEqual(await read(), ['UPS']); await clear();
+  });
+  await check('1000/10000条真实SQLite与IPC拼音搜索耗时及连续输入', async () => {
+    const timings = [], execute = promisify(execFile);
+    const root = await invoke('save_category', { libraryId, category: { id: '', name: '性能样本', kind: 'phrase', parentId: null, position: 99, background: '' } });
+    const current = await invoke('get_library');
+    await invoke('save_settings', { libraryId, settings: { ...current.settings, showSearch: true, searchMode: 'fuzzy' } });
+    for (const count of [1000, 10000]) {
+      await execute('python', ['-c', `import sqlite3,sys
+c=sqlite3.connect(sys.argv[1]); c.execute('PRAGMA foreign_keys=ON')
+with c:
+ c.execute('UPDATE sync_control SET capture=0 WHERE id=1')
+ for i in range(int(sys.argv[3])):
+  c.execute('INSERT OR IGNORE INTO phrases VALUES(?,?,?,?,?,?,?,?)',('perf-'+str(i),sys.argv[2],None,'性能技术手册'+str(i)+' UPS设备2026','','','',i))
+ c.execute('UPDATE sync_control SET capture=1 WHERE id=1')`, path.join(current.dataDir, 'shanyu.sqlite3'), root, String(count)], { windowsHide: true });
+      for (const query of ['性能', 'XINGNENGJISHUSHOUCE', 'xn jssc', 'UPSsb2026']) {
+        const sample = await page.evaluate(async query => { const start = performance.now(); const hits = await window.__TAURI_INTERNALS__.invoke('search_scoped_content', { query, scope: 'private', teamId: null }); return { ms: performance.now() - start, count: hits.length }; }, query);
+        assert.equal(sample.count, count); timings.push({ records: count, query, ...sample });
+      }
+      const final = 'xingnengjishushouce' + (count - 1), started = Date.now();
+      for (const value of ['x', 'xi', 'xing', 'xingneng', final]) { await setInput(page, value); await delay(35); }
+      await page.waitForFunction(title => { const rows = document.querySelectorAll('.search-panel .content-row'); return rows.length === 1 && rows[0].textContent.includes(title) && document.querySelector('#search-results').getAttribute('aria-busy') === 'false'; }, '性能技术手册' + (count - 1), { timeout: 30000 });
+      timings.push({ records: count, continuousInputMs: Date.now() - started, finalQuery: final, finalResults: 1 });
+    }
+    await fs.writeFile(path.join(evidence, 'performance.json'), JSON.stringify({ build: 'Debug custom-protocol', timings }, null, 2));
   });
   await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ date: new Date().toISOString(), checks, limits: ['真实WebView2、SQLite、IPC和窗口间事件；投递仅模拟成功／失败／中断回执', '300 DIP窄视口和默认视口布局检查，不替代真实系统DPI、企业微信、吸附及安装升级验收'] }, null, 2));
   console.log(JSON.stringify({ evidence, checks: checks.length }, null, 2));
