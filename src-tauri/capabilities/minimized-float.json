@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "minimized-float",
+  "description": "最小化悬浮窗只监听外观更新并支持原生拖动",
+  "windows": ["minimized-float"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "core:window:allow-start-dragging"]
+}

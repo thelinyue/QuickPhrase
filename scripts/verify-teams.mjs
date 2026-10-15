@@ -291,9 +291,9 @@ try {
     await userView.evaluate(() => { window.__qaPauseAction = 'create-user'; }); await userView.locator('dialog form').evaluate(el => el.requestSubmit());
     await until(() => userView.evaluate(() => !!window.__qaResume)); assert.ok(await userView.locator('.dialog-window-close').isDisabled());
     await invoke('plugin:window|close', { label: 'user-management' }, userView); await delay(100); assert.equal(userView.isClosed(), false); await userView.evaluate(() => { window.__qaResume(); delete window.__qaResume; });
-    const permission = userView.getByRole('checkbox', { name: '0003的创建共享话术权限', exact: true }); await permission.waitFor(); assert.equal(await permission.isChecked(), false);
+    const permission = userView.getByRole('switch', { name: '0003的创建共享话术权限', exact: true }); await permission.waitFor(); assert.equal(await permission.isChecked(), false);
     await click(permission); await until(() => api('GET', 'users'), users => users.some(u => u.username === '0003' && u.canCreateTeams)); await until(() => permission.isChecked());
-    await userView.getByRole('searchbox', { name: '搜索用户名', exact: true }).fill('客服丙'); assert.ok(await userView.getByText('联系方式：分机003', { exact: true }).count());
+    await userView.getByRole('searchbox', { name: '搜索用户名', exact: true }).fill('客服丙'); assert.ok(await userView.getByRole('button', { name: '修改0003的联系方式', exact: true }).count());
     await userView.screenshot({ path: path.join(evidence, 'employee-management.png') });
     for (const menu of ['共享话术管理', '账号管理']) { await click(page.getByRole('button', { name: '主菜单', exact: true })); await click(page.getByRole('menuitem', { name: menu, exact: true })); }
     await managementView.getByRole('searchbox', { name: '搜索共享话术', exact: true }).waitFor();
@@ -302,11 +302,40 @@ try {
     for (const [target, label, width] of [[userView, 'user-management', 480], [managementView, 'team-management', 560]]) {
       await resizeManagement(target, label === 'user-management' ? '账号管理' : '共享话术管理', width, 440);
       await until(() => target.evaluate(() => innerWidth), value => value === width);
-      const box = await target.locator('.management-pagination').boundingBox(); assert.ok(box.y >= 0 && box.y + box.height <= 440);
+      const box = await target.locator(label === 'user-management' ? '.user-pagination' : '.management-pagination').boundingBox(); assert.ok(box.y >= 0 && box.y + box.height <= 440);
       assert.ok(await target.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await target.screenshot({ path: path.join(evidence, label + '-minimum.png') });
       await resizeManagement(target, label === 'user-management' ? '账号管理' : '共享话术管理', label === 'user-management' ? 620 : 680, label === 'user-management' ? 620 : 600);
     }
+  });
+  await check('账号紧凑三行、资料明确保存及真实服务校验失败保留草稿', async () => {
+    await userView.getByRole('searchbox').fill('');
+    await until(() => userView.locator('.user-card').count(), n => n >= 3);
+    assert.ok(await userView.locator('.user-card').evaluateAll(cards => cards.filter(card => { const r = card.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }).length >= 3));
+    await userView.screenshot({ path: path.join(evidence, 'accounts-default.png') });
+    await click(userView.getByRole('button', { name: '修改0003的昵称', exact: true }));
+    const nickname = userView.getByRole('textbox', { name: '0003的昵称', exact: true });
+    await nickname.fill('客服丙更新'); await userView.getByRole('searchbox').focus();
+    assert.equal((await api('GET', 'users')).find(u => u.username === '0003').displayName, '客服丙');
+    await userView.screenshot({ path: path.join(evidence, 'accounts-edit.png') });
+    await click(userView.getByRole('button', { name: '保存昵称', exact: true }));
+    await until(() => api('GET', 'users'), users => users.find(u => u.username === '0003').displayName === '客服丙更新');
+    await until(() => nickname.count(), n => n === 0);
+    assert.equal((await api('GET', 'users')).find(u => u.username === '0003').contact, '分机003');
+    await click(userView.getByRole('button', { name: '修改0003的联系方式', exact: true }));
+    const contact = userView.getByRole('textbox', { name: '0003的联系方式', exact: true });
+    await contact.fill('校验' + String.fromCharCode(1)); await click(userView.getByRole('button', { name: '保存联系方式', exact: true }));
+    await userView.getByRole('alert').waitFor(); assert.equal(await contact.inputValue(), '校验' + String.fromCharCode(1));
+    assert.equal((await api('GET', 'users')).find(u => u.username === '0003').contact, '分机003');
+    await userView.screenshot({ path: path.join(evidence, 'accounts-edit-error.png') });
+    await resizeManagement(userView, '账号管理', 480, 440);
+    await contact.scrollIntoViewIfNeeded(); await userView.screenshot({ path: path.join(evidence, 'accounts-minimum-edit-error.png') });
+    assert.ok(await userView.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await click(userView.getByRole('button', { name: '取消修改联系方式', exact: true }));
+    await click(userView.getByRole('button', { name: '关闭提示', exact: true }));
+    await userView.locator('.user-cards').evaluate(el => { el.scrollTop = 0; });
+    await userView.screenshot({ path: path.join(evidence, 'accounts-minimum.png') });
+    await resizeManagement(userView, '账号管理', 620, 620);
   });
   await check('20条分页、长用户名、成员全草稿保存和旧服务人数兼容', async () => {
     const additions = [];
@@ -319,9 +348,20 @@ try {
     await userView.getByRole('searchbox', { name: '搜索用户名', exact: true }).fill('0000000000000000000000000000000024'); await userView.getByText('0000000000000000000000000000000024', { exact: true }).waitFor(); await userView.screenshot({ path: path.join(evidence, 'employee-long-fields.png') });
     await setMembers(teamB, additions.map(u => ({ userId: u.id, teamId: teamB, role: 'member' }))); await invoke('team_refresh');
     await setMembers(teamA, [{ userId: additions.at(-1).id, teamId: teamA, role: 'editor' }]); await invoke('team_refresh');
-    await until(() => userView.locator('.membership-link').count(), value => value === 2);
-    assert.ok(await userView.getByRole('button', { name: '售前小组 · 编辑者', exact: true }).count()); assert.ok(await userView.getByRole('button', { name: '售后小组 · 查看者', exact: true }).count());
+    await until(() => userView.locator('.user-membership-more').count(), value => value === 1);
+    await click(userView.locator('.user-membership-more'));
+    await userView.getByRole('menu').waitFor();
+    for (const name of ['售前小组 · 编辑者', '售后小组 · 查看者']) assert.equal(await userView.locator('.membership-link, [role="menuitem"]').filter({ hasText: name.split(' · ')[0] }).count(), 1);
+    await userView.screenshot({ path: path.join(evidence, 'employee-membership-popup.png') });
+    await userView.locator('[role="menuitem"]').first().press('Escape');
     await userView.screenshot({ path: path.join(evidence, 'employee-long-fields.png') });
+    await resizeManagement(userView, '账号管理', 480, 440);
+    assert.ok(await userView.locator('.user-card-heading, .user-card-details, .user-card-groups').evaluateAll(rows => rows.every(row => row.scrollWidth <= row.clientWidth)));
+    await click(userView.locator('.user-membership-more')); await userView.getByRole('menu').waitFor();
+    const popupBox = await userView.getByRole('menu').boundingBox(); assert.ok(popupBox.x >= 0 && popupBox.y >= 0 && popupBox.x + popupBox.width <= 480 && popupBox.y + popupBox.height <= 440);
+    await userView.screenshot({ path: path.join(evidence, 'accounts-minimum-memberships.png') });
+    await userView.getByRole('menuitem').first().press('Escape');
+    await resizeManagement(userView, '账号管理', 620, 620);
     const group = managementView.locator('.management-groups tbody tr').filter({ hasText: '售后小组' }); await until(() => group.locator('td').nth(1).textContent(), value => value === '21');
     await click(group.getByRole('button', { name: '管理成员', exact: true }));
     await managementView.getByRole('combobox', { name: 'UI0004的共享话术角色', exact: true }).selectOption('editor');
@@ -378,6 +418,7 @@ try {
   await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ date: new Date().toISOString(), checks: results, limits: ['真实客户端及HTTP/SSE，使用隔离数据和凭据；未进行聊天发送或剪贴板操作', '管理窗移到屏幕外正常创建，实际原生默认／最小客户区；系统确认按钮已模拟确认', '100%为本机真实DPI；150%/200%为WebView渲染倍率，不替代系统DPI，未覆盖真实局域网、HTTPS代理或安装升级'] }, null, 2));
   console.log(JSON.stringify({ evidence, checks: results.length }));
 } catch (error) {
+  for (const target of context?.pages() || []) if (!target.isClosed() && target.url().includes('#user-management')) await target.screenshot({ path: path.join(evidence, 'accounts-failure.png') }).catch(() => {});
   if (page && !page.isClosed()) await page.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});
   await fs.writeFile(path.join(evidence, 'failure.json'), JSON.stringify({ checks: results, error: String(error) }, null, 2)); throw error;
 } finally {

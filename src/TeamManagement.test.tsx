@@ -7,9 +7,10 @@ import { TeamSelector } from './TeamSelector';
 import type { TeamMembers, TeamStatus, TeamUser } from './types';
 
 const listeners = vi.hoisted(() => new Map<string, (event: { payload: unknown }) => void>());
+const nativeClose = vi.hoisted(() => ({ request: null as null | ((event: { preventDefault: () => void }) => Promise<void>), close: vi.fn() }));
 vi.mock('./api', () => ({ call: vi.fn(), useTeams: vi.fn(), closeWindow: vi.fn(), openWindow: vi.fn(async () => {}) }));
 vi.mock('@tauri-apps/api/event', () => ({ emitTo: vi.fn(async () => {}), listen: vi.fn(async (name, callback) => { listeners.set(name, callback); return () => listeners.delete(name); }) }));
-vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ onCloseRequested: vi.fn(async () => () => {}), startDragging: vi.fn(), close: vi.fn(), minimize: vi.fn() }) }));
+vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ onCloseRequested: vi.fn(async callback => { nativeClose.request = callback; return () => {}; }), startDragging: vi.fn(), close: nativeClose.close, minimize: vi.fn() }) }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn(async () => true), save: vi.fn(async () => null) }));
 const person = (id: string, extra: Partial<TeamUser> = {}): TeamUser => ({ id, username: id, displayName: `昵称${id}`, contact: '', admin: false, disabled: false, mustChangePassword: false, canCreateTeams: false, ...extra });
 const team = { teamId: 'A', name: '售前小组', role: 'manager' as const, editable: true, version: 1, membershipVersion: 4, lifecycleVersion: 1 };
@@ -134,12 +135,12 @@ describe('按身份管理共享话术', () => {
   it('服务管理员授予创建共享话术权限只提交该字段，资料修改不夹带密码和停用状态', async () => {
     status.user = person('admin', { admin: true });
     render(<TeamManagementWindow tab="users" />);
-    const permission = await screen.findByRole('checkbox', { name: '001的创建共享话术权限' });
+    const permission = await screen.findByRole('switch', { name: '001的创建共享话术权限' });
     fireEvent.click(permission); await waitFor(() => expect(actions('update-user')).toHaveLength(1));
     expect(actions('update-user')[0][1]?.request).toEqual({ canCreateTeams: true });
     await waitFor(() => expect((permission as HTMLInputElement).disabled).toBe(false));
     fireEvent.click(screen.getAllByRole('button', { name: '修改资料' })[0]);
-    fireEvent.change(screen.getByRole('textbox', { name: '昵称（可选）' }), { target: { value: '新昵称' } });
+    fireEvent.change(await screen.findByRole('textbox', { name: '昵称（可选）' }), { target: { value: '新昵称' } });
     submitDialog(); await waitFor(() => expect(actions('update-user')).toHaveLength(2));
     expect(actions('update-user')[1][1]?.request).toEqual({ username: '001', displayName: '新昵称', contact: '' });
   });
@@ -207,13 +208,117 @@ describe('按身份管理共享话术', () => {
     vi.mocked(call).mockImplementation(async (_, args) => args?.action === 'users' ? [status.user, person('001', { memberships: [{ teamId: 'A', name: team.name, role: 'editor' }] })] : null);
     render(<TeamManagementWindow mode="users" />);
     const myself = (await screen.findByText('本人')).closest('article')!;
-    expect(within(myself).queryByRole('switch')).toBeNull(); expect(within(myself).queryByRole('button', { name: '重置密码' })).toBeNull();
+    expect(within(myself).queryByRole('switch', { name: 'admin的启用状态' })).toBeNull(); expect((within(myself).getByRole('switch', { name: 'admin的创建共享话术权限' }) as HTMLInputElement).disabled).toBe(true); expect(within(myself).queryByRole('button', { name: '重置密码' })).toBeNull();
     expect(within(myself).getByRole('button', { name: '修改密码' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '售前小组 · 编辑者' }));
-    expect(openWindow).toHaveBeenCalledWith('team-management', '', '', 'teams', '', '', 'A');
+    await waitFor(() => expect(openWindow).toHaveBeenCalledWith('team-management', '', '', 'teams', '', '', 'A'));
     const more = screen.getByRole('button', { name: '更多' }); fireEvent.click(more);
     expect(screen.getByText('账号、共享话术、云文件及回收记录，不含个人内容。')).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' }); expect(screen.queryByRole('menu')).toBeNull(); expect(document.activeElement).toBe(more);
+  });
+});
+
+describe('账号卡片快捷编辑', () => {
+  beforeEach(() => { status.user = person('admin', { admin: true }); });
+  async function editField(field = '昵称') {
+    fireEvent.click(await screen.findByRole('button', { name: `修改001的${field}` }));
+    return await screen.findByRole('textbox', { name: `001的${field}` }) as HTMLInputElement;
+  }
+  it('失焦与中文选字不保存，Enter只提交资料且保持其他字段，Esc恢复显示和焦点', async () => {
+    render(<TeamManagementWindow mode="users" />);
+    const input = await editField(); expect(input.maxLength).toBe(50);
+    fireEvent.change(input, { target: { value: '新昵称' } }); fireEvent.blur(input); expect(actions('update-user')).toHaveLength(0);
+    fireEvent.compositionStart(input); fireEvent.keyDown(input, { key: 'Enter' }); expect(actions('update-user')).toHaveLength(0);
+    fireEvent.compositionEnd(input); fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(actions('update-user')).toHaveLength(1));
+    expect(actions('update-user')[0][1]?.request).toEqual({ displayName: '新昵称' });
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: '001的昵称' })).toBeNull());
+    const contact = await editField('联系方式'); expect(contact.maxLength).toBe(100);
+    fireEvent.change(contact, { target: { value: '123456' } }); fireEvent.keyDown(contact, { key: 'Escape' });
+    expect(actions('update-user')).toHaveLength(1);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: '修改001的联系方式' })));
+  });
+  it('未变化不提交，清空可保存，失败保留草稿并防止重复提交', async () => {
+    let reject!: (error: Error) => void;
+    vi.mocked(call).mockImplementation(async (_, args) => args?.action === 'users' ? [person('001', { contact: '123' })] : new Promise((_, fail) => { reject = fail; }));
+    render(<TeamManagementWindow mode="users" />);
+    await editField(); fireEvent.click(screen.getByRole('button', { name: '保存昵称' })); expect(actions('update-user')).toHaveLength(0);
+    const input = await editField('联系方式'); fireEvent.change(input, { target: { value: '' } });
+    const save = screen.getByRole('button', { name: '保存联系方式' }); fireEvent.click(save); fireEvent.click(save);
+    await waitFor(() => expect(actions('update-user')).toHaveLength(1));
+    expect(actions('update-user')[0][1]?.request).toEqual({ contact: '' });
+    await act(async () => reject(new Error('保存失败，请重试')));
+    expect((screen.getByRole('textbox', { name: '001的联系方式' }) as HTMLInputElement).value).toBe('');
+    expect(screen.getByRole('alert').textContent).toContain('保存失败'); expect((save as HTMLButtonElement).disabled).toBe(false);
+  });
+  it('切换字段和筛选需确认放弃，拒绝时保留草稿', async () => {
+    render(<TeamManagementWindow mode="users" />);
+    const input = await editField(); fireEvent.change(input, { target: { value: '草稿' } });
+    vi.mocked(confirm).mockResolvedValue(false);
+    fireEvent.click(screen.getByRole('button', { name: '修改001的联系方式' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1)); expect(input.value).toBe('草稿');
+    fireEvent.change(screen.getByRole('combobox', { name: '用户名状态筛选' }), { target: { value: 'disabled' } });
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2)); expect(input.isConnected).toBe(true);
+    vi.mocked(confirm).mockResolvedValue(true);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '002' } });
+    await waitFor(() => expect(screen.queryByRole('article', { name: '账号 001' })).toBeNull());
+    expect(actions('update-user')).toHaveLength(0); expect(screen.getByRole('article', { name: '账号 002' })).toBeTruthy();
+  });
+  it('保存未完成时切号，旧响应不能恢复资料或成功提示', async () => {
+    let complete!: () => void;
+    vi.mocked(call).mockImplementation(async (_, args) => args?.action === 'users' ? [person('001')] : new Promise<void>(resolve => { complete = resolve; }));
+    const view = render(<TeamManagementWindow mode="users" />);
+    const input = await editField(); fireEvent.change(input, { target: { value: '旧账号草稿' } }); fireEvent.click(screen.getByRole('button', { name: '保存昵称' }));
+    await waitFor(() => expect(complete).toBeTypeOf('function'));
+    status = { ...status, user: person('other'), sessionEpoch: 2 }; view.rerender(<TeamManagementWindow mode="users" />);
+    await act(async () => complete());
+    expect(screen.queryByDisplayValue('旧账号草稿')).toBeNull(); expect(screen.queryByText('账号资料已更新')).toBeNull();
+  });
+  it('离线撤下编辑，重新连接不恢复旧草稿', async () => {
+    const view = render(<TeamManagementWindow mode="users" />);
+    const input = await editField(); fireEvent.change(input, { target: { value: '草稿' } });
+    status = { ...status, offline: true }; view.rerender(<TeamManagementWindow mode="users" />);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    status = { ...status, offline: false }; view.rerender(<TeamManagementWindow mode="users" />);
+    await screen.findByRole('button', { name: '修改001的昵称' }); expect(screen.queryByDisplayValue('草稿')).toBeNull();
+  });
+  it('有草稿时翻页和原生关闭均可取消，确认关闭后清除草稿再关闭窗口', async () => {
+    vi.mocked(call).mockImplementation(async (_, args) => args?.action === 'users' ? [person('001'), ...Array.from({ length: 20 }, (_, i) => person(`U${i}`))] : null);
+    render(<TeamManagementWindow mode="users" />);
+    const input = await editField(); fireEvent.change(input, { target: { value: '未保存资料' } });
+    vi.mocked(confirm).mockResolvedValue(false);
+    fireEvent.click(screen.getByRole('button', { name: '下一页' })); await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('1／2')).toBeTruthy(); expect(input.value).toBe('未保存资料');
+    const preventDefault = vi.fn(); await act(async () => nativeClose.request!({ preventDefault }));
+    expect(preventDefault).toHaveBeenCalled(); expect(nativeClose.close).not.toHaveBeenCalled(); expect(input.isConnected).toBe(true);
+    vi.mocked(confirm).mockResolvedValue(true); await act(async () => nativeClose.request!({ preventDefault }));
+    expect(nativeClose.close).toHaveBeenCalledTimes(1); expect(screen.queryByRole('textbox')).toBeNull(); expect(actions('update-user')).toHaveLength(0);
+  });
+  it('权限失败保持原值且重复点击不重复提交；停用拒绝不提交', async () => {
+    let reject!: (e: Error) => void;
+    vi.mocked(call).mockImplementation(async (_, args) => args?.action === 'users' ? [person('001')] : new Promise((_, fail) => { reject = fail; }));
+    render(<TeamManagementWindow mode="users" />);
+    const permission = await screen.findByRole('switch', { name: '001的创建共享话术权限' }) as HTMLInputElement;
+    fireEvent.click(permission); fireEvent.click(permission); await waitFor(() => expect(actions('update-user')).toHaveLength(1));
+    expect(actions('update-user')[0][1]?.request).toEqual({ canCreateTeams: true });
+    await act(async () => reject(new Error('授权失败'))); expect(permission.checked).toBe(false);
+    vi.mocked(confirm).mockResolvedValue(false); fireEvent.click(screen.getByRole('switch', { name: '001的启用状态' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalled()); expect(actions('update-user')).toHaveLength(1);
+  });
+  it('只显示首组，其余浮层支持键盘、Esc焦点恢复、跳转和外部关闭', async () => {
+    vi.mocked(call).mockImplementation(async (_, args) => args?.action === 'users' ? [person('001', { memberships: [
+      { teamId: 'A', name: '一组', role: 'member' }, { teamId: 'B', name: '二组', role: 'editor' }, { teamId: 'C', name: '三组', role: 'manager' },
+    ] })] : null);
+    render(<TeamManagementWindow mode="users" />);
+    const more = await screen.findByRole('button', { name: '001的其他2组共享话术' }); expect(screen.queryByText('二组')).toBeNull();
+    fireEvent.click(more); const second = screen.getByRole('menuitem', { name: '二组 · 编辑者' }); expect(document.activeElement).toBe(second);
+    fireEvent.scroll(screen.getByRole('searchbox')); expect(screen.getByRole('menu')).toBeTruthy();
+    fireEvent.keyDown(second, { key: 'ArrowDown' }); expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '三组 · 库管理员' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' }); expect(screen.queryByRole('menu')).toBeNull(); expect(document.activeElement).toBe(more);
+    fireEvent.click(more); fireEvent.pointerDown(document.body); expect(screen.queryByRole('menu')).toBeNull();
+    fireEvent.click(more); fireEvent.scroll(more.closest('.user-cards')!); expect(screen.queryByRole('menu')).toBeNull();
+    fireEvent.click(more); fireEvent.click(screen.getByRole('menuitem', { name: '二组 · 编辑者' }));
+    await waitFor(() => expect(openWindow).toHaveBeenCalledWith('team-management', '', '', 'teams', '', '', 'B'));
   });
 });
 

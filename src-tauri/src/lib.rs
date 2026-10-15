@@ -1060,6 +1060,10 @@ fn change_data_directory(
     Ok(())
 }
 #[tauri::command]
+fn get_minimized_float_theme(state: State<AppState>) -> String {
+    state.native.settings.read().unwrap().theme.clone()
+}
+#[tauri::command]
 fn window_action(app: tauri::AppHandle, state: State<AppState>, action: String) -> Result<()> {
     match action.as_str() {
         "hide" => state.native.hide(),
@@ -1078,14 +1082,9 @@ fn window_action(app: tauri::AppHandle, state: State<AppState>, action: String) 
                 state.native.show("show");
             }
         }
-        "minimize" => {
-            if state.native.settings.read().unwrap().tray {
-                state.native.hide();
-            } else if let Some(w) = app.get_webview_window("main") {
-                w.minimize().map_err(|e| e.to_string())?;
-            }
-        }
+        "minimize" => state.native.minimize(),
         "exit" => {
+            state.native.persist_float_position();
             state.teams.stop_company_uploads();
             state.native.running.store(false, Ordering::Release);
             app.exit(0);
@@ -1290,6 +1289,27 @@ pub fn run() {
             .visible(false)
             .general_autofill_enabled(false)
             .build()?;
+            // 恢复小条预先创建，首次最小化直接显示；页面独立于话术库与输入监测。
+            tauri::WebviewWindowBuilder::new(
+                app,
+                "minimized-float",
+                tauri::WebviewUrl::App("index.html#minimized-float".into()),
+            )
+            .title("悬浮窗 · 闪语")
+            .inner_size(96.0, 40.0)
+            .decorations(false)
+            .shadow(false)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .closable(false)
+            .skip_taskbar(true)
+            .focused(false)
+            .focusable(false)
+            .always_on_top(true)
+            .visible(false)
+            .general_autofill_enabled(false)
+            .build()?;
             native.start(app.handle()).map_err(std::io::Error::other)?;
             team_commands::start(app.handle());
             private_sync.start(app.handle().clone());
@@ -1327,6 +1347,7 @@ pub fn run() {
                         "search" => state.native.show("search"),
                         "settings" => state.native.show("settings"),
                         "exit" => {
+                            state.native.persist_float_position();
                             state.teams.stop_company_uploads();
                             state.native.running.store(false, Ordering::Release);
                             app.exit(0);
@@ -1495,6 +1516,7 @@ pub fn run() {
                 validate_phrase_shortcut,
                 set_shortcut_input,
                 sync_sequence_map,
+                get_minimized_float_theme,
                 get_shortcut_candidates,
                 select_shortcut_candidate,
                 submit_shortcut_candidate,

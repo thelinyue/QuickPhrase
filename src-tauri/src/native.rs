@@ -18,13 +18,19 @@ mod dock_target;
 #[cfg(windows)]
 #[path = "native/docking.rs"]
 mod docking;
+#[cfg(windows)]
+#[path = "native/edge_hide.rs"]
+mod edge_hide;
+#[cfg(windows)]
+#[path = "native/minimized_float.rs"]
+mod minimized_float;
 #[path = "native/preview.rs"]
 mod preview;
 pub use preview::{PreviewAnchor, PreviewPayload};
 /// 自身回放与发送带独立标记，WebView2 的原生回调也能识别，避免把回放重新当作快捷键。
 pub(crate) const INTERNAL_INPUT_MARKER: usize = 0x53594E41;
 
-/// 所有客户端窗口统一使用直角，后续创建的编辑器和设置窗口也应用同一策略。
+/// 客户端窗口默认使用直角，后续创建的编辑器和设置窗口也应用同一策略；最小化悬浮窗单独裁剪圆角。
 /// Windows 10 本身为直角且不支持该 DWM 属性，忽略其 E_INVALIDARG；其他失败记录中文日志。
 #[cfg(windows)]
 pub fn square_window_corners(window: &tauri::Window) {
@@ -139,6 +145,12 @@ pub struct NativeState {
     pub common_geometry: Mutex<(i32, i32)>,
     pub error: Mutex<Option<String>>,
     display_mode: Mutex<DisplayMode>,
+    /// 只有主窗口主动最小化才能置位，自动隐藏和贴边收起不创建恢复小条。
+    minimized: AtomicBool,
+    #[cfg(windows)]
+    float_window: OnceLock<i64>,
+    #[cfg(windows)]
+    float_position: Mutex<Option<minimized_float::Position>>,
     pub running: AtomicBool,
     pub busy: Arc<AtomicBool>,
     pub cancelled: Arc<AtomicBool>,
@@ -157,6 +169,7 @@ enum Control {
     Settings(Box<Settings>, mpsc::SyncSender<Result<()>>),
     Show(String),
     Hide,
+    Minimize,
 }
 impl NativeState {
     pub fn new(settings: Settings, busy: Arc<AtomicBool>, cancelled: Arc<AtomicBool>) -> Self {
@@ -173,6 +186,11 @@ impl NativeState {
             common_geometry: Mutex::new((34, 0)),
             error: Mutex::new(None),
             display_mode: Mutex::new(DisplayMode::default()),
+            minimized: AtomicBool::new(false),
+            #[cfg(windows)]
+            float_window: OnceLock::new(),
+            #[cfg(windows)]
+            float_position: Mutex::new(None),
             running: AtomicBool::new(true),
             busy,
             cancelled,
@@ -215,6 +233,17 @@ impl NativeState {
                 platform::background_window(platform::hwnd(candidate))?;
             }
             let _ = self.candidate_window.set(candidate);
+            let floating = handle("minimized-float")?;
+            unsafe {
+                platform::background_window(platform::hwnd(floating))?;
+            }
+            let _ = self.float_window.set(floating);
+            match minimized_float::read_position(
+                &app.state::<crate::AppState>().device_store.lock().unwrap(),
+            ) {
+                Ok(position) => *self.float_position.lock().unwrap() = position,
+                Err(error) => log::warn!("{error}"),
+            }
             *self.target.lock().unwrap() = unsafe { platform::capture() };
         }
         let (tx, rx) = mpsc::channel();
@@ -317,6 +346,18 @@ impl NativeState {
     }
     pub fn hide(&self) {
         self.send_control(Control::Hide);
+    }
+    pub fn minimize(&self) {
+        self.send_control(Control::Minimize);
+    }
+    /// 正常退出时补存最后坐标，不能让工作池中的位置写入被进程退出截断。
+    pub fn persist_float_position(&self) {
+        #[cfg(windows)]
+        if let Some(app) = self.app.get() {
+            if let Err(error) = minimized_float::persist_position(app) {
+                log::warn!("悬浮窗位置未能保存：{error}");
+            }
+        }
     }
     /// 窗口动作与设置按同一队列顺序处理，先定位再显示，避免主线程唤起与后台隐藏相互覆盖。
     fn send_control(&self, action: Control) {
@@ -896,12 +937,32 @@ mod platform {
                                     last_external = Some(external);
                                 }
                                 dock.refresh_target(GetForegroundWindow());
-                                dock.show(&state, &action);
+                                // 等待已排队的贴边／最小化动作结束，再真正显示并激活。
+                                if action != "common" {
+                                    state.minimized.store(false, Ordering::Release);
+                                    dock.minimize = None;
+                                }
+                                dock.show_action = Some(action);
                             }
                             continue;
                         }
                         Control::Hide => {
+                            state.minimized.store(false, Ordering::Release);
+                            dock.minimize = None;
+                            dock.show_action = None;
                             *state.display_mode.lock().unwrap() = DisplayMode::Hidden;
+                            state.hide_preview(None);
+                            state.cancel_candidates();
+                            continue;
+                        }
+                        Control::Minimize => {
+                            let tray = state.settings.read().unwrap().tray;
+                            state.minimized.store(true, Ordering::Release);
+                            dock.minimize = Some(tray);
+                            dock.show_action = None;
+                            if tray {
+                                *state.display_mode.lock().unwrap() = DisplayMode::Hidden;
+                            }
                             state.hide_preview(None);
                             state.cancel_candidates();
                             continue;
@@ -978,7 +1039,15 @@ mod platform {
                         .update(hwnd(windows.2), foreground);
                 }
                 dock.refresh_target(foreground);
+                if dock.edge.ready() && dock.floating.ready() {
+                    if let Some(action) = dock.show_action.take() {
+                        dock.show(&state, &action);
+                    }
+                }
                 dock.update(&state, foreground);
+                if let Some(windows) = state.windows.get() {
+                    dock.floating.update(&state, hwnd(windows.0));
+                }
                 dock.update_common(&state, foreground);
                 std::thread::sleep(Duration::from_millis(30));
             }
@@ -1008,6 +1077,12 @@ mod platform {
         common_foreground: i64,
         /// 只为本次进程首次独立显示定位；随后唤起保留用户移动的位置。
         standalone_positioned: bool,
+        /// 独立贴边状态不能复用目标吸附的宽度、原始矩形或手动隐藏模式。
+        edge: super::edge_hide::EdgeHide,
+        /// 托盘选择在主动最小化时固定；小条开关可在最小化期间独立更新。
+        minimize: Option<bool>,
+        show_action: Option<String>,
+        floating: super::minimized_float::FloatingWindow,
     }
     impl Dock {
         /// 两处面板共用进程及窗口类型结论；同进程图片／视频窗口不能借用后台聊天关系。
@@ -1031,7 +1106,7 @@ mod platform {
             })
         }
         /// 手动启动、托盘及快捷键请求允许激活主窗口。先恢复显示模式与几何，再交出焦点。
-        unsafe fn show(&mut self, state: &NativeState, action: &str) {
+        unsafe fn show(&mut self, state: &Arc<NativeState>, action: &str) {
             let Some(windows) = state.windows.get() else {
                 return;
             };
@@ -1048,6 +1123,9 @@ mod platform {
                 }
                 return;
             }
+            state.minimized.store(false, Ordering::Release);
+            self.minimize = None;
+            self.edge.reveal();
             *state.display_mode.lock().unwrap() = if state.settings.read().unwrap().dock
                 && self.visible_target(foreground).is_some()
             {
@@ -1059,8 +1137,27 @@ mod platform {
                 let _ = ShowWindow(main, SW_RESTORE);
             }
             self.update(state, foreground);
-            if !SetForegroundWindow(main).as_bool() {
-                log::warn!("闪语已显示，但系统暂未允许切换输入焦点。");
+            // 无激活 WebView 的点击应由窗口所属线程完成激活；后台跟随和拖动不进入此路径。
+            let native = state.clone();
+            let handle = main.0 as i64;
+            if let Some(app) = state.app.get() {
+                if let Err(error) = app.run_on_main_thread(move || {
+                    if native.minimized.load(Ordering::Acquire)
+                        || *native.display_mode.lock().unwrap() == DisplayMode::Hidden
+                    {
+                        return;
+                    }
+                    let main = hwnd(handle);
+                    if !IsWindowVisible(main).as_bool() || IsIconic(main).as_bool() {
+                        return;
+                    }
+                    let _ = ShowWindow(main, SW_RESTORE);
+                    if !SetForegroundWindow(main).as_bool() {
+                        log::warn!("闪语已显示，但系统暂未允许切换输入焦点。");
+                    }
+                }) {
+                    state.notify_error(format!("闪语已显示，但暂时无法激活窗口：{error}"));
+                }
             }
             if let Some(app) = state.app.get() {
                 app.state::<Arc<crate::startup::LaunchIntent>>()
@@ -1282,11 +1379,23 @@ mod platform {
             self.standalone_positioned = true;
             Ok(())
         }
-        unsafe fn update(&mut self, state: &NativeState, foreground: HWND) {
+        unsafe fn update(&mut self, state: &Arc<NativeState>, foreground: HWND) {
             let Some(windows) = state.windows.get() else {
                 return;
             };
             let main = hwnd(windows.0);
+            if !self.edge.ready() || !self.floating.ready() {
+                return;
+            }
+            // 最小化必须在裁剪和贴边定位结束后执行，否则待处理的定位会覆盖系统最小化。
+            if state.minimized.load(Ordering::Acquire) {
+                if self.edge.clear(state, main) {
+                    if let Some(tray) = self.minimize.take() {
+                        self.floating.minimize(state, main, tray);
+                    }
+                }
+                return;
+            }
             let settings = state.settings.read().unwrap().clone();
             // Tauri 修改可调整大小／置顶属性时可能重建扩展样式，在任何再次显示前恢复后台语义。
             if let Err(error) = background_window(main) {
@@ -1306,6 +1415,9 @@ mod platform {
             };
             self.target_context = target.is_some() && mode != DisplayMode::Hidden;
             if !settings.dock || mode == DisplayMode::Standalone {
+                if !show && !self.edge.clear(state, main) {
+                    return;
+                }
                 let original = self.original_rect;
                 if !self.restore(state, main, settings.pinned) {
                     return;
@@ -1321,6 +1433,12 @@ mod platform {
                 } else if !show && visible {
                     let _ = ShowWindow(main, SW_HIDE);
                 }
+                if show {
+                    self.edge.update(state, main, foreground);
+                }
+                return;
+            }
+            if !self.edge.clear(state, main) {
                 return;
             }
             if !show {
@@ -1593,7 +1711,7 @@ mod platform {
                 Control::Settings(_, ack) => {
                     let _ = ack.send(Err("此功能需要 Windows。".into()));
                 }
-                Control::Show(_) | Control::Hide => {}
+                Control::Show(_) | Control::Hide | Control::Minimize => {}
             }
         }
     }

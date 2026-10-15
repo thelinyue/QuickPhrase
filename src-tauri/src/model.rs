@@ -117,12 +117,17 @@ pub fn validate_common_text(text: &str) -> Result<()> {
 pub struct Settings {
     pub startup: bool,
     pub tray: bool,
+    /// 主动最小化后的恢复入口独立于托盘；旧库和旧备份缺字段时默认开启。
+    pub show_floating_on_minimize: bool,
     pub enter: String,
     pub interval: u64,
     pub exit_search: bool,
     /// 兼容旧设置和备份；新版吸附始终完整展示，不再按闲置时间收成细条。
     pub auto_hide: bool,
     pub hide_delay: u64,
+    /// 独立窗口左右贴边隐藏，与旧版聊天侧栏收窄设置分开；缺字段的新装和升级默认开启。
+    pub edge_auto_hide: bool,
+    pub edge_reveal_delay: u64,
     pub show_numbers: bool,
     pub show_preview: bool,
     pub show_title: bool,
@@ -170,11 +175,14 @@ impl Default for Settings {
         Self {
             startup: false,
             tray: true,
+            show_floating_on_minimize: true,
             enter: "enter".into(),
             interval: 500,
             exit_search: true,
             auto_hide: true,
             hide_delay: 500,
+            edge_auto_hide: true,
+            edge_reveal_delay: 500,
             show_numbers: true,
             show_preview: true,
             show_title: true,
@@ -215,6 +223,9 @@ impl Default for Settings {
 }
 impl Settings {
     pub fn validate(&self) -> Result<()> {
+        if ![0, 500, 1000].contains(&self.edge_reveal_delay) {
+            return Err("贴边展开等待时间应为不等待、0.5秒或1秒。".into());
+        }
         if !["enter", "ctrl-enter"].contains(&self.enter.as_str()) || self.interval > 10_000 {
             return Err("发送按键或分段间隔无效（间隔应为0—10000毫秒）。".into());
         }
@@ -421,4 +432,60 @@ pub fn validate_phrase(p: &Phrase) -> Result<()> {
         crate::native::parse_shortcut(&p.shortcut)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod edge_settings_tests {
+    use super::*;
+    #[test]
+    fn minimization_float_defaults_on_and_round_trips_independently_of_tray() {
+        assert!(
+            serde_json::from_str::<Settings>(r#"{"tray":false}"#)
+                .unwrap()
+                .show_floating_on_minimize
+        );
+        for tray in [false, true] {
+            for show_floating_on_minimize in [false, true] {
+                let settings = Settings {
+                    tray,
+                    show_floating_on_minimize,
+                    ..Settings::default()
+                };
+                let dir = tempfile::tempdir().unwrap();
+                let store = crate::store::Store::open(dir.path()).unwrap();
+                store.save_settings(&settings).unwrap();
+                drop(store);
+                assert_eq!(
+                    crate::store::Store::open(dir.path())
+                        .unwrap()
+                        .settings()
+                        .unwrap(),
+                    settings
+                );
+            }
+        }
+    }
+    #[test]
+    fn legacy_settings_enable_independent_edges_without_reusing_old_dock_flags() {
+        let settings: Settings =
+            serde_json::from_str(r#"{"autoHide":false,"hideDelay":123}"#).unwrap();
+        assert!(settings.edge_auto_hide);
+        assert_eq!(settings.edge_reveal_delay, 500);
+        assert!(!settings.auto_hide);
+        assert_eq!(settings.hide_delay, 123);
+        settings.validate().unwrap();
+        let saved: Settings = serde_json::from_value(
+            serde_json::json!({"edgeAutoHide":false,"edgeRevealDelay":1000}),
+        )
+        .unwrap();
+        assert!(!saved.edge_auto_hide);
+        assert_eq!(saved.edge_reveal_delay, 1000);
+        for delay in [0, 500, 1000, 501] {
+            let settings = Settings {
+                edge_reveal_delay: delay,
+                ..Settings::default()
+            };
+            assert_eq!(settings.validate().is_ok(), delay != 501);
+        }
+    }
 }

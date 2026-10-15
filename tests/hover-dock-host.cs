@@ -14,7 +14,7 @@ public static class ShanyuHoverDockHost {
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Rect r);
     [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr h, out Rect r);
     [DllImport("user32.dll")] static extern bool GetCursorPos(out Point p);
-    [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll", SetLastError = true)] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
     [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref Point p);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
@@ -41,10 +41,15 @@ public static class ShanyuHoverDockHost {
     [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
     [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr h, ref MonitorInfo info);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, uint attribute, out Rect r, int size);
+    [DllImport("gdi32.dll")] static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+    [DllImport("gdi32.dll")] static extern int GetRgnBox(IntPtr region, out Rect rect);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
+    [DllImport("user32.dll")] static extern int GetWindowRgn(IntPtr h, IntPtr region);
     static readonly JavaScriptSerializer json = new JavaScriptSerializer();
     static IntPtr originalForeground;
     static Point originalCursor, lastPointer;
     static bool movedPointer;
+    static int pointerError;
     // 只读实际 Z 顺序，窗口间存在辅助句柄时也能检查三者的相对前后关系。
     static int ZOrder(IntPtr h) {
         int order = 0;
@@ -53,12 +58,16 @@ public static class ShanyuHoverDockHost {
     }
     static Dictionary<string, object> Inspect(IntPtr h) {
         Rect rect, frame; GetWindowRect(h, out rect); if (DwmGetWindowAttribute(h, 9, out frame, 16) != 0) frame = rect;
+        // 裁剪窗口的 DWM 范围可能仍为完整外框，用实际区域核对隐藏边条及命中范围。
+        Rect clip = frame; var region = CreateRectRgn(0, 0, 0, 0);
+        try { if (GetWindowRgn(h, region) != 0) { GetRgnBox(region, out clip); clip.left += rect.left; clip.right += rect.left; clip.top += rect.top; clip.bottom += rect.top; } }
+        finally { DeleteObject(region); }
         var client = new Point(); ClientToScreen(h, ref client);
         Rect clientRect; GetClientRect(h, out clientRect);
         var monitor = new MonitorInfo { size = Marshal.SizeOf(typeof(MonitorInfo)) }; GetMonitorInfo(MonitorFromWindow(h, 2), ref monitor);
         var style = GetWindowLong(h, -20);
         var className = new System.Text.StringBuilder(256); GetClassName(h, className, className.Capacity);
-        return new Dictionary<string, object> { {"className", className.ToString()}, {"handle", h.ToInt64()}, {"above", GetWindow(h, 3).ToInt64()}, {"below", GetWindow(h, 2).ToInt64()}, {"zOrder", ZOrder(h)}, {"rect", rect}, {"frame", frame}, {"client", client}, {"clientRect", clientRect}, {"work", monitor.work}, {"monitor", monitor.monitor}, {"dpi", GetDpiForWindow(h)}, {"visible", IsWindowVisible(h)}, {"iconic", IsIconic(h)}, {"zoomed", IsZoomed(h)}, {"toolWindow", (style & 0x80) != 0}, {"appWindow", (style & 0x40000) != 0}, {"noActivate", (style & 0x08000000) != 0}, {"topmost", (style & 8) != 0} };
+        return new Dictionary<string, object> { {"className", className.ToString()}, {"handle", h.ToInt64()}, {"above", GetWindow(h, 3).ToInt64()}, {"below", GetWindow(h, 2).ToInt64()}, {"zOrder", ZOrder(h)}, {"rect", rect}, {"frame", frame}, {"clip", clip}, {"client", client}, {"clientRect", clientRect}, {"work", monitor.work}, {"monitor", monitor.monitor}, {"dpi", GetDpiForWindow(h)}, {"visible", IsWindowVisible(h)}, {"iconic", IsIconic(h)}, {"zoomed", IsZoomed(h)}, {"toolWindow", (style & 0x80) != 0}, {"appWindow", (style & 0x40000) != 0}, {"noActivate", (style & 0x08000000) != 0}, {"topmost", (style & 8) != 0} };
     }
     static long Number(Dictionary<string, object> value, string name, long fallback) { return value.ContainsKey(name) ? Convert.ToInt64(value[name]) : fallback; }
     [STAThread] public static void Main(string[] args) {
@@ -125,8 +134,22 @@ public static class ShanyuHoverDockHost {
                 }
                 // 重放 Alt 松键产生的隐式菜单激活消息，只操作脚本指定的隔离客户端。
                 if (action == "alt-menu") PostMessage(new IntPtr(Number(command, "handle", 0)), 0x0112, new IntPtr(0xF100), IntPtr.Zero);
+                // 真实拖动指定隔离窗口，让 GUI_INMOVESIZE 经过产品的正常入口，不伪造贴边状态。
+                if (action == "drag") {
+                    int fromX = (int)Number(command, "fromX", 0), fromY = (int)Number(command, "fromY", 0);
+                    int toX = (int)Number(command, "x", fromX), toY = (int)Number(command, "y", fromY);
+                    pointerError = SetCursorPos(fromX, fromY) ? 0 : Marshal.GetLastWin32Error(); mouse_event(2, 0, 0, 0, UIntPtr.Zero);
+                    try {
+                        System.Threading.Thread.Sleep(150);
+                        for (int step = 1; step <= 10; step++) {
+                            SetCursorPos(fromX + (toX - fromX) * step / 10, fromY + (toY - fromY) * step / 10);
+                            System.Threading.Thread.Sleep(25);
+                        }
+                    } finally { mouse_event(4, 0, 0, 0, UIntPtr.Zero); }
+                    lastPointer = new Point { x = toX, y = toY }; movedPointer = true;
+                }
                 if (action == "pointer" || action == "click" || action == "double-click") {
-                    lastPointer = new Point { x = (int)Number(command, "x", 0), y = (int)Number(command, "y", 0) }; SetCursorPos(lastPointer.x, lastPointer.y); movedPointer = true;
+                    lastPointer = new Point { x = (int)Number(command, "x", 0), y = (int)Number(command, "y", 0) }; pointerError = SetCursorPos(lastPointer.x, lastPointer.y) ? 0 : Marshal.GetLastWin32Error(); movedPointer = true;
                     // 真实鼠标点击不临时修改被点窗口的置顶属性，避免验收本身改变待验证的层级。
                     for (int click = 0; click < (action == "double-click" ? 2 : action == "click" ? 1 : 0); click++) {
                         mouse_event(2, 0, 0, 0, UIntPtr.Zero);
@@ -159,7 +182,7 @@ public static class ShanyuHoverDockHost {
             }
             // 只读实际系统任务栏的范围与层级，验证遮挡关系；不移动、置顶或激活任务栏。
             var taskbar = FindWindow("Shell_TrayWnd", null);
-            File.WriteAllText(args[0], json.Serialize(new Dictionary<string, object> { {"nonce", nonce}, {"hwnd", form.Handle.ToInt64()}, {"inputFocused", input.Focused}, {"viewer", viewer == null || viewer.IsDisposed ? 0 : viewer.Handle.ToInt64()}, {"secondChat", secondChat == null || secondChat.IsDisposed ? 0 : secondChat.Handle.ToInt64()}, {"pid", System.Diagnostics.Process.GetCurrentProcess().Id}, {"foreground", foreground.ToInt64()}, {"foregroundPid", foregroundPid}, {"cursor", cursor}, {"windowAtCursor", GetAncestor(WindowFromPoint(cursor), 2).ToInt64()}, {"probedWindow", GetAncestor(WindowFromPoint(probe), 2).ToInt64()}, {"targetProbes", targetProbes}, {"windows", windows}, {"monitors", monitors}, {"taskbar", Inspect(taskbar)} }), new System.Text.UTF8Encoding(false));
+            File.WriteAllText(args[0], json.Serialize(new Dictionary<string, object> { {"nonce", nonce}, {"hwnd", form.Handle.ToInt64()}, {"inputFocused", input.Focused}, {"viewer", viewer == null || viewer.IsDisposed ? 0 : viewer.Handle.ToInt64()}, {"secondChat", secondChat == null || secondChat.IsDisposed ? 0 : secondChat.Handle.ToInt64()}, {"pid", System.Diagnostics.Process.GetCurrentProcess().Id}, {"foreground", foreground.ToInt64()}, {"foregroundPid", foregroundPid}, {"cursor", cursor}, {"pointerError", pointerError}, {"windowAtCursor", GetAncestor(WindowFromPoint(cursor), 2).ToInt64()}, {"probedWindow", GetAncestor(WindowFromPoint(probe), 2).ToInt64()}, {"targetProbes", targetProbes}, {"windows", windows}, {"monitors", monitors}, {"taskbar", Inspect(taskbar)} }), new System.Text.UTF8Encoding(false));
         };
         form.FormClosed += delegate {
             if (viewer != null) viewer.Dispose(); if (secondChat != null) secondChat.Dispose();

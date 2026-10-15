@@ -16,6 +16,53 @@ const library: Library = { categories: [], phrases: ['P1', 'P2'].map(id => ({ id
 const deletions = () => vi.mocked(call).mock.calls.filter(([command]) => command === 'delete_local_content');
 const submit = () => fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
 
+describe('最小化悬浮窗设置', () => {
+  it.each([false, true])('独立于托盘开关保存（tray=%s）', async tray => {
+    const settings = { ...library.settings, tray, showFloatingOnMinimize: true };
+    render(<SettingsWindow library={{ ...library, settings }} initialTab="常用设置" />);
+    fireEvent.click(screen.getByRole('checkbox', { name: '最小化显示悬浮窗' }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...settings, showFloatingOnMinimize: false }, libraryId: undefined }));
+    expect((screen.getByRole('checkbox', { name: '最小化到托盘' }) as HTMLInputElement).checked).toBe(tray);
+    fireEvent.click(screen.getByRole('checkbox', { name: '最小化显示悬浮窗' }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith('save_settings', { settings, libraryId: undefined }));
+  });
+  it('保存失败保留原值', async () => {
+    render(<SettingsWindow library={{ ...library, settings: { ...library.settings, showFloatingOnMinimize: true } }} initialTab="常用设置" />);
+    vi.mocked(call).mockRejectedValueOnce(new Error('保存失败'));
+    fireEvent.click(screen.getByRole('checkbox', { name: '最小化显示悬浮窗' }));
+    await screen.findByText('Error: 保存失败');
+    expect((screen.getByRole('checkbox', { name: '最小化显示悬浮窗' }) as HTMLInputElement).checked).toBe(true);
+  });
+});
+
+describe('常用设置贴边隐藏与发送间隔', () => {
+  const settings = { ...library.settings, edgeAutoHide: true, edgeRevealDelay: 500 as const, interval: 500 };
+  it('展示自动缩放状态、默认开启和互斥的等待选项，关闭后保留等待值', async () => {
+    render(<SettingsWindow library={{ ...library, settings }} initialTab="常用设置" />);
+    expect(screen.getByText('自动适配 Windows 缩放比例')).toBeTruthy();
+    expect((screen.getByRole('checkbox', { name: '悬浮时贴边自动隐藏' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('radio', { name: '等0.5秒' }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole('radio', { name: '等1秒' }));
+    await waitFor(() => expect((screen.getByRole('radio', { name: '等1秒' }) as HTMLInputElement).checked).toBe(true));
+    expect((screen.getByRole('radio', { name: '等0.5秒' }) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByRole('checkbox', { name: '悬浮时贴边自动隐藏' }));
+    await waitFor(() => expect((screen.getByRole('radio', { name: '等1秒' }) as HTMLInputElement).disabled).toBe(true));
+    expect(call).toHaveBeenLastCalledWith('save_settings', { settings: { ...settings, edgeAutoHide: false, edgeRevealDelay: 1000 }, libraryId: undefined });
+  });
+  it('保存失败保留原开关与选项，后续仍能保存发送间隔', async () => {
+    render(<SettingsWindow library={{ ...library, settings }} initialTab="常用设置" />);
+    vi.mocked(call).mockRejectedValueOnce(new Error('保存失败'));
+    fireEvent.click(screen.getByRole('checkbox', { name: '悬浮时贴边自动隐藏' }));
+    await screen.findByText('Error: 保存失败');
+    expect((screen.getByRole('checkbox', { name: '悬浮时贴边自动隐藏' }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole('radio', { name: /间隔小.*100毫秒/ }));
+    await waitFor(() => expect(call).toHaveBeenLastCalledWith('save_settings', { settings: { ...settings, interval: 100 }, libraryId: undefined }));
+    const custom = screen.getByRole('spinbutton', { name: '自定义分段间隔' });
+    fireEvent.change(custom, { target: { value: '750' } }); fireEvent.blur(custom);
+    await waitFor(() => expect(call).toHaveBeenLastCalledWith('save_settings', { settings: { ...settings, interval: 750 }, libraryId: undefined }));
+  });
+});
+
 describe('雾蓝灰默认主题', () => {
   const settings = { ...library.settings, theme: 'default' as const, fontSize: 14, titleColor: '#ff5100', phraseCategoryColor: '', fileCategoryColor: '' };
   const title = () => screen.getByRole('button', { name: '设置 话术标题 字体颜色' }).querySelector('span') as HTMLElement;
