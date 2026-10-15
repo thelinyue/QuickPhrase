@@ -71,7 +71,7 @@ export function App() {
     return () => { observer.disconnect(); document.removeEventListener('focusin', changeFocus); document.removeEventListener('focusout', changeFocus); window.removeEventListener('focus', changeFocus); window.removeEventListener('blur', changeFocus); };
   }, [route]);
   if (route === 'phrase-preview') return <PhrasePreviewWindow />;
-  if (route === 'shortcut-candidates') return <ShortcutCandidatesWindow />;
+  if (route === 'shortcut-candidates') return <ShortcutCandidatesWindow titleColor={library?.settings.titleColor} />;
   if (route === 'usage-guide') return <UsageGuideWindow settings={library?.settings} />;
   if (!library) return <div className="loading-screen"><strong>闪语</strong><span>{error || '正在读取本地话术…'}</span>{error && <button className="secondary-button" onClick={() => void refresh()}>重试</button>}</div>;
   if (route === 'editor') { const props = { library, id: params.get('id') || '', afterId: params.get('afterId') || '', categoryId: params.get('categoryId') || '', groupId: params.get('groupId') || '' }; return params.get('teamId') ? <TeamEditor {...props} teamId={params.get('teamId')!} /> : <Editor {...props} />; }
@@ -212,6 +212,21 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   const newContent = () => openWindow(kind === 'phrase' ? 'editor' : 'file-editor', '', '', '', kind === 'phrase' ? root : fileCategory, '', kind === 'phrase' ? teamId : '');
   const chooseCategory = (c: Category) => c.kind === 'phrase' ? setRoot(c.parentId || c.id) : setFileCategory(c.id);
   const newPhrase = (c: Category) => openWindow('editor', '', '', '', c.parentId || c.id, c.parentId ? c.id : '', teamId);
+  /** 空白区域按标题的视口位置归属，折叠不改变边界；菜单打开时捕获分类，避免后续布局改变目标。 */
+  function listMenu(e: MouseEvent<HTMLDivElement>) {
+    if ((e.target as Element).closest('.content-row,.group-heading')) return;
+    e.preventDefault(); e.currentTarget.focus();
+    let groupId = '';
+    if (kind === 'phrase') for (const heading of e.currentTarget.querySelectorAll<HTMLElement>('[data-group-id]')) {
+      if (heading.getBoundingClientRect().top > e.clientY) break;
+      groupId = heading.dataset.groupId || '';
+    }
+    popup(kind === 'phrase' ? [
+      { label: '新增话术', enabled: hasCategory && canEdit, action: () => openWindow('editor', '', '', '', root, groupId, teamId) },
+      ...cloudItems(hasCategory ? root : '', groupId),
+      { label: '新增二级分类', enabled: hasCategory, action: () => categoryDialog(undefined, root, 'phrase') },
+    ] : [{ label: '刷新', action: refresh }], e.clientX, e.clientY);
+  }
   function validCloudTarget(target: NonNullable<typeof cloudTarget>) {
     const current = cloudContext.current, status = current.teamStatus;
     return current.cloudAvailable && current.teamId === target.teamId && current.privateLibrary.libraryId === target.libraryId && status.server === target.server && status.user?.id === target.userId && (status.sessionEpoch || 0) === target.epoch
@@ -279,13 +294,13 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     ...(teamId ? [
       { label: '下载全部素材', action: () => call('prepare_team_phrase', { id: p.id }) },
       { label: '复制到个人话术', action: async () => { if (await confirm(`将「${labelOf(p)}」及其图片、文件复制到个人库？副本之后独立维护。`, { title: '复制到个人话术' })) await call('copy_team_to_private', { id: p.id }); } },
-      { label: '新增话术', enabled: canEdit, action: () => newContent() }, ...cloudItems(p.rootId, p.groupId || ''),
+      { label: '新增话术', enabled: canEdit, action: () => openWindow('editor', '', '', '', p.rootId, p.groupId || '', teamId) }, ...cloudItems(p.rootId, p.groupId || ''),
       { label: '编辑', enabled: canEdit, action: () => openWindow('editor', p.id, '', '', '', '', teamId) },
       { label: '移入回收站', enabled: canEdit, action: async () => { if (await confirm(`将「${labelOf(p)}」移入「${teamView?.team.name}」的回收站？`, { title: '删除话术', kind: 'warning' })) await call('delete_team_content', { teamId, request: { expectedVersion: teamView!.team.version, expectedLifecycleVersion: teamView!.team.lifecycleVersion, kind: 'phrase', id: p.contentRef!.id } }); } },
     ] : [
     ...(p.ready === false ? [{ label: '下载素材', enabled: !!teamStatus.user && !teamStatus.offline, action: async () => { await call('download_private_materials', { ids: [p.id], attachments: true }); setMessage('下载中，完成后重新投递'); } }] : []),
     { label: '复制到共享话术', enabled: teamStatus.teams.some(t => t.editable), action: () => publishToTeam(p.id, 'phrase') },
-    { label: '新增话术', action: () => openWindow('editor', '', '', '', root) }, ...cloudItems(p.rootId, p.groupId || ''), { label: '插入一条话术', action: () => openWindow('editor', '', p.id) }, { label: '编辑', action: () => openWindow('editor', p.id) },
+    { label: '新增话术', action: () => openWindow('editor', '', '', '', p.rootId, p.groupId || '', '') }, ...cloudItems(p.rootId, p.groupId || ''), { label: '插入一条话术', action: () => openWindow('editor', '', p.id) }, { label: '编辑', action: () => openWindow('editor', p.id) },
     { label: '标题背景色', action: () => setDialog({ title: '标题背景色', fields: <><label>选择颜色<input name="color" type="color" defaultValue={p.background || '#fff2bc'} /></label><label><span><input name="reset" type="checkbox" />恢复默认背景</span></label></>, onSubmit: async f => { await call('save_phrase', { phrase: { ...p, background: f.has('reset') ? '' : String(f.get('color')) }, afterId: null }); } }) },
     { label: '自定义快捷键', action: () => setShortcutPhrase(p) },
     { label: '排序', action: () => { const siblings = library.phrases.filter(v => v.rootId === p.rootId && v.groupId === p.groupId); sortDialog(p.id, 'phrase', siblings.findIndex(v => v.id === p.id) + 1, siblings.length); } },
@@ -333,13 +348,13 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     ...(teamStatus.user ? [{ label: '共享话术管理', enabled: !teamStatus.offline && !teamStatus.user.mustChangePassword, action: () => openWindow('team-management', '', '', 'teams', '', '', teamId) }] : []),
   ];
   function showPrimaryCategoryMenu(c: Category | undefined, e: MouseEvent) {
+    // 分类菜单只承载分类相关操作，全局账号和管理入口集中在主菜单。
     (e.currentTarget as HTMLElement).focus();
     if (teamId) { popup([
       { label: '新增话术', enabled: canEdit && !!c, action: () => c && newPhrase(c) }, ...cloudItems(c?.id || ''), { label: '新增一级分类', enabled: canEdit, action: () => categoryDialog() }, { label: '新增二级分类', enabled: canEdit && !!c, action: () => c && categoryDialog(undefined, c.id, 'phrase') },
       { label: '重命名', enabled: canEdit && !!c, action: () => c && categoryDialog(c) }, { label: '移入回收站', enabled: canEdit && !!c, action: () => c && deleteCategory(c) },
       { label: '回收站', enabled: canEdit, action: () => openWindow('recycle-bin', '', '', '', '', '', teamId) },
       { label: '导入数据', enabled: canEdit, action: () => openWindow('settings', '', '', '导入数据', '', '', teamId) }, { label: '导出数据', action: () => openWindow('settings', '', '', '导出数据', c?.id || '', '', teamId) },
-      null, ...managementMenu(),
     ], e.clientX, e.clientY); return; }
     const transfer = roots.length > 1;
     const anchor = e.currentTarget.getBoundingClientRect();
@@ -356,7 +371,6 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       { label: '复制到共享话术', enabled: !!c && teamStatus.teams.some(t => t.editable), action: () => c && publishToTeam(c.id, 'category') },
       { label: '设置一级分类背景色', enabled: !!c, action: () => c && openWindow('settings', '', '', '界面设置', c.id) },
       { label: '设置一级分类区域高度', action: () => setDialog({ title: '设置一级分类区域高度', fields: <><label>最小高度（31—200像素）<input name="height" type="number" min={31} max={200} defaultValue={settings.categoryHeight} required autoFocus /></label><p>一级分类自动换行，超过200像素可滚动。</p></>, onSubmit: async f => { await call('save_settings', { settings: { ...libraryRef.current.settings, categoryHeight: Number(f.get('height')) } }); } }) },
-      null, ...managementMenu(),
     ], e.clientX || anchor.left, e.clientY || anchor.bottom, true);
   }
   const topCategoryMenu = (e: MouseEvent) => showPrimaryCategoryMenu(roots.find(v => v.id === root), e);
@@ -379,7 +393,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   if (kind === 'phrase') {
     library.phrases.filter(p => p.rootId === root && !p.groupId).forEach(p => addRow(p, null));
     library.categories.filter(c => c.parentId === root).forEach(c => {
-      const isCollapsed = collapsed.has(c.id); content.push(<div className={`group-heading${isCollapsed ? ' collapsed' : ''}`} key={c.id} tabIndex={-1} onContextMenu={e => categoryMenu(c, e)}><button className="group-toggle" aria-expanded={!isCollapsed} onClick={() => setCollapsed(previous => { const next = new Set(previous); if (next.has(c.id)) next.delete(c.id); else next.add(c.id); return next; })}><span className="group-arrow" />{c.name}</button>{canEdit && <button className="group-edit" aria-label={`编辑分类 ${c.name}`} onClick={() => categoryDialog(c)}><Icon name="pencil" /></button>}</div>);
+      const isCollapsed = collapsed.has(c.id); content.push(<div className={`group-heading${isCollapsed ? ' collapsed' : ''}`} key={c.id} data-group-id={c.id} tabIndex={-1} onContextMenu={e => categoryMenu(c, e)}><button className="group-toggle" aria-expanded={!isCollapsed} onClick={() => setCollapsed(previous => { const next = new Set(previous); if (next.has(c.id)) next.delete(c.id); else next.add(c.id); return next; })}><span className="group-arrow" />{c.name}</button>{canEdit && <button className="group-edit" aria-label={`编辑分类 ${c.name}`} onClick={() => categoryDialog(c)}><Icon name="pencil" /></button>}</div>);
       const phrases = library.phrases.filter(p => p.rootId === root && p.groupId === c.id); if (!isCollapsed) phrases.forEach(p => addRow(p, null));
     });
   } else library.files.filter(f => f.categoryId === fileCategory).forEach(f => addRow(null, f));
@@ -407,7 +421,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     <UpdateNotice />
     {kind === 'phrase' && <div className="scope-bar">{(settings.teamsFirst ? ['team', 'private'] : ['private', 'team']).map(scope => scope === 'private' ? <button key={scope} className={`scope-name${!teamId ? ' active' : ''}`} onClick={() => changeScope('')}>个人话术</button> : <TeamSelector key={scope} status={teamStatus} teamId={teamId} onChange={changeScope} onError={setMessage} />)}<button id="top-menu" aria-label="一级分类菜单" onClick={topCategoryMenu}><Icon name="menu" /></button></div>}
     <nav className={`category-tabs${kind === 'file' ? ' files-tabs' : ' auto-wrapping'}${kind === 'phrase' || settings.fileCategoryHeight > 31 ? ' wrapping' : ''}`} style={kind === 'phrase' ? { minHeight: settings.categoryHeight } : { height: settings.fileCategoryHeight }} aria-label="一级分类">{(kind === 'phrase' ? roots : fileCats).map(c => { const background = c.background || (c.kind === 'file' ? settings.fileCategoryColor : settings.phraseCategoryColor); return <button key={c.id} title={categoryLabel(c, library.categories)} className={(kind === 'phrase' ? root : fileCategory) === c.id ? 'active' : ''} style={{ backgroundColor: background || undefined, color: background ? categoryTextColor(background) : undefined }} onClick={() => chooseCategory(c)} onContextMenu={e => categoryMenu(c, e)}>{c.name}</button>; })}<button className="add-category" aria-label="新增一级分类" disabled={kind === 'phrase' && !canEdit} onClick={() => categoryDialog()}>＋</button></nav>
-    <div className="list-area"><div ref={listRef} tabIndex={0} className="content-list" role="listbox" aria-label={kind === 'phrase' ? '话术列表' : '本地文件列表'} aria-multiselectable={kind === 'file'} onKeyDown={listKey} onContextMenu={e => { if (!(e.target as Element).closest('.content-row,.group-heading')) { e.preventDefault(); e.currentTarget.focus(); popup(kind === 'phrase' ? [{ label: '新增话术', enabled: hasCategory && canEdit, action: newContent }, ...cloudItems(hasCategory ? root : ''), { label: '新增二级分类', enabled: hasCategory, action: () => categoryDialog(undefined, root, 'phrase') }] : [{ label: '刷新', action: refresh }], e.clientX, e.clientY); } }}>{content.length ? content : <div className="empty-state"><img className="empty-illustration" src={`/illustrations/${kind === 'phrase' ? 'phrase' : 'files'}-empty.png`} width="96" height="96" alt="" draggable={false} /><span>{teamId && kind === 'phrase' && !teamView ? teamError || '正在加载共享话术…' : !hasCategory ? '还没有一级分类' : kind === 'phrase' ? '这个分类还没有话术' : '还没有关联文件'}</span><button disabled={kind === 'phrase' && !canEdit} onClick={() => hasCategory ? run(newContent) : categoryDialog()}>{!hasCategory ? '新增一级分类' : kind === 'phrase' ? '新增话术' : '新增关联文件'}</button></div>}</div>
+    <div className="list-area"><div ref={listRef} tabIndex={0} className="content-list" role="listbox" aria-label={kind === 'phrase' ? '话术列表' : '本地文件列表'} aria-multiselectable={kind === 'file'} onKeyDown={listKey} onContextMenu={listMenu}>{content.length ? content : <div className="empty-state"><img className="empty-illustration" src={`/illustrations/${kind === 'phrase' ? 'phrase' : 'files'}-empty.png`} width="96" height="96" alt="" draggable={false} /><span>{teamId && kind === 'phrase' && !teamView ? teamError || '正在加载共享话术…' : !hasCategory ? '还没有一级分类' : kind === 'phrase' ? '这个分类还没有话术' : '还没有关联文件'}</span><button disabled={kind === 'phrase' && !canEdit} onClick={() => hasCategory ? run(newContent) : categoryDialog()}>{!hasCategory ? '新增一级分类' : kind === 'phrase' ? '新增话术' : '新增关联文件'}</button></div>}</div>
       {settings.showSearch && query.trim() && <section className="search-panel" aria-label="搜索结果"><header><span>搜索结果</span><button aria-label="关闭搜索" onClick={clearSearch}>×</button></header><div className="search-kind">{kind === 'phrase' ? '话术' : '本地文件'}</div><div id="search-results">{sequenceLoading ? <div className="no-results">正在搜索…</div> : results.length ? results.map((hit, i) => row(hit.phrase, hit.file, i, true)) : <div className="no-results">没有找到匹配的内容</div>}</div></section>}
     </div>
     {settings.showSearch && query.trim() && <div className="search-backdrop" onClick={clearSearch} />}

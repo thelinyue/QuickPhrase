@@ -18,12 +18,15 @@ export function useEnterSubmit() {
 
 const paths: Record<string, string> = {
   check: 'm4 10 4 4 8-8',
+  // 话术类型使用独立轮廓，避免调整列表图标时影响编辑器和预览的通用图标。
+  'phrase-text': 'M5 2h10a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1ZM7 6h6M7 10h6M7 14h4',
+  'phrase-image': 'M3 3h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM2 14l5-5 4 4 3-3 4 4M14.5 6.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0',
+  'phrase-file': 'M11 2H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7l-5-5ZM11 2v5h5M11 10v4a2 2 0 0 1-4 0v-3a1 1 0 0 1 2 0v3',
   document: 'M5 2.5h9l2 2v13H5zM8 6h5M8 9h5M8 12h4', file: 'M5 2.5h7l4 4v11H5zM12 2.5v4h4M8 10h5M8 13h4',
   search: 'M14.5 8.5a6 6 0 1 1-12 0 6 6 0 0 1 12 0M13 13l4 4', pencil: 'm4 12 9-9 3 3-9 9-4 1zM11 5l3 3',
-  dock: 'M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4',
-  // 磁铁统一旋转为开口朝左；关闭态斜线旋转后从左下指向右上。
-  'dock-off': 'M4 3v7a6 6 0 0 0 12 0V3h-4v7a2 2 0 0 1-4 0V3zM4 6h4M12 6h4M3 3l14 14',
-  pin: 'M10 14v4M7 2h6l1 6 3 3v2H3v-2l3-3z', minus: 'M4 10h12', close: 'm5 5 10 10M15 5 5 15',
+  dock: 'M3 4h8a6 6 0 0 1 0 12H3v-3h8a3 3 0 0 0 0-6H3V4Z',
+  // 图钉缩小顶帽、延长针尖，空心与实心共用轮廓，切换时不偏移。
+  pin: 'm12.5 2.5 5 5-2.5 1-3 3v3L5.5 8h3l3-3 1-2.5ZM8.5 11.5 3 17', minus: 'M4 10h12', close: 'm5 5 10 10M15 5 5 15',
   menu: 'M3 5h14M3 10h14M3 15h14', settings: 'M8 2h4l.5 2 1 .5 2-.5 2 3.5-1.5 1.5v1l1.5 1.5-2 3.5-2-.5-1 .5-.5 2H8l-.5-2-1-.5-2 .5-2-3.5L4 10.5v-1L2.5 8 4.5 4.5l2 .5 1-.5zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0',
   eye: 'M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0',
   'eye-off': 'M1.5 10S5 4 10 4s8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6zM12.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0M3 17 17 3',
@@ -45,7 +48,13 @@ const paths: Record<string, string> = {
   stop: 'M4 4h12v12H4z',
   play: 'M6 3l11 7-11 7z',
 };
-export function Icon({ name }: { name: string }) { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d={paths[name] || paths.document} /></svg>; }
+/** 关闭斜线与磁铁交叉处留出透明间隙，避免小尺寸下堆成黑块；遮罩随按钮背景自然变化。 */
+function DockOffIcon() {
+  const maskId = useId();
+  const slash = 'M2.5 17.5l15-15';
+  return <svg viewBox="0 0 20 20" aria-hidden="true"><defs><mask id={maskId}><rect width="20" height="20" fill="white" stroke="none" /><path d={slash} stroke="black" strokeWidth="4" /></mask></defs><path d={paths.dock} mask={`url(#${maskId})`} /><path d={slash} /></svg>;
+}
+export function Icon({ name }: { name: string }) { return name === 'dock-off' ? <DockOffIcon /> : <svg viewBox="0 0 20 20" aria-hidden="true"><path d={paths[name] || paths.document} /></svg>; }
 /** 空值和历史橙色均表示默认标题色，由当前主题的 CSS 接管。
  * 单条话术自定义色优先于全局自定义色；只解析显示值，不改写库中的旧记录。 */
 export function phraseTitleColor(color?: string, defaultColor?: string) {

@@ -24,6 +24,8 @@ const hook = async view => view.evaluate(() => {
     const url = new URL(typeof input === 'string' ? input : input.url); if (url.hostname !== 'ipc.localhost') return original(input, init);
     const cmd = decodeURIComponent(url.pathname.slice(1)); let args = JSON.parse(init.body);
     const response = (value, state = 'ok') => new Response(JSON.stringify(value), { headers: { 'Tauri-Response': state, 'Content-Type': 'application/json' } });
+    // 仅给底部搜索种入带来源与未缓存状态的显示样本，不执行任何投递。
+    if (cmd === 'search_scoped_content' && window.__illustrationQA.searchFixture) return response(window.__illustrationQA.searchFixture);
     if (['plugin:window|show', 'plugin:window|set_focus', 'plugin:menu|popup', 'copy_phrase_text', 'copy_linked_files', 'open_linked_file', 'open_directory', 'native_status'].includes(cmd)) return response(null);
     if (['deliver_content', 'get_target'].includes(cmd)) throw new Error('插画验收禁止执行系统发送');
     if (cmd === 'plugin:webview|create_webview_window') args = { ...args, options: { ...args.options, visible: false, focus: false, skipTaskbar: true } };
@@ -162,8 +164,8 @@ try {
   });
   const styles = (target, selector) => target.locator(selector).first().evaluate(el => { const s = getComputedStyle(el); return { color: s.color, background: s.backgroundColor, shadow: s.boxShadow, radius: s.borderRadius }; });
   await page.setViewportSize({ width: 330, height: 720 }); await click(page.locator('.content-tabs').getByRole('button', { name: '话术', exact: true }));
-  const title = '青羽主题验证';
-  const id = await invoke('save_phrase', { phrase: { id: '', rootId: phraseRoot, groupId: null, title, color: '#ff5100', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '默认与自定义颜色保持独立' }] }] }, afterId: null });
+  const title = '雾蓝灰主题验证';
+  const id = await invoke('save_phrase', { phrase: { id: '', rootId: phraseRoot, groupId: null, title, color: '#ff5100', background: '', shortcut: 'Ctrl+1', position: 0, segments: [{ blocks: [{ kind: 'text', text: '默认与自定义颜色保持独立' }] }] }, afterId: null });
   await page.getByText(title, { exact: true }).waitFor();
   const row = page.locator(`[data-row="${id}"]`); await click(row); await page.mouse.move(315, 12);
   const preview = context.pages().find(p => p.url().includes('#phrase-preview')), candidates = context.pages().find(p => p.url().includes('#shortcut-candidates'));
@@ -172,25 +174,33 @@ try {
   const showPreview = (theme, titleColor, fontSize = 14) => invoke('plugin:event|emit', { event: 'phrase-preview', payload: { phrase: item, fontSize, titleColor, theme, maxHeight: 180 } });
   await invoke('plugin:event|emit', { event: 'shortcut-candidates', payload: { shortcut: 'Ctrl+1', phrases: [item], selectedIndex: 0, target: { hwnd: 0, focus: 0, pid: 0 } } });
   await candidates.locator('[data-candidate]').waitFor();
-  await check('七种主题共用浅色标题栏、中性文字和32像素行，主色与选中态跨窗同步', async () => {
-    const colors = { default: ['rgb(42, 117, 101)', 'rgb(232, 242, 237)'], green: ['rgb(62, 114, 86)', 'rgb(233, 242, 236)'], blue: ['rgb(48, 105, 126)', 'rgb(232, 240, 244)'], black: ['rgb(69, 81, 91)', 'rgb(237, 240, 242)'], pink: ['rgb(150, 86, 114)', 'rgb(245, 237, 241)'], lavender: ['rgb(104, 98, 148)', 'rgb(240, 238, 246)'], orange: ['rgb(155, 95, 48)', 'rgb(247, 240, 234)'] };
+  await check('七种主题的实色上下栏、深色话术标题与快捷键跨窗同步', async () => {
+    const colors = { default: ['rgb(75, 100, 121)', 'rgb(223, 232, 240)'], green: ['rgb(62, 114, 86)', 'rgb(233, 242, 236)'], blue: ['rgb(48, 105, 126)', 'rgb(232, 240, 244)'], black: ['rgb(69, 81, 91)', 'rgb(237, 240, 242)'], pink: ['rgb(150, 86, 114)', 'rgb(245, 237, 241)'], lavender: ['rgb(104, 98, 148)', 'rgb(240, 238, 246)'], orange: ['rgb(155, 95, 48)', 'rgb(247, 240, 234)'] };
     for (const [theme, [accent, selected]] of Object.entries(colors)) {
       await patchSettings({ theme, titleColor: '#ff5100' });
       for (const target of [page, settings, recycle, candidates]) await target.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
       await showPreview(theme, '#ff5100'); await preview.locator('.phrase-preview-content').waitFor();
       await preview.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
-      assert.equal((await styles(page, '.main-titlebar')).background, 'rgb(247, 248, 249)');
-      assert.equal((await styles(page, '.main-footer')).background, 'rgb(247, 248, 249)');
+      assert.equal((await styles(page, '.main-titlebar')).background, accent);
+      assert.equal((await styles(page, '.main-footer')).background, accent);
+      assert.equal((await styles(page, '.main-footer button')).color, 'rgb(255, 255, 255)');
+      assert.equal((await styles(page, '.category-tabs .active')).background, 'rgb(166, 77, 32)');
       assert.equal((await styles(page, '.content-tabs .active')).color, accent);
       assert.equal(await row.evaluate(el => el.getBoundingClientRect().height), 32);
-      const text = 'rgb(38, 49, 59)';
+      const text = await page.evaluate(() => { const probe = document.createElement('span'); probe.style.color = 'var(--phrase-title-color)'; document.body.append(probe); const color = getComputedStyle(probe).color; probe.remove(); return color; });
       assert.equal((await styles(page, `[data-row="${id}"] .row-title`)).color, text);
       assert.equal((await styles(preview, 'header strong')).color, text);
+      assert.equal((await styles(candidates, '.candidate-label')).color, text);
+      assert.equal((await styles(page, '.row-shortcut')).background, theme === 'default' ? 'rgb(82, 109, 131)' : accent);
+      assert.equal((await styles(page, '.row-shortcut')).color, 'rgb(255, 255, 255)');
+      assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--theme-hover').trim()), theme === 'default' ? '#f0f3f6' : '#f0f3f2');
+      assert.equal(text, 'rgb(166, 66, 27)');
+      await screenshot(page, 'theme-chrome-' + theme);
       assert.equal((await styles(candidates, '[aria-selected="true"]')).background, selected);
     }
     await patchSettings({ theme: 'default' }); await page.waitForFunction(() => document.documentElement.dataset.theme === 'default');
     await showPreview('default', '#ff5100');
-    assert.equal((await styles(page, `[data-row="${id}"]`)).background, 'rgb(232, 242, 237)');
+    assert.equal((await styles(page, `[data-row="${id}"]`)).background, 'rgb(223, 232, 240)');
     assert.ok((await styles(page, `[data-row="${id}"]`)).shadow.includes('2px'));
     assert.equal((await styles(page, '.category-tabs .active')).radius, '8px');
     assert.equal((await invoke('get_library')).phrases.find(p => p.id === id).color, '#ff5100');
@@ -204,7 +214,7 @@ try {
     await invoke('plugin:event|emit', { event: 'phrase-preview', payload: { phrase: custom, fontSize: 14, titleColor: '#652f7b', theme: 'default', maxHeight: 180 } });
     await preview.waitForFunction(() => getComputedStyle(document.querySelector('header strong')).color === 'rgb(107, 74, 21)');
     await invoke('save_phrase', { phrase: item, afterId: null }); await patchSettings({ titleColor: '#ff5100' }); await showPreview('default', '#ff5100');
-    await page.waitForFunction(id => getComputedStyle(document.querySelector(`[data-row="${id}"] .row-title`)).color === 'rgb(38, 49, 59)', id);
+    await page.waitForFunction(id => !document.querySelector(`[data-row="${id}"] .row-title`).style.color, id);
   });
   await check('新库默认14号字体，保存12号后换主题仍保留，10至18号字体不撑高单行', async () => {
     await click(settings.getByRole('button', { name: '界面设置', exact: true }));
@@ -222,10 +232,10 @@ try {
   await check('本地文件悬停覆盖选中色，移出恢复且标题与发送列不跳动', async () => {
     await click(page.locator('.content-tabs').getByRole('button', { name: '本地文件', exact: true }));
     const file = page.locator('.file-row').first(); await click(file); await page.mouse.move(315, 12);
-    assert.equal((await styles(page, '.file-row')).background, 'rgb(232, 242, 237)');
+    assert.equal((await styles(page, '.file-row')).background, 'rgb(223, 232, 240)');
     const before = await file.locator('.row-title').boundingBox(); await file.hover();
-    assert.equal((await styles(page, '.file-row')).background, 'rgb(240, 243, 242)'); assert.deepEqual(await file.locator('.row-title').boundingBox(), before);
-    await page.mouse.move(315, 12); assert.equal((await styles(page, '.file-row')).background, 'rgb(232, 242, 237)');
+    assert.equal((await styles(page, '.file-row')).background, 'rgb(240, 243, 246)'); assert.deepEqual(await file.locator('.row-title').boundingBox(), before);
+    await page.mouse.move(315, 12); assert.equal((await styles(page, '.file-row')).background, 'rgb(223, 232, 240)');
     await click(page.locator('.content-tabs').getByRole('button', { name: '话术', exact: true }));
   });
   await check('满列表、长标题与多分类在标准及最小视口保持单行，滚动后操作可达', async () => {
@@ -246,6 +256,84 @@ try {
       await within(page.locator('.content-list [data-row]').last()); await within(page.getByRole('button', { name: '设置', exact: true })); await screenshot(page, 'full-list-' + width + '-' + fontSize);
     }
     await page.setViewportSize({ width: 330, height: 720 }); await patchSettings({ fontSize: 14 }); await page.locator('.content-list').evaluate(el => { el.scrollTop = 0; }); await click(row); await page.mouse.move(315, 12);
+  });
+  await check('七种主题满列表色条铺满、左侧发送列固定对齐且标题与快捷键对比度达标', async () => {
+    for (const theme of ['default', 'green', 'blue', 'black', 'pink', 'lavender', 'orange']) {
+      await patchSettings({ theme }); await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
+      const geometry = await page.evaluate(() => {
+        const list = document.querySelector('.content-list'), group = list.querySelector('.group-heading'), row = list.querySelector('[data-row]');
+        const rect = el => el.getBoundingClientRect(), toggle = group.querySelector('.group-toggle');
+        const range = document.createRange(); range.selectNodeContents(toggle.lastChild);
+        return { listX: rect(list).x, groupX: rect(group).x, groupWidth: rect(group).width, listWidth: list.clientWidth, iconX: rect(row.querySelector('.row-icon')).x - rect(row).x, nameX: range.getBoundingClientRect().x - rect(group).x, sendWidth: rect(row.querySelector('.row-send')).width, groupColor: getComputedStyle(group).backgroundColor, selection: getComputedStyle(document.documentElement).getPropertyValue('--theme-selection').trim() };
+      });
+      assert.equal(geometry.listX, geometry.groupX); assert.equal(geometry.groupWidth, geometry.listWidth);
+      assert.equal(geometry.iconX, 26); assert.equal(geometry.nameX, 26); assert.equal(geometry.sendWidth, 24);
+      assert.notEqual(geometry.groupColor, 'rgba(0, 0, 0, 0)');
+      const expectedGroup = theme === 'default' ? 'rgb(237, 241, 245)' : (await styles(page, '[data-row][aria-selected="true"]')).background;
+      assert.equal(geometry.groupColor, expectedGroup);
+      const ratios = await page.evaluate(() => {
+        const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+        const luminance = color => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1); const v = [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3).map(n => n / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4); return v[0] * .2126 + v[1] * .7152 + v[2] * .0722; };
+        const root = getComputedStyle(document.documentElement), title = getComputedStyle(document.querySelector('.row-title')).color;
+        const pairs = ['.main-titlebar', '.main-footer', '.row-shortcut', '.category-tabs .active'].map(selector => { const s = getComputedStyle(document.querySelector(selector)); return [s.color, s.backgroundColor]; });
+        for (const bg of ['surface', 'selection', 'hover']) pairs.push([title, root.getPropertyValue('--theme-' + bg)]);
+        return pairs.map(([fg, bg]) => { const a = luminance(fg), b = luminance(bg); return (Math.max(a, b) + .05) / (Math.min(a, b) + .05); });
+      });
+      assert.ok(ratios.every(ratio => ratio >= 4.5), theme + '对比度：' + ratios.join(','));
+      await row.hover(); const before = await row.locator('.row-title').boundingBox(); await page.mouse.move(315, 12); const after = await row.locator('.row-title').boundingBox(); assert.equal(before.x, after.x);
+      await screenshot(page, 'theme-aligned-' + theme);
+    }
+    await patchSettings({ theme: 'default' });
+  });
+  await check('快捷键浮层不占文字宽度，标题模式与搜索状态来源保持可见', async () => {
+    const measure = target => target.evaluate(el => {
+      const bounds = selector => { const node = el.querySelector(selector); if (!node) return null; const r = node.getBoundingClientRect(); return { x: r.x, width: r.width, right: r.right, center: r.y + r.height / 2, height: r.height }; };
+      return { copy: bounds('.row-copy'), title: bounds('.row-title'), preview: bounds('.row-preview'), badge: bounds('.row-shortcut'), status: bounds('.row-status'), source: bounds('.row-source') };
+    });
+    for (const [width, height, fontSize] of [[330, 720, 14], [300, 400, 10], [300, 400, 18]]) for (const showPreview of [true, false]) {
+      await page.setViewportSize({ width, height }); await patchSettings({ fontSize, showPreview, showTitle: true });
+      await row.scrollIntoViewIfNeeded(); await page.waitForFunction(({ fontSize, showPreview }) => getComputedStyle(document.querySelector('.content-list')).fontSize === fontSize + 'px' && !!document.querySelector('.content-list .row-preview') === showPreview, { fontSize, showPreview });
+      const before = await measure(row); assert.equal(before.copy.right - before.badge.right, 4); assert.equal(before.copy.center, before.badge.center); assert.equal(before.badge.height, 18);
+      await invoke('save_phrase', { phrase: { ...item, shortcut: '' }, afterId: null }); await row.locator('.row-shortcut').waitFor({ state: 'detached' });
+      const after = await measure(row); assert.deepEqual(before.copy, after.copy); assert.deepEqual(before.title, after.title); assert.deepEqual(before.preview, after.preview);
+      await invoke('save_phrase', { phrase: item, afterId: null }); await row.locator('.row-shortcut').waitFor();
+      await screenshot(page, 'shortcut-overlay-' + width + '-' + fontSize + '-' + showPreview);
+    }
+    await patchSettings({ fontSize: 14, showPreview: true, showTitle: true, dockSearch: true });
+    await page.getByRole('textbox', { name: '搜索话术、本地文件', exact: true }).fill(title);
+    const searchRow = page.locator('#search-results [data-row]').first(); await searchRow.locator('.row-shortcut').waitFor();
+    const search = await measure(searchRow); assert.equal(search.copy.right - search.badge.right, 4);
+    await screenshot(page, 'shortcut-overlay-search'); await click(page.getByRole('button', { name: '清空搜索', exact: true }));
+    const dock = context.pages().find(p => p.url().includes('#common-dock')); assert.ok(dock); await hook(dock); views.add(dock);
+    await dock.setViewportSize({ width: 330, height: 300 });
+    await dock.evaluate(item => { window.__illustrationQA.searchFixture = [{ id: item.id, kind: 'phrase', file: null, sourceLabel: '共享来源', phrase: { ...item, ready: false, shortcut: 'Ctrl+Shift+Alt+1+2' } }]; }, item);
+    await dock.locator('input').first().fill(title); const dockRow = dock.locator('[data-row]').first(); await dockRow.locator('.row-shortcut').waitFor();
+    const data = await measure(dockRow); assert.equal(data.copy.right - data.badge.right, 4); assert.ok(data.badge.right <= data.status.x); assert.ok(data.badge.right <= data.source.x); assert.ok(data.badge.width <= 104);
+    assert.equal(await dockRow.locator('.row-shortcut').getAttribute('title'), 'Ctrl+Shift+Alt+1+2');
+    await screenshot(dock, 'shortcut-overlay-status-source'); await dock.locator('input').first().fill(''); await dock.evaluate(() => { delete window.__illustrationQA.searchFixture; });
+    await patchSettings({ dockSearch: false }); await page.setViewportSize({ width: 330, height: 720 });
+  });
+  await check('一至三位序号跟随10、14、18号文字，标准与最小视口保持基线及图标居中', async () => {
+    const total = await page.locator('.content-list [data-row]').count();
+    for (let i = total; i < 100; i++) await invoke('save_phrase', { phrase: { ...item, id: '', title: '序号与长标题显示验证' + (i + 1), segments: [{ blocks: [{ kind: 'text', text: '用于验证大字号和三位序号的单行布局。' }] }] }, afterId: null });
+    await page.waitForFunction(() => document.querySelectorAll('.content-list [data-row]').length === 100);
+    for (const [width, height] of [[330, 720], [300, 400]]) for (const fontSize of [10, 14, 18]) {
+      await page.setViewportSize({ width, height }); await patchSettings({ fontSize, showNumbers: true });
+      await page.waitForFunction(size => getComputedStyle(document.querySelector('.row-index')).fontSize === size + 'px', fontSize);
+      for (const index of [0, 9, 99]) {
+        const target = page.locator('.content-list [data-row]').nth(index); await within(target);
+        const dimensions = await target.evaluate(el => {
+          const number = el.querySelector('.row-index'), title = el.querySelector('.row-title'), icon = el.querySelector('.row-icon');
+          const rect = node => node.getBoundingClientRect(), center = node => rect(node).y + rect(node).height / 2;
+          return { text: number.textContent.trim(), font: getComputedStyle(number).fontSize, titleFont: getComputedStyle(title).fontSize, numberY: rect(number).y, titleY: rect(title).y, centerOffset: Math.abs(center(number) - center(icon)), iconHeight: rect(icon).height, rowHeight: rect(el).height, clipped: number.scrollWidth > number.clientWidth, sendWidth: rect(el.querySelector('.row-send')).width };
+        });
+        assert.equal(dimensions.text, (index + 1) + '.'); assert.equal(dimensions.font, dimensions.titleFont); assert.equal(dimensions.numberY, dimensions.titleY);
+        assert.equal(dimensions.centerOffset, 0); assert.equal(dimensions.iconHeight, 18); assert.equal(dimensions.rowHeight, 32); assert.equal(dimensions.sendWidth, 24); assert.equal(dimensions.clipped, false);
+      }
+      assert.ok(await page.locator('.content-list').evaluate(el => el.scrollWidth <= el.clientWidth));
+      await screenshot(page, 'number-100-' + width + '-' + fontSize);
+    }
+    await page.setViewportSize({ width: 330, height: 720 }); await patchSettings({ fontSize: 14 }); await row.scrollIntoViewIfNeeded();
   });
   await check('候选1、10和12条快照的32像素行、表头与底栏不裁切，超出10条独立滚动', async () => {
     for (const count of [1, 10, 12]) {
@@ -302,7 +390,7 @@ try {
   await check('主题默认正文、标题、提示与七种主题实心按钮白字对比度达到4.5比1', async () => {
     const palette = await page.evaluate(() => { const s = getComputedStyle(document.documentElement); return Object.fromEntries(['surface', 'panel', 'text', 'muted', 'title', 'accent', 'selection', 'hover'].map(key => [key, s.getPropertyValue('--theme-' + key).trim()])); });
     const luminance = hex => { const digits = hex.slice(1); const normalized = digits.length === 3 ? [...digits].map(c => c + c).join('') : digits; const values = [0, 2, 4].map(i => parseInt(normalized.slice(i, i + 2), 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return values[0] * .2126 + values[1] * .7152 + values[2] * .0722; };
-    for (const [foreground, background] of [[palette.text, palette.surface], [palette.muted, palette.panel], [palette.muted, palette.selection], [palette.title, palette.hover], [palette.title, palette.selection], ...['#2a7565', '#3e7256', '#30697e', '#45515b', '#965672', '#686294', '#9b5f30'].map(color => ['#ffffff', color])]) {
+    for (const [foreground, background] of [[palette.text, palette.surface], [palette.muted, palette.panel], [palette.muted, palette.selection], [palette.title, palette.hover], [palette.title, palette.selection], ...['#4b6479', '#3e7256', '#30697e', '#45515b', '#965672', '#686294', '#9b5f30'].map(color => ['#ffffff', color])]) {
       const [light, dark] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
       assert.ok((light + .05) / (dark + .05) >= 4.5, `${foreground} / ${background} 对比度不足`);
     }

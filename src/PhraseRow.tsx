@@ -10,6 +10,9 @@ export function PhraseRow({ phrase, file, index, selected, busy, settings, query
   const enterSubmit = useEnterSubmit();
   const label = file?.name || (phrase ? labelOf(phrase) : '');
   const hasImage = phrase?.segments.some(segment => segment.blocks.some(block => block.kind === 'image'));
+  const hasFile = phrase?.segments.some(segment => segment.blocks.some(block => block.kind === 'file'));
+  // 混合话术优先提示图片，其次附件；删除媒体后由内容自然恢复文字图标。
+  const phraseIcon = hasImage ? 'phrase-image' : hasFile ? 'phrase-file' : 'phrase-text';
   const title = file?.name || phrase?.title || (phrase && (!settings.showPreview || !textOf(phrase).trim()) ? label : '');
   const terms = query?.trim().toLowerCase().split(/\s+/).filter(Boolean) || [];
   const matchedFiles = phrase?.segments.flatMap(s => s.blocks).filter(b => b.kind === 'file' && terms.some(t => b.name.toLowerCase().includes(t))).map(b => b.kind === 'file' ? b.name : '').join(' · ') || '';
@@ -23,13 +26,15 @@ export function PhraseRow({ phrase, file, index, selected, busy, settings, query
       onClick={e => { e.stopPropagation(); if (!busy && e.detail < 2) onDeliver('send'); }} onDoubleClick={e => e.stopPropagation()}>
       <svg className="send-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M14 1 2 8l12 7v-4L7 8l7-3z" /></svg>
     </button>
-    <span className="row-icon" title={file ? undefined : hasImage ? '含图片话术' : '文字话术'}>{file ? <FileIcon path={file.path} /> : <Icon name={hasImage ? 'image' : 'document'} />}</span>
+    <span className="row-icon" title={file ? undefined : hasImage ? '含图片话术' : hasFile ? '含文件话术' : '文字话术'}>{file ? <FileIcon path={file.path} /> : <Icon name={phraseIcon} />}</span>
     {settings.showNumbers && <span className="row-index">{index + 1}.</span>}
+    <span className="row-copy">
     {title && (file || settings.showTitle !== false || !phrase || !textOf(phrase).trim() || terms.some(t => title.toLowerCase().includes(t))) && <span className="row-title" title={file ? title : undefined} style={{ color: file ? undefined : phraseTitleColor(phrase?.color, settings.titleColor), background: phrase?.background || undefined }}><Highlight text={title} query={query} /></span>}
     {phrase && (settings.showPreview || matchedFiles) && <span className="row-preview">{settings.showPreview && <Highlight text={textOf(phrase).replace(/\s+/g, ' ')} query={query} />}{matchedFiles && <>{settings.showPreview && ' · '}<Highlight text={matchedFiles} query={query} /></>}</span>}
+    {phrase?.shortcut && <span className="row-shortcut" title={phrase.shortcut}>{phrase.shortcut.replaceAll('+', ',')}</span>}
+    </span>
     {file?.missing && <span className="row-status">文件失效</span>}
     {phrase?.ready === false && <span className="row-status">未缓存</span>}
     {sourceLabel && <span className="row-source" title={sourceLabel}>{sourceLabel}</span>}
-    {phrase?.shortcut && <span className="row-shortcut" title={phrase.shortcut}>{phrase.shortcut.replaceAll('+', ',')}</span>}
   </div>;
 }

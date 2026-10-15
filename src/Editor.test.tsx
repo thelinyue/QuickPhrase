@@ -24,6 +24,20 @@ function select(input: HTMLElement, start: number, end = start) {
 const saved = () => vi.mocked(call).mock.calls.find(([cmd]) => cmd === 'save_phrase')?.[1]?.phrase as Phrase;
 const clipboardImage = () => Object.assign(new File([new Uint8Array([1, 2, 3])], '截图.png', { type: 'image/png' }), { arrayBuffer: vi.fn(async () => new Uint8Array([1, 2, 3]).buffer) });
 
+it.each(['个人', '共享'])('%s新增话术预选并保存传入的二级分类，切换一级分类清除它', async scope => {
+  const library = { categories: [
+    { id: 'root', name: '分类', kind: 'phrase', parentId: null },
+    { id: 'child', name: '子分类', kind: 'phrase', parentId: 'root' },
+    { id: 'other', name: '其他', kind: 'phrase', parentId: null },
+  ], phrases: [] } as unknown as Library;
+  render(<Editor library={library} id="" afterId="" categoryId="root" groupId="child" team={scope === '共享' ? { teamId: 'team', name: '小组', version: 1, lifecycleVersion: 1, editable: true } as import('./types').TeamInfo : undefined} />);
+  expect((screen.getByLabelText('请选择二级分类（可不选）') as HTMLSelectElement).value).toBe('child');
+  fireEvent.click(screen.getByRole('button', { name: '确定' }));
+  await waitFor(() => expect(call).toHaveBeenCalledWith(scope === '共享' ? 'save_team_phrase' : 'save_phrase', expect.objectContaining(scope === '共享' ? { draft: expect.objectContaining({ phrase: expect.objectContaining({ rootId: 'root', groupId: 'child' }) }) } : { phrase: expect.objectContaining({ rootId: 'root', groupId: 'child' }) })));
+  fireEvent.change(screen.getByLabelText('请选择一级分类'), { target: { value: 'other' } });
+  expect((screen.getByLabelText('请选择二级分类（可不选）') as HTMLSelectElement).value).toBe('');
+});
+
 describe('行内图片编辑', () => {
   it.each(['新增', '编辑'])('%s话术粘贴图片替换原选区，移动光标不改变插入位置，保存保留图文顺序', async mode => {
     const input = editor([{ kind: 'text', text: '前文替换后文' }], mode === '新增');

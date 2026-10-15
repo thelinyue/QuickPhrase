@@ -13,6 +13,27 @@ function Harness({ action }: { action: (id: string, mode: string) => void }) {
   return <>{['A', 'B'].map((id, i) => <PhraseRow key={id} phrase={phrase(id)} index={i} selected={selected === id} busy={busy} settings={settings} onSelect={() => select(id)} onContext={() => {}} onDeliver={mode => { if (!busy) { action(id, mode); setBusy(true); } }} />)}</>;
 }
 describe('话术行发送规则', () => {
+  it('快捷键浮层点击和双击沿用话术行操作，状态与来源位于覆盖区域外', async () => {
+    const props = { index: 0, selected: false, busy: false, settings, onSelect: vi.fn(), onContext: vi.fn(), onDeliver: vi.fn() };
+    render(<PhraseRow {...props} phrase={{ ...phrase('B'), shortcut: 'Ctrl+1+2', ready: false }} sourceLabel="共享话术" />);
+    const badge = screen.getByTitle('Ctrl+1+2');
+    expect(badge.closest('.row-copy')).toBeTruthy();
+    expect(screen.getByText('未缓存').closest('.row-copy')).toBeNull();
+    expect(screen.getByText('共享话术').closest('.row-copy')).toBeNull();
+    await userEvent.click(badge); expect(props.onSelect).toHaveBeenCalledTimes(1); expect(props.onDeliver).not.toHaveBeenCalled();
+    await userEvent.dblClick(badge); expect(props.onDeliver.mock.calls).toEqual([['insert']]);
+  });
+  it('图片优先于文件，移除附件后依次恢复文件和文字图标', () => {
+    const props = { index: 0, selected: false, busy: false, settings, onSelect: vi.fn(), onContext: vi.fn(), onDeliver: vi.fn() };
+    const item = phrase('媒体');
+    item.segments.push({ blocks: [{ kind: 'file', path: 'a.txt', name: 'a.txt' }, { kind: 'image', path: 'a.png', name: 'a.png' }] });
+    const view = render(<PhraseRow {...props} phrase={item} />);
+    expect(screen.getByTitle('含图片话术')).toBeTruthy();
+    item.segments[1].blocks.pop(); view.rerender(<PhraseRow {...props} phrase={{ ...item }} />);
+    expect(screen.getByTitle('含文件话术')).toBeTruthy();
+    item.segments.pop(); view.rerender(<PhraseRow {...props} phrase={{ ...item }} />);
+    expect(screen.getByTitle('文字话术')).toBeTruthy();
+  });
   it.each(['', '#ff5100', '#FF5100'])('默认标题色 %s 由主题接管，不修改话术记录', color => {
     const item = { ...phrase('B'), color };
     render(<PhraseRow phrase={item} index={0} selected={false} busy={false} settings={{ ...settings, theme: 'default', titleColor: '#ff5100' }} onSelect={() => {}} onContext={() => {}} onDeliver={() => {}} />);

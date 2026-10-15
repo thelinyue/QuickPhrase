@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { call } from './api';
 import { labelOf, textOf, type ShortcutCandidates } from './types';
+import { phraseTitleColor } from './ui';
 
 /** 原生监听拥有候选状态与键盘操作；无激活窗口只绘制快照，保持目标输入焦点。 */
-export function ShortcutCandidatesWindow() {
+export function ShortcutCandidatesWindow({ titleColor }: { titleColor?: string } = {}) {
   const [payload, setPayload] = useState<ShortcutCandidates | null>(null);
   const [error, setError] = useState(''); const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -33,7 +34,7 @@ export function ShortcutCandidatesWindow() {
       const preview = hasContent && summary !== title ? summary : '';
       return <button key={phrase.id} role="option" aria-selected={index === payload.selectedIndex} data-candidate={phrase.id} tabIndex={-1} title={text || summary} onMouseDown={e => e.preventDefault()} onClick={() => void call('select_shortcut_candidate', { index }).catch(e => setError(String(e)))}>
         <span className="candidate-number">{index < 10 ? (index + 1) % 10 : ''}</span><span className="candidate-content">
-          {title && <span className={`candidate-label${preview ? ' has-preview' : ''}`}>{title}</span>}
+          {title && <span className={`candidate-label${preview ? ' has-preview' : ''}`} style={{ color: phraseTitleColor(phrase.color, titleColor) }}>{title}</span>}
           {preview && <span className="candidate-preview">{preview}</span>}
           {!title && !preview && <span className="candidate-label">{labelOf(phrase)}</span>}
         </span>

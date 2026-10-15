@@ -11,6 +11,16 @@ beforeEach(() => { Element.prototype.scrollIntoView=vi.fn(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const payload: ShortcutCandidates = { shortcut:'Q+W',selectedIndex:0,target:{hwnd:1,focus:2,pid:3},phrases:Array.from({length:12},(_,i)=>({id:String(i),rootId:'R',groupId:null,title:`话术${i+1}`,shortcut:'Q+W',position:i,color:'',background:'',segments:[]})) };
 describe('原生候选快照绘制', () => {
+  it('候选标题保留单条、全局、主题的颜色优先级', async () => {
+    const phrases = payload.phrases.slice(0, 2).map((phrase, i) => ({ ...phrase, color: i ? '#ff5100' : '#123456' }));
+    vi.mocked(call).mockImplementation(async name => name === 'get_shortcut_candidates' ? { ...payload, phrases } : null);
+    const view = render(<ShortcutCandidatesWindow titleColor="#652f7b" />);
+    await screen.findAllByRole('option');
+    const labels = () => [...document.querySelectorAll<HTMLElement>('.candidate-label')].map(el => el.style.color);
+    expect(labels()).toEqual(['rgb(18, 52, 86)', 'rgb(101, 47, 123)']);
+    view.rerender(<ShortcutCandidatesWindow titleColor="#ff5100" />);
+    expect(labels()).toEqual(['rgb(18, 52, 86)', '']);
+  });
   it('显示正文摘要、合并空白并保留完整提示，空标题和重复正文不重复显示', async () => {
     const phrases = [
       { ...payload.phrases[0], title: '问候', segments: [{ blocks: [{ kind: 'text' as const, text: '您好\n  欢迎' }] }, { blocks: [{ kind: 'text' as const, text: '咨询' }] }] },

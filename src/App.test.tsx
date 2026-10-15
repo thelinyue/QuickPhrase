@@ -33,6 +33,53 @@ const teamFixture = () => {
   vi.mocked(useTeamView).mockImplementation(id => ({ view: views.get(id) || null, error: '' }));
   return status;
 };
+
+describe('新增话术继承右键所在分类', () => {
+  function headingPositions(tops: number[]) {
+    document.querySelectorAll('.group-heading').forEach((el, index) => {
+      vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({ top: tops[index] } as DOMRect);
+    });
+  }
+  it.each([[80, ''], [120, 'group'], [219, 'group'], [220, 'after'], [600, 'after']])('空白坐标 %i 归属 %s，菜单打开后不随布局变化', (y, group) => {
+    view(); headingPositions([120, 220]);
+    fireEvent.contextMenu(screen.getByRole('listbox', { name: '话术列表' }), { clientY: y });
+    headingPositions([500, 700]);
+    fireEvent.click(screen.getByRole('menuitem', { name: '新增话术' }));
+    expect(openWindow).toHaveBeenCalledWith('editor', '', '', '', 'common', group, '');
+  });
+  it('滚动后折叠分类仍按视口坐标归属，切换一级分类不会沿用旧分组', () => {
+    view(); fireEvent.click(screen.getByRole('button', { name: '后组' })); headingPositions([-100, 50]);
+    fireEvent.contextMenu(screen.getByRole('listbox', { name: '话术列表' }), { clientY: 300 });
+    fireEvent.click(screen.getByRole('menuitem', { name: '新增话术' }));
+    expect(openWindow).toHaveBeenLastCalledWith('editor', '', '', '', 'common', 'after', '');
+    fireEvent.click(screen.getByRole('button', { name: /^其他$/ }));
+    fireEvent.contextMenu(screen.getByRole('listbox', { name: '话术列表' }), { clientY: 300 });
+    fireEvent.click(screen.getByRole('menuitem', { name: '新增话术' }));
+    expect(openWindow).toHaveBeenLastCalledWith('editor', '', '', '', 'other', '', '');
+  });
+  it('右键个人话术行与分类标题均带入二级分类', async () => {
+    view(); fireEvent.contextMenu(document.querySelector('[data-row="B"]')!);
+    fireEvent.click(screen.getByRole('menuitem', { name: '新增话术' }));
+    expect(openWindow).toHaveBeenLastCalledWith('editor', '', '', '', 'common', 'group', '');
+    fireEvent.contextMenu(document.querySelector('.group-heading')!);
+    await waitFor(() => expect(nativeMenu.new).toHaveBeenCalled());
+    nativeMenu.new.mock.calls.at(-1)![0].items!.find(item => item.text === '新增话术')!.action!();
+    expect(openWindow).toHaveBeenLastCalledWith('editor', '', '', '', 'common', 'group', '');
+  });
+  it('共享库的标题、话术行及折叠后的空白处均带入该库分组', async () => {
+    teamFixture(); view(); fireEvent.click(screen.getByRole('button', { name: '共享话术' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^售后小组/ }));
+    await screen.findByText('售后小组话术');
+    for (const target of [document.querySelector('[data-row="team:B-team:shared:1:1"]')!, document.querySelector('.group-heading')!]) {
+      fireEvent.contextMenu(target); fireEvent.click(screen.getByRole('menuitem', { name: '新增话术' }));
+      expect(openWindow).toHaveBeenLastCalledWith('editor', '', '', '', 'B-team-root', 'B-team-child', 'B-team');
+    }
+    fireEvent.click(screen.getByRole('button', { name: '售后小组分组' })); headingPositions([100]);
+    fireEvent.contextMenu(screen.getByRole('listbox', { name: '话术列表' }), { clientY: 500 });
+    fireEvent.click(screen.getByRole('menuitem', { name: '新增话术' }));
+    expect(openWindow).toHaveBeenLastCalledWith('editor', '', '', '', 'B-team-root', 'B-team-child', 'B-team');
+  });
+});
 it('左下菜单按按钮上边缘向上弹出，不使用点击位置', () => {
   view();
   const trigger = screen.getByRole('button', { name: '主菜单' });
@@ -47,6 +94,19 @@ it('左下菜单按按钮上边缘向上弹出，不使用点击位置', () => {
 it('主菜单使用指引复用独立帮助窗口', () => {
   view(); fireEvent.click(screen.getByRole('button', { name: '主菜单' })); fireEvent.click(screen.getByRole('menuitem', { name: '使用指引' }));
   expect(openWindow).toHaveBeenCalledWith('usage-guide');
+});
+
+it.each(['右键分类', '分类菜单'])('%s只保留分类操作，全局管理入口仍在主菜单', source => {
+  const status = teamFixture();
+  vi.mocked(useTeams).mockReturnValue({ status: { ...status, companyFiles: true, user: { ...status.user!, admin: true } }, version: 1, loaded: true });
+  view();
+  if (source === '右键分类') fireEvent.contextMenu(screen.getByRole('button', { name: /^常用$/ }));
+  else fireEvent.click(screen.getByRole('button', { name: '一级分类菜单' }));
+  for (const name of ['新增话术', '新增云文件', '新增二级分类', '重命名', '删除', '导出该一级分类的话术', '设置一级分类背景色']) expect(screen.getByRole('menuitem', { name })).toBeTruthy();
+  const management = ['账号与同步', '云文件', '账号管理', '共享话术管理'];
+  for (const name of management) expect(screen.queryByRole('menuitem', { name: new RegExp(`^${name}$`) })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '主菜单' }));
+  for (const name of management) expect(screen.getByRole('menuitem', { name: new RegExp(`^${name}$`) })).toBeTruthy();
 });
 
 describe('共享话术入口、独立状态和撤权', () => {
@@ -185,13 +245,16 @@ async function nextCloud() {
   await screen.findByText(cloudFile.name); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: '下一步' }));
 }
 describe('右键新增云文件话术', () => {
-  it.each(['话术行', '空白', '一级分类'])('%s带入正确分类，选择只打开编辑器不执行保存或投递', async source => {
+  it.each(['话术行', '分组前空白', '分组后空白', '一级分类'])('%s带入正确分类，选择只打开编辑器不执行保存或投递', async source => {
     cloudFixture(); view();
     if (source === '话术行') fireEvent.contextMenu(document.querySelector('[data-row="B"]')!);
-    else if (source === '空白') fireEvent.contextMenu(screen.getByRole('listbox', { name: '话术列表' }));
+    else if (source.includes('空白')) {
+      document.querySelectorAll('.group-heading').forEach((el, index) => vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({ top: 100 + index * 100 } as DOMRect));
+      fireEvent.contextMenu(screen.getByRole('listbox', { name: '话术列表' }), { clientY: source === '分组前空白' ? 80 : 400 });
+    }
     else fireEvent.contextMenu(screen.getByRole('button', { name: '其他' }));
     fireEvent.click(screen.getByRole('menuitem', { name: '新增云文件' })); await nextCloud();
-    await waitFor(() => expect(openWindow).toHaveBeenCalledWith('editor', '', '', 'cloud:7:cloud-file', source === '一级分类' ? 'other' : 'common', source === '话术行' ? 'group' : '', ''));
+    await waitFor(() => expect(openWindow).toHaveBeenCalledWith('editor', '', '', 'cloud:7:cloud-file', source === '一级分类' ? 'other' : 'common', source === '话术行' ? 'group' : source === '分组后空白' ? 'after' : '', ''));
     expect(vi.mocked(call).mock.calls.some(([name]) => ['save_phrase', 'save_company_private_phrase', 'download_company_file', 'deliver_content'].includes(name))).toBe(false);
   });
   it('二级分类原生菜单带入被右键的分组', async () => {

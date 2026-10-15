@@ -16,18 +16,18 @@ const library: Library = { categories: [], phrases: ['P1', 'P2'].map(id => ({ id
 const deletions = () => vi.mocked(call).mock.calls.filter(([command]) => command === 'delete_local_content');
 const submit = () => fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
 
-describe('青羽默认主题', () => {
+describe('雾蓝灰默认主题', () => {
   const settings = { ...library.settings, theme: 'default' as const, fontSize: 14, titleColor: '#ff5100', phraseCategoryColor: '', fileCategoryColor: '' };
   const title = () => screen.getByRole('button', { name: '设置 话术标题 字体颜色' }).querySelector('span') as HTMLElement;
-  it('默认色板展示中性标题，切换主题不改写颜色设置', async () => {
+  it('默认色板展示主题标题，切换主题不改写颜色设置', async () => {
     render(<SettingsWindow library={{ ...library, settings }} initialTab="界面设置" />);
     const theme = screen.getByRole('combobox', { name: '主题风格' }) as HTMLSelectElement;
     expect(theme.options.length).toBe(7);
-    expect(theme.selectedOptions[0].textContent).toBe('青羽（默认）');
-    expect(title().style.color).toBe('rgb(38, 49, 59)');
+    expect(theme.selectedOptions[0].textContent).toBe('雾蓝灰（默认）');
+    expect(title().style.color).toBe('var(--phrase-title-color)');
     fireEvent.change(theme, { target: { value: 'green' } });
     await waitFor(() => expect(call).toHaveBeenCalled());
-    expect(title().style.color).toBe('rgb(38, 49, 59)');
+    expect(title().style.color).toBe('var(--phrase-title-color)');
     expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...settings, theme: 'green' }, libraryId: undefined });
     expect(settings.titleColor).toBe('#ff5100');
   });
@@ -40,7 +40,7 @@ describe('青羽默认主题', () => {
     expect(title().style.color).toBe('rgb(0, 0, 255)');
     fireEvent.click(screen.getByRole('button', { name: '设置 话术标题 字体颜色' }));
     fireEvent.click(screen.getByRole('button', { name: '恢复默认颜色' }));
-    await waitFor(() => expect(title().style.color).toBe('rgb(38, 49, 59)'));
+    await waitFor(() => expect(title().style.color).toBe('var(--phrase-title-color)'));
     expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...custom, theme: 'blue', titleColor: '#ff5100' }, libraryId: undefined });
   });
 });
