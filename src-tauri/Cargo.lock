@@ -3020,7 +3020,7 @@ dependencies = [
 
 [[package]]
 name = "quickphrase"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "calamine",
  "futures-util",

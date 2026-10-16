@@ -41,7 +41,9 @@ async function authorizeLaunch(processId) {
     await fs.writeFile(neutralControls, JSON.stringify(request)); await poll(async () => (await read(neutralOutput))?.nonce === request.nonce, '前台独立宿主授权隔离启动');
   }
 }
+const filters = process.argv.filter(arg => arg.startsWith('--filter=')).map(arg => arg.slice(9));
 const check = async (name, fn) => {
+  if (filters.length && !filters.some(filter => name.includes(filter))) return;
   try { await fn(); results.push({ name, passed: true }); console.log('通过：' + name); }
   catch (error) { results.push({ name, passed: false, error: String(error) }); throw error; }
 };
@@ -114,6 +116,22 @@ try {
       assert.ok(windowOf(state, 'main').frame.right - windowOf(state, 'main').frame.left >= 286);
       for (const key of ['main', 'bar', 'preview']) { assert.equal(windowOf(state, key).toolWindow, true); assert.equal(windowOf(state, key).appWindow, false); }
       snapshots.push({ name: name + '-active', state });
+    });
+    await check(name + '先吸附再首次独立显示保留最新宽高，超出工作区也不压缩', async () => {
+      const before = (await inspect()).windows[0].rect;
+      await control('move', { x: before.left, y: before.top, width: before.right - before.left, height: 1200 });
+      const docked = await poll(async () => { const s = await inspect(), m = windowOf(s, 'main'); return m.frame.bottom === s.windows[0].frame.bottom && m; }, '超高目标吸附');
+      settings = { ...settings, dock: false }; await invoke('save_settings', { settings });
+      await delay(350);
+      const detached = windowOf(await inspect(), 'main');
+      assert.deepEqual(detached.work, docked.work, '首次解除吸附也必须留在侧栏当前显示器');
+      assert.equal(detached.dpi, docked.dpi, '解除吸附不能恢复旧屏幕DPI');
+      assert.equal(detached.rect.right - detached.rect.left, docked.rect.right - docked.rect.left);
+      assert.equal(detached.rect.bottom - detached.rect.top, docked.rect.bottom - docked.rect.top);
+      settings = { ...settings, dock: true }; await invoke('save_settings', { settings });
+      await control('move', { x: before.left, y: before.top, width: before.right - before.left, height: before.bottom - before.top });
+      await focus(hostHandle);
+      await poll(async () => { const s = await inspect(); return windowOf(s, 'main').frame.bottom === s.windows[0].frame.bottom; }, '恢复目标大小并重新吸附');
     });
     await check(name + '底部搜索向上展开固定输入行，临时覆盖目标且收起恢复层级', async () => {
       const dock = browser.contexts()[0].pages().find(p => p.url().includes('#common-dock'));
@@ -296,14 +314,17 @@ try {
       await focus(neutralHandle); await focus(hostHandle); assert.equal(windowOf(await inspect(), 'main').visible, false);
       await invoke('window_action', { action: 'show' }); await poll(async () => windowOf(await inspect(), 'main').visible, '重新唤起');
     });
-    await check(name + '快捷键恢复非托盘最小化，关闭吸附恢复独立尺寸且旧设置兼容保留', async () => {
+    await check(name + '快捷键恢复非托盘最小化，关闭吸附保留最新尺寸且旧设置兼容保留', async () => {
       settings = { ...settings, tray: false, customHotkeys: false, searchHotkey: '8', windowHotkey: '9', commonHotkey: '0', autoHide: true, hideDelay: 1000 };
       await invoke('save_settings', { settings }); await invoke('window_action', { action: 'minimize' });
       await poll(async () => windowOf(await inspect(), 'main').iconic, '非托盘最小化');
       await native(['-Action', 'key', '-Key', '57', '-Alt']);
       await poll(async () => { const main = windowOf(await inspect(), 'main'); return main.visible && !main.iconic; }, '快捷键还原');
+      await focus(hostHandle);
+      const docked = await poll(async () => { const s = await inspect(), m = windowOf(s, 'main'); return m.visible && m.frame.top === s.windows[0].frame.top && m.frame.bottom === s.windows[0].frame.bottom && m; }, '还原后吸附尺寸');
       settings = { ...settings, tray: true, dock: false }; await invoke('save_settings', { settings });
-      const main = windowOf(await inspect(), 'main'); assert.equal(main.visible, true); assert.ok(main.rect.bottom - main.rect.top >= 700);
+      const main = await poll(async () => { const m = windowOf(await inspect(), 'main'); return m.visible && m.rect.right - m.rect.left === docked.rect.right - docked.rect.left && m.rect.bottom - m.rect.top === docked.rect.bottom - docked.rect.top && m; }, '关闭吸附保留最新宽高');
+      assert.equal(main.iconic, false);
       const saved = (await invoke('get_library')).settings; assert.equal(saved.autoHide, true); assert.equal(saved.hideDelay, 1000);
       for (const freeResize of [false, true]) {
         settings = { ...settings, freeResize }; await invoke('save_settings', { settings });

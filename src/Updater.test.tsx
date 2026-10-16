@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { UpdateNotice, UpdateSettings, type UpdateStatus } from './Updater';
+import { UpdateBadge, UpdateSettings, type UpdateStatus } from './Updater';
 import { call, openWindow } from './api';
 
-let update: (event: { payload: UpdateStatus }) => void;
+const updates = new Set<(event: { payload: UpdateStatus }) => void>();
 const unlisten = vi.fn();
 vi.mock('./api', () => ({ call: vi.fn(), openWindow: vi.fn(async () => {}) }));
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async (_name, callback) => { update = callback; return unlisten; }) }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async (_name, callback) => { updates.add(callback); return () => { updates.delete(callback); unlisten(); }; }) }));
+vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn(async () => '0.2.6') }));
 const initial: UpdateStatus = { config: { automatic: true, route: 'default', customProxy: '' }, phase: 'idle', release: null, downloaded: 0, total: null, message: '', lastCheck: 0, revision: 1 };
 beforeEach(() => {
   vi.mocked(call).mockResolvedValue(initial);
@@ -14,7 +15,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 async function mount(status = initial) { vi.mocked(call).mockResolvedValue(status); render(<UpdateSettings />); await screen.findByRole('combobox', { name: '下载线路' }); }
-function publish(patch: Partial<UpdateStatus>) { act(() => update({ payload: { ...initial, revision: 2, ...patch } })); }
+function publish(patch: Partial<UpdateStatus>) { act(() => updates.forEach(update => update({ payload: { ...initial, revision: 2, ...patch } }))); }
 
 it('四种线路可选，自定义和自动检查选择只在保存并检查时提交', async () => {
   await mount();
@@ -76,11 +77,29 @@ it('下载失败可重试，配置有未保存修改时不能使用旧线路下�
   expect((screen.getByRole('button', { name: '重新下载' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
-it('后台失败不弹提示，验证通过的新版提示可关闭并打开关于页', async () => {
-  vi.mocked(call).mockResolvedValue({ ...initial, phase: 'error', message: '连接失败' }); render(<UpdateNotice />);
+it('无新版或检查失败时底栏保持品牌文字，验证通过后提示两个版本并手动进入更新页', async () => {
+  render(<UpdateBadge />);
   await waitFor(() => expect(call).toHaveBeenCalledWith('get_update_status'));
-  expect(screen.queryByRole('status')).toBeNull();
-  publish({ phase: 'available', release: { version: '1.0.0', notes: '' } });
-  fireEvent.click(screen.getByText('发现新版本 v1.0.0，查看更新')); expect(openWindow).toHaveBeenCalledWith('settings', '', '', '关于');
-  fireEvent.click(screen.getByRole('button', { name: '关闭更新提示' })); expect(screen.queryByRole('status')).toBeNull();
+  publish({ phase: 'error', message: '网络连接失败' });
+  expect(screen.queryByRole('button')).toBeNull(); expect(screen.getByText('闪语')).toBeTruthy();
+  publish({ revision: 3, phase: 'available', release: { version: '0.2.7', notes: '' } });
+  const badge = await screen.findByRole('button', { name: /当前版本 v0\.2\.6\s+最新版本 v0\.2\.7/ });
+  expect(badge.title).toContain('点击查看并升级');
+  fireEvent.click(badge); expect(openWindow).toHaveBeenCalledWith('settings', '', '', '关于');
+  expect(call).not.toHaveBeenCalledWith('download_update'); expect(call).not.toHaveBeenCalledWith('install_update');
+  publish({ revision: 4, phase: 'current', release: null });
+  expect(screen.queryByRole('button')).toBeNull();
+});
+
+it('角标不占用顶部区域，下载和稍后安装期间持续提示', async () => {
+  vi.mocked(call).mockResolvedValue({ ...initial, phase: 'available', release: { version: '0.2.7', notes: '' } });
+  render(<UpdateBadge />);
+  await screen.findByRole('button', { name: /最新版本 v0.2.7/ });
+  expect(screen.queryByText('发现新版本 v0.2.7，查看更新')).toBeNull();
+  for (const [index, phase] of (['downloading', 'ready', 'error'] as const).entries()) {
+    publish({ revision: index + 2, phase, release: { version: '0.2.7', notes: '' } });
+    expect(screen.getByRole('button', { name: /最新版本 v0.2.7/ })).toBeTruthy();
+  }
+  publish({ revision: 1, phase: 'idle' });
+  expect(screen.getByRole('button', { name: /最新版本 v0.2.7/ })).toBeTruthy();
 });

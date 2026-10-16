@@ -3,7 +3,7 @@
 use super::*;
 use shanyu_team_model::member as wire;
 use shanyu_team_model::{private::Asset, Block as SharedBlock, Phrase as SharedPhrase};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +26,7 @@ pub(super) struct MemberState {
     worker_epoch: u64,
     worker_cancel: CancellationToken,
     cached: Cached,
+    shortcuts: BTreeMap<String, String>,
     cancel: CancellationToken,
     message: String,
     refreshing: bool,
@@ -35,7 +36,7 @@ pub(super) struct MemberState {
 #[serde(rename_all = "camelCase")]
 pub struct ClientCategory {
     #[serde(flatten)]
-    category: local::Category,
+    pub category: local::Category,
     read_only: bool,
     source_label: String,
 }
@@ -50,6 +51,7 @@ pub struct ClientPhrase {
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct View {
+    pub session_epoch: u64,
     pub categories: Vec<ClientCategory>,
     pub phrases: Vec<ClientPhrase>,
     subscription: wire::Subscription,
@@ -77,6 +79,18 @@ fn reference(follow: &wire::Follow, phrase: &SharedPhrase) -> wire::ContentRef {
         id: phrase.id.clone(),
         revision: phrase.revision,
     }
+}
+/// 快捷键属于使用者的本机偏好，不写回分享快照。正文修订保留绑定，来源库重建则隔离。
+/// 文件独立于可删除的登录缓存；服务地址和账号参与键，退出后重新登录仍能恢复自己的绑定。
+fn shortcut_key(active: &Active, reference: &wire::ContentRef) -> String {
+    serde_json::to_string(&(
+        &active.connection.server,
+        &active.authorization.user.id,
+        &reference.grant_id,
+        &reference.generation,
+        &reference.id,
+    ))
+    .expect("字符串元组可序列化")
 }
 fn find_phrase<'a>(
     follow: &'a wire::Follow,
@@ -198,6 +212,7 @@ impl TeamClient {
         *member = MemberState {
             epoch: active.epoch,
             cached,
+            shortcuts: load_json(&self.dir.join("member-shortcuts.json")).unwrap_or_default(),
             cancel: active.cancel.child_token(),
             ..Default::default()
         };
@@ -226,8 +241,14 @@ impl TeamClient {
             }) {
                 *map = (vec![], true);
             }
+            drop(map);
             if content_changed {
                 state.native.hide_preview(None);
+                state.native.cancel_candidates();
+                if let Err(error) = crate::refreshed(app, &state) {
+                    log::error!("成员话术快捷键刷新失败：{error}");
+                    let _ = app.emit("native-error", error);
+                }
             }
         }
         let _ = app.emit("member-content-changed", ());
@@ -501,6 +522,7 @@ impl TeamClient {
         active: &Active,
         follow: &wire::Follow,
         phrase: &SharedPhrase,
+        shortcuts: &BTreeMap<String, String>,
     ) -> ClientPhrase {
         let snapshot = follow.snapshot.as_ref().unwrap();
         let content_ref = reference(follow, phrase);
@@ -556,7 +578,10 @@ impl TeamClient {
                 title: phrase.title.clone(),
                 color: phrase.color.clone(),
                 background: phrase.background.clone(),
-                shortcut: String::new(),
+                shortcut: shortcuts
+                    .get(&shortcut_key(active, &content_ref))
+                    .cloned()
+                    .unwrap_or_default(),
                 position: phrase.position,
                 segments,
             },
@@ -581,6 +606,7 @@ impl TeamClient {
                 return Ok(View::default());
             }
             let mut view = View {
+                session_epoch: active.epoch,
                 subscription: member.cached.follow.subscription.clone(),
                 state: if active.offline {
                     "离线"
@@ -624,7 +650,14 @@ impl TeamClient {
                 view.phrases = snapshot
                     .phrases
                     .iter()
-                    .map(|p| self.local_member_phrase(&active, &member.cached.follow, p))
+                    .map(|p| {
+                        self.local_member_phrase(
+                            &active,
+                            &member.cached.follow,
+                            p,
+                            &member.shortcuts,
+                        )
+                    })
                     .collect();
             }
             Ok(view)
@@ -641,11 +674,43 @@ impl TeamClient {
             }
             let phrase = find_phrase(&member.cached.follow, &reference)
                 .ok_or("成员话术或分享范围已更新，请重新选择。")?;
-            let phrase = self.local_member_phrase(&active, &member.cached.follow, phrase);
+            let phrase =
+                self.local_member_phrase(&active, &member.cached.follow, phrase, &member.shortcuts);
             if require_ready && !phrase.ready {
                 return Err("素材未缓存，请下载后重新触发。".into());
             }
             Ok(phrase.phrase)
+        })
+    }
+    /// 只接受当前授权版本的引用；保存期间持有账号锁，旧窗口不能把偏好写到另一个账号。
+    pub fn save_member_shortcut(&self, epoch: u64, key: &str, shortcut: &str) -> Result<()> {
+        let reference = wire::ContentRef::from_key(key).ok_or("成员话术引用无效。")?;
+        let active = self.active()?;
+        let ctx = self.member_context(epoch)?;
+        if active.epoch != epoch {
+            return Err("账号已变化，请重新设置快捷键。".into());
+        }
+        let canonical = if shortcut.trim().is_empty() {
+            String::new()
+        } else {
+            crate::native::parse_shortcut(shortcut)?.canonical()
+        };
+        self.with_account(&ctx, || {
+            let mut member = self.member.lock().unwrap();
+            if member.epoch != ctx.epoch || find_phrase(&member.cached.follow, &reference).is_none()
+            {
+                return Err("账号、成员话术或分享范围已更新，请重新选择。".into());
+            }
+            let mut shortcuts = member.shortcuts.clone();
+            let key = shortcut_key(&active, &reference);
+            if canonical.is_empty() {
+                shortcuts.remove(&key);
+            } else {
+                shortcuts.insert(key, canonical);
+            }
+            save_json(&self.dir.join("member-shortcuts.json"), &shortcuts)?;
+            member.shortcuts = shortcuts;
+            Ok(())
         })
     }
     pub async fn prepare_member(
@@ -721,8 +786,12 @@ impl TeamClient {
         self: &Arc<Self>,
         app: &tauri::AppHandle,
         key: &str,
+        expected_epoch: Option<u64>,
     ) -> Result<local::Phrase> {
         let initial = self.active()?;
+        if expected_epoch.is_some_and(|epoch| epoch != initial.epoch) {
+            return Err("快捷键候选的账号已变化，请重新触发。".into());
+        }
         let _ = self.refresh_authorization(app).await;
         let active = self.active()?;
         if active.epoch != initial.epoch {
@@ -815,6 +884,140 @@ mod tests {
                 }],
                 assets: vec![],
             }),
+        }
+    }
+    #[test]
+    fn personal_shortcuts_persist_without_changing_shared_content_and_reject_stale_accounts() {
+        let (_dir, client, ctx) = super::super::tests::setup();
+        client
+            .inner
+            .lock()
+            .unwrap()
+            .active
+            .as_mut()
+            .unwrap()
+            .authorization
+            .capabilities
+            .member_phrase_sync = true;
+        let follow = fixture(&ctx.active.authorization.user.id);
+        let original = serde_json::to_value(&follow).unwrap();
+        save_json(
+            &client.member_dir(&ctx.active).join("follow.json"),
+            &Cached {
+                follow: follow.clone(),
+                last_successful_sync_at: None,
+            },
+        )
+        .unwrap();
+        client.initialize_member();
+        let first = client.member_view().unwrap().phrases.remove(0).phrase;
+        assert!(client
+            .save_member_shortcut(ctx.active.epoch + 1, &first.id, "Ctrl+K")
+            .is_err());
+        assert!(client
+            .save_member_shortcut(ctx.active.epoch, &first.id, "K")
+            .is_err());
+        client
+            .save_member_shortcut(ctx.active.epoch, &first.id, "Control+K")
+            .unwrap();
+        assert_eq!(
+            client.member_phrase(&first.id, false).unwrap().shortcut,
+            "Ctrl+K"
+        );
+        assert_eq!(
+            serde_json::to_value(&client.member.lock().unwrap().cached.follow).unwrap(),
+            original
+        );
+        // 模拟重启重新加载缓存和偏好，且普通正文修订不会抹掉使用者的快捷键。
+        *client.member.lock().unwrap() = MemberState::default();
+        client.initialize_member();
+        assert_eq!(
+            client.member_view().unwrap().phrases[0].phrase.shortcut,
+            "Ctrl+K"
+        );
+        client
+            .member
+            .lock()
+            .unwrap()
+            .cached
+            .follow
+            .snapshot
+            .as_mut()
+            .unwrap()
+            .phrases[0]
+            .revision += 1;
+        let revised = client.member_view().unwrap().phrases.remove(0).phrase;
+        assert_eq!(revised.shortcut, "Ctrl+K");
+        assert!(client
+            .save_member_shortcut(ctx.active.epoch, &first.id, "Alt+K")
+            .is_err());
+        // 同一分享给另一个账号使用时，旧窗口和旧偏好都不能跨账号生效。
+        let old_ref = wire::ContentRef::from_key(&revised.id).unwrap();
+        let mut other = ctx.active.clone();
+        other.authorization.user.id = local::id();
+        assert_ne!(
+            shortcut_key(&ctx.active, &old_ref),
+            shortcut_key(&other, &old_ref)
+        );
+        client
+            .save_member_shortcut(ctx.active.epoch, &revised.id, "")
+            .unwrap();
+        assert!(client
+            .member_phrase(&revised.id, false)
+            .unwrap()
+            .shortcut
+            .is_empty());
+        client
+            .save_member_shortcut(ctx.active.epoch, &revised.id, "Ctrl+K")
+            .unwrap();
+        client.member.lock().unwrap().cached.follow.snapshot = None;
+        assert!(client.member_view().unwrap().phrases.is_empty());
+        assert!(client.member_phrase(&revised.id, false).is_err());
+        assert!(client
+            .save_member_shortcut(ctx.active.epoch, &revised.id, "Alt+K")
+            .is_err());
+    }
+    #[test]
+    fn same_shared_phrase_uses_separate_shortcuts_after_account_switch() {
+        let (_dir, client, ctx) = super::super::tests::setup();
+        let mut active = ctx.active.clone();
+        active.authorization.capabilities.member_phrase_sync = true;
+        let original_user = active.authorization.user.id.clone();
+        let mut follow = fixture(&original_user);
+        for (user, expected) in [
+            (original_user.clone(), ""),
+            (local::id(), ""),
+            (original_user.clone(), "Ctrl+K"),
+        ] {
+            active.epoch += 1;
+            active.authorization.user.id = user.clone();
+            *client.inner.lock().unwrap().active.as_mut().unwrap() = active.clone();
+            follow.recipient_id = user.clone();
+            save_json(
+                &client.member_dir(&active).join("follow.json"),
+                &Cached {
+                    follow: follow.clone(),
+                    last_successful_sync_at: None,
+                },
+            )
+            .unwrap();
+            client.initialize_member();
+            let phrase = client.member_view().unwrap().phrases.remove(0).phrase;
+            assert_eq!(phrase.shortcut, expected);
+            assert!(client
+                .save_member_shortcut(active.epoch - 1, &phrase.id, "Alt+K")
+                .is_err());
+            client
+                .save_member_shortcut(
+                    active.epoch,
+                    &phrase.id,
+                    if user == original_user {
+                        "Ctrl+K"
+                    } else {
+                        "Alt+K"
+                    },
+                )
+                .unwrap();
         }
     }
     #[test]

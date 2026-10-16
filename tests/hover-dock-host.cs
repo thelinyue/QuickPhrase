@@ -50,6 +50,27 @@ public static class ShanyuHoverDockHost {
     static Point originalCursor, lastPointer;
     static bool movedPointer;
     static int pointerError;
+    static uint heldMouseRelease;
+    // 独立于宿主消息循环以1毫秒采样指定测试窗口，捕捉“移动后又复位”的瞬时闪动。
+    static readonly object traceLock = new object();
+    static readonly List<object> trace = new List<object>();
+    static IntPtr traceHandle;
+    static volatile bool traceRunning = true;
+    static void TraceWindows() {
+        SetThreadDpiAwarenessContext(new IntPtr(-4));
+        Rect previous = new Rect(); bool wasVisible = false;
+        while (traceRunning) {
+            lock (traceLock) {
+                if (traceHandle != IntPtr.Zero) {
+                    Rect r; GetWindowRect(traceHandle, out r);
+                    var visible = IsWindowVisible(traceHandle);
+                    if (trace.Count == 0 || visible != wasVisible || !r.Equals(previous)) trace.Add(new { visible = visible, rect = r });
+                    previous = r; wasVisible = visible;
+                }
+            }
+            System.Threading.Thread.Sleep(1);
+        }
+    }
     // 只读实际 Z 顺序，窗口间存在辅助句柄时也能检查三者的相对前后关系。
     static int ZOrder(IntPtr h) {
         int order = 0;
@@ -59,15 +80,15 @@ public static class ShanyuHoverDockHost {
     static Dictionary<string, object> Inspect(IntPtr h) {
         Rect rect, frame; GetWindowRect(h, out rect); if (DwmGetWindowAttribute(h, 9, out frame, 16) != 0) frame = rect;
         // 裁剪窗口的 DWM 范围可能仍为完整外框，用实际区域核对隐藏边条及命中范围。
-        Rect clip = frame; var region = CreateRectRgn(0, 0, 0, 0);
-        try { if (GetWindowRgn(h, region) != 0) { GetRgnBox(region, out clip); clip.left += rect.left; clip.right += rect.left; clip.top += rect.top; clip.bottom += rect.top; } }
+        Rect clip = frame; var region = CreateRectRgn(0, 0, 0, 0); bool clipped = false;
+        try { clipped = GetWindowRgn(h, region) != 0; if (clipped) { GetRgnBox(region, out clip); clip.left += rect.left; clip.right += rect.left; clip.top += rect.top; clip.bottom += rect.top; } }
         finally { DeleteObject(region); }
         var client = new Point(); ClientToScreen(h, ref client);
         Rect clientRect; GetClientRect(h, out clientRect);
         var monitor = new MonitorInfo { size = Marshal.SizeOf(typeof(MonitorInfo)) }; GetMonitorInfo(MonitorFromWindow(h, 2), ref monitor);
         var style = GetWindowLong(h, -20);
         var className = new System.Text.StringBuilder(256); GetClassName(h, className, className.Capacity);
-        return new Dictionary<string, object> { {"className", className.ToString()}, {"handle", h.ToInt64()}, {"above", GetWindow(h, 3).ToInt64()}, {"below", GetWindow(h, 2).ToInt64()}, {"zOrder", ZOrder(h)}, {"rect", rect}, {"frame", frame}, {"clip", clip}, {"client", client}, {"clientRect", clientRect}, {"work", monitor.work}, {"monitor", monitor.monitor}, {"dpi", GetDpiForWindow(h)}, {"visible", IsWindowVisible(h)}, {"iconic", IsIconic(h)}, {"zoomed", IsZoomed(h)}, {"toolWindow", (style & 0x80) != 0}, {"appWindow", (style & 0x40000) != 0}, {"noActivate", (style & 0x08000000) != 0}, {"topmost", (style & 8) != 0} };
+        return new Dictionary<string, object> { {"className", className.ToString()}, {"handle", h.ToInt64()}, {"above", GetWindow(h, 3).ToInt64()}, {"below", GetWindow(h, 2).ToInt64()}, {"zOrder", ZOrder(h)}, {"rect", rect}, {"frame", frame}, {"clip", clip}, {"clipped", clipped}, {"client", client}, {"clientRect", clientRect}, {"work", monitor.work}, {"monitor", monitor.monitor}, {"dpi", GetDpiForWindow(h)}, {"visible", IsWindowVisible(h)}, {"iconic", IsIconic(h)}, {"zoomed", IsZoomed(h)}, {"toolWindow", (style & 0x80) != 0}, {"appWindow", (style & 0x40000) != 0}, {"noActivate", (style & 0x08000000) != 0}, {"topmost", (style & 8) != 0} };
     }
     static long Number(Dictionary<string, object> value, string name, long fallback) { return value.ContainsKey(name) ? Convert.ToInt64(value[name]) : fallback; }
     [STAThread] public static void Main(string[] args) {
@@ -98,6 +119,19 @@ public static class ShanyuHoverDockHost {
                 nonce = Number(command, "nonce", 0); var action = (string)command["command"]; var handle = new IntPtr(Number(command, "handle", form.Handle.ToInt64()));
                 if (action == "move") SetWindowPos(handle, IntPtr.Zero, (int)Number(command, "x", 0), (int)Number(command, "y", 0), (int)Number(command, "width", 330), (int)Number(command, "height", 550), 0x0014);
                 if (action == "focus") SetForegroundWindow(handle);
+                if (action == "trace-start") { lock (traceLock) { trace.Clear(); traceHandle = handle; } }
+                if (action == "trace-stop") { lock (traceLock) { traceHandle = IntPtr.Zero; } }
+                // 在首个收起位移后立即移回，避免文件轮询延迟让150毫秒动画提前结束。
+                if (action == "leave-reenter") {
+                    Rect before, current; GetWindowRect(handle, out before); current = before;
+                    pointerError = SetCursorPos((int)Number(command, "awayX", 0), (int)Number(command, "awayY", 0)) ? 0 : Marshal.GetLastWin32Error();
+                    var wait = System.Diagnostics.Stopwatch.StartNew();
+                    while (current.Equals(before) && wait.ElapsedMilliseconds < 1000) { System.Threading.Thread.Sleep(1); GetWindowRect(handle, out current); }
+                    lastPointer = new Point { x = (int)Number(command, "x", 0), y = (int)Number(command, "y", 0) }; movedPointer = true;
+                    if (!SetCursorPos(lastPointer.x, lastPointer.y)) pointerError = Marshal.GetLastWin32Error();
+                    if (current.Equals(before)) pointerError = 1460;
+                    lock (traceLock) { trace.Clear(); traceHandle = handle; trace.Add(new { visible = IsWindowVisible(handle), rect = current }); }
+                }
                 // 模拟用户从前台启动程序时由 Shell 授予的激活权限，仅指定隔离客户端进程。
                 if (action == "allow-foreground") AllowSetForegroundWindow((uint)Number(command, "processId", 0));
                 if (action == "focus-list") { form.ActiveControl = null; SetFocus(form.Handle); }
@@ -159,6 +193,16 @@ public static class ShanyuHoverDockHost {
                         if (action == "double-click" && click == 0) System.Threading.Thread.Sleep(60);
                     }
                 }
+                // 分开按下和松开，让宿主继续处理消息，脚本可采样整个按键期间的窗口位置。
+                if (action == "mouse-down") {
+                    if (heldMouseRelease != 0) mouse_event(heldMouseRelease, 0, 0, 0, UIntPtr.Zero);
+                    bool right = command.ContainsKey("right") && (bool)command["right"];
+                    heldMouseRelease = right ? 16u : 4u;
+                    mouse_event(right ? 8u : 2u, 0, 0, 0, UIntPtr.Zero);
+                }
+                if (action == "mouse-up" && heldMouseRelease != 0) {
+                    mouse_event(heldMouseRelease, 0, 0, 0, UIntPtr.Zero); heldMouseRelease = 0;
+                }
                 if (action == "close") { form.Close(); return; }
             }
             var windows = new List<object> { Inspect(form.Handle) };
@@ -182,15 +226,18 @@ public static class ShanyuHoverDockHost {
             }
             // 只读实际系统任务栏的范围与层级，验证遮挡关系；不移动、置顶或激活任务栏。
             var taskbar = FindWindow("Shell_TrayWnd", null);
-            File.WriteAllText(args[0], json.Serialize(new Dictionary<string, object> { {"nonce", nonce}, {"hwnd", form.Handle.ToInt64()}, {"inputFocused", input.Focused}, {"viewer", viewer == null || viewer.IsDisposed ? 0 : viewer.Handle.ToInt64()}, {"secondChat", secondChat == null || secondChat.IsDisposed ? 0 : secondChat.Handle.ToInt64()}, {"pid", System.Diagnostics.Process.GetCurrentProcess().Id}, {"foreground", foreground.ToInt64()}, {"foregroundPid", foregroundPid}, {"cursor", cursor}, {"pointerError", pointerError}, {"windowAtCursor", GetAncestor(WindowFromPoint(cursor), 2).ToInt64()}, {"probedWindow", GetAncestor(WindowFromPoint(probe), 2).ToInt64()}, {"targetProbes", targetProbes}, {"windows", windows}, {"monitors", monitors}, {"taskbar", Inspect(taskbar)} }), new System.Text.UTF8Encoding(false));
+            object[] traceSnapshot; lock (traceLock) { traceSnapshot = trace.ToArray(); }
+            File.WriteAllText(args[0], json.Serialize(new Dictionary<string, object> { {"nonce", nonce}, {"hwnd", form.Handle.ToInt64()}, {"inputFocused", input.Focused}, {"viewer", viewer == null || viewer.IsDisposed ? 0 : viewer.Handle.ToInt64()}, {"secondChat", secondChat == null || secondChat.IsDisposed ? 0 : secondChat.Handle.ToInt64()}, {"pid", System.Diagnostics.Process.GetCurrentProcess().Id}, {"foreground", foreground.ToInt64()}, {"foregroundPid", foregroundPid}, {"cursor", cursor}, {"pointerError", pointerError}, {"windowAtCursor", GetAncestor(WindowFromPoint(cursor), 2).ToInt64()}, {"probedWindow", GetAncestor(WindowFromPoint(probe), 2).ToInt64()}, {"targetProbes", targetProbes}, {"trace", traceSnapshot}, {"windows", windows}, {"monitors", monitors}, {"taskbar", Inspect(taskbar)} }), new System.Text.UTF8Encoding(false));
         };
         form.FormClosed += delegate {
+            if (heldMouseRelease != 0) mouse_event(heldMouseRelease, 0, 0, 0, UIntPtr.Zero);
             if (viewer != null) viewer.Dispose(); if (secondChat != null) secondChat.Dispose();
-            timer.Stop(); Point cursor; GetCursorPos(out cursor);
+            traceRunning = false; timer.Stop(); Point cursor; GetCursorPos(out cursor);
             if (movedPointer && cursor.x == lastPointer.x && cursor.y == lastPointer.y) SetCursorPos(originalCursor.x, originalCursor.y);
             if (GetForegroundWindow() == form.Handle) SetForegroundWindow(originalForeground);
         };
         form.Shown += delegate { SetForegroundWindow(form.Handle); timer.Start(); };
-        Application.Run(form); timer.Dispose();
+        var tracer = new System.Threading.Thread(TraceWindows) { IsBackground = true }; tracer.Start();
+        Application.Run(form); tracer.Join(); timer.Dispose();
     }
 }

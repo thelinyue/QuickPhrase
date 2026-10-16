@@ -422,16 +422,21 @@ try {
     assert.equal(await preview.locator('.phrase-preview-body').evaluate(el => el.scrollTop), 0, '切换话术从正文开头阅读');
     await page.keyboard.press('Escape'); await poll(async () => !await popupVisible(), '关闭长文');
   });
-  await check('屏幕右下边缘仍从鼠标右下展开，不翻转或反向平移', async () => {
+  await check('屏幕右下边缘自动向左上展开，预览完整可见且长文可滚动到底', async () => {
     const original = windowOf(await inspect(), mainHandle).rect;
     const work = windowOf(await inspect(), mainHandle).work;
     await control('move', { handle: mainHandle, x: work.right - 330, y: work.bottom - 400, width: 330, height: 400 }); await delay(160); await focusHost();
     await hover(row(longId)); await poll(popupVisible, '边缘预览');
     const state = await inspect(), popup = windowOf(state, previewHandle), gap = Math.round(12 * popup.dpi / 96);
-    assert.equal(popup.rect.left - state.cursor.x, gap); assert.equal(popup.rect.top - state.cursor.y, gap);
-    assert.ok(popup.rect.right > work.right && popup.rect.bottom <= work.bottom, '保持固定方向，水平方向仍裁切，垂直方向限制在下方可用空间');
+    assert.equal(state.cursor.x - popup.rect.right, gap);
+    assert.equal(state.cursor.y - popup.rect.bottom, gap);
+    assert.ok(popup.rect.left >= work.left && popup.rect.right <= work.right && popup.rect.top >= work.top && popup.rect.bottom <= work.bottom, '预览外框完整保留在可用屏幕内');
     assert.equal(popup.noActivate, true); assert.equal(state.foreground, hostHandle);
-    snapshots.push({ name: 'fixed-direction-at-edge', cursor: state.cursor, popup });
+    await control('pointer', { x: popup.client.x + 40, y: popup.client.y + 90 });
+    await preview.locator('.phrase-preview-body').evaluate(el => { el.scrollTop = el.scrollHeight; });
+    assert.equal(await preview.locator('.phrase-preview-body').evaluate(el => el.scrollTop + el.clientHeight >= el.scrollHeight - 1), true);
+    await preview.screenshot({ path: path.join(evidence, 'adaptive-edge-preview.png') });
+    snapshots.push({ name: 'adaptive-preview-at-edge', cursor: state.cursor, popup });
     await page.keyboard.press('Escape'); await poll(async () => !await popupVisible(), '关闭边缘预览');
     await control('move', { handle: mainHandle, x: original.left, y: original.top, width: original.right - original.left, height: original.bottom - original.top }); await delay(160);
   });

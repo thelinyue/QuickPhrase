@@ -23,6 +23,7 @@ mod transfer;
 mod update_activity;
 mod update_protocol;
 mod updater;
+mod window_size;
 
 use delivery::{DeliveryReport, Mode};
 use model::*;
@@ -87,7 +88,27 @@ fn refreshed(app: &tauri::AppHandle, state: &AppState) -> Result<()> {
             let _ = app.emit("native-error", error);
         }
     }
-    state.native.update_bindings(&library)?;
+    // 成员正文仍由授权缓存提供，仅把本机个人快捷键加入活动候选。
+    // 云端本人设置变化可能产生冲突，此时停用冲突的成员绑定，保留偏好供用户修改。
+    let members = state.teams.member_view()?;
+    library
+        .categories
+        .extend(members.categories.into_iter().map(|c| c.category));
+    for member in members.phrases {
+        let phrase = member.phrase;
+        if native::parse_shortcut(&phrase.shortcut).is_ok_and(|key| {
+            !library.settings.shortcut_reserved(&key)
+                && !library.phrases.iter().any(|p| {
+                    native::parse_shortcut(&p.shortcut)
+                        .is_ok_and(|existing| key.prefix_conflicts(&existing))
+                })
+        }) {
+            library.phrases.push(phrase);
+        }
+    }
+    state
+        .native
+        .update_bindings(&library, Some(members.session_epoch))?;
     app.emit("library-changed", ())
         .map_err(|e| format!("界面刷新通知失败：{e}"))
 }
@@ -126,13 +147,27 @@ fn validate_phrase_shortcut(
     id: String,
     shortcut: String,
 ) -> Result<String> {
+    checked_phrase_shortcut(&state, &id, &shortcut)
+}
+fn checked_phrase_shortcut(state: &AppState, id: &str, shortcut: &str) -> Result<String> {
     if shortcut.trim().is_empty() {
         return Ok(String::new());
     }
-    let parsed = native::parse_shortcut(&shortcut)?;
+    let parsed = native::parse_shortcut(shortcut)?;
     let canonical = parsed.canonical();
+    let members = state.teams.member_view()?;
+    for phrase in members
+        .phrases
+        .iter()
+        .map(|p| &p.phrase)
+        .filter(|p| p.id != id)
+    {
+        if native::parse_shortcut(&phrase.shortcut).is_ok_and(|key| parsed.prefix_conflicts(&key)) {
+            return Err("该快捷键与成员话术的快捷键前缀冲突，请更换。".into());
+        }
+    }
     let store = state.store.lock().unwrap();
-    if let Some(conflict) = store::shortcut_collision(&store.conn, &id, &parsed)? {
+    if let Some(conflict) = store::shortcut_collision(&store.conn, id, &parsed)? {
         return Err(format!(
             "快捷键「{canonical}」与话术「{conflict}」冲突，请更换。"
         ));
@@ -142,6 +177,23 @@ fn validate_phrase_shortcut(
         return Err("该快捷键与导航或已启用的序号快捷键冲突，请更换。".into());
     }
     Ok(canonical)
+}
+#[tauri::command]
+fn save_member_shortcut(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    id: String,
+    shortcut: String,
+    session_epoch: u64,
+) -> Result<()> {
+    let shortcut = checked_phrase_shortcut(&state, &id, &shortcut)?;
+    state
+        .teams
+        .save_member_shortcut(session_epoch, &id, &shortcut)?;
+    state.native.cancel_candidates();
+    refreshed(&app, &state)?;
+    app.emit("member-content-changed", ())
+        .map_err(|e| format!("快捷键刷新失败：{e}"))
 }
 /// 搜索仅允许配置好的序号组合键；编辑、录入和模态输入暂停业务快捷键。
 #[tauri::command]
@@ -278,16 +330,29 @@ async fn submit_shortcut_candidate(
     // 先取走候选，再核对活动记录；已删除或改绑的候选失败后也能退出，长按不会重复提交。
     let (id, target) = state.native.take_candidate(index)?;
     {
-        let store = state.store.lock().unwrap();
-        let resolved = private_local::resolve_key(&store, &id, "phrase")?;
-        let current = store.phrase(&resolved)?;
+        let current = if id.starts_with("member:") {
+            state.teams.member_phrase(&id, false)?
+        } else {
+            let store = state.store.lock().unwrap();
+            let resolved = private_local::resolve_key(&store, &id, "phrase")?;
+            store.phrase(&resolved)?
+        };
         if !native::parse_shortcut(&current.shortcut)
             .is_ok_and(|shortcut| shortcut.canonical() == payload.shortcut)
         {
             return Err("候选话术的快捷键已变化，请重新触发。".into());
         }
     }
-    deliver_content(app, state, id, "phrase".into(), mode, target, None).await
+    deliver_content_checked(
+        app,
+        state,
+        id,
+        "phrase".into(),
+        mode,
+        target,
+        (None, payload.member_epoch),
+    )
+    .await
 }
 pub(crate) fn queue_candidate_delivery(app: tauri::AppHandle, index: usize, mode: Mode) {
     tauri::async_runtime::spawn(async move {
@@ -413,6 +478,7 @@ fn save_phrase(
     expected_revision: Option<u64>,
     library_id: Option<String>,
 ) -> Result<String> {
+    checked_phrase_shortcut(&state, &phrase.id, &phrase.shortcut)?;
     shortcut_conflict(
         &state.native.settings.read().unwrap(),
         std::slice::from_ref(&phrase),
@@ -826,13 +892,31 @@ async fn deliver_content(
     target: TargetContext,
     trigger_key: Option<u32>,
 ) -> Result<DeliveryReport> {
+    deliver_content_checked(app, state, id, kind, mode, target, (trigger_key, None)).await
+}
+/// 内部候选携带触发时的账号；普通点击沿用既有接口，投递仍统一取得发送锁并核验目标。
+async fn deliver_content_checked(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    kind: String,
+    mode: Mode,
+    target: TargetContext,
+    trigger: (Option<u32>, Option<u64>),
+) -> Result<DeliveryReport> {
+    let (trigger_key, member_epoch) = trigger;
     let guard = state.delivery.acquire()?;
     native::consume_delivery_key(trigger_key);
     if state.native.target.lock().unwrap().as_ref() != Some(&target) {
         return Err("目标上下文已变化，请重新聚焦输入区后返回闪语。".into());
     }
     let shared = if kind == "phrase" && id.starts_with("member:") {
-        Some(state.teams.check_member_delivery(&app, &id).await?)
+        Some(
+            state
+                .teams
+                .check_member_delivery(&app, &id, member_epoch)
+                .await?,
+        )
     } else if kind == "phrase" && shanyu_team_model::ContentRef::from_key(&id).is_some() {
         Some(state.teams.check_delivery(&app, &id).await?)
     } else {
@@ -945,6 +1029,7 @@ fn save_settings(
     settings: Settings,
     library_id: Option<String>,
 ) -> Result<()> {
+    let members = state.teams.member_view()?;
     let store = private_commands::active_store(&state, library_id.as_deref())?;
     let old = store.settings()?;
     settings.validate()?;
@@ -953,6 +1038,14 @@ fn save_settings(
         reserved.sequence_hotkeys = true;
     }
     shortcut_conflict(&reserved, &store.library()?.phrases)?;
+    shortcut_conflict(
+        &reserved,
+        &members
+            .phrases
+            .into_iter()
+            .map(|p| p.phrase)
+            .collect::<Vec<_>>(),
+    )?;
     state.native.apply_settings(&settings)?;
     if let Err(e) = store.save_settings(&settings) {
         let _ = state.native.apply_settings(&old);
@@ -1218,6 +1311,7 @@ pub fn run() {
             let dir = std::env::var_os("SHANYU_TEST_DATA_DIR")
                 .map(std::path::PathBuf::from)
                 .unwrap_or(dir);
+            let window_size_dir = dir.clone();
             let mut data_directory =
                 data_directory::DataDirectory::startup(&dir).map_err(std::io::Error::other)?;
             let dir = data_directory.root();
@@ -1254,6 +1348,7 @@ pub fn run() {
                 .update_bindings(
                     &private_sync::binding_library(&store, settings.clone())
                         .map_err(std::io::Error::other)?,
+                    None,
                 )
                 .map_err(std::io::Error::other)?;
             let teams = team::TeamClient::new(&dir).map_err(std::io::Error::other)?;
@@ -1274,6 +1369,15 @@ pub fn run() {
                 teams,
                 sequence_generation: Mutex::new(0),
             });
+            match native.window_size.lock().unwrap().load(window_size_dir) {
+                Ok(Some(size)) => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        window.set_size(tauri::LogicalSize::new(size.width, size.height))?;
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => log::warn!("{error}"),
+            }
             updater::start_background(app.handle().clone());
             tauri::WebviewWindowBuilder::new(
                 app,
@@ -1593,6 +1697,7 @@ pub fn run() {
                 search_content,
                 save_phrase,
                 validate_phrase_shortcut,
+                save_member_shortcut,
                 set_shortcut_input,
                 sync_sequence_map,
                 get_minimized_float_theme,
@@ -1660,11 +1765,18 @@ pub fn run() {
             ];
             handler(invoke)
         })
-        .run(context)
+        .build(context)
         .unwrap_or_else(|error| {
             native::startup_error(&format!(
                 "闪语启动失败：{error}\n请检查 WebView2 运行时及用户数据目录权限。"
             ));
             std::process::exit(1);
+        })
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                if let Some(state) = app.try_state::<AppState>() {
+                    state.native.remember_main_size(true);
+                }
+            }
         });
 }

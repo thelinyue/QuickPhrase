@@ -84,6 +84,31 @@ impl Anchor {
             bottom: self.work.bottom.min(rect.bottom - self.insets.bottom),
         }
     }
+    /// 收起时只允许边条触发；一旦开始展开，整块目标面板都是鼠标进入通道。
+    /// 鼠标通常比150毫秒动画更快，不能因它领先于当前可见区域而立即反向收起。
+    /// 展开后的原生缩放边框也属于窗口；DWM 可见边框之外的这圈区域不能被误判为离开。
+    fn hover_region(self, rect: RECT, hidden: bool) -> RECT {
+        if hidden {
+            self.clip(rect)
+        } else {
+            RECT {
+                left: self.work.left.max(self.expanded.left),
+                top: self.work.top.max(self.expanded.top),
+                right: self.work.right.min(self.expanded.right),
+                bottom: self.work.bottom.min(self.expanded.bottom),
+            }
+        }
+    }
+    /// 用原生实际位置还原已显示的进度；界面线程忙时，动画时钟可能领先于屏幕上的窗口。
+    fn progress(self, current: RECT) -> f64 {
+        if current.left == self.hidden_x {
+            1.0
+        } else {
+            (f64::from(current.left - self.expanded.left)
+                / f64::from(self.hidden_x - self.expanded.left))
+            .clamp(0.0, 1.0)
+        }
+    }
     fn recover(self, current: RECT, work: RECT) -> RECT {
         let width = current.right - current.left;
         let height = current.bottom - current.top;
@@ -104,7 +129,8 @@ impl Anchor {
     }
 }
 
-/// progress 为 0 时完整展开、1 时只剩边条。连续悬停才能展开，反向动画从当前帧接续。
+/// progress 为 0 时完整展开、1 时只剩边条。只有完全隐藏才等待连续悬停；
+/// 鼠标回到仍可见的窗口立即展开，反向动画从已显示的帧接续，不能先补执行收起帧。
 #[derive(Default)]
 struct Motion {
     start: Option<Instant>,
@@ -127,23 +153,25 @@ impl Motion {
         blocked: bool,
         focused: bool,
         delay: u64,
+        rendered: f64,
     ) -> f64 {
         if self.hold && (inside || !focused) {
             self.hold = false;
         }
-        let progress = self.progress(now);
         let hide = if blocked || self.hold {
             self.hover = None;
             false
         } else if inside {
             let since = *self.hover.get_or_insert(now);
-            self.hidden && now.duration_since(since) < Duration::from_millis(delay)
+            self.hidden
+                && rendered >= 1.0
+                && now.duration_since(since) < Duration::from_millis(delay)
         } else {
             self.hover = None;
             true
         };
         if hide != self.hidden {
-            self.from = progress;
+            self.from = rendered;
             self.start = Some(now);
             self.hidden = hide;
         }
@@ -167,6 +195,22 @@ fn contains(rect: RECT, point: POINT) -> bool {
     point.x >= rect.left && point.x < rect.right && point.y >= rect.top && point.y < rect.bottom
 }
 
+/// 暂停收起会反向展开当前动画，因此只能使用主窗口自己的交互状态。
+/// 外部点击即使发生在主窗口失焦通知到达前，也不能凭全局按键或残留输入标记唤出窗口。
+fn interaction_blocks_hide(
+    pointer_on_main: bool,
+    capture_on_main: bool,
+    menu_on_main: bool,
+    main_foreground: bool,
+    input_on_main: bool,
+    mouse_down: bool,
+) -> bool {
+    capture_on_main
+        || menu_on_main
+        || (pointer_on_main && mouse_down)
+        || (main_foreground && input_on_main)
+}
+
 impl EdgeHide {
     pub fn ready(&self) -> bool {
         !self.pending.load(Ordering::Acquire)
@@ -183,14 +227,19 @@ impl EdgeHide {
         rect: RECT,
         clip: Option<RECT>,
         fallback: RECT,
+        raise: bool,
     ) {
-        if self.last_rect == Some(rect) && clip.is_some() {
+        if self.last_rect == Some(rect) && clip.is_some() && !raise {
             return;
         }
         let Some(app) = state.app.get() else {
             return;
         };
         self.last_rect = Some(rect);
+        // 贴边期间边条和展开面板临时置顶，避免被正在使用的软件挡住。
+        // 清除贴边锚点后恢复用户的置顶选择，不改写设置或抢走输入焦点。
+        let pinned = state.settings.read().unwrap().pinned;
+        let topmost = self.anchor.is_some() || pinned;
         let handle = main.0 as i64;
         let pending = self.pending.clone();
         let failed = self.failed.clone();
@@ -212,16 +261,27 @@ impl EdgeHide {
                     let _ = DeleteObject(region.into());
                 }
             }
+            // 只在进入／退出贴边和开始展开时调整层级，后续动画保持原顺序。
+            let mut flags = SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
+            if !raise
+                && (GetWindowLongPtrW(main, GWL_EXSTYLE) & WS_EX_TOPMOST.0 as isize != 0) == topmost
+            {
+                flags |= SWP_NOZORDER;
+            }
             // 区域成功后由 Windows 持有；失败时恢复完整窗口，不让用户困在不可见边条里。
             let moved = clipped
                 && SetWindowPos(
                     main,
-                    None,
+                    Some(if topmost {
+                        HWND_TOPMOST
+                    } else {
+                        HWND_NOTOPMOST
+                    }),
                     rect.left,
                     rect.top,
                     0,
                     0,
-                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+                    flags,
                 )
                 .is_ok();
             if !moved {
@@ -229,12 +289,12 @@ impl EdgeHide {
                 let _ = SetWindowRgn(main, None, true);
                 let _ = SetWindowPos(
                     main,
-                    None,
+                    Some(if pinned { HWND_TOPMOST } else { HWND_NOTOPMOST }),
                     fallback.left,
                     fallback.top,
                     0,
                     0,
-                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+                    SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
                 );
                 failed.store(true, Ordering::Release);
             }
@@ -253,7 +313,7 @@ impl EdgeHide {
             return false;
         }
         if let Some(anchor) = self.anchor.take() {
-            self.place(state, main, anchor.expanded, None, anchor.expanded);
+            self.place(state, main, anchor.expanded, None, anchor.expanded, false);
         }
         self.motion = Motion::default();
         self.moving = false;
@@ -293,7 +353,7 @@ impl EdgeHide {
         if moving {
             // 开始拖动时撤销裁剪，但绝不把正在被用户移动的窗口拉回旧位置。
             if self.anchor.take().is_some() {
-                self.place(state, main, rect, None, rect);
+                self.place(state, main, rect, None, rect, false);
                 self.motion = Motion::default();
                 self.last_rect = None;
             }
@@ -343,7 +403,7 @@ impl EdgeHide {
         }
         if self.last_rect.is_some_and(|expected| expected != rect) {
             self.anchor = None;
-            self.place(state, main, rect, None, rect);
+            self.place(state, main, rect, None, rect, false);
             self.last_rect = None;
             self.motion = Motion::default();
             return;
@@ -352,24 +412,25 @@ impl EdgeHide {
         if GetCursorPos(&mut pointer).is_err() {
             return;
         }
-        let inside = contains(anchor.clip(rect), pointer);
+        let inside = contains(anchor.hover_region(rect, self.motion.hidden), pointer);
         let preview_open = state.preview.lock().unwrap().source == main.0 as i64
             && state
                 .windows
                 .get()
                 .is_some_and(|windows| IsWindowVisible(hwnd(windows.2)).as_bool());
-        // 同一 UI 线程也承载设置窗口：菜单、捕获和输入只在属于主窗口时阻止其收起。
-        let settings_window = state.management_windows.settings.load(Ordering::Acquire);
-        let settings_foreground = settings_window != 0 && foreground.0 as i64 == settings_window;
-        let blocked = (!settings_foreground
-            && (gui.flags.0 & (GUI_INMENUMODE.0 | GUI_POPUPMENUMODE.0 | GUI_SYSTEMMENUMODE.0)
-                != 0
-                || !gui.hwndCapture.0.is_null()))
-            || GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0
-            || GetAsyncKeyState(VK_RBUTTON.0 as i32) < 0
-            || state.busy.load(Ordering::Acquire)
+        // 同一 UI 线程也承载设置等辅助窗口；用根窗口核对 WebView 子窗口的实际归属。
+        // 命中检查同时排除遮挡主窗口的其他软件，不能仅靠鼠标坐标或前台状态判断点击归属。
+        let blocked = interaction_blocks_hide(
+            contains(anchor.clip(rect), pointer)
+                && GetAncestor(WindowFromPoint(pointer), GA_ROOT) == main,
+            GetAncestor(gui.hwndCapture, GA_ROOT) == main,
+            gui.flags.0 & (GUI_INMENUMODE.0 | GUI_POPUPMENUMODE.0 | GUI_SYSTEMMENUMODE.0) != 0
+                && GetAncestor(gui.hwndMenuOwner, GA_ROOT) == main,
+            foreground == main,
+            state.shortcut_input.load(Ordering::Acquire) == main.0 as i64,
+            GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0 || GetAsyncKeyState(VK_RBUTTON.0 as i32) < 0,
+        ) || state.busy.load(Ordering::Acquire)
             || state.management_windows.blocks_edge_hide()
-            || (state.shortcut_input.load(Ordering::Acquire) != 0 && !settings_foreground)
             || preview_open;
         if self.reveal {
             self.reveal = false;
@@ -377,24 +438,30 @@ impl EdgeHide {
                 hold: true,
                 ..Default::default()
             };
-            self.place(state, main, anchor.expanded, None, anchor.expanded);
+            self.place(state, main, anchor.expanded, None, anchor.expanded, false);
             return;
         }
+        let was_hidden = self.motion.hidden;
         let progress = self.motion.step(
             Instant::now(),
             inside,
             blocked,
             foreground == main,
             settings.edge_reveal_delay,
+            anchor.progress(rect),
         );
+        let raise = (was_hidden && !self.motion.hidden)
+            || GetWindowLongPtrW(main, GWL_EXSTYLE) & WS_EX_TOPMOST.0 as isize == 0;
         let next = anchor.rect(progress);
-        if self.last_rect != Some(next) {
+        // 展开首帧的位置可能尚未变化，层级更新仍必须排入同一界面队列。
+        if self.last_rect != Some(next) || raise {
             self.place(
                 state,
                 main,
                 next,
                 (progress > 0.0).then_some(anchor.clip(next)),
                 anchor.expanded,
+                raise,
             );
         }
     }
@@ -490,35 +557,335 @@ mod tests {
             hidden: true,
             ..Default::default()
         };
-        m.step(t, true, false, false, 500);
+        m.step(t, true, false, false, 500, m.progress(t));
         assert_eq!(
-            m.step(t + Duration::from_millis(220), false, false, false, 500),
+            m.step(
+                t + Duration::from_millis(220),
+                false,
+                false,
+                false,
+                500,
+                m.progress(t + Duration::from_millis(220))
+            ),
             1.0
         );
-        m.step(t + Duration::from_millis(300), true, false, false, 500);
+        m.step(
+            t + Duration::from_millis(300),
+            true,
+            false,
+            false,
+            500,
+            m.progress(t + Duration::from_millis(300)),
+        );
         assert_eq!(
-            m.step(t + Duration::from_millis(799), true, false, false, 500),
+            m.step(
+                t + Duration::from_millis(799),
+                true,
+                false,
+                false,
+                500,
+                m.progress(t + Duration::from_millis(799))
+            ),
             1.0
         );
-        m.step(t + Duration::from_millis(800), true, false, false, 500);
+        m.step(
+            t + Duration::from_millis(800),
+            true,
+            false,
+            false,
+            500,
+            m.progress(t + Duration::from_millis(800)),
+        );
         assert_eq!(
-            m.step(t + Duration::from_millis(950), true, false, false, 500),
+            m.step(
+                t + Duration::from_millis(950),
+                true,
+                false,
+                false,
+                500,
+                m.progress(t + Duration::from_millis(950))
+            ),
             0.0
         );
+    }
+    #[test]
+    fn external_mouse_press_never_reverses_hiding_or_reveals_either_edge() {
+        let t = Instant::now();
+        let work = rect(0, 0, 1920, 1040);
+        for outer in [rect(0, 100, 330, 820), rect(1590, 100, 1920, 820)] {
+            let anchor = Anchor::new(outer, outer, work, 96).unwrap();
+            // 同时覆盖收起途中和完全收起；鼠标按下时前台切换通知也可能尚未到达。
+            for elapsed in [60, 150] {
+                for focused in [true, false] {
+                    let mut motion = Motion::default();
+                    motion.step(t, false, false, focused, 500, motion.progress(t));
+                    let mut progress = motion.progress(t + Duration::from_millis(elapsed));
+                    for held in [0, 30, 180, 650] {
+                        let blocked =
+                            interaction_blocks_hide(false, false, false, focused, false, true);
+                        let next = motion.step(
+                            t + Duration::from_millis(elapsed + held),
+                            false,
+                            blocked,
+                            focused,
+                            500,
+                            motion.progress(t + Duration::from_millis(elapsed + held)),
+                        );
+                        assert!(next >= progress, "外部按键不能反向展开动画");
+                        progress = next;
+                    }
+                    assert_eq!(anchor.rect(progress), anchor.rect(1.0));
+                }
+            }
+        }
+    }
+    #[test]
+    fn only_main_interactions_pause_hiding_and_stale_input_does_not() {
+        // 主窗口内按键、拖出窗口后的鼠标捕获、主窗口菜单及前台输入均保留保护。
+        for (pointer, capture, menu, focused, input, pressed) in [
+            (true, false, false, false, false, true),
+            (false, true, false, false, false, true),
+            (false, false, true, true, false, false),
+            (false, false, false, true, true, false),
+        ] {
+            let mut motion = Motion::default();
+            let t = Instant::now();
+            let blocked = interaction_blocks_hide(pointer, capture, menu, focused, input, pressed);
+            motion.step(t, false, blocked, focused, 500, motion.progress(t));
+            assert_eq!(
+                motion.step(
+                    t + Duration::from_secs(1),
+                    false,
+                    blocked,
+                    focused,
+                    500,
+                    motion.progress(t + Duration::from_secs(1))
+                ),
+                0.0
+            );
+        }
+        // 其他窗口的输入标记或主窗口失焦后的旧标记，均不能阻止收起。
+        assert!(!interaction_blocks_hide(
+            false, false, false, true, false, false
+        ));
+        assert!(!interaction_blocks_hide(
+            false, false, false, false, true, true
+        ));
+        // 悬停仍由原有等待时间处理，不能因为命中窗口就绕过延时。
+        assert!(!interaction_blocks_hide(
+            true, false, false, false, false, false
+        ));
+    }
+    #[test]
+    fn native_resize_borders_keep_revealed_window_open_but_do_not_wake_hidden_window() {
+        let t = Instant::now();
+        for dpi in [96, 144, 192] {
+            let work = rect(-1920, 0, 0, 1040);
+            let border = (7 * dpi / 96) as i32;
+            for left in [true, false] {
+                let frame = if left {
+                    rect(-1920, 100, -1590, 820)
+                } else {
+                    rect(-330, 100, 0, 820)
+                };
+                let outer = rect(
+                    frame.left - border,
+                    frame.top,
+                    frame.right + border,
+                    frame.bottom + border,
+                );
+                let a = Anchor::new(outer, frame, work, dpi).unwrap();
+                for point in [
+                    POINT {
+                        x: if left {
+                            frame.right + 1
+                        } else {
+                            frame.left - 1
+                        },
+                        y: frame.top + 100,
+                    },
+                    POINT {
+                        x: frame.left + 100,
+                        y: frame.bottom + 1,
+                    },
+                ] {
+                    assert!(
+                        !contains(a.clip(a.expanded), point),
+                        "原生缩放边框位于DWM可见框外"
+                    );
+                    let mut motion = Motion::default();
+                    for elapsed in [0, 30, 150, 1000] {
+                        let inside = contains(a.hover_region(a.expanded, motion.hidden), point);
+                        assert_eq!(
+                            motion.step(
+                                t + Duration::from_millis(elapsed),
+                                inside,
+                                false,
+                                false,
+                                500,
+                                motion.progress(t + Duration::from_millis(elapsed))
+                            ),
+                            0.0
+                        );
+                    }
+                    assert!(
+                        !contains(a.hover_region(a.rect(1.0), true), point),
+                        "隐藏后不能由原面板边框唤出"
+                    );
+                }
+                let outside = POINT {
+                    x: if left { outer.right } else { outer.left - 1 },
+                    y: frame.top + 100,
+                };
+                assert!(
+                    !contains(a.hover_region(a.expanded, false), outside),
+                    "离开真实外框仍可正常收起"
+                );
+            }
+        }
+    }
+    #[test]
+    fn pointer_can_enter_ahead_of_reveal_animation_without_reversing_it() {
+        let t = Instant::now();
+        let work = rect(-1920, 0, 0, 1040);
+        for dpi in [96, 144, 192] {
+            for left in [true, false] {
+                let outer = if left {
+                    rect(-1920, 100, -1590, 820)
+                } else {
+                    rect(-330, 100, 0, 820)
+                };
+                let a = Anchor::new(outer, outer, work, dpi).unwrap();
+                let full = a.clip(a.expanded);
+                let mut motion = Motion {
+                    hidden: true,
+                    ..Default::default()
+                };
+                motion.step(t, true, false, false, 500, motion.progress(t));
+                motion.step(
+                    t + Duration::from_millis(500),
+                    true,
+                    false,
+                    false,
+                    500,
+                    motion.progress(t + Duration::from_millis(500)),
+                );
+                let point = POINT {
+                    x: if left {
+                        full.right - 10
+                    } else {
+                        full.left + 10
+                    },
+                    y: full.top + 100,
+                };
+                let progress = motion.progress(t + Duration::from_millis(530));
+                assert!(
+                    !contains(a.clip(a.rect(progress)), point),
+                    "鼠标已领先于当前动画"
+                );
+                for elapsed in [530, 580, 650, 1000, 2000] {
+                    let current = a.rect(motion.progress(t + Duration::from_millis(elapsed)));
+                    let inside = contains(a.hover_region(current, motion.hidden), point);
+                    let next = motion.step(
+                        t + Duration::from_millis(elapsed),
+                        inside,
+                        false,
+                        false,
+                        500,
+                        motion.progress(t + Duration::from_millis(elapsed)),
+                    );
+                    assert!(!motion.hidden, "进入面板时不能反向收起");
+                    assert!(next <= progress);
+                }
+                assert_eq!(motion.progress(t + Duration::from_millis(2000)), 0.0);
+                motion.step(
+                    t + Duration::from_millis(2100),
+                    false,
+                    false,
+                    false,
+                    500,
+                    motion.progress(t + Duration::from_millis(2100)),
+                );
+                assert_eq!(motion.progress(t + Duration::from_millis(2250)), 1.0);
+                // 完全收起后仍必须命中边条，不能因鼠标靠近原面板区域而误展开。
+                assert!(!contains(a.hover_region(a.rect(1.0), motion.hidden), point));
+            }
+        }
+    }
+    #[test]
+    fn reentering_visible_panel_reverses_closing_without_waiting() {
+        let t = Instant::now();
+        let work = rect(0, 0, 1920, 1040);
+        for outer in [rect(0, 100, 330, 820), rect(1590, 100, 1920, 820)] {
+            let anchor = Anchor::new(outer, outer, work, 96).unwrap();
+            for delay in [0, 500, 1000] {
+                for elapsed in [30, 90, 149, 180] {
+                    let mut motion = Motion::default();
+                    motion.step(t, false, false, false, delay, motion.progress(t));
+                    // 最后一帧也可能因界面线程繁忙仍未执行；以实际窗口位置判断可见性。
+                    let current =
+                        anchor.rect(motion.progress(t + Duration::from_millis(elapsed.min(90))));
+                    let visible = anchor.clip(current);
+                    let point = POINT {
+                        x: (visible.left + visible.right) / 2,
+                        y: 200,
+                    };
+                    assert!(contains(anchor.hover_region(current, motion.hidden), point));
+                    let next = motion.step(
+                        t + Duration::from_millis(elapsed),
+                        true,
+                        false,
+                        false,
+                        delay,
+                        anchor.progress(current),
+                    );
+                    assert!(
+                        next <= anchor.progress(current),
+                        "反向首帧不能继续从鼠标下方收起"
+                    );
+                    assert!(!motion.hidden, "鼠标回到仍可见的面板时必须立即反向展开");
+                    for offset in [30, 150, 1000] {
+                        motion.step(
+                            t + Duration::from_millis(elapsed + offset),
+                            true,
+                            false,
+                            false,
+                            delay,
+                            motion.progress(t + Duration::from_millis(elapsed + offset)),
+                        );
+                        assert!(!motion.hidden, "鼠标仍在窗口内时不能收起");
+                    }
+                }
+            }
+        }
     }
     #[test]
     fn reverse_continues_from_current_frame_and_zero_delay_reveals() {
         let t = Instant::now();
         let mut m = Motion::default();
-        m.step(t, false, false, false, 0);
+        m.step(t, false, false, false, 0, m.progress(t));
         let partial = m.progress(t + Duration::from_millis(60));
         assert!(partial > 0.0 && partial < 1.0);
         assert_eq!(
-            m.step(t + Duration::from_millis(60), true, false, false, 0),
+            m.step(
+                t + Duration::from_millis(60),
+                true,
+                false,
+                false,
+                0,
+                m.progress(t + Duration::from_millis(60))
+            ),
             partial
         );
         assert_eq!(
-            m.step(t + Duration::from_millis(210), true, false, false, 0),
+            m.step(
+                t + Duration::from_millis(210),
+                true,
+                false,
+                false,
+                0,
+                m.progress(t + Duration::from_millis(210))
+            ),
             0.0
         );
     }
@@ -529,25 +896,53 @@ mod tests {
             hold: true,
             ..Default::default()
         };
-        assert_eq!(m.step(t, false, false, true, 500), 0.0);
-        m.step(t, true, false, true, 500);
-        m.step(t, false, false, true, 500);
+        assert_eq!(m.step(t, false, false, true, 500, m.progress(t)), 0.0);
+        m.step(t, true, false, true, 500, m.progress(t));
+        m.step(t, false, false, true, 500, m.progress(t));
         assert_eq!(
-            m.step(t + Duration::from_millis(150), false, false, true, 500),
+            m.step(
+                t + Duration::from_millis(150),
+                false,
+                false,
+                true,
+                500,
+                m.progress(t + Duration::from_millis(150))
+            ),
             1.0
         );
-        m.step(t + Duration::from_millis(150), false, true, true, 500);
+        m.step(
+            t + Duration::from_millis(150),
+            false,
+            true,
+            true,
+            500,
+            m.progress(t + Duration::from_millis(150)),
+        );
         assert_eq!(
-            m.step(t + Duration::from_millis(300), false, true, true, 500),
+            m.step(
+                t + Duration::from_millis(300),
+                false,
+                true,
+                true,
+                500,
+                m.progress(t + Duration::from_millis(300))
+            ),
             0.0
         );
         let mut m = Motion {
             hold: true,
             ..Default::default()
         };
-        m.step(t, false, false, false, 500);
+        m.step(t, false, false, false, 500, m.progress(t));
         assert_eq!(
-            m.step(t + Duration::from_millis(150), false, false, false, 500),
+            m.step(
+                t + Duration::from_millis(150),
+                false,
+                false,
+                false,
+                500,
+                m.progress(t + Duration::from_millis(150))
+            ),
             1.0
         );
     }

@@ -148,7 +148,7 @@ pub struct NativeState {
     pub settings: RwLock<Settings>,
     pub bindings: RwLock<Vec<(String, Shortcut)>>,
     /// 按分类、分组与话术顺序缓存活动库，同键只监听一次，匹配后展开全部候选。
-    pub shortcut_phrases: RwLock<Vec<Phrase>>,
+    pub shortcut_phrases: RwLock<(Vec<Phrase>, Option<u64>)>,
     pub candidates: Mutex<candidates::CandidateState>,
     /// 只由主窗口同步绘制结果；文件槽位为空，隐藏窗口继续沿用最后快照。
     pub sequence_map: RwLock<(Vec<Option<String>>, bool)>,
@@ -170,6 +170,7 @@ pub struct NativeState {
     #[cfg(windows)]
     float_position: Mutex<Option<minimized_float::Position>>,
     pub running: AtomicBool,
+    pub window_size: Mutex<crate::window_size::WindowSize>,
     pub busy: Arc<AtomicBool>,
     pub cancelled: Arc<AtomicBool>,
     /// 常驻窗口的句柄在启动时读取。后台不调用 Tauri 的同步句柄查询，
@@ -196,7 +197,7 @@ impl NativeState {
             target: Mutex::new(None),
             settings: RwLock::new(settings),
             bindings: RwLock::new(vec![]),
-            shortcut_phrases: RwLock::new(vec![]),
+            shortcut_phrases: RwLock::new((vec![], None)),
             candidates: Mutex::new(candidates::CandidateState::default()),
             sequence_map: RwLock::new((vec![], true)),
             common_menu: Mutex::new(crate::common_menu::MenuState::default()),
@@ -215,6 +216,7 @@ impl NativeState {
             #[cfg(windows)]
             float_position: Mutex::new(None),
             running: AtomicBool::new(true),
+            window_size: Mutex::new(crate::window_size::WindowSize::default()),
             busy,
             cancelled,
             #[cfg(windows)]
@@ -275,6 +277,74 @@ impl NativeState {
         std::thread::spawn(move || platform::monitor(this, rx));
         Ok(())
     }
+    /// 只保存正常主窗口的客户区尺寸；贴边裁剪只改变区域，不会把细条宽度记入下次启动。
+    pub fn remember_main_size(&self, flush: bool) {
+        #[cfg(windows)]
+        unsafe {
+            use windows::Win32::{
+                Foundation::RECT,
+                UI::{HiDpi::GetDpiForWindow, WindowsAndMessaging::*},
+            };
+            let Some(windows) = self.windows.get() else {
+                return;
+            };
+            let main = platform::hwnd(windows.0);
+            let mut size = self.window_size.lock().unwrap();
+            if IsWindowVisible(main).as_bool()
+                && !IsIconic(main).as_bool()
+                && !IsZoomed(main).as_bool()
+                && !self.minimized.load(Ordering::Acquire)
+            {
+                let mut client = RECT::default();
+                if GetClientRect(main, &mut client).is_ok() {
+                    if size.restore_pending {
+                        if let Some(saved) = size.current {
+                            // 无边框 WebView 首次显示前可能仍带30DIP系统标题栏测量值。
+                            // 显示后按实际客户区补差，不能将初始化产生的高度反写成用户尺寸。
+                            let scale = f64::from(GetDpiForWindow(main).max(96)) / 96.0;
+                            let width = (saved.width * scale).round() as i32;
+                            let height = (saved.height * scale).round() as i32;
+                            if client.right != width || client.bottom != height {
+                                let mut outer = RECT::default();
+                                if GetWindowRect(main, &mut outer).is_ok() {
+                                    let _ = SetWindowPos(
+                                        main,
+                                        None,
+                                        0,
+                                        0,
+                                        outer.right - outer.left + width - client.right,
+                                        outer.bottom - outer.top + height - client.bottom,
+                                        SWP_NOMOVE
+                                            | SWP_NOZORDER
+                                            | SWP_NOACTIVATE
+                                            | SWP_ASYNCWINDOWPOS,
+                                    );
+                                }
+                                return;
+                            }
+                        }
+                        size.restore_pending = false;
+                    }
+                    if let Some(current) = crate::window_size::Size::from_physical(
+                        client.right - client.left,
+                        client.bottom - client.top,
+                        GetDpiForWindow(main),
+                    ) {
+                        if size.observe(current, std::time::Instant::now()) {
+                            if let Err(error) = size.persist() {
+                                log::warn!("{error}");
+                            }
+                        }
+                    }
+                }
+            }
+            if flush {
+                if let Err(error) = size.persist() {
+                    log::warn!("{error}");
+                }
+            }
+        }
+    }
     pub fn apply_settings(&self, settings: &Settings) -> Result<()> {
         settings.validate()?;
         let previous = self.settings.read().unwrap().clone();
@@ -308,7 +378,7 @@ impl NativeState {
         rx.recv_timeout(std::time::Duration::from_secs(3))
             .map_err(|_| "Windows设置更新超时，请稍后重试。".to_string())?
     }
-    pub fn update_bindings(&self, library: &Library) -> Result<()> {
+    pub fn update_bindings(&self, library: &Library, member_epoch: Option<u64>) -> Result<()> {
         let settings = self.settings.read().unwrap();
         let mut phrases = vec![];
         for root in library
@@ -343,7 +413,7 @@ impl NativeState {
                 bindings.push((canonical, shortcut));
             }
         }
-        *self.shortcut_phrases.write().unwrap() = phrases;
+        *self.shortcut_phrases.write().unwrap() = (phrases, member_epoch);
         *self.bindings.write().unwrap() = bindings;
         Ok(())
     }
@@ -466,6 +536,9 @@ mod platform {
     };
     static HOOK_STATE: OnceLock<Arc<NativeState>> = OnceLock::new();
     static MATCHER: OnceLock<Mutex<ShortcutMatcher>> = OnceLock::new();
+    // 仅表示主窗口已经进入目标吸附；开关开启但独立显示时仍可自由拖动。
+    // 子类回调只读原子状态，不等待跟随线程或设置锁，避免系统移动消息相互阻塞。
+    static MAIN_DOCKED: AtomicBool = AtomicBool::new(false);
     pub fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(Some(0)).collect()
     }
@@ -696,7 +769,8 @@ mod platform {
         }
     }
     /// Alt 导航键由 RegisterHotKey 消费，窗口仍可能收到 Alt 松键并进入隐式系统菜单状态。
-    /// 只拦截无字符的键盘菜单激活；Alt+空格、Alt+F4、移动、调整大小等显式系统操作继续放行。
+    /// 主窗口实际吸附时禁止系统移动和纵向调整；角落按对应左右边处理，仍可调整宽度。
+    /// 独立模式及其他窗口沿用原系统操作；Alt+空格、Alt+F4等显式菜单操作继续放行。
     /// 此子类只安装在主窗口和短语横条的所属 UI 线程，窗口销毁时移除，不修改全局键盘状态。
     unsafe extern "system" fn navigation_system_menu(
         window: HWND,
@@ -704,16 +778,34 @@ mod platform {
         w: WPARAM,
         l: LPARAM,
         id: usize,
-        _: usize,
+        main_window: usize,
     ) -> LRESULT {
         use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
         if message == WM_SYSCOMMAND && w.0 & 0xFFF0 == SC_KEYMENU as usize && l.0 == 0 {
             return LRESULT(0);
         }
+        let docked = main_window != 0 && MAIN_DOCKED.load(Ordering::Acquire);
+        if docked && message == WM_SYSCOMMAND {
+            let command = w.0 & 0xFFF0;
+            if command == SC_MOVE as usize
+                || (command == SC_SIZE as usize && !matches!(w.0 & 0xF, 1 | 2))
+            {
+                return LRESULT(0);
+            }
+        }
         if message == WM_NCDESTROY {
             let _ = RemoveWindowSubclass(window, Some(navigation_system_menu), id);
         }
-        DefSubclassProc(window, message, w, l)
+        let result = DefSubclassProc(window, message, w, l);
+        if docked && message == WM_NCHITTEST {
+            return LRESULT(match result.0 as u32 {
+                HTTOP | HTBOTTOM => HTCLIENT,
+                HTTOPLEFT | HTBOTTOMLEFT => HTLEFT,
+                HTTOPRIGHT | HTBOTTOMRIGHT => HTRIGHT,
+                _ => return result,
+            } as isize);
+        }
+        result
     }
 
     /// WebView2 的组合键回调也走原生匹配器，搜索输入不依赖全局钩子是否转发客户端按键。
@@ -727,13 +819,14 @@ mod platform {
             .hwnd()
             .map_err(|e| format!("无法获取导航窗口句柄：{e}"))?
             .0 as i64;
+        let main_window = usize::from(window.label() == "main");
         window
             .with_webview(move |webview| unsafe {
                 if !windows::Win32::UI::Shell::SetWindowSubclass(
                     hwnd(handle),
                     Some(navigation_system_menu),
                     0,
-                    0,
+                    main_window,
                 )
                 .as_bool()
                 {
@@ -1090,6 +1183,11 @@ mod platform {
                     }
                 }
                 dock.update(&state, foreground);
+                if dock.original_rect.is_some() {
+                    // 启动即吸附时高度由目标决定；已恢复的逻辑宽度仍沿用，不能和跟随定位争抢高度。
+                    state.window_size.lock().unwrap().restore_pending = false;
+                }
+                state.remember_main_size(false);
                 if let Some(windows) = state.windows.get() {
                     dock.floating.update(&state, hwnd(windows.0));
                 }
@@ -1115,13 +1213,14 @@ mod platform {
         /// 闪语窗口只能延续刚才正在使用的目标，不能让独立窗口吸附到后台的旧目标。
         target_context: bool,
         original_rect: Option<RECT>,
-        original_dpi: u32,
         width: super::docking::DockWidth,
         foreground: i64,
         /// 底栏独立记录前台切换，在目标所在层内维持目标、侧栏、底栏的顺序。
         common_foreground: i64,
         /// 只为本次进程首次独立显示定位；随后唤起保留用户移动的位置。
-        standalone_positioned: bool,
+        standalone_positioned: Arc<AtomicBool>,
+        /// 首次定位与显示在同一个界面线程动作中完成；完成前轮询不得提前显示旧位置。
+        standalone_pending: Arc<AtomicBool>,
         /// 独立贴边状态不能复用目标吸附的宽度、原始矩形或手动隐藏模式。
         edge: super::edge_hide::EdgeHide,
         /// 托盘选择在主动最小化时固定；小条开关可在最小化期间独立更新。
@@ -1351,9 +1450,29 @@ mod platform {
                 );
             }
         }
-        unsafe fn restore(&mut self, state: &NativeState, main: HWND, pinned: bool) -> bool {
-            if let Some(rect) = self.original_rect {
-                if let Err(error) = SetWindowPos(
+        /// 返回异步恢复使用的矩形及 DPI，首次独立定位不再读回尚未处理的旧侧栏位置。
+        unsafe fn restore(&mut self, main: HWND, pinned: bool) -> Result<Option<(RECT, u32)>> {
+            if let Some(original) = self.original_rect {
+                let mut current = RECT::default();
+                GetWindowRect(main, &mut current)
+                    .map_err(|e| format!("无法读取吸附窗口的当前尺寸：{e}"))?;
+                let dpi = GetDpiForWindow(main).max(96);
+                // 跟随目标跨屏后，旧独立坐标和旧 DPI 已不再适用；以当前侧栏所在屏幕为准。
+                let monitor = MonitorFromWindow(main, MONITOR_DEFAULTTONEAREST);
+                let mut info = MONITORINFO {
+                    cbSize: size_of::<MONITORINFO>() as u32,
+                    ..Default::default()
+                };
+                if !GetMonitorInfoW(monitor, &mut info).as_bool() {
+                    return Err("无法读取吸附窗口当前屏幕的工作区。".into());
+                }
+                let same_monitor = MonitorFromRect(&original, MONITOR_DEFAULTTONEAREST) == monitor;
+                let rect = super::docking::undocked_bounds(
+                    same_monitor.then_some(&original),
+                    &current,
+                    &info.rcWork,
+                );
+                SetWindowPos(
                     main,
                     Some(if pinned { HWND_TOPMOST } else { HWND_NOTOPMOST }),
                     rect.left,
@@ -1361,23 +1480,24 @@ mod platform {
                     rect.right - rect.left,
                     rect.bottom - rect.top,
                     SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
-                ) {
-                    state.notify_error(format!("无法恢复闪语独立窗口的位置和尺寸：{error}"));
-                    return false;
-                }
+                )
+                .map_err(|e| format!("无法恢复闪语独立窗口的位置和尺寸：{e}"))?;
                 self.original_rect = None;
                 self.width = Default::default();
+                return Ok(Some((rect, dpi)));
             }
-            true
+            Ok(None)
         }
         /// 独立窗口先在前台所在屏幕定位再显示；尺寸随目标 DPI 换算，工作区排除任务栏。
         unsafe fn position_standalone(
             &mut self,
+            state: &Arc<NativeState>,
             main: HWND,
             foreground: HWND,
-            original: Option<RECT>,
+            restored: Option<(RECT, u32)>,
+            preserve_size: bool,
         ) -> Result<()> {
-            if self.standalone_positioned {
+            if self.standalone_positioned.load(Ordering::Acquire) {
                 return Ok(());
             }
             let monitor = if !foreground.0.is_null() && IsWindow(Some(foreground)).as_bool() {
@@ -1396,32 +1516,97 @@ mod platform {
             }
             let mut rect = RECT::default();
             GetWindowRect(main, &mut rect).map_err(|e| format!("无法读取主窗口尺寸：{e}"))?;
-            // 恢复定位是异步消息，不能立刻把尚未恢复的侧栏尺寸当作独立窗口尺寸。
-            let current_dpi = if let Some(original) = original {
-                rect = original;
-                self.original_dpi.max(96)
+            // 恢复定位是异步消息；使用刚提交的最新宽高及其 DPI，避免读回旧矩形后二次缩放。
+            let current_dpi = if let Some((bounds, dpi)) = restored {
+                rect = bounds;
+                dpi
             } else {
                 GetDpiForWindow(main).max(96)
             };
             let (mut dpi, mut dpi_y) = (current_dpi, current_dpi);
             let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut dpi_y);
-            let bounds = super::docking::standalone_bounds(
-                &info.rcWork,
-                ((rect.right - rect.left) as f64 * dpi as f64 / current_dpi as f64).round() as i32,
-                ((rect.bottom - rect.top) as f64 * dpi as f64 / current_dpi as f64).round() as i32,
-                dpi,
-            );
-            SetWindowPos(
-                main,
-                None,
-                bounds.left,
-                bounds.top,
-                bounds.right - bounds.left,
-                bounds.bottom - bounds.top,
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
-            )
-            .map_err(|e| format!("无法将主窗口定位到屏幕右侧：{e}"))?;
-            self.standalone_positioned = true;
+            let width =
+                ((rect.right - rect.left) as f64 * dpi as f64 / current_dpi as f64).round() as i32;
+            let height =
+                ((rect.bottom - rect.top) as f64 * dpi as f64 / current_dpi as f64).round() as i32;
+            let mut bounds = super::docking::standalone_bounds(&info.rcWork, width, height, dpi);
+            if restored.is_some() || preserve_size {
+                // 首次显示前已经吸附过时，也保留最新尺寸；超出工作区不擅自压缩。
+                bounds.right = bounds.left + width;
+                bounds.bottom = bounds.top + height;
+            }
+            let app = state.app.get().ok_or("Windows服务尚未启动。")?;
+            let handle = main.0 as i64;
+            let pending = self.standalone_pending.clone();
+            let positioned = self.standalone_positioned.clone();
+            let native = state.clone();
+            pending.store(true, Ordering::Release);
+            if let Err(error) = app.run_on_main_thread(move || {
+                if !native.minimized.load(Ordering::Acquire)
+                    && *native.display_mode.lock().unwrap() != DisplayMode::Hidden
+                {
+                    let main = hwnd(handle);
+                    let saved = {
+                        let size = native.window_size.lock().unwrap();
+                        (size.restore_pending && restored.is_none())
+                            .then_some(size.current)
+                            .flatten()
+                    };
+                    let mut bounds = bounds;
+                    if let Some(size) = saved {
+                        // 在首次显示前刷新隐藏窗口的非客户区，按真实边框恢复尺寸并重新居中。
+                        // 否则先用含系统标题栏的高度定位，显示后补差会再跳动30DIP。
+                        let _ = SetWindowPos(
+                            main,
+                            None,
+                            0,
+                            0,
+                            0,
+                            0,
+                            SWP_FRAMECHANGED
+                                | SWP_NOMOVE
+                                | SWP_NOSIZE
+                                | SWP_NOZORDER
+                                | SWP_NOACTIVATE,
+                        );
+                        let mut outer = RECT::default();
+                        let mut client = RECT::default();
+                        if GetWindowRect(main, &mut outer).is_ok()
+                            && GetClientRect(main, &mut client).is_ok()
+                        {
+                            let scale = f64::from(dpi) / f64::from(GetDpiForWindow(main).max(96));
+                            let width = (size.width * f64::from(dpi) / 96.0
+                                + f64::from(outer.right - outer.left - client.right) * scale)
+                                .round() as i32;
+                            let height = (size.height * f64::from(dpi) / 96.0
+                                + f64::from(outer.bottom - outer.top - client.bottom) * scale)
+                                .round() as i32;
+                            bounds =
+                                super::docking::standalone_bounds(&info.rcWork, width, height, dpi);
+                            bounds.right = bounds.left + width;
+                            bounds.bottom = bounds.top + height;
+                        }
+                    }
+                    // 不在后台先排异步定位再同步显示，否则第一帧可能暴露左侧默认坐标。
+                    if let Err(error) = SetWindowPos(
+                        main,
+                        None,
+                        bounds.left,
+                        bounds.top,
+                        bounds.right - bounds.left,
+                        bounds.bottom - bounds.top,
+                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                    ) {
+                        native.notify_error(format!("无法将主窗口定位到屏幕右侧：{error}"));
+                    } else {
+                        positioned.store(true, Ordering::Release);
+                    }
+                }
+                pending.store(false, Ordering::Release);
+            }) {
+                self.standalone_pending.store(false, Ordering::Release);
+                return Err(format!("无法安排主窗口首次显示：{error}"));
+            }
             Ok(())
         }
         unsafe fn update(&mut self, state: &Arc<NativeState>, foreground: HWND) {
@@ -1429,7 +1614,10 @@ mod platform {
                 return;
             };
             let main = hwnd(windows.0);
-            if !self.edge.ready() || !self.floating.ready() {
+            if !self.edge.ready()
+                || !self.floating.ready()
+                || self.standalone_pending.load(Ordering::Acquire)
+            {
                 return;
             }
             // 最小化必须在裁剪和贴边定位结束后执行，否则待处理的定位会覆盖系统最小化。
@@ -1460,16 +1648,30 @@ mod platform {
             };
             self.target_context = target.is_some() && mode != DisplayMode::Hidden;
             if !settings.dock || mode == DisplayMode::Standalone {
+                MAIN_DOCKED.store(false, Ordering::Release);
                 if !show && !self.edge.clear(state, main) {
                     return;
                 }
-                let original = self.original_rect;
-                if !self.restore(state, main, settings.pinned) {
-                    return;
+                let restored = match self.restore(main, settings.pinned) {
+                    Ok(restored) => restored,
+                    Err(error) => {
+                        state.notify_error(error);
+                        return;
+                    }
+                };
+                if !settings.dock && restored.is_some() {
+                    // 主动解除吸附已经选定当前位置；首次独立显示也不能再按其他前台窗口跨屏定位。
+                    self.standalone_positioned.store(true, Ordering::Release);
                 }
                 if show {
-                    if let Err(error) = self.position_standalone(main, foreground, original) {
+                    let preserve_size = state.window_size.lock().unwrap().current.is_some();
+                    if let Err(error) =
+                        self.position_standalone(state, main, foreground, restored, preserve_size)
+                    {
                         state.notify_error(error);
+                        return;
+                    }
+                    if self.standalone_pending.load(Ordering::Acquire) {
                         return;
                     }
                 }
@@ -1520,8 +1722,8 @@ mod platform {
             }
             if self.original_rect.is_none() {
                 self.original_rect = Some(m);
-                self.original_dpi = GetDpiForWindow(main).max(96);
             }
+            MAIN_DOCKED.store(true, Ordering::Release);
             let Ok(frame) = Self::frame(main) else {
                 return;
             };

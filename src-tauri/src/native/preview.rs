@@ -70,10 +70,20 @@ mod platform {
             (outer.bottom - outer.top) - (client.bottom - client.top),
         ))
     }
-    /// 提示始终从鼠标右下方展开，屏幕边缘也不翻转或反向移动；超出屏幕的部分由系统裁切。
-    fn bounds(pointer: POINT, width: i32, height: i32, gap: i32) -> RECT {
-        let x = pointer.x + gap;
-        let y = pointer.y + gap;
+    /// 优先右下，放不下时分别向左／向上翻转；最后钳制到工作区，避开任务栏及屏幕外侧。
+    fn bounds(pointer: POINT, width: i32, height: i32, gap: i32, work: RECT) -> RECT {
+        let x = if pointer.x + gap + width <= work.right {
+            pointer.x + gap
+        } else {
+            pointer.x - gap - width
+        };
+        let y = if pointer.y + gap + height <= work.bottom {
+            pointer.y + gap
+        } else {
+            pointer.y - gap - height
+        };
+        let x = x.clamp(work.left, (work.right - width).max(work.left));
+        let y = y.clamp(work.top, (work.bottom - height).max(work.top));
         RECT {
             left: x,
             top: y,
@@ -81,10 +91,11 @@ mod platform {
             bottom: y + height,
         }
     }
-    /// 固定右下方展开，只使用鼠标下方的客户区高度；不设480 DIP上限，也不反向挪动。
+    /// 长文使用鼠标上下两侧中更充足的一侧，正文超出后滚动，不能在底边只留几行甚至不显示。
     fn available_height(pointer: POINT, work: RECT, scale: f64, vertical_inset: i32) -> f64 {
         let gap = (12.0 * scale).round() as i32;
-        (work.bottom - pointer.y - gap - vertical_inset).max(0) as f64 / scale
+        let y = pointer.y.clamp(work.top, work.bottom);
+        ((work.bottom - y).max(y - work.top) - gap - vertical_inset).max(0) as f64 / scale
     }
     impl PreviewState {
         unsafe fn hide(&mut self, preview: HWND) {
@@ -245,6 +256,7 @@ mod platform {
                 width,
                 height,
                 (12.0 * state.scale).round() as i32,
+                state.work,
             );
             unsafe {
                 SetWindowPos(
@@ -303,17 +315,14 @@ mod platform {
                     for y in [origin + 990, origin + 1040 - gap, origin + 1050] {
                         let remaining = available_height(POINT { x: 100, y }, work, scale, 2);
                         assert!(remaining >= 0.0);
-                        if remaining > 0.0 {
-                            assert!(y + gap + (remaining * scale).ceil() as i32 + 2 <= work.bottom);
-                        } else {
-                            assert!(y + gap + 2 >= work.bottom);
-                        }
+                        assert!(remaining > 480.0 / scale, "靠近底边时向上提供足够阅读空间");
+                        assert!(remaining * scale + 2.0 <= f64::from(work.bottom - work.top));
                     }
                 }
             }
         }
         #[test]
-        fn preview_keeps_pointer_direction_even_at_screen_edges() {
+        fn preview_flips_at_screen_edges_and_stays_inside_work_area() {
             for origin in [-1920, 0, 1920] {
                 let work = RECT {
                     left: origin + 8,
@@ -328,18 +337,23 @@ mod platform {
                     for x in [100, 1890] {
                         for y in [100, 1000] {
                             let pointer = POINT { x: origin + x, y };
-                            let rect = bounds(pointer, width, height, gap);
-                            assert_eq!((rect.left - pointer.x, rect.top - pointer.y), (gap, gap));
+                            let rect = bounds(pointer, width, height, gap, work);
                             assert_eq!(
                                 (rect.right - rect.left, rect.bottom - rect.top),
                                 (width, height)
                             );
                             if x == 1890 {
-                                assert!(rect.right > work.right);
+                                assert_eq!(pointer.x - rect.right, gap);
+                            } else {
+                                assert_eq!(rect.left - pointer.x, gap);
                             }
                             if y == 1000 {
-                                assert!(rect.bottom > work.bottom);
+                                assert_eq!(pointer.y - rect.bottom, gap);
+                            } else {
+                                assert_eq!(rect.top - pointer.y, gap);
                             }
+                            assert!(rect.left >= work.left && rect.right <= work.right);
+                            assert!(rect.top >= work.top && rect.bottom <= work.bottom);
                             assert!(!contains(rect, pointer));
                         }
                     }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { getVersion } from '@tauri-apps/api/app';
 import { call, openWindow } from './api';
 import { FormDialog } from './ui';
 
@@ -66,9 +67,17 @@ export function UpdateSettings() {
   </section>;
 }
 
-/** 只提示已通过签名验证的版本，不主动唤起窗口；关闭提示不影响后台状态。 */
-export function UpdateNotice() {
-  const { status } = useUpdateStatus(); const [dismissed, setDismissed] = useState(''); const [error, setError] = useState('');
-  if (!status?.release || dismissed === status.release.version) return null;
-  return <div className="update-notice" role="status"><button onClick={() => void openWindow('settings', '', '', '关于').catch(e => setError(String(e)))}>发现新版本 v{status.release.version}，查看更新</button><button aria-label="关闭更新提示" onClick={() => setDismissed(status.release!.version)}>×</button>{error && <span>{error}</span>}</div>;
+/** 更新仅在底栏显示角标，悬停展示版本信息；复用已验证状态，点击只打开更新页。 */
+export function UpdateBadge() {
+  const { status } = useUpdateStatus();
+  const [current, setCurrent] = useState('读取中…');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let disposed = false;
+    void getVersion().then(version => { if (!disposed) setCurrent(`v${version}`); }).catch(() => { if (!disposed) setCurrent('读取失败'); });
+    return () => { disposed = true; };
+  }, []);
+  if (!status?.release) return <span className="brand-name">闪语</span>;
+  const hint = `当前版本 ${current}\n最新版本 v${status.release.version}\n点击查看并升级`;
+  return <span className="brand-update" role="status"><button className="brand-name brand-update-button" title={error || hint} aria-label={error || hint} onClick={() => { setError(''); void openWindow('settings', '', '', '关于').catch(e => setError(String(e))); }}>闪语<span className="brand-update-badge" aria-hidden="true">新</span></button></span>;
 }

@@ -29,6 +29,9 @@
 #ifndef AppGroup
   #define AppGroup "闪语"
 #endif
+#ifndef WindowSizeDirectory
+  #define WindowSizeDirectory "{localappdata}\com.quickphrase.desktop"
+#endif
 
 [Setup]
 AppId={#AppId}
@@ -88,6 +91,77 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: 
 Type: files; Name: "{app}\shanyu.exe"; Check: IsUpgrade
 
 [Code]
+type
+  TWindowRect = record Left, Top, Right, Bottom: Integer; end;
+var
+  PreviousWindowSize: String;
+
+function SizeFindWindowEx(Parent, After: HWND; ClassName, Title: String): HWND;
+  external 'FindWindowExW@user32.dll stdcall';
+function SizeGetProcessId(Window: HWND; var ProcessId: LongWord): LongWord;
+  external 'GetWindowThreadProcessId@user32.dll stdcall';
+function SizeOpenProcess(Access: LongWord; Inherit: Boolean; ProcessId: LongWord): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function SizeQueryImage(Process: THandle; Flags: LongWord; Image: String; var Length: LongWord): Boolean;
+  external 'QueryFullProcessImageNameW@kernel32.dll stdcall';
+function SizeCloseHandle(Handle: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+function SizeGetClientRect(Window: HWND; var Rect: TWindowRect): Boolean;
+  external 'GetClientRect@user32.dll stdcall';
+function SizeGetDpi(Window: HWND): LongWord;
+  external 'GetDpiForWindow@user32.dll stdcall';
+function SizeIsIconic(Window: HWND): Boolean;
+  external 'IsIconic@user32.dll stdcall';
+function SizeIsZoomed(Window: HWND): Boolean;
+  external 'IsZoomed@user32.dll stdcall';
+function SizeDpiContext(Context: THandle): THandle;
+  external 'SetThreadDpiAwarenessContext@user32.dll stdcall';
+
+{ 旧版尚未保存尺寸：在安装器关闭旧进程之前只读客户区，且核对进程确实来自本次安装目录。
+  新版已有尺寸文件时不迁移，不覆盖运行中客户端保存的最新结果，也不读取话术或聊天内容。 }
+procedure CapturePreviousWindowSize;
+var Window: HWND; ProcessId, Length, Dpi: LongWord; Process, OldDpi: THandle;
+    Image, SizePath: String; Rect: TWindowRect; Width, Height: Integer;
+begin
+  SizePath := ExpandConstant('{#WindowSizeDirectory}\window-size.json');
+  if FileExists(SizePath) then Exit;
+  Window := SizeFindWindowEx(0, 0, 'Tauri Window', '闪语');
+  while Window <> 0 do begin
+    SizeGetProcessId(Window, ProcessId);
+    Process := SizeOpenProcess($1000, False, ProcessId);
+    if Process <> 0 then begin
+      try
+        Length := 32768; SetLength(Image, Length);
+        if SizeQueryImage(Process, 0, Image, Length) then begin
+          SetLength(Image, Length);
+          if ((CompareText(Image, ExpandConstant('{app}\QuickPhrase.exe')) = 0) or
+              (CompareText(Image, ExpandConstant('{app}\shanyu.exe')) = 0)) and
+              not SizeIsIconic(Window) and not SizeIsZoomed(Window) then begin
+            OldDpi := SizeDpiContext(-4);
+            try
+              Dpi := SizeGetDpi(Window);
+              if (Dpi > 0) and SizeGetClientRect(Window, Rect) then begin
+                Width := ((Rect.Right - Rect.Left) * 96 + Integer(Dpi) div 2) div Integer(Dpi);
+                Height := ((Rect.Bottom - Rect.Top) * 96 + Integer(Dpi) div 2) div Integer(Dpi);
+                if (Width > 0) and (Height > 0) then begin
+                  PreviousWindowSize := Format('{"width":%d,"height":%d}', [Width, Height]);
+                  Log('已记录升级前窗口大小。');
+                  Exit;
+                end;
+              end;
+            finally
+              if OldDpi <> 0 then SizeDpiContext(OldDpi);
+            end;
+          end;
+        end;
+      finally
+        SizeCloseHandle(Process);
+      end;
+    end;
+    Window := SizeFindWindowEx(0, Window, 'Tauri Window', '闪语');
+  end;
+end;
+
 const
   WebViewKey = 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
 
@@ -108,9 +182,20 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
-var LegacyCommand: String;
+var LegacyCommand, SizePath, SizeTemp: String;
 begin
   if CurStep = ssPostInstall then begin
+    SizePath := ExpandConstant('{#WindowSizeDirectory}\window-size.json');
+    if (PreviousWindowSize <> '') and not FileExists(SizePath) then begin
+      ForceDirectories(ExtractFileDir(SizePath));
+      SizeTemp := SizePath + '.upgrade';
+      if SaveStringToFile(SizeTemp, PreviousWindowSize, False) and RenameFile(SizeTemp, SizePath) then
+        Log('已保留升级前窗口大小。')
+      else begin
+        DeleteFile(SizeTemp);
+        Log('无法保存升级前窗口大小，首次打开可能使用默认大小。');
+      end;
+    end;
     { 静默升级未启动应用时也更新入口；仅接管指向本次安装目录的旧启动项。 }
     if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', '{#LegacyStartupValue}', LegacyCommand) and
       (CompareText(LegacyCommand, '"' + ExpandConstant('{app}\shanyu.exe') + '" --autostart') = 0) then begin
@@ -135,6 +220,7 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var ExitCode: Integer;
 begin
   Result := '';
+  CapturePreviousWindowSize;
   if WebViewInstalled then Exit;
   { 官方引导程序支持当前用户安装；运行失败时停止安装并保留具体退出码。 }
   ExtractTemporaryFile('MicrosoftEdgeWebview2Setup.exe');

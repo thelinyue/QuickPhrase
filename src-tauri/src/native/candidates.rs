@@ -14,6 +14,8 @@ pub struct CandidatePayload {
     pub phrases: Vec<Phrase>,
     pub selected_index: usize,
     pub target: TargetContext,
+    /// 成员候选必须沿用触发时的账号，防止切号后相同来源引用被旧候选投递。
+    pub member_epoch: Option<u64>,
 }
 
 #[derive(Default)]
@@ -296,22 +298,26 @@ mod window {
             if !settings.custom_hotkeys {
                 return;
             }
-            let phrases = self
-                .shortcut_phrases
-                .read()
-                .unwrap()
-                .iter()
-                .filter(|p| {
-                    crate::native::parse_shortcut(&p.shortcut)
-                        .is_ok_and(|s| s.canonical() == shortcut)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
+            // 话术与账号来自同一绑定快照，不能在读完旧话术后补读新账号。
+            let (phrases, member_epoch) = {
+                let bindings = self.shortcut_phrases.read().unwrap();
+                let phrases = bindings
+                    .0
+                    .iter()
+                    .filter(|p| {
+                        crate::native::parse_shortcut(&p.shortcut)
+                            .is_ok_and(|s| s.canonical() == shortcut)
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                (phrases, bindings.1)
+            };
             if phrases.is_empty() {
                 return;
             }
             self.hide_preview(None);
             let payload = CandidatePayload {
+                member_epoch,
                 shortcut: shortcut.into(),
                 phrases,
                 selected_index: 0,
@@ -453,6 +459,7 @@ mod tests {
         };
         state.open(
             CandidatePayload {
+                member_epoch: None,
                 shortcut: "Q+W".into(),
                 phrases: (0..12)
                     .map(|i| Phrase {

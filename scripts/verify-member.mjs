@@ -3,10 +3,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { chromium } from 'playwright';
 
-// 隔离数据下运行真实 Windows IPC、凭据、HTTP、SSE 与 WebView2；不发送聊天或操作系统剪贴板。
+// 隔离数据下运行 Windows IPC、凭据、HTTP、SSE 与 WebView2；仅向隔离宿主触发候选，缺失素材必须在操作剪贴板前拒绝。
 const repo = process.cwd(), evidence = path.join(repo, '.build', `member-${Date.now()}`);
 if (!process.env.SHANYU_TEAM_SERVER_EXE) throw new Error('请通过 SHANYU_TEAM_SERVER_EXE 指定 Hub 程序。');
 await fs.mkdir(evidence, { recursive: true });
@@ -53,6 +54,8 @@ async function settings(alias = '账号与共享') {
   await hook(view); await view.getByRole('heading', { name: '账号与共享', exact: true }).waitFor(); return view;
 }
 const click = locator => locator.evaluate(el => el.click());
+// 关闭原生窗口而非仅销毁调试目标，否则管理窗口仍存在，会按设计暂停业务快捷键。
+const closeView = async view => { await invoke('plugin:window|close', {}, view).catch(error => { if (!view.isClosed()) throw error; }); await until(() => view.isClosed()); };
 const memberView = accept => until(() => invoke('get_member_view'), accept);
 const synced = () => until(() => invoke('get_private_status'), s => s.enabled && s.state === '已同步' && s.pending === 0 && s.lastSuccessfulSyncAt > 0);
 const login = username => invoke('team_login', { server: base, username, password });
@@ -95,7 +98,7 @@ try {
     await root.check(); assert.equal(await view.getByRole('button', { name: '确认共享', exact: true }).isEnabled(), true);
     await view.screenshot({ path: path.join(evidence, 'share-scope.png') }); await click(view.getByRole('button', { name: '确认共享', exact: true })); await view.locator('dialog').waitFor({ state: 'hidden' });
     const overview = await invoke('get_member_overview', { sessionEpoch: account.sessionEpoch }); grant = overview.sharing; assert.deepEqual(grant.rootIds, [sourceRoot]);
-    await view.close();
+    await closeView(view);
   });
   await startClient('recipient-a'); await login('002');
   await check('接收方不启用本人同步即可使用，分类同名隔离、两级只读且个人库不混入缓存', async () => {
@@ -116,7 +119,48 @@ try {
     await assert.rejects(invoke('save_phrase', { phrase: { ...member.phrases[0], title: '禁止修改' } }));
     const syncLabel = await view.locator('.private-sync-settings .sync-row > strong').evaluate(el => { const range = document.createRange(); range.selectNodeContents(el); return { wrap: getComputedStyle(el).whiteSpace, lines: range.getClientRects().length }; });
     assert.equal(syncLabel.wrap, 'nowrap'); assert.equal(syncLabel.lines, 1);
-    await view.screenshot({ path: path.join(evidence, 'account-sharing.png') }); await view.close();
+    await view.screenshot({ path: path.join(evidence, 'account-sharing.png') }); await closeView(view);
+  });
+  await check('分享话术个人快捷键独立保存，同键候选可选且缺失素材整条拒绝', async () => {
+    const epoch = (await invoke('get_team_status')).sessionEpoch;
+    const bind = shortcut => invoke('save_member_shortcut', { id: oldKey, shortcut, sessionEpoch: epoch });
+    await assert.rejects(invoke('save_member_shortcut', { id: oldKey, shortcut: 'Ctrl+K', sessionEpoch: epoch - 1 }));
+    await bind('Control+K');
+    assert.equal((await invoke('get_member_view')).phrases[0].shortcut, 'Ctrl+K');
+    await assert.rejects(invoke('validate_phrase_shortcut', { id: ownId, shortcut: 'Ctrl+K+Y' }));
+    const own = (await invoke('get_library')).phrases.find(p => p.id === ownId);
+    await assert.rejects(invoke('save_phrase', { phrase: { ...own, shortcut: 'Ctrl+K+Y' } }));
+    await bind(''); assert.equal((await invoke('get_member_view')).phrases[0].shortcut, '');
+    await bind('Ctrl+Shift+F11');
+    await invoke('save_phrase', { phrase: { ...own, shortcut: 'Ctrl+Shift+F11' } });
+    const settings = (await invoke('get_library')).settings;
+    await assert.rejects(invoke('save_settings', { settings: { ...settings, sequenceHotkeys: true, sequenceBindings: ['Ctrl+Shift+F11', ...settings.sequenceBindings.slice(1)] } }));
+    await invoke('save_settings', { settings: { ...settings, dock: false, dockCommon: false, edgeAutoHide: false, customHotkeys: true, globalPhraseHotkeys: true, sequenceHotkeys: false } });
+    const run = promisify(execFile), events = path.join(evidence, 'shortcut-host.json'), controls = path.join(evidence, 'shortcut-control.json');
+    const ps = args => run('powershell.exe', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', ...args], { windowsHide: true, encoding: 'utf8' });
+    const native = async args => JSON.parse((await ps(['-File', path.join(repo, 'tests/native-driver.ps1'), ...args])).stdout);
+    const fixture = path.join(evidence, 'ShanyuDockHost.exe');
+    await ps(['-File', path.join(repo, 'tests/build-dock-host.ps1'), '-OutputPath', fixture]);
+    const host = spawn(fixture, [events, controls], { windowsHide: true, stdio: 'ignore' });
+    try {
+      const info = await until(async () => JSON.parse(await fs.readFile(events, 'utf8')));
+      await native(['-Action', 'focus', '-Handle', String(info.hwnd)]); await delay(350);
+      await native(['-Action', 'key', '-Key', '122', '-Ctrl', '-Shift']);
+      const payload = await until(() => invoke('get_shortcut_candidates'));
+      assert.equal(payload.memberEpoch, epoch);
+      const ownLibrary = await invoke('get_library');
+      const ownKey = `private:${ownLibrary.libraryId}:phrase:${ownId}:${ownLibrary.privateRevisions[`phrase:${ownId}`]}`;
+      assert.deepEqual(payload.phrases.map(p => p.id).sort(), [ownKey, oldKey].sort());
+      const index = payload.phrases.findIndex(p => p.id === oldKey); assert.ok(index >= 0);
+      await assert.rejects(invoke('submit_shortcut_candidate', { index, mode: 'insert' }), /素材未缓存/);
+      assert.equal((await until(async () => JSON.parse(await fs.readFile(events, 'utf8')))).events.length, 0, '缺失素材不得部分投递');
+      await native(['-Action', 'key', '-Key', '122', '-Ctrl', '-Shift']); await until(() => invoke('get_shortcut_candidates'));
+      await bind(''); assert.equal(await invoke('get_shortcut_candidates'), null);
+      await bind('Ctrl+Shift+F11');
+    } finally { host.kill(); }
+    await invoke('save_phrase', { phrase: { ...own, shortcut: '' } });
+    const source = await api('source', 'GET', 'me/private/snapshot');
+    assert.equal(source.records.find(r => r.kind === 'phrase' && r.id === sourcePhrase).value.shortcut, '');
   });
   await check('图片自动缓存、附件按需下载，主搜索与全部搜索都保留成员来源', async () => {
     await memberView(v => v.phrases[0]?.segments[0].blocks.find(b => b.kind === 'image')?.path);
@@ -129,6 +173,7 @@ try {
   await startClient('recipient-b'); await login('002');
   await check('同账号第二设备读取使用选择，停止会清除缓存并同步回第一设备', async () => {
     const member = await memberView(v => v.phrases.length === 1); const account = await invoke('get_team_status');
+    assert.equal(member.phrases[0].shortcut, '', '个人绑定不应从其他设备同步');
     assert.equal((await api('source', 'GET', 'me/phrase-grants')).users.length, 1);
     await invoke('set_member_subscription', { sessionEpoch: account.sessionEpoch, request: { grantId: null, expectedVersion: member.subscription.version } }); await memberView(v => !v.subscription.grantId && !v.phrases.length);
     assert.equal((await api('source', 'GET', 'me/phrase-grants')).users.length, 0);
@@ -136,6 +181,7 @@ try {
     const nextAccount = await invoke('get_team_status'), overview = await invoke('get_member_overview', { sessionEpoch: nextAccount.sessionEpoch });
     await invoke('set_member_subscription', { sessionEpoch: nextAccount.sessionEpoch, request: { grantId: grant.id, expectedVersion: overview.subscription.version } });
     const next = await memberView(v => v.phrases.length === 1); oldKey = next.phrases[0].id;
+    assert.equal(next.phrases[0].shortcut, 'Ctrl+Shift+F11');
     await invoke('download_member_materials', { ids: [oldKey], attachments: true });
   });
   await check('共享范围和人数同一行，名单排序滚动、Esc关闭及焦点恢复；暂停与离线状态明确', async () => {
@@ -195,18 +241,19 @@ try {
     await view.getByRole('button', { name: '重新连接', exact: true }).waitFor({ state: 'hidden' });
     for (const username of extra) await api(username, 'PUT', 'me/phrase-subscription', { grantId: null, expectedVersion: 1 });
     await until(async () => (await api('source', 'GET', 'me/phrase-grants')).users.length, n => n === 1);
-    await view.close(); await startClient('recipient-a'); await memberView(v => v.phrases[0]?.ready);
+    await closeView(view); await startClient('recipient-a'); await memberView(v => v.phrases[0]?.ready);
   });
   await check('断网与离线重启保留完整缓存，联网后恢复授权核验', async () => {
     service.kill(); await until(() => service.exitCode !== null || service.signalCode !== null);
     await assert.rejects(invoke('team_refresh')); assert.equal((await invoke('get_team_status')).offline, true);
-    await startClient('recipient-a'); const cached = await memberView(v => v.state === '离线' && v.phrases[0]?.ready); oldKey = cached.phrases[0].id;
+    await startClient('recipient-a'); const cached = await memberView(v => v.state === '离线' && v.phrases[0]?.ready); oldKey = cached.phrases[0].id; assert.equal(cached.phrases[0].shortcut, 'Ctrl+Shift+F11');
     service = startServer(); await until(async () => (await fetch(base + '/health')).ok); await invoke('team_refresh');
     await memberView(v => v.state === '已同步' && v.phrases.length === 1);
   });
   await check('来源编辑经 SSE 更新，旧引用拒绝；移出范围撤下正文及素材', async () => {
     await editSource(value => ({ ...value, title: '来源已更新' })); const edited = await memberView(v => v.phrases[0]?.title === '来源已更新');
-    assert.notEqual(edited.phrases[0].id, oldKey);
+    assert.notEqual(edited.phrases[0].id, oldKey); assert.equal(edited.phrases[0].shortcut, 'Ctrl+Shift+F11');
+    await assert.rejects(invoke('save_member_shortcut', { id: oldKey, shortcut: '', sessionEpoch: (await invoke('get_team_status')).sessionEpoch }));
     await assert.rejects(invoke('show_phrase_preview', { id: oldKey, anchor: { left: 0, top: 0, right: 50, bottom: 50 } }));
     await editSource(value => ({ ...value, rootId: secretRoot, groupId: null })); await memberView(v => v.phrases.length === 0);
     const oldPath = edited.phrases[0].segments[0].blocks.find(b => b.kind === 'file').path; await assert.rejects(fs.access(oldPath));
@@ -250,10 +297,10 @@ try {
     await dialog.getByLabel('密码', { exact: true }).fill(password);
     await click(dialog.getByRole('button', { name: '连接', exact: true })); await dialog.waitFor({ state: 'hidden' });
     await until(() => invoke('get_library'), value => value.phrases.some(p => p.id === ownId));
-    await view.close(); await invoke('team_logout'); assert.equal((await invoke('get_member_view')).phrases.length, 0);
+    await closeView(view); await invoke('team_logout'); assert.equal((await invoke('get_member_view')).phrases.length, 0);
   });
   assert.deepEqual(faults, []);
-  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ checks, clientVersion: await invoke('plugin:app|version'), limits: ['真实 Windows WebView2、IPC、SQLite、凭据和回环 HTTP/SSE；接收方两个隔离设备轮流运行', '未触发真实企业微信、剪贴板或实体输入；局域网、代理、DPI和安装升级未验证'] }, null, 2));
+  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ checks, clientVersion: await invoke('plugin:app|version'), limits: ['真实 Windows WebView2、IPC、SQLite、凭据和回环 HTTP/SSE；接收方两个隔离设备轮流运行', '快捷键通过系统按键进入隔离宿主，缺失素材拒绝投递；未操作真实企业微信或剪贴板；局域网、代理、DPI和安装升级未验证'] }, null, 2));
   console.log('证据：' + evidence);
 } catch (error) {
   await page?.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});

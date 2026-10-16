@@ -78,7 +78,7 @@ try {
     await fs.writeFile(file, 'invalid signature'); await assert.rejects(invoke('qa_load_update'), /签名/);
     await fs.writeFile(file, signature); const status = await invoke('qa_load_update'); assert.equal(status.phase, 'ready');
     await settings.getByRole('button', { name: '退出并安装', exact: true }).waitFor();
-    await main.getByRole('button', { name: '发现新版本 v9.9.9，查看更新' }).waitFor();
+    await main.getByRole('button', { name: /最新版本 v9.9.9/ }).waitFor();
     await settings.screenshot({ path: path.join(root, 'settings-ready.png') });
   });
   await check('编辑窗口阻止安装；关闭后启动失败保留应用并释放操作互斥', async () => {

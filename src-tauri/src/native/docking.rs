@@ -15,6 +15,30 @@ impl DockWidth {
     }
 }
 
+/// 解除吸附留在侧栏当前显示器，尺寸沿用当前物理宽高，不再按旧屏幕 DPI 缩放。
+/// 仅同屏旧位置可恢复；越界时平移到当前工作区，超大窗口也保留尺寸并让左上角可访问。
+pub fn undocked_bounds(
+    same_monitor_original: Option<&windows::Win32::Foundation::RECT>,
+    current: &windows::Win32::Foundation::RECT,
+    work: &windows::Win32::Foundation::RECT,
+) -> windows::Win32::Foundation::RECT {
+    let position = same_monitor_original.unwrap_or(current);
+    let width = current.right - current.left;
+    let height = current.bottom - current.top;
+    let left = position
+        .left
+        .clamp(work.left, (work.right - width).max(work.left));
+    let top = position
+        .top
+        .clamp(work.top, (work.bottom - height).max(work.top));
+    windows::Win32::Foundation::RECT {
+        left,
+        top,
+        right: left + width,
+        bottom: top + height,
+    }
+}
+
 /// SetWindowPos 使用窗口外框，而 DWM 给出的可见边缘不包含不可见的调整大小边框。
 /// 将期望的可见矩形换算成外框矩形；边框来自当前窗口，避免写死像素后在不同 DPI 下出现间隙。
 pub fn window_bounds_for_frame(
@@ -91,6 +115,106 @@ pub fn bottom_bounds(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn undocking_does_not_return_to_a_different_monitor() {
+        use windows::Win32::Foundation::RECT;
+        // 左右屏、上方屏及不同缩放后的物理尺寸；旧位置属于其他屏幕时不参与恢复。
+        for (x, y) in [(0, 0), (-2560, -240), (0, -1800)] {
+            let work = RECT {
+                left: x,
+                top: y,
+                right: x + 2560,
+                bottom: y + 1600,
+            };
+            for dpi in [96, 144, 192] {
+                let current = RECT {
+                    left: x + 300,
+                    top: y + 80,
+                    right: x + 300 + 400 * dpi / 96,
+                    bottom: y + 80 + 720 * dpi / 96,
+                };
+                assert_eq!(
+                    undocked_bounds(None, &current, &work),
+                    current,
+                    "跨屏吸附后解除时应留在当前屏幕，并保留当前尺寸"
+                );
+            }
+        }
+    }
+    #[test]
+    fn undocking_on_same_monitor_restores_position_and_keeps_latest_size() {
+        use windows::Win32::Foundation::RECT;
+        let work = RECT {
+            left: -2560,
+            top: -240,
+            right: 0,
+            bottom: 1600,
+        };
+        let original = RECT {
+            left: -1500,
+            top: -100,
+            right: -1180,
+            bottom: 620,
+        };
+        for dpi in [96, 144, 192] {
+            let current = RECT {
+                left: -900,
+                top: 0,
+                right: -900 + 400 * dpi / 96,
+                bottom: 720 * dpi / 96,
+            };
+            let restored = undocked_bounds(Some(&original), &current, &work);
+            assert_eq!((restored.left, restored.top), (original.left, original.top));
+            assert_eq!(restored.right - restored.left, current.right - current.left);
+            assert_eq!(restored.bottom - restored.top, current.bottom - current.top);
+        }
+    }
+    #[test]
+    fn undocking_keeps_offscreen_sidebar_accessible_without_resizing() {
+        use windows::Win32::Foundation::RECT;
+        let work = RECT {
+            left: -1920,
+            top: 0,
+            right: 0,
+            bottom: 1040,
+        };
+        for current in [
+            RECT {
+                left: 0,
+                top: 80,
+                right: 400,
+                bottom: 900,
+            },
+            RECT {
+                left: -2320,
+                top: -20,
+                right: -1920,
+                bottom: 800,
+            },
+            RECT {
+                left: -300,
+                top: 80,
+                right: 100,
+                bottom: 1800,
+            },
+            RECT {
+                left: -2000,
+                top: 80,
+                right: 500,
+                bottom: 900,
+            },
+        ] {
+            for original in [None, Some(&current)] {
+                let restored = undocked_bounds(original, &current, &work);
+                assert!(restored.left >= work.left && restored.left < work.right);
+                assert!(restored.top >= work.top && restored.top < work.bottom);
+                assert!(restored.right <= work.right || restored.left == work.left);
+                assert!(restored.bottom <= work.bottom || restored.top == work.top);
+                assert_eq!(restored.right - restored.left, current.right - current.left);
+                assert_eq!(restored.bottom - restored.top, current.bottom - current.top);
+            }
+        }
+    }
     #[test]
     fn standalone_stays_inside_current_work_area_at_each_dpi() {
         use windows::Win32::Foundation::RECT;

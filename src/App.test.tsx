@@ -383,7 +383,7 @@ describe('主窗口四个设置开关独立保存', () => {
 
 describe('成员分类混合显示且整类只读', () => {
   function setupMember() {
-    const status=teamFixture(); status.memberPhraseSync=true;
+    const status=teamFixture(); status.memberPhraseSync=true; status.sessionEpoch=7;
     const followedRoot='member-category:grant:common', followedGroup='member-category:grant:group';
     const key='member:grant:2:3:generation:source:5';
     const memberPhrase: Phrase={...phrase(key,followedGroup,followedRoot),title:'来源话术',contentRef:{source:'member',grantId:'grant',grantVersion:2,subscriptionVersion:3,generation:'generation',id:'source',revision:5}};
@@ -411,11 +411,25 @@ describe('成员分类混合显示且整类只读', () => {
     expect(mapping()?.ids).toEqual([key]);
     const row=document.querySelector(`[data-row="${key}"]`)!;
     fireEvent.contextMenu(row);
-    for (const name of ['编辑','自定义快捷键','移动到其他分类','复制到其他分类','删除','复制到共享话术']) expect(screen.queryByRole('menuitem',{name})).toBeNull();
+    for (const name of ['编辑','移动到其他分类','复制到其他分类','删除','复制到共享话术']) expect(screen.queryByRole('menuitem',{name})).toBeNull();
     fireEvent.click(screen.getByRole('menuitem',{name:'下载全部素材'}));
     await waitFor(()=>expect(call).toHaveBeenCalledWith('download_member_materials',{ids:[key],attachments:true}));
     fireEvent.doubleClick(row);
     await waitFor(()=>expect(call).toHaveBeenCalledWith('deliver_content',expect.objectContaining({id:key,kind:'phrase'})));
+  });
+  it.each([false, true])('成员话术可设置或清除自己的快捷键，正文仍只读（清除=%s）', async remove => {
+    const { key } = setupMember(); view();
+    vi.mocked(call).mockImplementation(async (name, args) => name === 'validate_phrase_shortcut' ? args?.shortcut : null);
+    fireEvent.click(screen.getByRole('button', { name: '常用成员002 · 只读' }));
+    fireEvent.contextMenu(document.querySelector(`[data-row="${key}"]`)!);
+    fireEvent.click(screen.getByRole('menuitem', { name: '自定义快捷键' }));
+    expect(screen.getByText('仅保存在本机当前账号，不影响来源成员的话术。')).toBeTruthy();
+    await waitFor(() => expect((screen.getByRole('button', { name: '确定' }) as HTMLButtonElement).disabled).toBe(false));
+    if (remove) fireEvent.click(screen.getByRole('button', { name: '删除话术快捷键' }));
+    else fireEvent.keyDown(screen.getByRole('textbox', { name: '第一个按键' }), { key: 'k', code: 'KeyK', ctrlKey: true });
+    fireEvent.click(screen.getByRole('button', { name: '确定' }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith('save_member_shortcut', { id: key, shortcut: remove ? '' : 'Ctrl+K', sessionEpoch: 7 }));
+    expect(vi.mocked(call).mock.calls.some(([name]) => name === 'save_phrase')).toBe(false);
   });
   it('本人移动选择器排除只读分类；右键本人分类不受当前跟随分类影响', async () => {
     setupMember();view();
