@@ -310,7 +310,7 @@ pub async fn backup_team_server(state: State<'_, AppState>, path: String) -> Res
     state.teams.backup(std::path::Path::new(&path)).await
 }
 
-/// 主搜索限定当前来源；底部 dock 搜索才合并全部授权共享话术和本地文件。
+/// 主窗口和底部搜索共用授权缓存，文件筛选包含本地与云端关联，不逐词请求云端目录。
 /// 数据读取与按需拼音转换在工作线程执行，不阻塞 Windows 窗口消息。
 #[tauri::command(async)]
 pub fn search_scoped_content(
@@ -319,20 +319,26 @@ pub fn search_scoped_content(
     scope: String,
     team_id: Option<String>,
 ) -> Result<Vec<serde_json::Value>> {
-    let store = state.store.lock().unwrap();
-    let query =
-        crate::search_match::SearchQuery::new(&query, store.settings()?.search_mode == "exact");
-    let mut hits = if scope == "team" {
-        vec![]
-    } else {
-        store.search_matching(&query)?.into_iter().filter(|h|h.kind=="phrase"&&(scope=="all"||scope=="private")).map(|h|{let content_key=crate::private_local::content_key(&store,"phrase",&h.id).ok();serde_json::json!({"id":h.id,"kind":h.kind,"phrase":h.phrase,"file":h.file,"privateKey":content_key,"sourceLabel":"个人话术"})}).collect::<Vec<_>>()
+    let epoch = state.teams.status().session_epoch;
+    let (query, mut hits) = {
+        let store = state.store.lock().unwrap();
+        let query =
+            crate::search_match::SearchQuery::new(&query, store.settings()?.search_mode == "exact");
+        let hits = if scope == "team" {
+            vec![]
+        } else {
+            store.search_matching(&query)?.into_iter().filter(|h|h.kind=="phrase"&&(scope=="all"||scope=="private")).map(|h|{let content_key=crate::private_local::content_key(&store,"phrase",&h.id).ok();
+let mut phrase = serde_json::to_value(&h.phrase).unwrap_or_default();
+phrase["contentRef"] = serde_json::json!({"source":"private","libraryId":crate::private_local::identity(&store).ok(),"id":h.id,"revision":crate::private_local::revision(&store,"phrase",&h.id).unwrap_or(0)});
+serde_json::json!({"id":h.id,"kind":h.kind,"phrase":phrase,"file":h.file,"privateKey":content_key,"sourceLabel":"个人话术"})}).collect::<Vec<_>>()
+        };
+        (query, hits)
     };
-    drop(store);
     if scope == "all" || scope == "private" {
         hits.extend(state.teams.search_member(&query));
     }
     if scope == "all" || scope == "file" {
-        hits.extend(state.device_store.lock().unwrap().search_matching(&query)?.into_iter().filter(|h|h.kind=="file").map(|h|serde_json::json!({"id":h.id,"kind":h.kind,"phrase":h.phrase,"file":h.file,"sourceLabel":"本地文件"})));
+        hits.extend(crate::linked_files::cached_view(&state)?.into_iter().filter(|file| query.matches(&file.name)).map(|file| serde_json::json!({"id":file.id,"kind":"file","phrase":null,"sourceLabel":if file.cloud.is_some() {"云文件"} else {"本地文件"},"file":file})));
     }
     if scope == "all" || scope == "team" {
         hits.extend(state.teams.search(
@@ -343,6 +349,9 @@ pub fn search_scoped_content(
                 None
             },
         ));
+    }
+    if state.teams.status().session_epoch != epoch {
+        return Err("账号已变化，旧搜索结果已丢弃。".into());
     }
     Ok(hits)
 }

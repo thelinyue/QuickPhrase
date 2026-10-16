@@ -38,13 +38,13 @@ export function UsageGuideWindow({ settings }: { settings?: Settings }) {
     <p>没有企业微信目标时可独立使用。手动隐藏后，通过托盘、显示快捷键或重新打开闪语恢复。最小化到托盘的行为可在设置中调整。</p>
     <p>底部眼睛按钮显示／隐藏常用短语和搜索框；底部吸附短语与搜索可以在“界面设置”中分别设置。</p>
   </> : topic === '本地文件与云文件' ? <>
-    <h2>管理和使用文件</h2><h3>本地文件</h3><p>切到“本地文件”，先创建分类，再从主菜单新增关联文件。Ctrl 单击多选，Shift 选择连续项，Ctrl+A 选择当前分类。</p><p>移除关联、移动分类和改显示名都保留磁盘源文件；失效文件可右键重新关联。</p>
+    <h2>管理和使用文件</h2><h3>统一文件列表</h3><p>切到“文件”，先创建分类，再新增关联文件，选择“关联本地文件”或“关联云文件”。Ctrl 单击多选，Shift 选择连续项，Ctrl+A 选择当前分类。</p><p>移除关联、移动分类和改显示名都保留磁盘源文件；失效文件可右键重新关联。</p>
     <h3>云文件</h3><p>登录并完成初始改密后，从主菜单打开“云文件”。有上传权限时，可多选本机文件，或将文件拖到云文件列表、上传管理正文区，直接加入上传任务。</p><p>单文件需为1字节至128MB，文件夹不上传。无效文件单独提示，其他文件继续；在上传管理查看进度、停止任务或核对中断结果。关闭管理窗口后任务继续，退出客户端会停止。</p><p>下载完成后不会自动投递。服务管理员分别授予上传、删除、恢复权限；云文件删除移入回收站。</p>
   </> : topic === '账号与共享话术' ? <>
     <h2>个人内容与团队共享</h2><p>在主菜单“账号与共享”填写 Hub 地址并登录。首次登录需修改初始密码；本地功能无需登录即可使用。</p><p>“个人话术”保存个人内容，私人同步需要主动开启。“共享话术 ▾”切换已授权的共享话术；查看者阅读和使用，编辑者维护内容，库管理员管理成员。</p><p>个人话术和共享话术通过复制分别维护；切换账号不会把上一个账号的任务或内容交给新账号。</p>
     <button className="secondary-button" onClick={() => void openWindow('settings', '', '', '账号与共享').catch(e => setMessage(String(e)))}>打开账号与共享</button>
   </> : <>
-    <h2>导入、导出与回收</h2><p>从主菜单打开“导入数据”或“导出数据”，选择个人库、共享话术或本机文件与设置。导入先预览，确认后保存；完整图文和附件请使用 ZIP 备份，Excel 只保存文字。</p><p>删除话术和分类默认移入回收站，可从主菜单查看并还原。永久删除无法撤回；本地文件关联和常用短语不进入回收站。</p><p>安装、升级和卸载保留用户数据。同步不能代替独立备份，重要内容可定期导出。</p>
+    <h2>导入、导出与回收</h2><p>从主菜单打开“导入数据”或“导出数据”，选择个人库、共享话术或本机文件与设置。导入先预览，确认后保存；完整图文和附件请使用 ZIP 备份，Excel 只保存文字。</p><p>删除话术和分类默认移入回收站，可从主菜单查看并还原。永久删除无法撤回；文件关联和常用短语不进入回收站。</p><p>安装、升级和卸载保留用户数据。同步不能代替独立备份，重要内容可定期导出。</p>
   </>;
   return <section className="client-window usage-guide-window"><Titlebar title="使用指引" minimize /><div className="settings-layout"><aside className="settings-sidebar guide-sidebar"><nav aria-label="指引主题">{topics.map(value => <button key={value} aria-current={topic === value ? 'page' : undefined} className={topic === value ? 'active' : ''} onClick={() => setTopic(value)}>{value}</button>)}</nav><div className="settings-brand"><span>闪语</span><small>随时查看，边看边练</small></div></aside><main className="guide-content" key={topic}>{content}</main></div><footer className="guide-footer"><span>以后可从主菜单打开“使用指引”</span><button className="primary-button" onClick={() => void begin()}>开始使用</button></footer><Feedback message={message} clear={() => setMessage('')} /></section>;
 }

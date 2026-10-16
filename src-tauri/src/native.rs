@@ -118,6 +118,8 @@ impl DisplayMode {
 /// 管理窗口可独立开关；不使用单一“最后打开窗口”句柄，避免关掉一个就提前解除暂停。
 #[derive(Default)]
 pub struct ManagementWindows {
+    /// 文件选择可由多个编辑窗口打开，按窗口身份记录，关闭其中一个不能解除其他窗口的暂停。
+    pub file_windows: Mutex<std::collections::HashSet<String>>,
     /// 自定义短语菜单需要与系统菜单一样暂停快捷键和贴边收起。
     pub common_menu: std::sync::atomic::AtomicI64,
     pub search_history_confirm: std::sync::atomic::AtomicI64,
@@ -129,7 +131,8 @@ pub struct ManagementWindows {
 impl ManagementWindows {
     /// 设置是独立窗口，不阻止主窗口贴边收起；其他管理窗口保持原有保护。
     pub(crate) fn blocks_edge_hide(&self) -> bool {
-        self.common_menu.load(Ordering::Acquire) != 0
+        !self.file_windows.lock().unwrap().is_empty()
+            || self.common_menu.load(Ordering::Acquire) != 0
             || self.search_history_confirm.load(Ordering::Acquire) != 0
             || self.teams.load(Ordering::Acquire) != 0
             || self.users.load(Ordering::Acquire) != 0
@@ -140,15 +143,21 @@ impl ManagementWindows {
     }
 }
 
+/// 匹配表、候选内容与账号世代一次替换，避免刷新中读取到不同批次。
+#[derive(Clone, Default)]
+pub struct ShortcutBindings {
+    generation: u64,
+    keys: Vec<(String, Shortcut)>,
+    phrases: Vec<Phrase>,
+    member_epoch: Option<u64>,
+}
 pub struct NativeState {
     pub common_menu: Mutex<crate::common_menu::MenuState>,
     pub search_history_confirm: Mutex<Option<crate::search_history_confirm::Session>>,
     pub common_menu_handle: std::sync::atomic::AtomicI64,
     pub target: Mutex<Option<TargetContext>>,
     pub settings: RwLock<Settings>,
-    pub bindings: RwLock<Vec<(String, Shortcut)>>,
-    /// 按分类、分组与话术顺序缓存活动库，同键只监听一次，匹配后展开全部候选。
-    pub shortcut_phrases: RwLock<(Vec<Phrase>, Option<u64>)>,
+    pub bindings: RwLock<ShortcutBindings>,
     pub candidates: Mutex<candidates::CandidateState>,
     /// 只由主窗口同步绘制结果；文件槽位为空，隐藏窗口继续沿用最后快照。
     pub sequence_map: RwLock<(Vec<Option<String>>, bool)>,
@@ -196,8 +205,7 @@ impl NativeState {
         Self {
             target: Mutex::new(None),
             settings: RwLock::new(settings),
-            bindings: RwLock::new(vec![]),
-            shortcut_phrases: RwLock::new((vec![], None)),
+            bindings: RwLock::new(ShortcutBindings::default()),
             candidates: Mutex::new(candidates::CandidateState::default()),
             sequence_map: RwLock::new((vec![], true)),
             common_menu: Mutex::new(crate::common_menu::MenuState::default()),
@@ -354,11 +362,19 @@ impl NativeState {
             .get()
             .and_then(|app| app.get_webview_window("main"))
         {
-            if let Err(error) = window.set_always_on_top(settings.pinned) {
+            if let Err(error) = if previous.pinned != settings.pinned {
+                window.set_always_on_top(settings.pinned)
+            } else {
+                Ok(())
+            } {
                 let _ = self.configure_background(&previous);
                 return Err(format!("置顶设置失败：{error}"));
             }
-            if let Err(error) = window.set_resizable(settings.free_resize) {
+            if let Err(error) = if previous.free_resize != settings.free_resize {
+                window.set_resizable(settings.free_resize)
+            } else {
+                Ok(())
+            } {
                 let _ = window.set_always_on_top(previous.pinned);
                 let _ = self.configure_background(&previous);
                 return Err(format!("窗口拉宽设置失败：{error}"));
@@ -413,15 +429,29 @@ impl NativeState {
                 bindings.push((canonical, shortcut));
             }
         }
-        *self.shortcut_phrases.write().unwrap() = (phrases, member_epoch);
-        *self.bindings.write().unwrap() = bindings;
+        let mut current = self.bindings.write().unwrap();
+        if current.keys != bindings
+            || current.phrases != phrases
+            || current.member_epoch != member_epoch
+        {
+            *current = ShortcutBindings {
+                generation: current.generation.wrapping_add(1),
+                keys: bindings,
+                phrases,
+                member_epoch,
+            };
+        }
         Ok(())
     }
     /// 搜索仅放行序号组合键；编辑和模态输入由上下文校验整体暂停。
-    fn active_bindings(&self, search: bool) -> Vec<(String, Shortcut)> {
+    fn active_bindings(
+        &self,
+        search: bool,
+        snapshot: &ShortcutBindings,
+    ) -> Vec<(String, Shortcut)> {
         let settings = self.settings.read().unwrap();
         let mut bindings = if settings.custom_hotkeys && !search {
-            self.bindings.read().unwrap().clone()
+            snapshot.keys.clone()
         } else {
             vec![]
         };
@@ -752,9 +782,6 @@ mod platform {
                 );
             }
         }
-        if let Some(id) = action.fired {
-            state.fire_shortcut(&id);
-        }
     }
     /// 界面 Enter 提交会将焦点移回目标；松键前仍消费原提交键，避免长按继续发送草稿。
     pub fn consume_delivery_key(key: Option<u32>) {
@@ -892,21 +919,29 @@ mod platform {
             }
         }
         let search = context.is_some_and(|c| state.search_input.load(Ordering::Acquire) == c.0);
-        let mut action = MATCHER
+        let snapshot = state.bindings.read().unwrap().clone();
+        let mut matcher = MATCHER
             .get_or_init(|| Mutex::new(ShortcutMatcher::default()))
             .lock()
-            .unwrap()
-            .event(
-                event,
-                if candidate_active || candidate_action.swallowed {
-                    None
-                } else {
-                    context
-                },
-                current_modifiers,
-                &state.active_bindings(search),
-                Instant::now(),
-            );
+            .unwrap();
+        let previous = matcher.rebind(snapshot.generation, context);
+        let mut action = matcher.event(
+            event,
+            if candidate_active || candidate_action.swallowed {
+                None
+            } else {
+                context
+            },
+            current_modifiers,
+            &state.active_bindings(search, &snapshot),
+            Instant::now(),
+        );
+        drop(matcher);
+        if !previous.replay.is_empty() {
+            let mut events = previous.replay;
+            events.append(&mut action.replay);
+            action.replay = events;
+        }
         // SendInput 会排队；同时回放当前事件并吞掉原事件，保持“首键、后续普通键”的顺序。
         if !action.replay.is_empty() && !action.swallowed {
             action.replay.push(event);
@@ -919,6 +954,9 @@ mod platform {
             && !modifier_key(event.key)
         {
             state.cancelled.store(true, Ordering::Release);
+        }
+        if let Some(id) = action.fired.take() {
+            state.fire_shortcut(&id, &snapshot);
         }
         let swallowed = action.swallowed || candidate_action.swallowed;
         apply_key_action(state, action);
@@ -1144,6 +1182,7 @@ mod platform {
                         }
                     }
                 }
+                // 被钩子消费的键不会可靠更新异步键态；必须等实际 KeyUp 才能解除消费。
                 let current_context = shortcut_context(&state);
                 let submit_down = GetAsyncKeyState(VK_RETURN.0 as i32) < 0;
                 let timed = {
@@ -1152,7 +1191,13 @@ mod platform {
                         .lock()
                         .unwrap();
                     matcher.release_submit_key(|_| submit_down);
-                    matcher.tick(current_context, Instant::now())
+                    let previous =
+                        matcher.rebind(state.bindings.read().unwrap().generation, current_context);
+                    let mut timed = matcher.tick(current_context, Instant::now());
+                    if !previous.replay.is_empty() {
+                        timed.replay = previous.replay;
+                    }
+                    timed
                 };
                 apply_key_action(&state, timed);
                 state.check_candidates();

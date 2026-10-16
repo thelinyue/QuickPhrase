@@ -9,8 +9,25 @@ vi.mock('./api', () => ({ call: vi.fn(async () => null) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async (_: string, callback: typeof handler.fn) => { handler.fn=callback; return () => {}; }) }));
 beforeEach(() => { Element.prototype.scrollIntoView=vi.fn(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
-const payload: ShortcutCandidates = { shortcut:'Q+W',selectedIndex:0,target:{hwnd:1,focus:2,pid:3},phrases:Array.from({length:12},(_,i)=>({id:String(i),rootId:'R',groupId:null,title:`话术${i+1}`,shortcut:'Q+W',position:i,color:'',background:'',segments:[]})) };
+const payload: ShortcutCandidates = { sessionId:'test',layoutKey:'test-layout',maxWidth:360,maxHeight:420,shortcut:'Q+W',selectedIndex:0,target:{hwnd:1,focus:2,pid:3},phrases:Array.from({length:12},(_,i)=>({id:String(i),rootId:'R',groupId:null,title:`话术${i+1}`,shortcut:'Q+W',position:i,color:'',background:'',segments:[]})) };
 describe('原生候选快照绘制', () => {
+  it.each([[80, 360, 240], [600, 360, 360], [600, 180, 180]])('自然内容宽度 %i 在布局上限 %i 下测为 %i，选择不重测', async (natural, maxWidth, expected) => {
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function(this: HTMLElement) {
+      return this.classList.contains('candidate-content') ? natural : 0;
+    });
+    try {
+      const snapshot = { ...payload, maxWidth };
+      vi.mocked(call).mockImplementation(async name => name === 'get_shortcut_candidates' ? snapshot : null);
+      render(<ShortcutCandidatesWindow />);
+      await waitFor(() => expect(call).toHaveBeenCalledWith('resize_shortcut_candidates', expect.objectContaining({ width: expected, sessionId: payload.sessionId })));
+      const measurements = () => vi.mocked(call).mock.calls.filter(([name]) => name === 'resize_shortcut_candidates').length;
+      const count = measurements();
+      await act(async () => { handler.fn({ payload: { ...snapshot, selectedIndex: 11 } }); });
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)); });
+      expect(measurements()).toBe(count);
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    } finally { scroll.mockRestore(); }
+  });
   it('候选标题保留单条、全局、主题的颜色优先级', async () => {
     const phrases = payload.phrases.slice(0, 2).map((phrase, i) => ({ ...phrase, color: i ? '#ff5100' : '#123456' }));
     vi.mocked(call).mockImplementation(async name => name === 'get_shortcut_candidates' ? { ...payload, phrases } : null);
@@ -32,7 +49,7 @@ describe('原生候选快照绘制', () => {
     render(<ShortcutCandidatesWindow />);
     const rows = await screen.findAllByRole('option');
     expect(rows[0].querySelector('.candidate-preview')?.textContent).toBe('您好 欢迎 咨询');
-    expect(rows[0].getAttribute('title')).toBe('您好\n  欢迎\n咨询');
+    expect(rows[0].getAttribute('title')).toBe('问候\n您好\n  欢迎\n咨询');
     expect(rows[1].querySelector('.candidate-label')).toBeNull();
     expect(rows[1].querySelector('.candidate-preview')?.textContent).toBe('完整正文'.repeat(30));
     expect(rows[2].querySelector('.candidate-preview')).toBeNull();

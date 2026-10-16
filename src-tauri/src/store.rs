@@ -52,6 +52,25 @@ impl Store {
           CREATE TABLE IF NOT EXISTS common_phrases(id TEXT PRIMARY KEY,text TEXT NOT NULL,position INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),content TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS recycle_bin(id TEXT PRIMARY KEY,deleted_at INTEGER NOT NULL,content TEXT NOT NULL);").map_err(db_error)?;
+        let file_columns = schema
+            .prepare("PRAGMA table_info(files)")
+            .map_err(db_error)?
+            .query_map([], |r| r.get::<_, String>(1))
+            .map_err(db_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(db_error)?;
+        for (column, definition) in [
+            ("cloud", "TEXT"),
+            ("custom_name", "INTEGER NOT NULL DEFAULT 0"),
+        ] {
+            if !file_columns.iter().any(|name| name == column) {
+                schema
+                    .execute_batch(&format!(
+                        "ALTER TABLE files ADD COLUMN {column} {definition}"
+                    ))
+                    .map_err(db_error)?;
+            }
+        }
         // 早期开发库可能缺少分类颜色列；只补列，不重建表，保留主键、层级与内容。
         let has_background = {
             let mut columns = schema
@@ -139,24 +158,41 @@ impl Store {
     }
     pub fn save_settings(&self, settings: &Settings) -> Result<()> {
         settings.validate()?;
-        let mut reserved = settings.clone();
-        if settings.sequence_bindings != self.settings()?.sequence_bindings {
-            reserved.sequence_hotkeys = true;
-        }
-        for phrase in self
-            .library()?
-            .phrases
-            .iter()
-            .filter(|p| !p.shortcut.is_empty())
+        let old = self.settings()?;
+        if settings.search_hotkey != old.search_hotkey
+            || settings.window_hotkey != old.window_hotkey
+            || settings.common_hotkey != old.common_hotkey
+            || settings.sequence_hotkeys != old.sequence_hotkeys
+            || settings.sequence_bindings != old.sequence_bindings
         {
-            if reserved.shortcut_reserved(&crate::native::parse_shortcut(&phrase.shortcut)?) {
-                return Err(format!(
-                    "话术「{}」的快捷键与导航或序号快捷键冲突，请先修改。",
-                    phrase.label()
-                ));
+            let mut reserved = settings.clone();
+            if settings.sequence_bindings != old.sequence_bindings {
+                reserved.sequence_hotkeys = true;
+            }
+            // 普通偏好不读整库；快捷键变化也只读取绑定列，不加载分段、素材或文件。
+            let mut stmt = self
+                .conn
+                .prepare("SELECT id,title,shortcut FROM phrases WHERE shortcut<>''")
+                .map_err(db_error)?;
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                })
+                .map_err(db_error)?;
+            for row in rows {
+                let (id, title, shortcut) = row.map_err(db_error)?;
+                if reserved.shortcut_reserved(&crate::native::parse_shortcut(&shortcut)?) {
+                    return Err(format!(
+                        "话术「{}」的快捷键与导航或序号快捷键冲突，请先修改。",
+                        if title.is_empty() { id } else { title }
+                    ));
+                }
             }
         }
-        let old = self.settings()?;
         let tx = self.conn.unchecked_transaction().map_err(db_error)?;
         crate::private_local::save_setting_changes(&tx, &old, settings)?;
         tx.execute("INSERT INTO settings VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET content=excluded.content", [serde_json::to_string(settings).map_err(db_error)?]).map_err(db_error)?;
@@ -209,7 +245,7 @@ impl Store {
         }
         let mut stmt = self
             .conn
-            .prepare("SELECT id,category_id,path,name,position FROM files ORDER BY position,rowid")
+            .prepare("SELECT id,category_id,path,name,position,cloud,custom_name FROM files ORDER BY position,rowid")
             .map_err(db_error)?;
         let files = stmt
             .query_map([], |r| {
@@ -222,6 +258,22 @@ impl Store {
                     name: r.get(3)?,
                     position: r.get(4)?,
                     missing,
+                    cloud: r
+                        .get::<_, Option<String>>(5)?
+                        .map(|raw| {
+                            serde_json::from_str(&raw).map_err(|e| {
+                                rusqlite::Error::FromSqlConversionFailure(
+                                    5,
+                                    rusqlite::types::Type::Text,
+                                    Box::new(e),
+                                )
+                            })
+                        })
+                        .transpose()?,
+                    custom_name: r.get(6)?,
+                    status: String::new(),
+                    can_rename: false,
+                    source_name: String::new(),
                 })
             })
             .map_err(db_error)?
@@ -922,7 +974,7 @@ impl Store {
             }
             let name = path.file_name().unwrap_or_default().to_string_lossy();
             tx.execute(
-                "INSERT INTO files VALUES(?1,?2,?3,?4,?5)",
+                "INSERT INTO files(id,category_id,path,name,position) VALUES(?1,?2,?3,?4,?5)",
                 params![
                     id(),
                     category,
@@ -946,7 +998,7 @@ impl Store {
         }
         self.conn
             .execute(
-                "UPDATE files SET path=?2,name=?3,category_id=?4 WHERE id=?1",
+                "UPDATE files SET path=?2,name=?3,category_id=?4,cloud=NULL,custom_name=0 WHERE id=?1",
                 params![
                     item_id,
                     external_path(&path),
@@ -1149,11 +1201,25 @@ impl Store {
         for f in &data.files {
             let category = map.get(&f.category_id).ok_or("导入文件关联缺少分类。")?;
             check_file_category(&tx, category)?;
-            if !Path::new(&f.path).is_absolute() {
+            if f.cloud.is_none() && !Path::new(&f.path).is_absolute() {
                 return Err("导入文件关联使用了无效路径。".into());
             }
             let key = if batch.is_some() { f.id.clone() } else { id() };
-            tx.execute("INSERT INTO files VALUES(?1,?2,?3,?4,(SELECT coalesce(max(position),-1)+1 FROM files))",params![key,category,f.path,f.name]).map_err(db_error)?;
+            if let Some(cloud) = &f.cloud {
+                if cloud.server.is_empty()
+                    || cloud.user_id.is_empty()
+                    || uuid::Uuid::parse_str(&cloud.asset_id).is_err()
+                {
+                    return Err("云文件关联身份无效。".into());
+                }
+            }
+            let cloud = f
+                .cloud
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(db_error)?;
+            tx.execute("INSERT INTO files(id,category_id,path,name,position,cloud,custom_name) VALUES(?1,?2,?3,?4,(SELECT coalesce(max(position),-1)+1 FROM files),?5,?6)",params![key,category,if f.cloud.is_some() { "" } else { &f.path },f.name,cloud,f.custom_name]).map_err(db_error)?;
         }
         if restore_settings {
             data.settings.validate()?;

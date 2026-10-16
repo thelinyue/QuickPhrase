@@ -1,11 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emitTo, listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow, currentMonitor } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useEffect, useRef, useState } from 'react';
-import type { Library, TeamStatus, TeamView } from './types';
+import type { Library, Settings, TeamStatus, TeamView } from './types';
 let activeLibraryId = '';
-const privateWrites = new Set(['save_phrase', 'save_category', 'save_common_phrase', 'reorder_common_phrases', 'delete_category', 'move_copy_category', 'reorder_categories', 'delete_item', 'delete_local_content', 'restore_recycled', 'remove_recycled', 'empty_recycle', 'move_copy_phrase', 'sort_item', 'save_settings', 'import_images', 'import_pasted_images']);
+const privateWrites = new Set(['save_phrase', 'save_category', 'save_common_phrase', 'reorder_common_phrases', 'delete_category', 'move_copy_category', 'reorder_categories', 'delete_item', 'delete_local_content', 'restore_recycled', 'remove_recycled', 'empty_recycle', 'move_copy_phrase', 'sort_item', 'save_settings', 'patch_settings', 'import_images', 'import_pasted_images']);
 
 export async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (command === 'save_phrase') {
@@ -20,16 +20,44 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
   catch (error) { const message = String(error); void invoke('report_error', { message }).catch(() => {}); throw new Error(message); }
 }
 
+export interface SettingsSnapshot { libraryId: string; settings: Settings; revision: number }
 export function useLibrary() {
   const [library, setLibrary] = useState<Library | null>(null);
   const [error, setError] = useState('');
-  const sequence = useRef(0);
-  const refresh = async () => { const request = ++sequence.current; try { const next = await call<Library>('get_library'); if (request !== sequence.current) return; activeLibraryId = next.libraryId || ''; if (next.libraryId) next.phrases = next.phrases.map(p => ({ ...p, contentRef: { source: 'private' as const, libraryId: next.libraryId!, id: p.id, revision: next.privateRevisions?.[`phrase:${p.id}`] || 0 }, ready: next.privateReady?.[p.id] })); setLibrary(next); setError(''); } catch (e) { if (request === sequence.current) setError(String(e)); } };
+  const sequence = useRef(0); const settingsSnapshots = useRef(new Map<string, SettingsSnapshot>());
+  const refresh = async () => {
+    const request = ++sequence.current;
+    try {
+      const next = await call<Library & { settingsRevision?: number }>('get_library');
+      if (request !== sequence.current) return;
+      activeLibraryId = next.libraryId || '';
+      const latest = settingsSnapshots.current.get(next.libraryId || '');
+      if (latest && latest.revision > (next.settingsRevision ?? 0)) { next.settings = latest.settings; next.settingsRevision = latest.revision; }
+      else settingsSnapshots.current.set(next.libraryId || '', { libraryId: next.libraryId || '', settings: next.settings, revision: next.settingsRevision ?? 0 });
+      if (next.libraryId) next.phrases = next.phrases.map(p => ({ ...p, contentRef: { source: 'private' as const, libraryId: next.libraryId!, id: p.id, revision: next.privateRevisions?.[`phrase:${p.id}`] || 0 }, ready: next.privateReady?.[p.id] }));
+      setLibrary(next); setError('');
+    } catch (e) { if (request === sequence.current) setError(String(e)); }
+  };
   useEffect(() => {
-    let disposed = false; let unlisten: (() => void) | undefined;
-    void refresh();
-    void listen('library-changed', () => { if (!disposed) void refresh(); }).then(fn => { if (disposed) fn(); else unlisten = fn; });
-    return () => { disposed = true; unlisten?.(); };
+    let disposed = false; const stops: (() => void)[] = [];
+    const subscribe = async () => {
+      for (const [name, handler] of [
+        ['company-files-changed', () => { if (!disposed) void refresh(); }],
+        ['library-changed', () => { if (!disposed) void refresh(); }],
+        ['settings-changed', (event: { payload: SettingsSnapshot }) => {
+          if (disposed) return;
+          const value = event.payload, old = settingsSnapshots.current.get(value.libraryId);
+          if (old && old.revision >= value.revision) return;
+          settingsSnapshots.current.set(value.libraryId, value);
+          setLibrary(current => current?.libraryId === value.libraryId ? { ...current, settings: value.settings, settingsRevision: value.revision } : current);
+        }],
+      ] as const) {
+        const stop = await listen<SettingsSnapshot>(name, handler); if (disposed) stop(); else stops.push(stop);
+      }
+      if (!disposed) await refresh();
+    };
+    void subscribe().catch(e => { if (!disposed) setError(String(e)); });
+    return () => { disposed = true; ++sequence.current; stops.forEach(stop => stop()); };
   }, []);
   return { library, error, refresh };
 }
@@ -55,6 +83,8 @@ export async function openWindow(route: 'editor' | 'file-editor' | 'settings' | 
   const query = new URLSearchParams({ id, afterId, tab, categoryId, groupId, teamId, libraryId });
   const sort = route === 'common-sort' || route === 'category-sort' || route === 'file-sort';
   const deleting = route === 'delete-confirm', recycling = route === 'recycle-bin', managing = route === 'team-management' || route === 'user-management';
+  const monitor = route === 'file-editor' ? await currentMonitor() : null;
+  const available = monitor ? { width: monitor.workArea.size.width / monitor.scaleFactor, height: monitor.workArea.size.height / monitor.scaleFactor } : { width: 900, height: 600 };
   const window = new WebviewWindow(route, {
     url: `index.html#${route}?${query}`, title: managing ? `${route === 'user-management' ? '账号管理' : '共享话术管理'} · 闪语` : deleting ? '删除确认 · 闪语' : recycling ? '回收站 · 闪语' : route === 'file-sort' ? '文件快速排序 · 闪语' : route === 'editor' ? '话术编辑 · 闪语' : route === 'settings' ? '设置 · 闪语' : route === 'common-editor' ? '常用短语 · 闪语' : route === 'category-sort' ? '分类排序 · 闪语' : route === 'common-sort' ? '常用短语排序 · 闪语' : '文件关联 · 闪语',
     width: route === 'user-management' ? 620 : managing ? 680 : deleting ? 384 : recycling ? 830 : route === 'file-editor' ? 510 : route === 'common-editor' ? 380 : sort ? 550 : 594, height: route === 'user-management' ? 620 : managing ? 600 : deleting ? 256 : recycling ? 500 : route === 'file-editor' ? 250 : route === 'common-editor' ? 160 : sort ? 580 : 620,
@@ -62,6 +92,7 @@ export async function openWindow(route: 'editor' | 'file-editor' | 'settings' | 
     decorations: false, resizable: route !== 'common-editor' && !deleting, center: true,
     // 在 WebView2 层关闭所有动态窗口的“保存的信息”建议，autocomplete="off" 不能可靠禁止它。
     generalAutofillEnabled: false,
+    ...(route === 'file-editor' ? { width: Math.min(900, available.width), height: Math.min(600, available.height), minWidth: Math.min(760, available.width), minHeight: Math.min(480, available.height) } : {}),
     ...(route === 'company-files' ? { title: '云文件管理中心 · 闪语', width: 1000, height: 650, minWidth: 760, minHeight: 480 } : {}),
     ...(route === 'usage-guide' ? { title: '使用指引 · 闪语', width: 760, height: 620, minWidth: 620, minHeight: 440 } : {}),
   });

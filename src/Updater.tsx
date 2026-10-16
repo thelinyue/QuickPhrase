@@ -6,6 +6,7 @@ import { FormDialog } from './ui';
 
 export interface UpdateConfig { automatic: boolean; route: 'default' | 'backup' | 'custom' | 'direct'; customProxy: string }
 export interface UpdateStatus {
+  manualInstallAvailable?: boolean;
   config: UpdateConfig; phase: 'idle' | 'checking' | 'available' | 'current' | 'downloading' | 'ready' | 'installing' | 'error';
   release: { version: string; notes: string } | null; downloaded: number; total: number | null; message: string; lastCheck: number; revision: number;
 }
@@ -60,6 +61,7 @@ export function UpdateSettings() {
     {status?.phase === 'downloading' && <><progress aria-label="更新下载进度" value={status.total ? status.downloaded : undefined} max={status.total || undefined} /><p>{(status.downloaded / 1024 / 1024).toFixed(1)} MB{status.total ? ` / ${(status.total / 1024 / 1024).toFixed(1)} MB` : ''}</p><button className="secondary-button" disabled={pending} onClick={() => void run(async () => { await call('cancel_update'); })}>取消下载</button></>}
     {status?.release && ['available', 'error'].includes(status.phase) && <button className="primary-button" disabled={busy || !!draft} onClick={() => void run(async () => { setLater(false); accept(await call<UpdateStatus>('download_update')); })}>{status.phase === 'error' ? '重新下载' : '下载更新'}</button>}
     {status?.phase === 'ready' && <div className="setting-buttons"><button className="primary-button" disabled={busy} onClick={() => setConfirm(true)}>退出并安装</button><button className="secondary-button" disabled={busy} onClick={() => setLater(true)}>稍后</button></div>}
+    {status?.manualInstallAvailable && <button className="secondary-button" disabled={busy} onClick={() => void run(async () => { await call('open_update_download_directory'); })}>打开下载目录</button>}
     {status?.message && <p role="status">{later && status.phase === 'ready' ? '可以继续使用，稍后回到此处安装。' : status.message}</p>}
     {error && <p role="alert" className="validation-error">{error}</p>}
     <p className="settings-hint">公共代理可能暂时不可用，可更换线路或直连重试。下载后会验证发布签名；程序和安装器仍未附带 Windows 代码签名。</p>

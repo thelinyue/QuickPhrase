@@ -9,12 +9,12 @@ export function categoryLabel(category: Category, categories: Category[]) {
   const matches = categories.filter(c => c.kind === category.kind && c.parentId === category.parentId && c.name.toLowerCase() === category.name.toLowerCase());
   return matches.length > 1 ? `${category.name}（同名 ${matches.findIndex(c => c.id === category.id) + 1}）` : category.name;
 }
-export interface LinkedFile { id: string; categoryId: string; path: string; name: string; position: number; missing: boolean }
+export interface LinkedFile { id: string; categoryId: string; path: string; name: string; position: number; missing: boolean; cloud?: { server: string; userId: string; assetId: string } | null; customName?: boolean; canRename?: boolean; sourceName?: string; status?: string }
 export interface CommonPhrase { id: string; text: string; position: number }
 export interface RecycleItem { id: string; kind: 'phrase' | 'primary-category' | 'secondary-category'; label: string; location: string; deletedAt: number; phraseCount: number }
 export interface RecycleRecord extends Omit<RecycleItem, 'phraseCount'> { categories: Category[]; phrases: Phrase[] }
 export interface Settings { startup: boolean; tray: boolean; showFloatingOnMinimize: boolean; enter: 'enter' | 'ctrl-enter'; interval: number; exitSearch: boolean; autoHide: boolean; hideDelay: number; edgeAutoHide: boolean; edgeRevealDelay: 0 | 500 | 1000; showNumbers: boolean; showPreview: boolean; showTitle: boolean; showSearch: boolean; showCommon: boolean; dockCommon: boolean; fontSize: number; expand: boolean; dock: boolean; dockSide: 'left' | 'right'; searchMode: 'fuzzy' | 'exact'; searchHotkey: string; windowHotkey: string; commonHotkey: string; customHotkeys: boolean; sequenceHotkeys: boolean; sequenceDirectSend: boolean; sequenceBindings: string[]; globalPhraseHotkeys: boolean; pinned: boolean; categoryHeight: number; phraseDoubleClick: 'insert' | 'send'; commonSingleClick: 'select' | 'insert' | 'send'; dockSearch: boolean; freeResize: boolean; rememberDock: boolean; theme: 'default' | 'green' | 'blue' | 'black' | 'pink' | 'lavender' | 'orange'; titleColor: string; phraseCategoryColor: string; fileCategoryColor: string; filesFirst: boolean; teamsFirst: boolean; fileCategoryHeight: number; commonHeight: number; dockCommonRows: number }
-export interface Library { categories: Category[]; phrases: Phrase[]; files: LinkedFile[]; commonPhrases: CommonPhrase[]; settings: Settings; dataDir: string; libraryId?: string; privateRevisions?: Record<string, number>; privateReady?: Record<string, boolean>; ownerLabel?: string }
+export interface Library { settingsRevision?: number; categories: Category[]; phrases: Phrase[]; files: LinkedFile[]; commonPhrases: CommonPhrase[]; settings: Settings; dataDir: string; libraryId?: string; privateRevisions?: Record<string, number>; privateReady?: Record<string, boolean>; ownerLabel?: string }
 export interface SearchHit { id: string; kind: 'phrase' | 'file'; phrase: Phrase | null; file: LinkedFile | null; sourceLabel?: string; teamId?: string; privateKey?: string }
 export type TeamRole = 'member' | 'editor' | 'manager';
 export const teamRoleLabel = (role: TeamRole) => role === 'manager' ? '库管理员' : role === 'editor' ? '编辑者' : '查看者';
@@ -39,7 +39,7 @@ export interface DeletedTeam { teamId: string; name: string; lifecycleVersion: n
 export interface TeamAssetCleanup { teamId: string; name: string; pendingAssets: number }
 export interface TeamRecycle { id: string; teamId: string; label: string; deletedAt: number; categories: Category[]; phrases: { title: string; segments: { blocks: ({ kind: 'text'; text: string } | { kind: 'image' | 'file'; assetId: string; name: string })[] }[] }[] }
 export interface TargetContext { hwnd: number; focus: number; pid: number }
-export interface ShortcutCandidates { shortcut: string; phrases: Phrase[]; selectedIndex: number; target: TargetContext }
+export interface ShortcutCandidates { sessionId: string; layoutKey: string; maxWidth: number; maxHeight: number; shortcut: string; phrases: Phrase[]; selectedIndex: number; target: TargetContext }
 export interface DeliveryReport { status: 'submitted' | 'interrupted' | 'failed'; completedSegments: number; completedBlocks: number; error: string | null }
 export interface ImportPreview { id: string; kind: 'excel' | 'backup'; filename: string; categories: number; phrases: number; commonPhrases: number; files: number; images: number; recycled: number; rows: { category: string; title: string; text: string }[]; notes: string[] }
 export const textOf = (phrase: Phrase) => phrase.segments.map(s => s.blocks.filter((b): b is Extract<Block, { kind: 'text' }> => b.kind === 'text').map(b => b.text).join('')).join('\n');
@@ -53,3 +53,10 @@ export function syncTime(value: number | null | undefined) {
   if (Number.isNaN(date.getTime())) return '暂无成功同步记录';
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
+
+/** 搜索身份不包含修订号，刷新后保留选中；执行仍使用带修订的内容引用。 */
+export function searchHitKey(hit: SearchHit) {
+  const ref = hit.phrase?.contentRef;
+  return JSON.stringify([hit.kind, ref?.source || (hit.teamId ? 'team' : hit.kind === 'file' ? 'file' : 'private'), ref?.source === 'private' ? ref.libraryId : ref?.source === 'team' ? ref.teamId : ref?.source === 'member' ? ref.grantId : hit.teamId || '', ref?.id || hit.id]);
+}
+export const searchDeliveryKey = (hit: SearchHit) => hit.privateKey || (hit.phrase ? contentKey(hit.phrase) : hit.id);

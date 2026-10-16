@@ -81,6 +81,47 @@ try {
     assert.equal((await invoke('team_admin', { action: 'users' })).find(u => u.id === employee).username, '0001');
     await until(() => invoke('get_team_view', { teamId: teamA }));
   });
+  await check('MCP 共享读写、素材上传、版本冲突、默认库账号隔离与切号失效', async () => {
+    const status = await invoke('get_team_status');
+    await invoke('set_default_team', { server: status.server, userId: status.user.id, teamId: teamA });
+    assert.equal(await invoke('get_default_team'), teamA);
+    const mcp = await invoke('get_mcp_status'); const mcpPort = await port();
+    const materialDir = path.join(evidence, 'mcp-materials'); await fs.mkdir(materialDir); await fs.copyFile(path.join(repo, 'src-tauri/icons/icon.png'), path.join(materialDir, 'image.png'));
+    await invoke('patch_mcp_settings', { accountKey: mcp.account, patch: { enabled: true, port: mcpPort, grants: [{ source: 'team', libraryId: teamB }], roots: [{ id: 'images', path: materialDir }] } });
+    const connection = (await invoke('get_mcp_connection')).mcpServers.quickphrase;
+    const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...connection.headers }; let session, sequence = 0;
+    const rpc = async (method, params = {}) => {
+      const response = await fetch(connection.url, { method: 'POST', headers: { ...headers, ...(session ? { 'Mcp-Session-Id': session, 'MCP-Protocol-Version': '2025-06-18' } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: ++sequence, method, params }), signal: AbortSignal.timeout(20000) });
+      assert.equal(response.status, 200); session ||= response.headers.get('mcp-session-id');
+      const text = await response.text(); const line = text.split('\n').find(line => /^data:\s*\{/.test(line)); const result = JSON.parse(line ? line.slice(5) : text); assert.equal(result.error, undefined); return result.result;
+    };
+    await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'QuickPhrase-team-QA', version: '1' } });
+    const callTool = async (name, args) => rpc('tools/call', { name, arguments: args });
+    const tool = async (name, args) => { const result = await callTool(name, args); assert.ok(!result.isError, result.content?.[0]?.text); return JSON.parse(result.content[0].text); };
+    const scope = { source: 'team', libraryId: teamB };
+    const current = async () => { const v = await invoke('get_team_view', { teamId: teamB }); return { ...scope, expectedVersion: v.team.version, expectedLifecycleVersion: v.team.lifecycleVersion }; };
+    assert.equal((await callTool('list_categories', { source: 'team', libraryId: teamA })).isError, true);
+    const c = await tool('save_category', { ...await current(), category: { id: '', name: 'AI 分类', kind: 'phrase', parentId: null, position: 0, background: '' } });
+    const before = await current();
+    const created = await tool('save_phrase', { ...before, phrase: { rootId: c.id, title: 'AI 共享图片', segments: [{ blocks: [{ kind: 'text', text: '共享正文' }, { kind: 'image', rootId: 'images', relativePath: 'image.png' }] }] } });
+    const read = await tool('read_phrase', { ...scope, id: created.id }); const { revision, ...editable } = read.phrase;
+    assert.equal((await callTool('save_phrase', { ...before, phrase: editable })).isError, true);
+    await tool('save_phrase', { ...await current(), phrase: { ...editable, title: 'AI 更新图片' } });
+    assert.equal((await tool('search_phrases', { ...scope, query: '更新', limit: 1 })).page.total, 1);
+    assert.equal((await callTool('sort_item', { ...await current(), kind: 'phrase', id: `team:${teamA}:${created.id}:1:1`, position: 0 })).isError, true);
+    await tool('sort_item', { ...await current(), kind: 'phrase', id: created.id, position: 0 });
+    await tool('recycle_phrase', { ...await current(), id: created.id });
+    await until(() => invoke('get_team_view', { teamId: teamB }), v => !v.phrases.length);
+    // 清理合成分类，保留 MCP 回收记录用于确认服务端边界。
+    const v = await invoke('get_team_view', { teamId: teamB }); await invoke('delete_team_content', { teamId: teamB, request: { expectedVersion: v.team.version, expectedLifecycleVersion: v.team.lifecycleVersion, kind: 'category', id: c.id } });
+    await invoke('team_logout');
+    await assert.rejects(fetch(connection.url, { method: 'POST', headers, body: '{}', signal: AbortSignal.timeout(3000) }));
+    await invoke('team_login', { server: base, username: '0001', password: employeePassword }); assert.equal(await invoke('get_default_team'), '');
+    await invoke('team_logout'); await invoke('team_login', { server: base, username: 'qa-admin', password }); assert.equal(await invoke('get_default_team'), teamA);
+    const fresh = await invoke('get_mcp_status'); await invoke('patch_mcp_settings', { accountKey: fresh.account, patch: { enabled: false } });
+    await invoke('set_default_team', { server: status.server, userId: status.user.id, teamId: '' });
+  });
+  if (!process.argv.includes('--mcp-only')) {
   await check('用户名和共享话术窗口右上角关闭实际销毁，可重新打开', async () => {
     for (const [label, title, width, height] of [['user-management', '账号管理', 620, 620], ['team-management', '共享话术管理', 680, 600]]) {
       await invoke('plugin:webview|create_webview_window', { options: { label, title: title + ' · 闪语', url: 'index.html#' + label, width, height, decorations: false } });
@@ -415,6 +456,7 @@ try {
     await until(() => userView.locator('.user-card').count(), value => value === 0); await until(() => managementView.locator('.management-groups').count(), value => value === 0);
     const directories = await fs.readdir(path.join(clientData, 'teams'), { withFileTypes: true }); assert.equal(directories.filter(d => d.isDirectory() && d.name !== 'temp').length, 0);
   });
+  }
   await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ date: new Date().toISOString(), checks: results, limits: ['真实客户端及HTTP/SSE，使用隔离数据和凭据；未进行聊天发送或剪贴板操作', '管理窗移到屏幕外正常创建，实际原生默认／最小客户区；系统确认按钮已模拟确认', '100%为本机真实DPI；150%/200%为WebView渲染倍率，不替代系统DPI，未覆盖真实局域网、HTTPS代理或安装升级'] }, null, 2));
   console.log(JSON.stringify({ evidence, checks: results.length }));
 } catch (error) {

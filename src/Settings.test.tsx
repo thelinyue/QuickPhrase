@@ -1,5 +1,6 @@
+import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as testingRender, screen, waitFor } from '@testing-library/react';
 import { SettingsWindow } from './Settings';
 import { call } from './api';
 import { getVersion } from '@tauri-apps/api/app';
@@ -9,8 +10,12 @@ import type { Library } from './types';
 vi.mock('./api', () => ({ call: vi.fn(async () => 0), closeWindow: vi.fn(async () => {}) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn(async () => '0.1.1') }));
+const closingWindow = vi.hoisted(() => ({ close: vi.fn(async () => {}), handler: undefined as undefined | ((event: { preventDefault: () => void }) => Promise<void>) }));
+vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ close: closingWindow.close, onCloseRequested: vi.fn(async callback => { closingWindow.handler = callback; return () => { closingWindow.handler = undefined; }; }) }) }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => null) }));
-beforeEach(() => { vi.mocked(call).mockResolvedValue(0); vi.mocked(getVersion).mockResolvedValue('0.1.1'); HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.open = true; }); });
+let savedSettings: Library['settings'];
+const render = (element: ReactElement<{ library: Library }>) => { savedSettings = element.props.library.settings; return testingRender(element); };
+beforeEach(() => { vi.mocked(call).mockImplementation(async (command, args) => { if (command === 'patch_settings') { savedSettings = { ...savedSettings, ...args?.patch as object }; return { settings: savedSettings, libraryId: '', revision: 1 }; } return 0; }); vi.mocked(getVersion).mockResolvedValue('0.1.1'); HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.open = true; }); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const library: Library = { categories: [], phrases: ['P1', 'P2'].map(id => ({ id, rootId: 'root', groupId: null, title: '话术', color: '', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '正文' }] }] })), commonPhrases: [{ id: 'C1', text: '您好', position: 0 }], files: [], dataDir: '', settings: {} as Library['settings'] };
 const deletions = () => vi.mocked(call).mock.calls.filter(([command]) => command === 'delete_local_content');
@@ -21,10 +26,10 @@ describe('最小化悬浮窗设置', () => {
     const settings = { ...library.settings, tray, showFloatingOnMinimize: true };
     render(<SettingsWindow library={{ ...library, settings }} initialTab="常用设置" />);
     fireEvent.click(screen.getByRole('checkbox', { name: '最小化显示悬浮窗' }));
-    await waitFor(() => expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...settings, showFloatingOnMinimize: false }, libraryId: undefined }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith('patch_settings', { patch: { showFloatingOnMinimize: false }, libraryId: undefined }));
     expect((screen.getByRole('checkbox', { name: '最小化到托盘' }) as HTMLInputElement).checked).toBe(tray);
     fireEvent.click(screen.getByRole('checkbox', { name: '最小化显示悬浮窗' }));
-    await waitFor(() => expect(call).toHaveBeenCalledWith('save_settings', { settings, libraryId: undefined }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith('patch_settings', { patch: { showFloatingOnMinimize: true }, libraryId: undefined }));
   });
   it('保存失败保留原值', async () => {
     render(<SettingsWindow library={{ ...library, settings: { ...library.settings, showFloatingOnMinimize: true } }} initialTab="常用设置" />);
@@ -47,7 +52,7 @@ describe('常用设置贴边隐藏与发送间隔', () => {
     expect((screen.getByRole('radio', { name: '等0.5秒' }) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(screen.getByRole('checkbox', { name: '悬浮时贴边自动隐藏' }));
     await waitFor(() => expect((screen.getByRole('radio', { name: '等1秒' }) as HTMLInputElement).disabled).toBe(true));
-    expect(call).toHaveBeenLastCalledWith('save_settings', { settings: { ...settings, edgeAutoHide: false, edgeRevealDelay: 1000 }, libraryId: undefined });
+    expect(call).toHaveBeenLastCalledWith('patch_settings', { patch: { edgeAutoHide: false }, libraryId: undefined });
   });
   it('保存失败保留原开关与选项，后续仍能保存发送间隔', async () => {
     render(<SettingsWindow library={{ ...library, settings }} initialTab="常用设置" />);
@@ -56,10 +61,10 @@ describe('常用设置贴边隐藏与发送间隔', () => {
     await screen.findByText('Error: 保存失败');
     expect((screen.getByRole('checkbox', { name: '悬浮时贴边自动隐藏' }) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByRole('radio', { name: /间隔小.*100毫秒/ }));
-    await waitFor(() => expect(call).toHaveBeenLastCalledWith('save_settings', { settings: { ...settings, interval: 100 }, libraryId: undefined }));
+    await waitFor(() => expect(call).toHaveBeenLastCalledWith('patch_settings', { patch: { interval: 100 }, libraryId: undefined }));
     const custom = screen.getByRole('spinbutton', { name: '自定义分段间隔' });
     fireEvent.change(custom, { target: { value: '750' } }); fireEvent.blur(custom);
-    await waitFor(() => expect(call).toHaveBeenLastCalledWith('save_settings', { settings: { ...settings, interval: 750 }, libraryId: undefined }));
+    await waitFor(() => expect(call).toHaveBeenLastCalledWith('patch_settings', { patch: { interval: 750 }, libraryId: undefined }));
   });
 });
 
@@ -75,7 +80,7 @@ describe('雾蓝灰默认主题', () => {
     fireEvent.change(theme, { target: { value: 'green' } });
     await waitFor(() => expect(call).toHaveBeenCalled());
     expect(title().style.color).toBe('var(--phrase-title-color)');
-    expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...settings, theme: 'green' }, libraryId: undefined });
+    expect(call).toHaveBeenCalledWith('patch_settings', { patch: { theme: 'green' }, libraryId: undefined });
     expect(settings.titleColor).toBe('#ff5100');
   });
   it('自定义标题色在切换主题后保留，恢复默认继续保存历史标记', async () => {
@@ -83,12 +88,12 @@ describe('雾蓝灰默认主题', () => {
     render(<SettingsWindow library={{ ...library, settings: custom }} initialTab="界面设置" />);
     expect(title().style.color).toBe('rgb(0, 0, 255)');
     fireEvent.change(screen.getByRole('combobox', { name: '主题风格' }), { target: { value: 'blue' } });
-    await waitFor(() => expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...custom, theme: 'blue' }, libraryId: undefined }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith('patch_settings', { patch: { theme: 'blue' }, libraryId: undefined }));
     expect(title().style.color).toBe('rgb(0, 0, 255)');
     fireEvent.click(screen.getByRole('button', { name: '设置 话术标题 字体颜色' }));
     fireEvent.click(screen.getByRole('button', { name: '恢复默认颜色' }));
     await waitFor(() => expect(title().style.color).toBe('var(--phrase-title-color)'));
-    expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...custom, theme: 'blue', titleColor: '#ff5100' }, libraryId: undefined });
+    expect(call).toHaveBeenCalledWith('patch_settings', { patch: { titleColor: '#ff5100' }, libraryId: undefined });
   });
 });
 
@@ -171,17 +176,17 @@ it('类目点击不保存，选择另一项才交换，两组排序独立', asyn
   const second = screen.getByRole('combobox', { name: '类目第2位' }) as HTMLSelectElement;
   const privateFirst = screen.getByRole('combobox', { name: '话术库第1位' }) as HTMLSelectElement;
   fireEvent.click(first); fireEvent.change(first, { target: { value: '话术' } });
-  expect(call).not.toHaveBeenCalledWith('save_settings', expect.anything());
-  expect(Array.from(first.options).map(o => o.textContent)).toEqual(['话术', '本地文件']);
-  fireEvent.change(first, { target: { value: '本地文件' } });
-  await waitFor(() => expect([first.value, second.value]).toEqual(['本地文件', '话术']));
-  expect(call).toHaveBeenCalledWith('save_settings', expect.objectContaining({ settings: expect.objectContaining({ filesFirst: true }) }));
+  expect(call).not.toHaveBeenCalledWith('patch_settings', expect.anything());
+  expect(Array.from(first.options).map(o => o.textContent)).toEqual(['话术', '文件']);
+  fireEvent.change(first, { target: { value: '文件' } });
+  await waitFor(() => expect([first.value, second.value]).toEqual(['文件', '话术']));
+  expect(call).toHaveBeenCalledWith('patch_settings', expect.objectContaining({ patch: expect.objectContaining({ filesFirst: true }) }));
   fireEvent.change(privateFirst, { target: { value: '共享话术' } });
   await waitFor(() => expect(privateFirst.value).toBe('共享话术'));
-  expect([first.value, second.value]).toEqual(['本地文件', '话术']);
-  expect(call).toHaveBeenCalledWith('save_settings', expect.objectContaining({ settings: expect.objectContaining({ filesFirst: true, teamsFirst: true }) }));
-  fireEvent.change(second, { target: { value: '本地文件' } });
-  await waitFor(() => expect([first.value, second.value]).toEqual(['话术', '本地文件']));
+  expect([first.value, second.value]).toEqual(['文件', '话术']);
+  expect(call).toHaveBeenCalledWith('patch_settings', expect.objectContaining({ patch: expect.objectContaining({ teamsFirst: true }) }));
+  fireEvent.change(second, { target: { value: '文件' } });
+  await waitFor(() => expect([first.value, second.value]).toEqual(['话术', '文件']));
   expect(privateFirst.value).toBe('共享话术');
 });
 
@@ -190,7 +195,7 @@ it('排序保存失败保留原顺序和焦点', async () => {
   const first = screen.getByRole('combobox', { name: '类目第1位' }) as HTMLSelectElement;
   first.focus();
   vi.mocked(call).mockRejectedValueOnce(new Error('保存失败'));
-  fireEvent.change(first, { target: { value: '本地文件' } });
+  fireEvent.change(first, { target: { value: '文件' } });
   await screen.findByText(/保存失败/);
   expect(first.value).toBe('话术');
   expect(document.activeElement).toBe(first);
@@ -214,6 +219,29 @@ describe('应用版本', () => {
 
 describe('十项序号与快捷键设置', () => {
   const shortcuts = () => ({ ...library, settings: { ...library.settings, searchHotkey: 'Q', windowHotkey: 'W', commonHotkey: 'E', sequenceHotkeys: false, sequenceDirectSend: false, sequenceBindings: Array.from({ length: 10 }, (_, i) => `Ctrl+${(i+1)%10}`), customHotkeys: true, globalPhraseHotkeys: false } });
+  it.each([false, true])('连续修改后关闭会等待全部保存，失败留窗（失败=%s）', async fail => {
+    let finish!: () => void;
+    const base = vi.mocked(call).getMockImplementation()!;
+    vi.mocked(call).mockImplementation(async (command, args) => {
+      if (command === 'patch_settings' && args?.patch && 'sequenceHotkeys' in (args.patch as object)) {
+        await new Promise<void>(resolve => { finish = resolve; });
+        if (fail) throw new Error('设置写入失败');
+      }
+      return base(command, args);
+    });
+    render(<SettingsWindow library={shortcuts()} initialTab="快捷键" />);
+    fireEvent.click(screen.getByRole('checkbox', { name: '开启序号快捷键' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '全局生效' }));
+    await waitFor(() => expect(finish).toBeTypeOf('function'));
+    const event = { preventDefault: vi.fn() }; let closed!: Promise<void>;
+    act(() => { closed = closingWindow.handler!(event); });
+    expect(event.preventDefault).toHaveBeenCalled(); expect(closingWindow.close).not.toHaveBeenCalled();
+    await act(async () => { finish(); await closed; });
+    expect(savedSettings.globalPhraseHotkeys).toBe(true);
+    expect(savedSettings.sequenceHotkeys).toBe(!fail);
+    expect(closingWindow.close).toHaveBeenCalledTimes(fail ? 0 : 1);
+    if (fail) expect(screen.getByRole('status').textContent).toContain('部分设置未保存');
+  });
   it('默认关闭，十项单组合键录入、单项关闭和重新录入恢复', async () => {
     render(<SettingsWindow library={shortcuts()} initialTab="快捷键" />);
     expect((screen.getByRole('checkbox', { name: '开启序号快捷键' }) as HTMLInputElement).checked).toBe(false);
@@ -229,7 +257,7 @@ describe('十项序号与快捷键设置', () => {
     vi.mocked(call).mockRejectedValue(new Error('与已有快捷键冲突，请更换。'));
     render(<SettingsWindow library={shortcuts()} initialTab="快捷键" />);
     fireEvent.keyDown(screen.getByLabelText('发送序号1'),{key:'2',code:'Digit2',ctrlKey:true});
-    await screen.findByRole('status'); await waitFor(()=>expect((screen.getByLabelText('发送序号1') as HTMLInputElement).value).toBe('Ctrl+1'));
+    await screen.findByRole('alert'); await waitFor(()=>expect((screen.getByLabelText('发送序号1') as HTMLInputElement).value).toBe('Ctrl+1'));
     fireEvent.click(screen.getByRole('checkbox',{name:'开启序号快捷键'})); await waitFor(()=>expect((screen.getByRole('checkbox',{name:'开启序号快捷键'}) as HTMLInputElement).disabled).toBe(false));
     expect((screen.getByRole('checkbox',{name:'开启序号快捷键'}) as HTMLInputElement).checked).toBe(false);
     const alt=screen.getByLabelText('定位到搜索快捷键'); fireEvent.change(alt,{target:{value:'W'}});fireEvent.blur(alt);
@@ -239,12 +267,12 @@ describe('十项序号与快捷键设置', () => {
     render(<SettingsWindow library={shortcuts()} initialTab="快捷键" />);
     fireEvent.keyDown(screen.getByLabelText('发送序号1'),{key:'a',code:'KeyA'});
     expect(screen.getByRole('status').textContent).toContain('单个组合键');
-    expect(vi.mocked(call).mock.calls.filter(([name])=>name==='save_settings')).toHaveLength(0);
+    expect(vi.mocked(call).mock.calls.filter(([name])=>name==='patch_settings')).toHaveLength(0);
     expect(screen.queryByRole('button',{name:'使用教程'})).toBeNull();
     expect(screen.getByText('生效范围')).toBeTruthy();
     fireEvent.click(screen.getByRole('checkbox',{name:'全局生效'}));
     await waitFor(()=>expect((screen.getByRole('checkbox',{name:'全局生效'}) as HTMLInputElement).checked).toBe(true));
-    expect(call).toHaveBeenCalledWith('save_settings', { settings: expect.objectContaining({ globalPhraseHotkeys: true }) });
+    expect(call).toHaveBeenCalledWith('patch_settings', { patch: expect.objectContaining({ globalPhraseHotkeys: true }), libraryId: undefined });
   });
 });
 

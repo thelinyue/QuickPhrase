@@ -83,7 +83,7 @@ it('大量共享话术仅显示数量和管理入口，不在账号页逐库展�
   status = { ...status, teams: Array.from({ length: 100 }, (_, i) => ({ teamId: `T${i}`, name: `团队${i}` })) as TeamStatus['teams'] };
   render(<TeamSettings />);
   expect(screen.getByText('可管理：100')).toBeTruthy();
-  expect(screen.queryByText(/团队\d/)).toBeNull();
+  expect(screen.getByRole('combobox', { name: '默认共享话术' }).querySelectorAll('option')).toHaveLength(status.teams.length + 1);
   fireEvent.click(screen.getByRole('button', { name: '管理话术' }));
   await waitFor(() => expect(openWindow).toHaveBeenCalledWith('team-management'));
 });

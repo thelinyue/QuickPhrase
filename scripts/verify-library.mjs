@@ -86,6 +86,82 @@ try {
     try { await invoke('save_settings', { settings: { ...initial.settings, dock: false, dockCommon: false, pinned: false, customHotkeys: false, searchHotkey: '8', windowHotkey: '9', commonHotkey: '0' } }); break; }
     catch (error) { if (i >= 30 || !String(error).includes('服务尚未启动')) throw error; await delay(100); }
   }
+  await check('设置局部保存不重读整库，保留数值草稿、焦点、滚动和当前页签', async () => {
+    await click(page.getByRole('button',{name:'设置',exact:true}));
+    const settings=await view('settings','.settings-window');
+    await click(settings.getByRole('button',{name:'常用设置',exact:true}));
+    const input=settings.getByRole('spinbutton',{name:'自定义分段间隔'});
+    await input.fill('875');
+    const before=await settings.evaluate(()=>{window.__settingsDraft=document.querySelector('[aria-label="自定义分段间隔"]');document.querySelector('.settings-content').scrollTop=150;return document.querySelector('.settings-content').scrollTop;});
+    const requestCount=(await requests(settings)).filter(r=>r.cmd==='get_library').length;
+    await click(settings.getByRole('radio',{name:'精确匹配',exact:true}));
+    await settings.waitForFunction(()=>!document.querySelector('[data-setting="searchMode"]')?.disabled);
+    assert.equal((await requests(settings)).filter(r=>r.cmd==='get_library').length,requestCount);
+    assert.equal(await input.inputValue(),'875');
+    assert.equal(await input.evaluate(el=>el===window.__settingsDraft),true);
+    assert.equal(await settings.locator('.settings-content').evaluate(el=>el.scrollTop),before);
+    assert.equal(await settings.locator('.settings-sidebar button.active').textContent(),'常用设置');
+    assert.equal(await input.evaluate(el=>el===document.activeElement),true);
+    await invoke('patch_settings',{libraryId:initial.libraryId,patch:{searchMode:initial.settings.searchMode}},settings);
+    await invoke('plugin:window|close',{},settings).catch(e=>{if(!/closed|disposed|destroyed/.test(String(e)))throw e;});
+  });
+  await check('MCP 真实协议发现、授权、事务版本、素材副本、撤权和令牌失效', async () => {
+    const listener = net.createServer(); await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
+    const mcpPort = listener.address().port;
+    const status = await invoke('get_mcp_status'); assert.equal(status.config.enabled, false); assert.deepEqual(status.config.grants, []);
+    const occupied = await invoke('patch_mcp_settings', { accountKey: status.account, patch: { enabled: true, port: mcpPort } });
+    assert.equal(occupied.running, false); assert.equal(occupied.config.enabled, false); assert.match(occupied.error, /端口.*占用/);
+    await new Promise(resolve => listener.close(resolve));
+
+    const materialRoot = path.join(evidence, 'mcp-source'); await fs.mkdir(materialRoot); await fs.writeFile(path.join(materialRoot, 'attachment.txt'), '保留源文件');
+    let active = await invoke('patch_mcp_settings', { accountKey: status.account, patch: { enabled: true, port: mcpPort, grants: [{ source: 'private', libraryId: initial.libraryId }], roots: [{ id: 'materials', path: materialRoot }] } });
+    assert.equal(active.running, true, active.error);
+    const connection = (await invoke('get_mcp_connection')).mcpServers.quickphrase;
+    let session, sequence = 0;
+    const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...connection.headers };
+    const rpc = async (method, params = {}) => {
+      const response = await fetch(connection.url, { method: 'POST', headers: { ...headers, ...(session ? { 'Mcp-Session-Id': session, 'MCP-Protocol-Version': '2025-06-18' } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: ++sequence, method, params }), signal: AbortSignal.timeout(15000) });
+      assert.equal(response.status, 200); session ||= response.headers.get('mcp-session-id');
+      const text = await response.text(); const result = JSON.parse(text.startsWith('data:') || text.includes('\ndata:') ? text.split('\n').find(line => /^data:\s*\{/.test(line)).slice(5).trim() : text);
+      assert.equal(result.error, undefined, JSON.stringify(result.error)); return result.result;
+    };
+    await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'QuickPhrase-isolated-QA', version: '1' } });
+    await fetch(connection.url, { method: 'POST', headers: { ...headers, 'Mcp-Session-Id': session, 'MCP-Protocol-Version': '2025-06-18' }, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }), signal: AbortSignal.timeout(5000) });
+    assert.equal((await rpc('tools/list')).tools.length, 9);
+    const invokeTool = async (name, args = {}) => rpc('tools/call', { name, arguments: args });
+    const tool = async (name, args = {}) => { const result = await invokeTool(name, args); assert.ok(!result.isError, result.content?.[0]?.text); return JSON.parse(result.content[0].text); };
+    const scope = { source: 'private', libraryId: initial.libraryId };
+    assert.equal((await tool('list_libraries')).libraries.length, 1);
+    const newCategory = await tool('save_category', { ...scope, category: { id: '', name: 'AI 整理', kind: 'phrase', parentId: null, position: 0, background: '' } });
+    const draft = { rootId: newCategory.id, title: 'AI 导入', segments: [{ blocks: [{ kind: 'text', text: '导入正文' }, { kind: 'file', rootId: 'materials', relativePath: 'attachment.txt' }] }] };
+    const created = await tool('save_phrase', { ...scope, phrase: draft });
+    const stored = (await invoke('get_library')).phrases.find(p => p.id === created.id); const copy = stored.segments[0].blocks[1].path;
+    assert.notEqual(copy, path.join(materialRoot, 'attachment.txt')); assert.equal(await fs.readFile(copy, 'utf8'), '保留源文件');
+    const read = await tool('read_phrase', { ...scope, id: created.id }); assert.equal(read.segments[0].blocks[1].path, undefined); assert.deepEqual(read.segments[0].blocks[1].existing, { segment: 0, block: 1 });
+    const { revision, ...editable } = read;
+    await tool('save_phrase', { ...scope, expectedRevision: revision, phrase: { ...editable, title: 'AI 已整理' } });
+    assert.equal((await invokeTool('save_phrase', { ...scope, expectedRevision: revision, phrase: editable })).isError, true);
+    assert.equal((await invokeTool('save_phrase', { ...scope, phrase: { ...draft, segments: [{ blocks: [{ kind: 'file', rootId: 'materials', relativePath: '../secret.txt' }] }] } })).isError, true);
+    assert.equal((await tool('search_phrases', { ...scope, query: '已整理', limit: 1 })).total, 1);
+    const outside=path.join(evidence,'outside-materials');await fs.mkdir(outside);await fs.writeFile(path.join(outside,'private.txt'),'不可读取');
+    await fs.symlink(outside,path.join(materialRoot,'junction'),'junction');
+    assert.equal((await invokeTool('save_phrase',{...scope,phrase:{...draft,segments:[{blocks:[{kind:'file',rootId:'materials',relativePath:'junction/private.txt'}]}]}})).isError,true);
+
+    for (const extra of [{ Authorization: 'Bearer wrong' }, { Origin: 'http://evil.invalid' }, { Host: 'evil.invalid' }]) {
+      const response = await fetch(connection.url, { method: 'POST', headers: { ...headers, ...extra }, body: '{}', signal: AbortSignal.timeout(5000) }); assert.ok(response.status >= 400);
+    }
+    // 配置保存会关闭旧协议会话；重新连接后仍需逐库授权。
+    await invoke('patch_mcp_settings', { accountKey: status.account, patch: { grants: [] } });
+    session = undefined;
+    await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'QA', version: '1' } });
+    assert.equal((await invokeTool('read_phrase', { ...scope, id: created.id })).isError, true);
+    await invoke('reset_mcp_token');
+    assert.equal((await fetch(connection.url, { method: 'POST', headers, body: '{}', signal: AbortSignal.timeout(5000) })).status, 401);
+    await invoke('patch_mcp_settings', { accountKey: status.account, patch: { enabled: false } });
+    assert.equal(await fs.readFile(path.join(materialRoot, 'attachment.txt'), 'utf8'), '保留源文件');
+    await invoke('delete_item', { libraryId: initial.libraryId, id: created.id, kind: 'phrase', recycle: false });
+    await invoke('delete_category', { libraryId: initial.libraryId, id: newCategory.id, keepPhrases: false, recycle: false });
+  });
   const root = await category('客服'), group = await category('通用', 'phrase', root);
   const textId = await phrase('文字话术', root), imageId = await phrase('进群图文', root, group);
   const sample = path.join(repo, 'src-tauri/icons/icon.png'), sourceFiles = ['原文件 A.txt', '原文件 B.txt', '原文件 C.txt', '原文件 D.txt'].map(name => path.join(evidence, name));
@@ -151,9 +227,9 @@ try {
     await right(row(imageId)); await menu('编辑'); const editor = await view('editor', '.editor-window');
     await editor.waitForFunction(() => document.querySelector('.inline-image img')?.naturalWidth > 0);
     await click(editor.getByRole('button', { name: '删除附件 icon.png', exact: true })); await editor.locator('.inline-image').waitFor({ state: 'detached' });
-    await click(editor.getByRole('button', { name: '确定', exact: true })); await page.locator('[data-row="' + imageId + '"] .row-icon[title="文字话术"]').waitFor();
+    await click(editor.getByRole('button', { name: '确定', exact: true })); await page.locator('[data-row="' + imageId + '"] .row-icon[title="含文件话术"]').waitFor();
     const p = (await invoke('get_library')).phrases.find(p => p.id === imageId); const images = await invoke('import_images', { paths: [sample] }); p.segments[0].blocks.splice(1, 0, ...images); await invoke('save_phrase', { phrase: p, afterId: null });
-    await page.getByRole('textbox', { name: '搜索话术、本地文件' }).fill('进群图文'); await page.locator('#search-results .row-icon[title="含图片话术"]').waitFor();
+    await page.getByRole('textbox', { name: '搜索话术、文件' }).fill('进群图文'); await page.locator('#search-results .row-icon[title="含图片话术"]').waitFor();
     await click(page.getByRole('button', { name: '清空搜索', exact: true }));
   });
   let originalImage;
@@ -226,14 +302,36 @@ try {
     await searchRecycle(recycle, '分页10'); if (!(await recycleIds(recycle)).length) await searchRecycle(recycle, '分页9');
     await click(recycle.getByRole('button', { name: '清空当前回收站', exact: true })); assert.ok((await recycle.locator('dialog').textContent()).includes('搜索结果之外')); await form(recycle); assert.equal((await invoke('get_recycle_bin')).length, 0);
   });
-  await click(page.getByRole('button', { name: '本地文件', exact: true })); await invoke('add_files', { categoryId: fileRoot, paths: sourceFiles });
+  await click(page.getByRole('button', { name: '文件', exact: true })); await invoke('add_files', { categoryId: fileRoot, paths: sourceFiles });
   const targetCategory = await category('目标文件', 'file'); let files = (await invoke('get_library')).files; const fileIds = files.map(f => f.id);
   await check('本地文件和分类菜单完整，显示名修改保留源文件', async () => {
     await right(page.locator('.category-tabs button').first());
-    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['新增分类', '重命名', '删除', '快速排序']);
+    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['关联文件', '新增分类', '重命名', '删除', '快速排序']);
     await right(row(fileIds[0])); assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['发到输入区（双击）', '直接发送', '复制文件', '新增', '修改显示名', '移除关联', '快速排序文件', '移动到其它分类', '打开文件', '打开文件位置', '重新关联文件', '刷新文件关联状态', '如何批量操作？']);
     await page.screenshot({ path: path.join(evidence, 'file-context-menu.png') }); await menu('修改显示名'); await page.locator('dialog input[name="name"]').fill('自定义显示名'); await form(page);
     assert.equal((await invoke('get_library')).files.find(f => f.id === fileIds[0]).name, '自定义显示名'); assert.ok(await fs.stat(sourceFiles[0]));
+  });
+  await check('文件空白与分类右键关联入口保留目标、窗口来源选择、取消和失效分类草稿', async () => {
+    const original = (await invoke('get_library')).categories.find(c => c.id === fileRoot);
+    const list = page.getByRole('listbox', { name: '文件列表' });
+    await right(list); assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['关联文件', '刷新']);
+    const bounds = await page.locator('.context-menu').evaluate(el => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; }); assert.ok(bounds);
+    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    await page.locator('.context-menu').waitFor({ state: 'detached' }); assert.ok(await list.evaluate(el => el === document.activeElement));
+    for (const target of [{ locator: list, id: fileRoot }, { locator: page.locator('.category-tabs').getByRole('button', { name: original.name, exact: true }), id: fileRoot }, { locator: page.getByRole('button', { name: '目标文件', exact: true }), id: targetCategory }, { locator: page.getByText('还没有关联文件', { exact: true }), id: targetCategory }]) {
+      await right(target.locator); await menu('关联文件'); const editor = await view('file-editor', '.file-association-window');
+      assert.equal(await editor.getByRole('combobox', { name: '文件分类' }).inputValue(), target.id);
+      assert.ok(await editor.getByRole('button', { name: '关联本地文件', exact: true }).evaluate(el => el.classList.contains('active')));
+      await click(editor.getByRole('button', { name: '关联云文件', exact: true })); await editor.getByRole('textbox', { name: '搜索云文件' }).waitFor();
+      await finish(editor, '取消'); assert.equal((await invoke('get_library')).files.length, 4);
+    }
+    const removed = await category('待删除关联分类', 'file');
+    await right(page.getByRole('button', { name: '待删除关联分类', exact: true })); await menu('关联文件'); const editor = await view('file-editor', '.file-association-window');
+    await editor.evaluate(paths => window.__libraryQA.paths = paths, [sourceFiles[0]]); await click(editor.getByRole('button', { name: '＋ 选择本地文件', exact: true }));
+    await invoke('delete_category', { id: removed }); await editor.getByRole('option', { name: '原文件分类已不存在，请重新选择' }).waitFor({ state: 'attached' });
+    await click(editor.getByRole('button', { name: '确定关联', exact: true })); await editor.getByRole('alert').filter({ hasText: '文件分类已变化' }).waitFor();
+    assert.equal(await editor.locator('.local-selection-list > div').count(), 1); assert.equal((await invoke('get_library')).files.length, 4); await finish(editor, '取消');
+    await click(page.locator('.category-tabs').getByRole('button', { name: original.name, exact: true }));
   });
   await check('文件分类新增、重命名和删除取消／确认均生效，删除只移除关联', async () => {
     await right(page.locator('.category-tabs button').first()); await menu('新增分类'); await page.locator('dialog input[name="name"]').fill('临时文件分类'); await form(page);
@@ -254,9 +352,9 @@ try {
   });
   await check('文件新增窗口批量关联，取消不写库；批量操作说明可正常打开', async () => {
     const added = ['新增 E.txt', '新增 F.txt'].map(name => path.join(evidence, name)); for (const file of added) await fs.writeFile(file, '批量新增');
-    await right(row(fileIds[0])); await menu('新增'); let editor = await view('file-editor', '.file-window'); await editor.evaluate(paths => window.__libraryQA.paths = paths, added);
-    await click(editor.getByRole('button', { name: '＋ 添加文件', exact: true })); assert.equal(await editor.locator('.chosen-files span').count(), 2); await finish(editor, '取消'); assert.equal((await invoke('get_library')).files.length, 4);
-    await right(row(fileIds[0])); await menu('新增'); editor = await view('file-editor', '.file-window'); await editor.evaluate(paths => window.__libraryQA.paths = paths, added); await click(editor.getByRole('button', { name: '＋ 添加文件', exact: true })); await finish(editor);
+    await right(row(fileIds[0])); await menu('新增'); let editor = await view('file-editor', '.file-association-window'); await editor.evaluate(paths => window.__libraryQA.paths = paths, added);
+    await click(editor.getByRole('button', { name: '＋ 选择本地文件', exact: true })); assert.equal(await editor.locator('.local-selection-list > div').count(), 2); await finish(editor, '取消'); assert.equal((await invoke('get_library')).files.length, 4);
+    await right(row(fileIds[0])); await menu('新增'); editor = await view('file-editor', '.file-association-window'); await editor.evaluate(paths => window.__libraryQA.paths = paths, added); await click(editor.getByRole('button', { name: '＋ 选择本地文件', exact: true })); await finish(editor, '确定关联');
     const addedRecords = (await invoke('get_library')).files.filter(f => added.includes(f.path)); assert.equal(addedRecords.length, 2); await invoke('remove_linked_files', { ids: addedRecords.map(f => f.id) });
     for (const file of added) assert.ok(await fs.stat(file)); await right(row(fileIds[0])); await menu('如何批量操作？'); assert.ok((await page.locator('dialog').textContent()).includes('Ctrl+A')); await form(page);
   });
@@ -276,15 +374,15 @@ try {
     assert.equal(await page.locator('.file-row[aria-selected="true"]').count(), 3); await choose(ids[1], { ctrlKey: true }); assert.equal(await page.locator('.file-row[aria-selected="true"]').count(), 2);
     await right(row(ids[0])); for (const label of ['直接发送', '修改显示名', '打开文件']) assert.equal(await page.getByRole('menuitem', { name: label, exact: true }).isDisabled(), true);
     await menu('复制文件'); assert.deepEqual((await requests(page)).filter(c => c.cmd === 'copy_linked_files').at(-1).args.ids, [ids[0], ids[2]]);
-    await page.getByRole('textbox', { name: '搜索话术、本地文件' }).fill('自定义显示名'); await page.locator('#search-results .file-row').waitFor(); await right(page.locator('#search-results .file-row'));
+    await page.getByRole('textbox', { name: '搜索话术、文件' }).fill('自定义显示名'); await page.locator('#search-results .file-row').waitFor(); await right(page.locator('#search-results .file-row'));
     assert.equal(await page.getByRole('menuitem', { name: '修改显示名', exact: true }).isEnabled(), true); await menu('复制文件'); assert.deepEqual((await requests(page)).filter(c => c.cmd === 'copy_linked_files').at(-1).args.ids, [fileIds[0]]);
     await click(page.getByRole('button', { name: '清空搜索', exact: true }));
   });
   await check('失效文件可刷新和重新关联，源文件保留且不进入回收站', async () => {
     await fs.unlink(sourceFiles[3]); await right(row(fileIds[3])); await menu('刷新文件关联状态'); await row(fileIds[3]).locator('.row-status').waitFor();
     await right(row(fileIds[3])); assert.equal(await page.getByRole('menuitem', { name: '打开文件', exact: true }).isDisabled(), true); assert.equal(await page.getByRole('menuitem', { name: '重新关联文件', exact: true }).isEnabled(), true);
-    await menu('重新关联文件'); const editor = await view('file-editor', '.file-window'); await editor.evaluate(paths => window.__libraryQA.paths = paths, [sourceFiles[2]]);
-    await click(editor.getByRole('button', { name: '＋ 添加文件', exact: true })); await click(editor.getByRole('button', { name: '确定', exact: true }));
+    await menu('重新关联文件'); const editor = await view('file-editor', '.file-association-window'); await editor.evaluate(paths => window.__libraryQA.paths = paths, [sourceFiles[2]]);
+    await click(editor.getByRole('button', { name: '＋ 选择本地文件', exact: true })); await finish(editor, '确定关联');
     assert.equal((await invoke('get_library')).files.find(f => f.id === fileIds[3]).missing, false); assert.equal((await invoke('get_recycle_bin')).length, 0);
   });
   await check('文件批量移动和取消／确认移除只操作关联，不删除源文件', async () => {

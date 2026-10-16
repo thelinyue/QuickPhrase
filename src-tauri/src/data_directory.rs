@@ -810,7 +810,7 @@ fn protected_files(source: &Path, files: &[PathBuf]) -> Result<HashSet<String>> 
     for file in files.iter().filter(|p| is_database(p)) {
         let conn = read_database(&source.join(file))?;
         let paths = conn
-            .prepare("SELECT path FROM files")
+            .prepare("SELECT path FROM files WHERE path<>''")
             .map_err(error)?
             .query_map([], |r| r.get::<_, String>(0))
             .map_err(error)?

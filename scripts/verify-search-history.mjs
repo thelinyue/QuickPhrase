@@ -87,6 +87,64 @@ try {
     for (const title of ['OS支持UPS型号', 'pro-ups型号', 'OS如何连接UPS', 'OS管理员权限', 'OS恢复出厂设置', 'UGOS重置系统']) await invoke('save_phrase', { libraryId, phrase: { id: '', rootId: root, groupId: null, title, color: '', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '您好，这边为您提供 UPS SSH DNS 故障检查说明及连接方式。' }] }] }, afterId: null });
     await setInput(page, 'UPS'); await waitResults(page); assert.deepEqual(await read(), []);
   });
+  await check('两处混合搜索按话术和文件分组，窄窗口不溢出，跨组键盘投递使用文件身份', async () => {
+    const categoryId = await invoke('save_category', { category: { id: '', name: '混合分组验证', kind: 'file', parentId: null, position: 0, background: '' } });
+    const source = path.join(evidence, 'UPS混合资料.pdf'); await fs.writeFile(source, '分组验证'); await invoke('add_files', { categoryId, paths: [source] });
+    const file = (await invoke('get_library')).files.find(f => f.path === source);
+    await page.locator('.review-toast').waitFor({ state: 'hidden' });
+    for (const target of [page, dock]) {
+      await setInput(target, 'UPS'); await waitResults(target);
+      const list = target.locator(target === page ? '#search-results' : '.dock-search-results');
+      await list.locator('.file-row').waitFor();
+      assert.deepEqual(await list.locator('.search-group-title').allTextContents(), ['话术', '文件']);
+      assert.equal(await target.locator('.search-kind,.dock-search-tabs').count(), 0);
+      assert.equal(await list.locator('.row-source').count(), 0);
+      assert.equal(await list.locator('.content-row').last().getAttribute('data-row'), file.id);
+      const count = await list.locator('.content-row').count();
+      for (let i = 1; i < count; i++) await target.locator('.search-bar input').press('ArrowDown');
+      assert.equal(await list.locator('.selected').getAttribute('data-row'), file.id);
+      const before = await target.evaluate(() => window.__historyQA.deliveries.length);
+      await target.locator('.search-bar input').press('Enter');
+      await target.waitForFunction(n => window.__historyQA.deliveries.length === n + 1, before);
+      assert.deepEqual(await target.evaluate(() => { const d = window.__historyQA.deliveries.at(-1); return { id: d.id, kind: d.kind }; }), { id: file.id, kind: 'file' });
+      await target.locator('.review-toast,.dock-status').evaluateAll(items => items.forEach(item => item.click()));
+      for (const width of [300, 304]) {
+        await target.setViewportSize({ width, height: target === page ? 718 : 420 });
+        assert.ok(await list.evaluate(el => el.scrollWidth <= el.clientWidth));
+        await list.evaluate(el => el.scrollTop = 0);
+        await target.screenshot({ path: path.join(evidence, `grouped-${target === page ? 'main' : 'dock'}-${width}.png`) });
+      }
+    }
+    await check('搜索结果右键菜单保留原列表与滚动，Esc回到原行，菜单投递保持目标，外部点击仍收起', async () => {
+      await setInput(page, 'UPS'); await waitResults(page);
+      for (const selector of ['.content-row:not(.file-row)', '.file-row']) {
+        const row = page.locator('#search-results ' + selector).last();
+        await row.scrollIntoViewIfNeeded();
+        await row.evaluate(el => { const qa = window.__historyQA; qa.menuRow = el; qa.menuList = el.closest('#search-results'); qa.menuScroll = qa.menuList.scrollTop; });
+        await row.click({ button: 'right' });
+        const menu = page.getByRole('menu'); await menu.waitFor();
+        const retained = () => page.evaluate(() => { const qa = window.__historyQA; return qa.menuRow.isConnected && qa.menuList === document.querySelector('#search-results') && qa.menuList.scrollTop === qa.menuScroll && document.querySelector('.search-bar input').value === 'UPS'; });
+        assert.ok(await retained());
+        await page.keyboard.press('ArrowDown'); assert.ok(await retained());
+        await menu.getByRole('menuitem', { name: '直接发送', exact: true }).hover(); assert.ok(await retained());
+        if (selector === '.content-row:not(.file-row)') await page.screenshot({ path: path.join(evidence, 'search-context-menu.png') });
+        await page.keyboard.press('Escape'); await menu.waitFor({ state: 'hidden' });
+        assert.ok(await page.evaluate(() => document.activeElement === window.__historyQA.menuRow)); assert.ok(await retained());
+        await row.click({ button: 'right' });
+        const count = await page.evaluate(() => window.__historyQA.deliveries.length);
+        await menu.getByRole('menuitem', { name: selector === '.content-row:not(.file-row)' ? '添加到输入区（双击）' : '发到输入区（双击）', exact: true }).click();
+        await page.waitForFunction(n => window.__historyQA.deliveries.length === n + 1, count);
+        assert.equal(await page.evaluate(() => window.__historyQA.deliveries.at(-1).kind), selector === '.content-row:not(.file-row)' ? 'phrase' : 'file');
+        assert.ok(await retained());
+        await page.locator('.review-toast').evaluateAll(items => items.forEach(item => item.click()));
+      }
+      await page.getByRole('button', { name: '主菜单', exact: true }).click();
+      await page.locator('.search-panel').waitFor({ state: 'hidden' });
+      await page.keyboard.press('Escape');
+    });
+    await invoke('remove_linked_files', { ids: [file.id] }); await clear();
+    await setInput(page, 'UPS'); await setInput(dock, 'UPS');
+  });
   await check('两处搜索仅悬停显示快捷键，相同库通知不重查，后台更新不卸载结果行', async () => {
     let current = await invoke('get_library'); const first = current.phrases[0];
     await invoke('save_phrase', { libraryId, phrase: { ...first, shortcut: 'Q+W' }, afterId: null });
@@ -175,13 +233,13 @@ try {
         assert.equal(await target.locator('.search-panel .content-row,.dock-search-results .content-row').first().getAttribute('aria-selected'), 'true');
       }
       const after = await target.evaluate(() => ({ deliveries: window.__historyQA.deliveries.length, search: window.__historyQA.requests.filter(r => r.cmd === 'search_scoped_content').at(-1).args }));
-      assert.equal(after.deliveries, before.deliveries); assert.equal(after.search.scope, target === page ? 'private' : 'all');
+      assert.equal(after.deliveries, before.deliveries); assert.equal(after.search.scope, 'all');
     }
     const search = await page.locator('.search-bar').boundingBox(), panel = await page.locator('.search-panel').boundingBox(), backdrop = await page.locator('.search-backdrop').boundingBox();
     assert.ok(panel.y + panel.height <= search.y && search.y - panel.y - panel.height <= 12, '结果浮层直接指向搜索框');
     const titlebar = await page.locator('.main-titlebar').boundingBox();
     assert.equal(backdrop.y, titlebar.y + titlebar.height); assert.equal(backdrop.y + backdrop.height, search.y);
-    assert.equal(await page.locator('.common-phrases').count(), 1); assert.equal(await page.locator('.search-kind').textContent(), '话术');
+    assert.equal(await page.locator('.common-phrases').count(), 1); assert.deepEqual(await page.locator('.search-group-title').allTextContents(), ['话术']);
     const dockPanel = await dock.locator('.dock-result-panel').boundingBox(), dockInput = await dock.locator('.dock-search-bar').boundingBox();
     assert.equal(dockInput.y - dockPanel.y - dockPanel.height, 10, '底部结果尖角位于搜索框上方的间隙内');
     assert.equal(await dock.locator('.dock-result-panel > header').textContent(), '搜索结果×');
@@ -200,7 +258,7 @@ try {
     const heights = await dock.evaluate(() => window.__historyQA.heights);
     assert.ok(heights.length > 1); assert.ok(new Set(heights).size > 1); assert.ok(heights.every(h => h >= 28 && h <= 420));
   });
-  await check('底部标签、收起恢复、紧凑结果及420 DIP高度预算，按钮始终居中且完整可见', async () => {
+  await check('底部分组、收起恢复、紧凑结果及420 DIP高度预算，按钮始终居中且完整可见', async () => {
     const categoryId = await invoke('save_category', { category: { id: '', name: '本地文件验证', kind: 'file', parentId: null, position: 0, background: '' } });
     const filePath = path.join(evidence, 'UPS说明.txt'); await fs.writeFile(filePath, '隔离布局验证');
     await invoke('add_files', { categoryId, paths: [filePath] });
@@ -229,7 +287,7 @@ try {
     assert.ok((await validate()).scroll, '窄窗口优先压缩结果区并提供滚动'); await dock.screenshot({ path: path.join(evidence, 'dock-search-narrow.png') });
     await dock.setViewportSize({ width: 988, height: 420 });
     await validate(); await dock.screenshot({ path: path.join(evidence, 'dock-search-wide.png') });
-    await click(dock.getByRole('tab', { name: '本地文件', exact: true }));
+    await setInput(dock, 'UPS说明'); await dock.locator('.dock-search-results .file-row').waitFor();
     assert.equal(await dock.locator('.dock-search-results .content-row').count(), 1);
     assert.ok((await validate()).result.height < 80, '单条文件不撑大结果区');
     await dock.screenshot({ path: path.join(evidence, 'dock-search-file.png') });
@@ -238,10 +296,9 @@ try {
     assert.equal(await dock.locator('.common-phrases').count(), 1); assert.equal((await invoke('get_library')).settings.dockSearch, true);
     await dock.screenshot({ path: path.join(evidence, 'dock-search-collapsed.png') });
     await click(dock.getByRole('button', { name: '展开底部搜索' })); await waitResults(dock);
-    assert.equal(await dock.locator('.search-bar input').inputValue(), 'UPS');
-    assert.equal(await dock.getByRole('tab', { name: '本地文件' }).getAttribute('aria-selected'), 'true');
-    await click(dock.getByRole('tab', { name: '话术', exact: true }));
-    await setInput(dock, '不存在的搜索词'); await dock.getByText('没有找到匹配的话术', { exact: true }).waitFor();
+    assert.equal(await dock.locator('.search-bar input').inputValue(), 'UPS说明');
+    assert.deepEqual(await dock.locator('.search-group-title').allTextContents(), ['文件']);
+    await setInput(dock, '不存在的搜索词'); await dock.getByText('没有找到匹配的内容', { exact: true }).waitFor();
     assert.ok((await validate()).result.height < 80);
     await click(dock.getByRole('button', { name: '清空底部搜索' }));
     current = await invoke('get_library'); await invoke('save_settings', { settings: { ...current.settings, dockCommon: false } });

@@ -1,3 +1,4 @@
+import { orderSearchResults, SearchResults } from './SearchResults';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { Menu } from '@tauri-apps/api/menu';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
@@ -8,7 +9,7 @@ import { Icon, Titlebar, useEnterSubmit } from './ui';
 import { PhraseRow } from './PhraseRow';
 import { SearchHistoryBar, useSearchHistory, type SearchUsage } from './SearchHistory';
 import { useMembers } from './useMembers';
-import { categoryLabel, type CommonPhrase, type DeliveryReport, type Library, type SearchHit, type TargetContext } from './types';
+import { searchHitKey, searchDeliveryKey, categoryLabel, type CommonPhrase, type DeliveryReport, type Library, type SearchHit, type TargetContext } from './types';
 
 /** 换行短语按真实布局导航：上下先找相邻行，再选择横向中心最近的项。 */
 export function commonNavigationIndex(rects: Pick<DOMRect, 'left' | 'top' | 'width'>[], index: number, key: string) {
@@ -96,7 +97,7 @@ export function CommonDockWindow({ library }: { library: Library }) {
   const searchUsage = (): SearchUsage | undefined => library.libraryId ? { query, libraryId: library.libraryId } : undefined;
   const content = useRef<HTMLElement>(null);
   const [query, setQuery] = useState(''); const [storedResults, setResults] = useState<SearchHit[]>([]); const [index, setIndex] = useState(0); const [searching, setSearching] = useState(false);
-  const [collapsed, setCollapsed] = useState(false); const [kind, setKind] = useState<'phrase' | 'file'>('phrase');
+  const [collapsed, setCollapsed] = useState(false);
   const [searchActive, setSearchActive] = useState(false);
   const upperRef = useRef<HTMLDivElement>(null);
   const commonRef = useRef<HTMLDivElement>(null); const resultMenuOpen = useRef(false);
@@ -110,9 +111,8 @@ export function CommonDockWindow({ library }: { library: Library }) {
   const [searchSource, setSearchSource] = useState<{ query: string; scope: string; source: string; valid: boolean } | null>(null);
   const searchPending = searching || composing.current || searchSource?.query !== query || searchSource.scope !== searchScope || searchSource.source !== searchStamp || !searchSource.valid;
   const searchGuard = useRef({ query, scope: searchScope, source: searchStamp, pending: searchPending }); searchGuard.current = { query, scope: searchScope, source: searchStamp, pending: searchPending };
-  const results = searchSource?.query === query && searchSource.scope === searchScope ? storedResults.filter(hit => hit.kind === kind && (!hit.teamId || teamStatus.teams.some(t => t.teamId === hit.teamId))) : [];
+  const results = searchSource?.query === query && searchSource.scope === searchScope ? storedResults.filter(hit => (!hit.teamId || teamStatus.teams.some(t => t.teamId === hit.teamId))) : [];
   const searchSelection = useRef<SearchHit | undefined>(undefined); searchSelection.current = results[index];
-  const searchKind = useRef(kind); searchKind.current = kind;
   const [hiding, setHiding] = useState(false); const hidingRef = useRef(false);
   const clearSearch = () => { setQuery(''); setResults([]); setIndex(0); setSearching(false); };
   const chooseHistory = (value: string) => { composing.current = false; setQuery(value); setResults([]); setIndex(0); setSearching(true); repeatSearch(v => v + 1); searchRef.current?.focus(); };
@@ -130,10 +130,11 @@ export function CommonDockWindow({ library }: { library: Library }) {
   useEffect(() => {
     if (collapsed || !library.settings.dockSearch || !query.trim() || composing.current) { if (!query.trim()) setResults([]); return; }
     let active = true; setSearching(true); setSearchFailed(false);
-    const timer = setTimeout(() => { void call<SearchHit[]>('search_scoped_content', { query, scope: 'all' }).then(found => {
+    const timer = setTimeout(() => { void call<SearchHit[]>('search_scoped_content', { query, scope: 'all' }).then(hits => {
+      const found = orderSearchResults(hits);
       if (!active) return;
       const selected = searchSelection.current;
-      setIndex(Math.max(0, found.filter(hit => hit.kind === searchKind.current).findIndex(hit => hit.id === selected?.id && hit.kind === selected.kind && hit.teamId === selected.teamId)));
+      setIndex(Math.max(0, found.findIndex(hit => !!selected && searchHitKey(hit) === searchHitKey(selected))));
       setResults(previous => JSON.stringify(previous) === JSON.stringify(found) ? previous : found);
       setSearchSource({ query, scope: searchScope, source: searchStamp, valid: true }); setSearching(false);
     }).catch(e => { if (active) { setSearchSource(previous => previous ? { ...previous, valid: false } : null); setMessage(String(e)); setSearching(false); setSearchFailed(true); } }); }, 100);
@@ -181,7 +182,7 @@ export function CommonDockWindow({ library }: { library: Library }) {
     if (searchGuard.current.pending) return;
     const usage = searchUsage();
     await menuRef.current?.close();
-    const menu = await Menu.new({ items: [{ text: '添加到输入区', enabled: !busy, action: () => void deliver(hit.privateKey || hit.id, 'insert', hit.kind, undefined, usage) }, { text: '直接发送', enabled: !busy, action: () => void deliver(hit.privateKey || hit.id, 'send', hit.kind, undefined, usage) }, ...(hit.phrase?.contentRef?.source === 'member' ? [{ text: '下载全部素材', enabled: !busy && !teamStatus.offline, action: () => { void call('download_member_materials', { ids: [hit.id], attachments: true }).catch(e => setMessage(String(e))); } }] : [])] }); menuRef.current = menu;
+    const menu = await Menu.new({ items: [{ text: '添加到输入区', enabled: !busy, action: () => void deliver(searchDeliveryKey(hit), 'insert', hit.kind, undefined, usage) }, { text: '直接发送', enabled: !busy, action: () => void deliver(searchDeliveryKey(hit), 'send', hit.kind, undefined, usage) }, ...(hit.phrase?.contentRef?.source === 'member' ? [{ text: '下载全部素材', enabled: !busy && !teamStatus.offline, action: () => { void call('download_member_materials', { ids: [searchDeliveryKey(hit)], attachments: true }).catch(e => setMessage(String(e))); } }] : [])] }); menuRef.current = menu;
     resultMenuOpen.current = true;
     try { await menu.popup(new LogicalPosition(e.clientX, e.clientY)); }
     finally { resultMenuOpen.current = false; if (!document.hasFocus()) setSearchActive(false); }
@@ -191,7 +192,7 @@ export function CommonDockWindow({ library }: { library: Library }) {
     try {
       // 关闭整条短语区域并同步设置；没有底部搜索时，原生跟随服务同时隐藏整个窗口。
       // 恢复入口使用界面设置中的“显示底部吸附常用短语”，不留下空横条或新增按钮。
-      await call('save_settings', { settings: { ...library.settings, dockCommon: false } });
+      await call('patch_settings', { patch: { dockCommon: false } });
     } catch (e) { setMessage(String(e)); } finally { hidingRef.current = false; setHiding(false); }
   }
   function toggleSearch() {
@@ -216,15 +217,14 @@ export function CommonDockWindow({ library }: { library: Library }) {
     <div className="dock-search-upper" ref={upperRef} id="dock-search-panel" hidden={!overlayOpen}>
     {overlayOpen && query.trim() && <section className="dock-result-panel" aria-label="搜索结果">
       <header><span>搜索结果</span><button aria-label="关闭底部搜索结果" onClick={() => { clearSearch(); searchRef.current?.focus(); }}>×</button></header>
-      <div className="dock-search-tabs" role="tablist" aria-label="底部搜索类型">{(['phrase', 'file'] as const).map(value => <button key={value} role="tab" id={`dock-tab-${value}`} aria-selected={kind === value} aria-controls="dock-search-results" tabIndex={kind === value ? 0 : -1} onClick={() => { setKind(value); setIndex(0); }} onKeyDown={e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = e.key === 'Home' ? 'phrase' : e.key === 'End' ? 'file' : kind === 'phrase' ? 'file' : 'phrase'; setKind(next); setIndex(0); document.getElementById(`dock-tab-${next}`)?.focus(); } }}>{value === 'phrase' ? '话术' : '本地文件'}</button>)}</div>
-      <div className="dock-search-results" id="dock-search-results" role="listbox" aria-label="底部搜索结果" aria-busy={searchPending && !searchFailed}>{results.length ? results.map((hit, i) => <PhraseRow key={`${hit.teamId || ''}:${hit.kind}:${hit.id}`} sourceLabel={hit.sourceLabel} phrase={hit.phrase || undefined} file={hit.file || undefined} index={i} settings={library.settings} selected={i === index} query={query} busy={busy || searchPending} onSelect={() => setIndex(i)} onDeliver={(mode, triggerKey) => void deliver(hit.privateKey || hit.id, mode, hit.kind, triggerKey, searchUsage())} onContext={e => void resultMenu(e, hit).catch(e => setMessage(String(e)))} />) : <div className="no-results">{searchFailed ? '搜索失败，请重新输入关键词' : searchPending ? '正在搜索…' : `没有找到匹配的${kind === 'phrase' ? '话术' : '本地文件'}`}</div>}</div>
+      <div className="dock-search-results" id="dock-search-results" role="listbox" aria-label="底部搜索结果" aria-busy={searchPending && !searchFailed}>{results.length ? <SearchResults results={results} renderRow={(hit, i) => <PhraseRow key={searchHitKey(hit)} phrase={hit.phrase || undefined} file={hit.file || undefined} index={i} settings={library.settings} selected={i === index} query={query} busy={busy || searchPending} onSelect={() => setIndex(i)} onDeliver={(mode, triggerKey) => void deliver(searchDeliveryKey(hit), mode, hit.kind, triggerKey, searchUsage())} onContext={e => void resultMenu(e, hit).catch(e => setMessage(String(e)))} />} /> : <div className="no-results">{searchFailed ? '搜索失败，请重新输入关键词' : searchPending ? '正在搜索…' : '没有找到匹配的内容'}</div>}</div>
     </section>}
     {overlayOpen && !query.trim() && <SearchHistoryBar label="历史搜索" items={history.items} clearing={history.clearing} onSelect={chooseHistory} onClear={() => void history.clear()} />}
     </div>
-    {library.settings.dockSearch && <div className="search-bar dock-search-bar"><button className="dock-search-toggle" aria-label={collapsed ? '展开底部搜索' : '收起底部搜索'} title={collapsed ? '展开底部搜索' : '收起底部搜索'} aria-expanded={!collapsed} aria-controls="dock-search-panel" onClick={toggleSearch}><Icon name={collapsed ? 'eye-off' : 'eye'} /></button>{!collapsed && <><Icon name="search" /><input ref={searchRef} data-shortcut-search aria-label="底部搜索话术、本地文件" placeholder="搜索话术、本地文件" value={query} onChange={e => { setSearchActive(true); setQuery(e.target.value); setIndex(0); setSearching(!!e.target.value.trim()); }} onCompositionStart={() => { composing.current = true; setSearching(true); }} onCompositionEnd={e => { composing.current = false; setQuery(e.currentTarget.value); endComposition(v => v + 1); }} onKeyDown={e => {
+    {library.settings.dockSearch && <div className="search-bar dock-search-bar"><button className="dock-search-toggle" aria-label={collapsed ? '展开底部搜索' : '收起底部搜索'} title={collapsed ? '展开底部搜索' : '收起底部搜索'} aria-expanded={!collapsed} aria-controls="dock-search-panel" onClick={toggleSearch}><Icon name={collapsed ? 'eye-off' : 'eye'} /></button>{!collapsed && <><Icon name="search" /><input ref={searchRef} data-shortcut-search aria-label="底部搜索话术、文件" placeholder="搜索话术、文件" value={query} onChange={e => { setSearchActive(true); setQuery(e.target.value); setIndex(0); setSearching(!!e.target.value.trim()); }} onCompositionStart={() => { composing.current = true; setSearching(true); }} onCompositionEnd={e => { composing.current = false; setQuery(e.currentTarget.value); endComposition(v => v + 1); }} onKeyDown={e => {
       if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setIndex(i => Math.max(0, Math.min(results.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))); requestAnimationFrame(() => document.querySelector('.dock-search-results .selected')?.scrollIntoView({ block: 'nearest' })); }
-      if (e.key === 'Enter' && query.trim() && !searchPending && results[index] && enterSubmit()) { e.preventDefault(); const hit = results[index]; void deliver(hit.privateKey || hit.id, 'insert', hit.kind, 13, searchUsage()); }
+      if (e.key === 'Enter' && query.trim() && !searchPending && results[index] && enterSubmit()) { e.preventDefault(); const hit = results[index]; void deliver(searchDeliveryKey(hit), 'insert', hit.kind, 13, searchUsage()); }
       if (e.key === 'Escape') { e.preventDefault(); clearSearch(); setSearchActive(false); }
     }} />{query && <button className="dock-search-clear" aria-label="清空底部搜索" onClick={() => { clearSearch(); searchRef.current?.focus(); }}>×</button>}</>}</div>}
     </div>

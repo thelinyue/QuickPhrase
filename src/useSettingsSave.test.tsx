@@ -1,0 +1,40 @@
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { useSettingsSave } from './useSettingsSave';
+import { call, type SettingsSnapshot } from './api';
+import type { Settings } from './types';
+vi.mock('./api', () => ({ call: vi.fn() }));
+afterEach(() => { cleanup(); vi.resetAllMocks(); });
+const initial = { theme: 'default', showSearch: true, showCommon: true, fontSize: 14 } as Settings;
+it('不同字段连续修改排队，失败仅回退对应字段且不会整库读取', async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(call).mockImplementationOnce(() => new Promise((_, no) => { reject = no; })).mockResolvedValueOnce({ libraryId: 'A', settings: { ...initial, showCommon: false }, revision: 2 });
+  const hook = renderHook(() => useSettingsSave(initial, 'A'));
+  let first!: Promise<boolean>, second!: Promise<boolean>;
+  act(() => { first = hook.result.current.change({ showSearch: false }); second = hook.result.current.change({ showCommon: false }); });
+  expect(hook.result.current.settings.showSearch).toBe(false); expect(hook.result.current.settings.showCommon).toBe(false);
+  await act(async () => { await Promise.resolve(); }); expect(call).toHaveBeenCalledTimes(1);
+  await act(async () => { reject(new Error('保存失败')); await first; await second; });
+  expect(hook.result.current.settings.showSearch).toBe(true); expect(hook.result.current.settings.showCommon).toBe(false);
+  expect(hook.result.current.errors.showSearch).toContain('保存失败'); expect(hook.result.current.errors.showCommon).toBeUndefined();
+  expect(vi.mocked(call).mock.calls.map(([name]) => name)).toEqual(['patch_settings', 'patch_settings']);
+});
+it('另一窗口的新设置通知优先于迟到的保存回执', async () => {
+  let resolve!: (value: SettingsSnapshot) => void;
+  vi.mocked(call).mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const hook = renderHook(({ settings, revision }) => useSettingsSave(settings, 'A', revision), { initialProps: { settings: initial, revision: 1 } });
+  let saving!: Promise<boolean>; act(() => { saving = hook.result.current.change({ showSearch: false }); });
+  await act(async () => { await Promise.resolve(); });
+  hook.rerender({ settings: { ...initial, theme: 'blue', showSearch: false }, revision: 3 });
+  await act(async () => { resolve({ libraryId: 'A', settings: { ...initial, showSearch: false }, revision: 2 }); await saving; });
+  expect(hook.result.current.settings.theme).toBe('blue'); expect(hook.result.current.settings.showSearch).toBe(false);
+});
+it('切号再切回也不会执行上一代排队操作', async () => {
+  let resolve!: (value: SettingsSnapshot) => void;
+  vi.mocked(call).mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const hook = renderHook(({ id }) => useSettingsSave(initial, id), { initialProps: { id: 'A' } });
+  let saving!: Promise<boolean>; act(() => { saving = hook.result.current.change({ showSearch: false }); void hook.result.current.change({ fontSize: 18 }); });
+  await act(async () => { await Promise.resolve(); }); hook.rerender({ id: 'B' }); hook.rerender({ id: 'A' });
+  await act(async () => { resolve({ libraryId: 'A', settings: { ...initial, showSearch: false }, revision: 2 }); await saving; });
+  expect(call).toHaveBeenCalledTimes(1); expect(hook.result.current.settings.showSearch).toBe(true); expect(hook.result.current.busy('fontSize')).toBe(false);
+});

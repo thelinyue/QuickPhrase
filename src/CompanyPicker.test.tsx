@@ -1,0 +1,37 @@
+import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { CompanyFilePicker } from './CompanyPicker';
+const fixture = vi.hoisted(() => ({ created: vi.fn(), close: vi.fn(async () => {}), listeners: new Map<string, (e: { payload: unknown }) => void>(), epoch: 4 }));
+vi.mock('./api', () => ({ call: vi.fn(async () => {}), useTeams: () => ({ status: { sessionEpoch: fixture.epoch }, loaded: true }) }));
+vi.mock('./CompanyFiles', () => ({ CloudFileTable: () => null }));
+vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ label: 'editor' }), currentMonitor: async () => ({ scaleFactor: 2, workArea: { size: { width: 1400, height: 900 } } }) }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: async (name: string, callback: (e: { payload: unknown }) => void) => { fixture.listeners.set(name, callback); return () => fixture.listeners.delete(name); }, emitTo: vi.fn() }));
+vi.mock('@tauri-apps/api/webviewWindow', () => ({ WebviewWindow: class { constructor(label: string, options: unknown) { fixture.created(label, options); } close = fixture.close; once = async () => () => {}; } }));
+afterEach(() => { cleanup(); fixture.epoch = 4; fixture.listeners.clear(); vi.clearAllMocks(); });
+it('独立窗口服从工作区，旧请求和旧账号结果不能写入草稿', async () => {
+  const onConfirm = vi.fn(), close = vi.fn();
+  const view = render(<CompanyFilePicker limit={2} onConfirm={onConfirm} close={close} />);
+  await waitFor(() => expect(fixture.created).toHaveBeenCalledOnce());
+  const options = fixture.created.mock.calls[0][1];
+  expect(options).toMatchObject({ width: 700, height: 450, minWidth: 700, minHeight: 450 });
+  const requestId = new URLSearchParams(options.url.split('?')[1]).get('requestId');
+  const listener = fixture.listeners.get('company-picker-result')!;
+  const files = [{ assetId: 'a', name: '资料.pdf' }];
+  act(() => listener({ payload: { requestId: 'other', epoch: 4, files } }));
+  act(() => listener({ payload: { requestId, epoch: 3, files } }));
+  expect(onConfirm).not.toHaveBeenCalled();
+  act(() => listener({ payload: { requestId, epoch: 4, files } }));
+  expect(onConfirm).toHaveBeenCalledWith(files, 4);
+  view.unmount();
+  act(() => listener({ payload: { requestId, epoch: 4, files } }));
+  expect(onConfirm).toHaveBeenCalledOnce();
+  expect(fixture.close).toHaveBeenCalledOnce();
+});
+it('切号取消选择，不为旧编辑上下文自动打开新账号窗口', async () => {
+  const close = vi.fn(), view = render(<CompanyFilePicker limit={1} onConfirm={vi.fn()} close={close} />);
+  await waitFor(() => expect(fixture.created).toHaveBeenCalledOnce());
+  fixture.epoch = 5;
+  view.rerender(<CompanyFilePicker limit={1} onConfirm={vi.fn()} close={close} />);
+  expect(close).toHaveBeenCalledOnce();
+  expect(fixture.created).toHaveBeenCalledOnce();
+});

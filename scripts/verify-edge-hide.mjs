@@ -99,7 +99,7 @@ try {
       const text = selection.toString(); selection.removeAllRanges(); return text;
     });
     assert.equal(selection, '');
-    const input = page.getByRole('textbox', { name: '搜索话术、本地文件', exact: true });
+    const input = page.getByRole('textbox', { name: '搜索话术、文件', exact: true });
     await input.fill('选择验收');
     assert.equal(await input.evaluate(el => { el.select(); return el.value.slice(el.selectionStart, el.selectionEnd); }), '选择验收');
     await input.fill(''); await page.keyboard.press('Escape');

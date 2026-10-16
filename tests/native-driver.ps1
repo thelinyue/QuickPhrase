@@ -1,4 +1,4 @@
-﻿param([ValidateSet('focus','inspect','move','minimize','restore','key','menu')][string]$Action = 'inspect', [long]$Handle = 0, [int]$X = 0, [int]$Y = 0, [int]$Width = 0, [int]$Height = 0, [int]$Key = 0, [switch]$Ctrl, [switch]$Alt, [switch]$Shift, [int]$Repeats = 1, [int]$HoldMilliseconds = 0, [string]$Keys, [string]$ClipboardExpected, [string]$ClipboardImageSnapshot, [string]$ClipboardFileExpected, [int]$ProcessId = 0, [string]$Title, [string]$WindowClass, [string]$Screenshot, [int]$MenuIndex = -1)
+﻿param([ValidateSet('focus','inspect','move','minimize','restore','key','menu')][string]$Action = 'inspect', [long]$Handle = 0, [int]$X = 0, [int]$Y = 0, [int]$Width = 0, [int]$Height = 0, [int]$Key = 0, [switch]$Ctrl, [switch]$Alt, [switch]$Shift, [int]$Repeats = 1, [int]$HoldMilliseconds = 0, [string]$Keys, [switch]$Overlap, [string]$ClipboardExpected, [string]$ClipboardImageSnapshot, [string]$ClipboardFileExpected, [int]$ProcessId = 0, [string]$Title, [string]$WindowClass, [string]$Screenshot, [int]$MenuIndex = -1)
 $ErrorActionPreference = 'Stop'
 # 仅用于本机验收：原生鼠标和按键确保焦点流程经过真实 Windows 输入队列。
 Add-Type -TypeDefinition @'
@@ -49,6 +49,9 @@ public static class ShanyuQaWindows {
  }
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int command);
  [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h,int x,int y,int w,int height,bool repaint);
+ [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
+ [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h,ref Point point);
+ [StructLayout(LayoutKind.Sequential)] public struct Point { public int x,y; }
  [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr h,uint flags);
  [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor,ref MonitorInfo info);
  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
@@ -109,9 +112,10 @@ if ($Action -eq 'key') {
   foreach ($testKey in $keyList) {
     for ($repeat = 0; $repeat -lt $Repeats; $repeat++) { [ShanyuQaWindows]::keybd_event([byte]$testKey,0,0,$testMarker); Start-Sleep -Milliseconds 20 }
     if ($HoldMilliseconds) { Start-Sleep -Milliseconds $HoldMilliseconds }
-    [ShanyuQaWindows]::keybd_event([byte]$testKey,0,2,$testMarker)
+    if (-not $Overlap) { [ShanyuQaWindows]::keybd_event([byte]$testKey,0,2,$testMarker) }
     Start-Sleep -Milliseconds 40
   }
+  if ($Overlap) { foreach ($testKey in $keyList) { [ShanyuQaWindows]::keybd_event([byte]$testKey,0,2,$testMarker) } }
   if ($Shift) { [ShanyuQaWindows]::keybd_event(16,0,2,$testMarker) }
   if ($Alt) { [ShanyuQaWindows]::keybd_event(18,0,2,$testMarker) }
   if ($Ctrl) { [ShanyuQaWindows]::keybd_event(17,0,2,$testMarker) }
@@ -143,6 +147,16 @@ $guiThread = [ShanyuQaWindows]::GetWindowThreadProcessId($guiWindow,[ref]$guiPro
 if ([ShanyuQaWindows]::GetGUIThreadInfo($guiThread,[ref]$guiInfo)) {
   $result.menuMode = ($guiInfo.flags -band 28) -ne 0
   $result.menuOwner = $guiInfo.menuOwner.ToInt64()
+  $result.dpi = [ShanyuQaWindows]::GetDpiForWindow($guiWindow)
+  $focusRect = New-Object ShanyuQaWindows+Rect
+  if ([ShanyuQaWindows]::GetWindowRect($guiInfo.focus,[ref]$focusRect)) { $result.focusRect = $focusRect }
+  if ($guiInfo.caret -ne [IntPtr]::Zero) {
+    $caretPoint = New-Object ShanyuQaWindows+Point
+    $caretPoint.x = $guiInfo.caretRect.left; $caretPoint.y = $guiInfo.caretRect.top
+    if ([ShanyuQaWindows]::ClientToScreen($guiInfo.caret,[ref]$caretPoint)) {
+      $result.caretRect = @{left=$caretPoint.x; top=$caretPoint.y; right=$caretPoint.x+[Math]::Max(1,$guiInfo.caretRect.right-$guiInfo.caretRect.left); bottom=$caretPoint.y+$guiInfo.caretRect.bottom-$guiInfo.caretRect.top}
+    }
+  }
 }
 $inputDesktop = [ShanyuQaWindows]::OpenInputDesktop(0,$false,1)
 try { $result.inputDesktop = [ShanyuQaWindows]::DesktopName($inputDesktop) } finally { [ShanyuQaWindows]::CloseDesktop($inputDesktop) | Out-Null }

@@ -115,12 +115,21 @@ struct Pending {
 /// 原生窗口或输入控件变化时取消且不向新焦点回放；长按重复、合成事件不会重复触发。
 #[derive(Default)]
 pub struct ShortcutMatcher {
+    generation: u64,
     pending: Option<Pending>,
     held: HashSet<u32>,
     consumed: HashSet<u32>,
     submit_key: Option<u32>,
 }
 impl ShortcutMatcher {
+    /// 实际内容或授权变化使未完成序列失效；仍在原输入区时回放暂存首键。
+    pub fn rebind(&mut self, generation: u64, context: Option<(i64, i64)>) -> KeyAction {
+        if generation == self.generation {
+            return KeyAction::default();
+        }
+        self.generation = generation;
+        self.flush(context)
+    }
     pub fn consume(&mut self, key: u32) {
         self.consumed.insert(key);
         self.submit_key = Some(key);
@@ -195,16 +204,16 @@ impl ShortcutMatcher {
                 action.swallowed = true;
                 return action;
             }
-            if event.down
-                && !repeat
-                && modifiers == pending.modifiers
-                && (event.key == pending.key || !self.held.contains(&pending.key))
-            {
+            if event.down && !repeat && modifiers == pending.modifiers {
                 if let Some((id, _)) = bindings.iter().find(|(_, s)| {
                     s.modifiers == pending.modifiers
                         && s.key == pending.key
                         && s.next_key == Some(event.key)
                 }) {
+                    // 快速输入允许不同键重叠；两枚尚未松开的触发键都必须消费到松开。
+                    if self.held.contains(&pending.key) {
+                        self.consumed.insert(pending.key);
+                    }
                     self.pending = None;
                     self.consumed.insert(event.key);
                     action.swallowed = true;
@@ -350,6 +359,63 @@ mod tests {
                 .swallowed
         );
     }
+    #[test]
+    fn overlapping_ordered_keys_fire_once_and_consume_both_releases() {
+        for (binding, modifiers) in [("A+B", 0), ("Ctrl+A+B", 1)] {
+            let mut matcher = ShortcutMatcher::default();
+            let now = Instant::now();
+            let bindings = bindings(&[binding]);
+            assert!(
+                matcher
+                    .event(event('A', true), CONTEXT, modifiers, &bindings, now)
+                    .swallowed
+            );
+            let second = matcher.event(event('B', true), CONTEXT, modifiers, &bindings, now);
+            assert_eq!(second.fired.as_deref(), Some("0"));
+            assert!(second.replay.is_empty());
+            for key in ['A', 'B'] {
+                let repeat = matcher.event(event(key, true), CONTEXT, modifiers, &bindings, now);
+                assert!(repeat.swallowed);
+                assert!(repeat.fired.is_none());
+                assert!(
+                    matcher
+                        .event(event(key, false), CONTEXT, modifiers, &bindings, now)
+                        .swallowed
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn consumed_keys_require_real_release_even_after_context_change() {
+        let mut matcher = ShortcutMatcher::default();
+        let now = Instant::now();
+        let keys = bindings(&["1+1"]);
+        matcher.event(event('1', true), CONTEXT, 0, &keys, now);
+        matcher.event(event('1', false), CONTEXT, 0, &keys, now);
+        assert!(matcher
+            .event(event('1', true), CONTEXT, 0, &keys, now)
+            .fired
+            .is_some());
+        matcher.tick(None, now + SEQUENCE_TIMEOUT);
+        for context in [None, CONTEXT] {
+            let action = matcher.event(event('1', true), context, 0, &keys, now);
+            assert!(action.swallowed);
+            assert!(action.fired.is_none());
+        }
+        assert!(
+            matcher
+                .event(event('1', false), None, 0, &keys, now)
+                .swallowed
+        );
+        matcher.event(event('1', true), CONTEXT, 0, &keys, now);
+        matcher.event(event('1', false), CONTEXT, 0, &keys, now);
+        assert!(matcher
+            .event(event('1', true), CONTEXT, 0, &keys, now)
+            .fired
+            .is_some());
+    }
+
     #[test]
     fn repeated_key_sequence_requires_two_distinct_presses() {
         let mut matcher = ShortcutMatcher::default();

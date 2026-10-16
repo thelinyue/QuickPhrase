@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings-close",
+  "description": "设置窗口等待保存结束后，由Tauri关闭事件完成销毁",
+  "windows": ["settings"],
+  "permissions": ["core:window:allow-destroy"]
+}

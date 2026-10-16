@@ -94,7 +94,7 @@ try {
         assert.equal(native.menuMode, false, 'Alt+Q之后的上下键不能打开系统菜单');
       }
     }
-    const search = page.getByRole('textbox', { name: '搜索话术、本地文件', exact: true });
+    const search = page.getByRole('textbox', { name: '搜索话术、文件', exact: true });
     assert.equal(await search.evaluate(e => e === document.activeElement), true);
     const ids = [];
     for (const title of ['搜索甲', '搜索乙']) ids.push(await invoke('save_phrase', { phrase: { id: '', title, rootId: phraseRoot, groupId: null, shortcut: '', color: '', background: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '隔离验证' }] }] }, afterId: null }));
@@ -133,7 +133,7 @@ try {
         assert.ok(Math.abs(viewport.width * scale - after.clientRect.right) <= 1, '内容宽度与吸附窗口一致');
         assert.ok(Math.abs(viewport.height * scale - after.clientRect.bottom) <= 1, '内容高度与吸附窗口一致');
         await control('cancel-move', { handle: mainHandle }); await delay(80);
-        await page.getByRole('button', { name: '本地文件', exact: true }).click();
+        await page.getByRole('button', { name: '文件', exact: true }).click();
         await page.getByRole('button', { name: '话术', exact: true }).click();
       }
     }

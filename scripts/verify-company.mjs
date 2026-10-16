@@ -20,10 +20,11 @@ const initial = randomUUID(), password = randomUUID(), workerInitial = randomUUI
 const base = `http://127.0.0.1:${await port()}`;
 const server = spawn(executable, [], { windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_DATA_DIR: path.join(evidence, 'server'), SHANYU_LISTEN: new URL(base).host, SHANYU_ADMIN_USERNAME: 'qa-admin', SHANYU_ADMIN_PASSWORD: initial } });
 let loseUpload = false, uploadCount = 0, downloadCount = 0, holdDownload = false, heldDownload = false, releaseDownload, holdUpload = false, heldUpload = false, releaseUpload, uploadSettled, token, workerToken, app, browser, page, cloud, editor, epoch, libraryId, root, asset, teams = [];
-let holdBatch = false, offlineClient = false;
+let holdBatch = false, offlineClient = false, legacyRename = false;
 const batchHeld = new Map();
 const proxy = http.createServer((req, res) => {
   if (offlineClient) { res.writeHead(503); res.end(); return; }
+  if (legacyRename && req.method === 'PATCH' && /\/company\/files\/[^/]+$/.test(req.url)) { res.writeHead(405); res.end(); return; }
   const lost = loseUpload && req.method === 'PUT' && /\/company\/files\/[^/]+\/content/.test(req.url);
   if (req.method === 'PUT' && /\/company\/files\/[^/]+\/content/.test(req.url)) ++uploadCount;
   if (req.method === 'GET' && /\/company\/files\/[^/]+\/content/.test(req.url)) ++downloadCount;
@@ -81,6 +82,11 @@ async function resizeCloud(width, height) {
   assert.equal(await new Promise(resolve => driver.once('exit', resolve)), 0);
   await until(() => cloud.evaluate(({ width, height }) => innerWidth === width && innerHeight === height, { width, height }));
 }
+async function pickerWindow() {
+  const picker = await until(() => browser.contexts()[0].pages().find(p => !p.isClosed() && p.url().includes('#company-picker?')));
+  await picker.locator('.company-table tbody tr').first().waitFor();
+  return picker;
+}
 async function verifyProgressLayout() {
   // 按实际文字矩形核对百分比未换行、未挤出单元格，防止 100／% 的布局回归。
   const layout = await cloud.locator('.company-progress').evaluateAll(elements => elements.map(el => {
@@ -135,7 +141,7 @@ try {
   await check('云文件右键阻止默认菜单、复用业务动作并在最小窗口避让边缘', async () => {
     const row = cloud.locator('tbody tr').filter({ hasText: asset.name });
     const right = async target => target.evaluate(el => { const rect = el.getBoundingClientRect(); return !el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left + 20, clientY: rect.top + 10 })); });
-    assert.equal(await right(row), true); assert.deepEqual(await cloud.getByRole('menuitem').allTextContents(), ['下载', '另存为', '生成话术', '删除']);
+    assert.equal(await right(row), true); assert.deepEqual(await cloud.getByRole('menuitem').allTextContents(), ['下载', '另存为', '生成话术', '重命名云文件', '删除']);
     assert.equal(await cloud.getByRole('menuitem', { name: '下载', exact: true }).evaluate(el => getComputedStyle(el).outlineStyle), 'none');
     await cloud.screenshot({ path: path.join(evidence, 'company-context-menu.png') }); await cloud.keyboard.press('End'); assert.equal(await cloud.evaluate(() => document.activeElement.textContent), '删除');
     await cloud.keyboard.press('Escape'); assert.ok(await row.evaluate(el => el === document.activeElement));
@@ -222,7 +228,7 @@ try {
     await cloud.locator('tbody tr').first().evaluate(el => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 260, clientY: 210 })));
     assert.deepEqual(await cloud.getByRole('menuitem').allTextContents(), ['批量下载', '批量删除']); assert.equal(await cloud.locator('tbody input:checked').count(), 10); await cloud.keyboard.press('Escape');
     await cloud.locator('tbody input').last().uncheck(); await cloud.locator('tbody tr').last().evaluate(el => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 260, clientY: 350 })));
-    assert.equal(await cloud.locator('tbody input:checked').count(), 1); assert.deepEqual(await cloud.getByRole('menuitem').allTextContents(), ['下载', '另存为', '生成话术', '删除']); await cloud.keyboard.press('Escape');
+    assert.equal(await cloud.locator('tbody input:checked').count(), 1); assert.deepEqual(await cloud.getByRole('menuitem').allTextContents(), ['下载', '另存为', '生成话术', '重命名云文件', '删除']); await cloud.keyboard.press('Escape');
     await cloud.getByRole('button', { name: '下一页' }).click(); assert.equal(await cloud.locator('tbody input:checked').count(), 0);
     await cloud.getByRole('textbox', { name: '跳转页码' }).fill('3'); await cloud.getByRole('button', { name: '跳转' }).click(); assert.equal(await cloud.locator('tbody tr').count(), 3);
     await cloud.getByRole('button', { name: '上传时间倒序' }).click(); await cloud.getByRole('button', { name: '上传时间正序' }).waitFor();
@@ -265,20 +271,20 @@ try {
     const library = await invoke('get_library'), a = library.phrases.find(p => p.id === first).segments[0].blocks[0].path, b = library.phrases.find(p => p.id === second).segments[0].blocks[0].path;
     adminCopy = a; assert.equal(a, b); assert.equal(path.basename(a), '价格表.xlsx'); assert.deepEqual(await fs.readFile(a), bytes);
   });
-  await check('话术右键新增云文件带入分组，取消无写入，已有草稿不覆盖，真实保存附件', async () => {
+  await check('话术右键从云文件新建话术带入分组，取消无写入，已有草稿不覆盖，真实保存附件', async () => {
     const group = await invoke('save_category', { category: { id: '', name: '右键云文件分组', kind: 'phrase', parentId: root, position: 0, background: '' }, libraryId });
     const original = await invoke('save_phrase', { phrase: { ...draft('右键入口样本', root, [{ kind: 'text', text: '入口样本' }]), groupId: group }, afterId: null, libraryId, expectedRevision: null });
     await page.getByRole('button', { name: '资料', exact: true }).click(); const row = page.locator(`[data-row="${original}"]`); await row.waitFor();
     const selectCloud = async () => {
       await row.evaluate(el => { const r = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 })); });
-      await page.getByRole('menuitem', { name: '新增云文件', exact: true }).click(); const picker = page.getByRole('dialog', { name: '选择云文件' }); await picker.locator('label').filter({ hasText: asset.name }).waitFor(); return picker;
+      await page.getByRole('menuitem', { name: '从云文件新建话术', exact: true }).click(); const picker = await pickerWindow(); await picker.getByRole('checkbox', { name: `选择 ${asset.name}`, exact: true }).waitFor(); return picker;
     };
-    const before = (await invoke('get_library')).phrases.length; let picker = await selectCloud(); await picker.getByRole('button', { name: '取消' }).click(); assert.equal((await invoke('get_library')).phrases.length, before);
-    picker = await selectCloud(); await picker.getByRole('checkbox').check(); await picker.getByRole('button', { name: '下一步' }).click();
+    const before = (await invoke('get_library')).phrases.length; let picker = await selectCloud(); await picker.getByRole('button', { name: '取消' }).click(); await until(() => picker.isClosed()); assert.equal((await invoke('get_library')).phrases.length, before);
+    picker = await selectCloud(); await picker.getByRole('checkbox', { name: `选择 ${asset.name}`, exact: true }).check(); await picker.getByRole('button', { name: '下一步' }).click();
     editor = await until(() => browser.contexts()[0].pages().find(p => p.url().includes('#editor?'))); await editor.getByRole('button', { name: `删除附件 ${asset.name}`, exact: true }).waitFor();
     assert.equal(await editor.getByLabel('话术标题（可不填）').inputValue(), asset.name); assert.equal(await editor.getByLabel('请选择一级分类').inputValue(), root); assert.equal(await editor.getByLabel('请选择二级分类（可不选）').inputValue(), group);
     await editor.getByLabel('话术标题（可不填）').fill('右键云文件草稿');
-    picker = await selectCloud(); await picker.getByRole('checkbox').check(); await picker.getByRole('button', { name: '下一步' }).click(); await page.getByText(/请先完成或关闭当前话术编辑窗口/).waitFor(); assert.equal(await editor.getByLabel('话术标题（可不填）').inputValue(), '右键云文件草稿');
+    picker = await selectCloud(); await picker.getByRole('checkbox', { name: `选择 ${asset.name}`, exact: true }).check(); await picker.getByRole('button', { name: '下一步' }).click(); await page.getByText(/请先完成或关闭当前话术编辑窗口/).waitFor(); assert.equal(await editor.getByLabel('话术标题（可不填）').inputValue(), '右键云文件草稿');
     await editor.screenshot({ path: path.join(evidence, 'company-context-editor.png') }); await editor.getByRole('button', { name: '确定', exact: true }).click(); await until(() => editor.isClosed());
     const library = await until(async () => { const library = await invoke('get_library'); return library.phrases.some(p => p.title === '右键云文件草稿') && library; }); const saved = library.phrases.find(p => p.title === '右键云文件草稿');
     assert.equal(saved.rootId, root); assert.equal(saved.groupId, group); assert.deepEqual(await fs.readFile(saved.segments[0].blocks.find(b => b.kind === 'file').path), bytes);
@@ -287,7 +293,7 @@ try {
     editor = await window('editor', `editor?categoryId=${root}&libraryId=${encodeURIComponent(libraryId)}`);
     await editor.getByLabel('话术标题（可不填）').fill('编辑器生成');
     await editor.getByRole('button', { name: '文件', exact: true }).click(); await editor.getByRole('button', { name: '云文件', exact: true }).click();
-    const picker = editor.getByRole('dialog', { name: '选择云文件' }); await picker.getByRole('checkbox').check(); await picker.getByRole('button', { name: '添加文件' }).click();
+    const picker = await pickerWindow(); await picker.getByRole('checkbox', { name: `选择 ${asset.name}`, exact: true }).check(); await picker.getByRole('button', { name: '添加文件' }).click();
     await editor.getByRole('button', { name: '删除附件 价格表.xlsx' }).waitFor(); await editor.screenshot({ path: path.join(evidence, 'company-editor.png') });
     await editor.getByRole('button', { name: '确定', exact: true }).click();
     const library = await until(async () => { const library = await invoke('get_library'); return library.phrases.some(p => p.title === '编辑器生成') && library; });
@@ -303,11 +309,89 @@ try {
       view = await invoke('get_team_view', { teamId }); await invoke('prepare_team_phrase', { id: view.phrases[0].id }); view = await invoke('get_team_view', { teamId }); assert.equal(path.basename(view.phrases[0].segments[0].blocks[0].path), '价格表.xlsx');
     }
   });
-  await check('共享话术右键新增云文件仍引用原本体并保存到当前共享库', async () => {
+  await check('统一文件窗口关联云文件、公共改名与显示名分离、搜索和账号隔离', async () => {
+    const category = await invoke('save_category', { category: { id: '', name: '关联资料', kind: 'file', parentId: null, position: 0, background: '' }, libraryId });
+    await page.locator('.content-tabs').getByRole('button', { name: '文件', exact: true }).click();
+    await page.getByRole('button', { name: '关联资料', exact: true }).click();
+    await page.getByRole('button', { name: '新增关联文件', exact: true }).click();
+    const files = await until(() => browser.contexts()[0].pages().find(p => !p.isClosed() && p.url().includes('#file-editor?')));
+    await files.getByRole('button', { name: '关联云文件', exact: true }).click();
+    await files.getByRole('checkbox', { name: `选择 ${asset.name}`, exact: true }).check();
+    const dimensions = await files.evaluate(() => ({ width: innerWidth, height: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth }));
+    assert.ok(dimensions.width >= 760 && dimensions.height >= 480 && !dimensions.overflow);
+    await files.screenshot({ path: path.join(evidence, 'unified-file-window.png') });
+    await files.getByRole('button', { name: '确定关联', exact: true }).click(); await until(() => files.isClosed());
+    const link = (await invoke('get_library')).files.find(f => f.cloud?.assetId === asset.assetId); assert.ok(link); assert.equal(link.path, '');
+    const downloaded = downloadCount;
+    legacyRename = true;
+    try { await assert.rejects(invoke('rename_company_file', { sessionEpoch: epoch, id: asset.assetId, expectedName: asset.name, name: '新价格表.xlsx' }), /升级服务端/); }
+    finally { legacyRename = false; }
+    await invoke('rename_company_file', { sessionEpoch: epoch, id: asset.assetId, expectedName: asset.name, name: '新价格表.xlsx' });
+    await until(async () => (await invoke('get_library')).files.find(f => f.id === link.id)?.name === '新价格表.xlsx');
+    // 目录连接失败不能使逐词搜索退回关联时的旧名称，搜索只读已授权快照。
+    offlineClient = true;
+    try {
+      for (const query of ['新价', '新价格', '新价格表']) {
+        const results = await Promise.race([invoke('search_scoped_content', { query, scope: 'all', teamId: null }), delay(3000).then(() => { throw new Error('本地搜索被云端目录请求阻塞。'); })]);
+        assert.ok(results.some(hit => hit.id === link.id && hit.file.name === '新价格表.xlsx'));
+      }
+    } finally { offlineClient = false; }
+    for (const teamId of teams) {
+      const view = await until(async () => { const v = await invoke('get_team_view', { teamId }); return v.phrases[0]?.segments[0].blocks[0].name === '新价格表.xlsx' && v; });
+      await invoke('prepare_team_phrase', { id: view.phrases[0].id });
+      assert.equal(path.basename((await invoke('get_team_view', { teamId })).phrases[0].segments[0].blocks[0].path), '新价格表.xlsx');
+    }
+    assert.equal(downloadCount, downloaded, '改名复用既有缓存，不重复下载');
+    await invoke('rename_linked_file', { id: link.id, name: '个人显示名' });
+    await invoke('rename_company_file', { sessionEpoch: epoch, id: asset.assetId, expectedName: '新价格表.xlsx', name: asset.name });
+    assert.equal((await invoke('get_library')).files.find(f => f.id === link.id).name, '个人显示名');
+    await invoke('team_logout'); epoch = (await invoke('team_login', { server: clientBase, username: 'qa-worker', password: workerPassword })).sessionEpoch;
+    assert.ok(!(await invoke('get_library')).files.some(f => f.id === link.id));
+    await assert.rejects(invoke('rename_linked_file', { id: link.id, name: '越权修改' }));
+    epoch = (await invoke('team_login', { server: clientBase, username: 'qa-admin', password })).sessionEpoch;
+    assert.equal((await invoke('get_library')).files.find(f => f.id === link.id).name, '个人显示名');
+    await invoke('remove_linked_files', { ids: [link.id] });
+    assert.equal((await api('GET', `company/files/${asset.assetId}`)).name, asset.name);
+    await page.locator('.content-tabs').getByRole('button', { name: '话术', exact: true }).click();
+    for (const teamId of teams) await until(() => invoke('get_team_view', { teamId }));
+  });
+  await check('混合关联移动排序与切换来源保留源文件，下载中改名复用同一份字节', async () => {
+    const source = path.join(evidence, '混合本地文件.txt'); await fs.writeFile(source, '保留外部源文件');
+    const a = await invoke('save_category', { category: { id: '', name: '混合来源', kind: 'file', parentId: null, position: 0, background: '' }, libraryId });
+    const b = await invoke('save_category', { category: { id: '', name: '移动目标', kind: 'file', parentId: null, position: 0, background: '' }, libraryId });
+    const id = randomUUID(), original = '下载前名称.txt', renamed = '下载中改名.txt';
+    const upload = await fetch(`${base}/api/company/files/${id}/content?${new URLSearchParams({ name: original, size: '3' })}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: 'abc' }); assert.ok(upload.ok);
+    await invoke('add_files', { categoryId: a, paths: [source] });
+    await invoke('add_cloud_files', { sessionEpoch: epoch, categoryId: a, assetIds: [id], replaceId: null });
+    const files = (await invoke('get_library')).files.filter(f => f.categoryId === a), local = files.find(f => !f.cloud), remote = files.find(f => f.cloud); assert.equal(files.length, 2);
+    await invoke('move_linked_files', { ids: [local.id, remote.id], categoryId: b });
+    await invoke('reorder_files', { ids: [remote.id, local.id], categoryId: b });
+    assert.deepEqual((await invoke('get_library')).files.filter(f => f.categoryId === b).map(f => f.id), [remote.id, local.id]);
+    const downloads = downloadCount;
+    holdDownload = true;
+    const pending = invoke('download_company_file', { sessionEpoch: epoch, id }).then(() => null, error => error);
+    try {
+      await until(() => heldDownload);
+      await api('PATCH', `company/files/${id}`, { name: renamed, expectedName: original });
+    } finally { releaseDownload?.(); }
+    assert.equal(await pending, null);
+    const catalog = await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' });
+    assert.ok(catalog.files.some(f => f.assetId === id && f.name === renamed && f.cached));
+    await invoke('download_company_file', { sessionEpoch: epoch, id }); assert.equal(downloadCount, downloads + 1);
+    await invoke('relink_file', { id: remote.id, categoryId: b, path: source });
+    await invoke('add_cloud_files', { sessionEpoch: epoch, categoryId: b, assetIds: [id], replaceId: local.id });
+    const switched = (await invoke('get_library')).files;
+    assert.equal(switched.find(f => f.id === local.id).cloud.assetId, id);
+    assert.equal(switched.find(f => f.id === remote.id).cloud, null);
+    await invoke('remove_linked_files', { ids: [local.id, remote.id] });
+    assert.equal(await fs.readFile(source, 'utf8'), '保留外部源文件'); assert.equal((await api('GET', `company/files/${id}`)).name, renamed);
+    await api('POST', `company/files/${id}/recycle`); await api('DELETE', `company/files/${id}`, { confirmName: renamed });
+  });
+  await check('共享话术右键从云文件新建话术仍引用原本体并保存到当前共享库', async () => {
     const teamId = teams[0]; await page.getByRole('button', { name: '共享话术', exact: true }).click(); await page.getByRole('menuitem', { name: /^销售/ }).click();
     const row = page.locator('.content-row').filter({ hasText: '公司资料' }); await row.waitFor();
     await row.evaluate(el => { const r = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 10 })); });
-    await page.getByRole('menuitem', { name: '新增云文件', exact: true }).click(); const picker = page.getByRole('dialog', { name: '选择云文件' }); await picker.getByRole('checkbox').check(); await picker.getByRole('button', { name: '下一步' }).click();
+    await page.getByRole('menuitem', { name: '从云文件新建话术', exact: true }).click(); const picker = await pickerWindow(); await picker.getByRole('checkbox', { name: `选择 ${asset.name}`, exact: true }).check(); await picker.getByRole('button', { name: '下一步' }).click();
     editor = await until(() => browser.contexts()[0].pages().find(p => p.url().includes('#editor?'))); await editor.getByRole('button', { name: `删除附件 ${asset.name}`, exact: true }).waitFor();
     assert.equal(new URLSearchParams(new URL(editor.url()).hash.split('?')[1]).get('teamId'), teamId);
     await editor.getByLabel('话术标题（可不填）').fill('共享右键文件'); await editor.getByRole('button', { name: '确定', exact: true }).click(); await until(() => editor.isClosed());
@@ -323,15 +407,15 @@ try {
     await invoke('confirm_import', { previewId: preview.id, operationId: randomUUID(), target: privateTarget });
     const imported = (await invoke('get_library')).phrases.find(p => p.title === '公司资料'); assert.ok(imported); assert.deepEqual(await fs.readFile(imported.segments[0].blocks[0].path), bytes);
   });
-  await check('回收保留原话术，禁止新增引用，并阻止有引用的永久删除', async () => {
+  await check('回收保留原话术及本体，禁止新增引用', async () => {
     await invoke('manage_company_file', { sessionEpoch: epoch, id: asset.assetId, operation: 'recycle', confirmName: '' });
     await assert.rejects(invoke('save_company_private_phrase', { phrase: draft('禁止新增', root), afterId: null, expectedRevision: null, libraryId, companyFiles: selections() }), /回收/);
-    await assert.rejects(invoke('manage_company_file', { sessionEpoch: epoch, id: asset.assetId, operation: 'purge', confirmName: asset.name }), /引用/);
     for (const teamId of teams) { const view = await invoke('get_team_view', { teamId }); const response = await fetch(`${base}/api/teams/${teamId}/assets/${asset.assetId}`, { headers: { Authorization: `Bearer ${token}`, 'x-team-lifecycle': '1' } }); assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes); assert.ok(view.phrases[0].ready); }
   });
   await check('真实回收站保留系统图标、两种用户名和时间，批量恢复及逐文件永久删除', async () => {
     await cloud.getByRole('button', { name: '云文件回收站', exact: true }).click(); const row = cloud.locator('tbody tr').filter({ hasText: asset.name }); await row.waitFor();
     assert.equal(await row.getByText('qa-admin', { exact: true }).count(), 2); await row.locator('img').waitFor();
+    assert.ok(await row.locator('.company-file-name').evaluate(el=>{const icon=el.querySelector('img,svg').getBoundingClientRect(),text=el.querySelector('.company-file-details').getBoundingClientRect();return Math.abs(icon.top+icon.height/2-text.top-text.height/2)<1;}), '文件图标应与名称和状态整体垂直居中');
     assert.ok(await cloud.locator('.company-recycle-table').evaluate(el => el.getBoundingClientRect().right <= el.parentElement.getBoundingClientRect().right));
     await cloud.screenshot({ path: path.join(evidence, 'company-recycle.png') });
     await row.getByRole('button', { name: '恢复', exact: true }).click(); await cloud.getByRole('dialog', { name: '恢复云文件' }).getByRole('button', { name: '确定', exact: true }).click(); await until(async () => !await row.count());
@@ -350,12 +434,49 @@ try {
     for (const file of unreferenced) {
       await api('POST', `company/files/${file.id}/recycle`); await cloud.getByRole('button', { name: '刷新', exact: true }).click();
       const item = cloud.locator('tbody tr').filter({ hasText: file.name }); await item.getByRole('button', { name: '永久删除', exact: true }).click();
-      const dialog = cloud.getByRole('dialog', { name: '永久删除云文件' }); await dialog.getByRole('textbox', { name: '输入完整文件名' }).fill(file.name); await dialog.getByRole('button', { name: '确定', exact: true }).click(); await until(async () => !await item.count());
+      const dialog = cloud.getByRole('dialog', { name: '永久删除云文件' }); assert.equal(await dialog.getByRole('textbox').count(), 0); await dialog.getByRole('button', { name: '确定', exact: true }).click(); await until(async () => !await item.count());
     }
     await cloud.getByRole('button', { name: '云文件管理', exact: true }).click();
   });
+  await check('管理员清空含引用文件的回收站，旧话术缓存可用、未缓存设备不能下载', async () => {
+    const id = randomUUID(), name = '清理缓存验证.pdf';
+    const upload = await fetch(`${base}/api/company/files/${id}/content?${new URLSearchParams({name,size:'3'})}`, {method:'PUT',headers:{Authorization:`Bearer ${token}`},body:'abc'}); assert.ok(upload.ok);
+    let view = await invoke('get_team_view', {teamId:teams[0]});
+    await invoke('save_team_phrase', {draft:{teamId:teams[0],expectedVersion:view.team.version,expectedLifecycleVersion:1,phrase:draft('清理缓存验证',view.categories[0].id,[{kind:'file',path:'',name}]),companyFiles:[{segment:0,block:0,assetId:id,sessionEpoch:epoch}]}});
+    view = await invoke('get_team_view', {teamId:teams[0]}); let phrase = view.phrases.find(p=>p.title==='清理缓存验证');
+    await invoke('prepare_team_phrase', {id:phrase.id});
+    const category = await invoke('save_category',{category:{id:'',name:'清理缓存关联',kind:'file',parentId:null,position:0,background:''},libraryId});
+    await invoke('add_cloud_files',{sessionEpoch:epoch,categoryId:category,assetIds:[id],replaceId:null});
+    const downloads = downloadCount;
+
+    for(let i=0;i<12;i++) {
+      const id=randomUUID(), name=`清空验证${i}.txt`;
+      const response=await fetch(`${base}/api/company/files/${id}/content?${new URLSearchParams({name,size:'3'})}`,{method:'PUT',headers:{Authorization:`Bearer ${token}`},body:'abc'});assert.ok(response.ok);
+      await api('POST',`company/files/${id}/recycle`);
+    }
+    await api('POST',`company/files/${id}/recycle`);
+    await cloud.getByRole('button',{name:'云文件回收站',exact:true}).click();
+    await cloud.getByRole('textbox',{name:'搜索云文件'}).fill('清空验证0');
+    await cloud.getByRole('button',{name:'清空回收站',exact:true}).click();
+    const dialog=cloud.getByRole('dialog',{name:'清空云文件回收站'});
+    await dialog.waitFor();assert.match(await dialog.textContent(),/13 个文件/);assert.equal(await dialog.getByRole('textbox').count(),0);
+    await dialog.getByRole('button',{name:'清空回收站',exact:true}).click();
+    await cloud.getByText(/成功 13 个，失败 0 个/).waitFor();
+    const remaining=await invoke('get_company_files',{sessionEpoch:epoch,recycled:true,query:''});
+    assert.deepEqual(remaining.files,[]);
+    await invoke('team_refresh'); view=await invoke('get_team_view',{teamId:teams[0]}); phrase=view.phrases.find(p=>p.title==='清理缓存验证');
+    assert.ok(phrase.ready); assert.equal(await fs.readFile(phrase.segments[0].blocks[0].path,'utf8'),'abc');
+    await invoke('prepare_team_phrase',{id:phrase.id}); assert.equal(downloadCount,downloads);
+    const linked=(await invoke('get_library')).files.find(f=>f.cloud?.assetId===id); assert.equal(linked.missing,false); assert.equal(linked.status,'仅本机缓存');
+    const snapshot=await api('GET',`teams/${teams[0]}/snapshot`); assert.ok(snapshot.companyAssetIds.includes(id));
+    const unavailable=await fetch(`${base}/api/teams/${teams[0]}/assets/${id}`,{headers:{Authorization:`Bearer ${token}`,'x-team-lifecycle':'1'}}); assert.equal(unavailable.status,404);
+    await assert.rejects(invoke('manage_company_file',{sessionEpoch:epoch,id,operation:'restore',confirmName:''}));
+    await cloud.screenshot({path:path.join(evidence,'company-recycle-cleared.png')});
+    await cloud.getByRole('textbox',{name:'搜索云文件'}).fill('');
+    await cloud.getByRole('button',{name:'云文件管理',exact:true}).click();
+  });
   await check('无共享话术用户可用云文件目录，管理权限由服务端拒绝', async () => {
-    await invoke('manage_company_file', { sessionEpoch: epoch, id: asset.assetId, operation: 'restore', confirmName: '' }); await invoke('team_logout');
+    await invoke('team_logout');
     const employee = await invoke('team_login', { server: clientBase, username: 'qa-worker', password: workerPassword }); epoch = employee.sessionEpoch; assert.equal(employee.teams.length, 0); assert.ok(employee.companyFiles);
     const catalog = await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' }); assert.equal(catalog.files.length, 1); await invoke('download_company_file', { sessionEpoch: epoch, id: asset.assetId });
     await assert.rejects(invoke('manage_company_file', { sessionEpoch: epoch, id: asset.assetId, operation: 'recycle', confirmName: '' }), /权限/);

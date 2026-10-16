@@ -19,6 +19,7 @@ public static class ShanyuTestHost {
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern uint RegisterClipboardFormat(string name);
     [DllImport("user32.dll")] static extern bool IsClipboardFormatAvailable(uint format);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] static extern bool DestroyCaret();
     static string eventsPath,controlPath,lastControl;
     static readonly List<Dictionary<string,object>> events = new List<Dictionary<string,object>>();
     static readonly JavaScriptSerializer json = new JavaScriptSerializer();
@@ -64,6 +65,10 @@ public static class ShanyuTestHost {
                 if(action=="reset") {events.Clear();input.Text=command.ContainsKey("draft")?(string)command["draft"]:"";ctrlEnter=command.ContainsKey("ctrlEnter")&&(bool)command["ctrlEnter"];input.SelectionStart=input.TextLength;Flush();}
                 if(action=="focus") {form.WindowState=FormWindowState.Normal;form.Activate();SetForegroundWindow(form.Handle);input.Focus();input.SelectionStart=input.TextLength;Flush();}
                 if(action=="blur") {alternate.Focus();Record("focus-changed",true);}
+                // 在拥有光标的线程制造“应用不提供系统光标”及整窗容器，验证候选回退而非伪造产品坐标。
+                if(action=="no-caret") {DestroyCaret();Record("caret-removed",true);}
+                if(action=="full-input") {label.Visible=false;alternate.Visible=false;DestroyCaret();Record("full-input",true);}
+                if(action=="restore-input") {label.Visible=true;alternate.Visible=true;alternate.Focus();input.Focus();input.SelectionStart=input.TextLength;Record("input-restored",true);}
                 if(action=="copy") {Clipboard.SetText((string)command["text"]);ownClipboard=GetClipboardSequenceNumber();Record("new-copy",true);}
                 if(action=="copy-image") {using(var image=Image.FromFile((string)command["path"])){Clipboard.SetImage(image);}ownClipboard=GetClipboardSequenceNumber();Record("test-copy-image",true);}
                 if(action=="copy-files") {var files=new System.Collections.Specialized.StringCollection();files.Add((string)command["path"]);Clipboard.SetFileDropList(files);ownClipboard=GetClipboardSequenceNumber();Record("test-copy-files",true);}

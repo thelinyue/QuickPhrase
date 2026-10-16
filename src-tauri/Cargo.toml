@@ -1,6 +1,6 @@
 [package]
 name = "quickphrase"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2021"
 description = "闪语 QuickPhrase Windows 本地话术工具"
 
@@ -41,6 +41,8 @@ futures-util = "0.3"
 minisign-verify = "0.3"
 semver = "1"
 sha2 = "0.10"
+rmcp = { version = "3.5.1", features = ["transport-streamable-http-server"] }
+axum = "0.8"
 
 [dev-dependencies]
 minisign = "0.10"

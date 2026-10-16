@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { MainWindow } from './App';
 import { call, openWindow, useTeams, useTeamView } from './api';
@@ -8,6 +8,7 @@ import type { Library, Phrase, SearchHit, TeamStatus, TeamView } from './types';
 const callbacks = vi.hoisted(() => new Map<string, (event: { payload: unknown }) => void>());
 const nativeMenu = vi.hoisted(() => ({ new: vi.fn(async (_options: { items?: { text?: string; enabled?: boolean; action?: () => void }[] }) => ({ popup: vi.fn(async () => {}), close: vi.fn(async () => {}) })) }));
 vi.mock('@tauri-apps/api/menu', () => ({ Menu: nativeMenu }));
+vi.mock('./CompanyPicker', () => ({ CompanyPickerWindow: () => null, CompanyFilePicker: ({ onConfirm, close }: { onConfirm: (files: unknown[], epoch: number) => void; close: () => void }) => <div role="dialog" aria-label="选择云文件"><span>价格表.xlsx</span><input type="checkbox" /><button onClick={close}>取消</button><button onClick={() => onConfirm([{ assetId: 'cloud-file', name: '价格表.xlsx' }], 7)}>下一步</button></div> }));
 vi.mock('./api', () => ({ call: vi.fn(), closeWindow: vi.fn(), openWindow: vi.fn(), useLibrary: vi.fn(), useTeams: vi.fn(), useTeamView: vi.fn() }));
 vi.mock('./useMembers', () => ({ useMembers: vi.fn(() => null) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async (name: string, callback: (event: {payload: unknown}) => void) => { callbacks.set(name, callback); return () => callbacks.delete(name); }) }));
@@ -36,6 +37,45 @@ const teamFixture = () => {
   vi.mocked(useTeamView).mockImplementation(id => ({ view: views.get(id) || null, error: '' }));
   return status;
 };
+
+describe('文件关联右键入口', () => {
+  it.each([false, true])('列表空白及空分类提示打开当前分类，已有文件：%s', populated => {
+    render(<MainWindow library={{ ...library, files: populated ? library.files : [] }} refresh={vi.fn(async () => {})} />);
+    fireEvent.click(within(document.querySelector('.content-tabs')!).getByRole('button', { name: '文件' }));
+    fireEvent.contextMenu(populated ? screen.getByRole('listbox', { name: '文件列表' }) : screen.getByText('还没有关联文件'));
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['关联文件', '刷新']);
+    fireEvent.click(screen.getByRole('menuitem', { name: '关联文件' }));
+    expect(openWindow).toHaveBeenCalledWith('file-editor', '', '', '', 'local-files');
+  });
+  it.each(['local-files', 'second-files'])('分类标签带入被右键点击的分类：%s', id => {
+    render(<MainWindow library={{ ...library, categories: [...library.categories, { ...library.categories.at(-1)!, id: 'second-files', name: '第二文件分类' }] }} refresh={vi.fn(async () => {})} />);
+    fireEvent.click(within(document.querySelector('.content-tabs')!).getByRole('button', { name: '文件' }));
+    fireEvent.contextMenu(within(screen.getByRole('navigation', { name: '一级分类' })).getByRole('button', { name: id === 'local-files' ? '文件' : '第二文件分类' }));
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['关联文件', '新增分类', '重命名', '删除', '快速排序']);
+    fireEvent.click(screen.getByRole('menuitem', { name: '关联文件' }));
+    expect(openWindow).toHaveBeenCalledWith('file-editor', '', '', '', id);
+  });
+  it('菜单打开后分类变化仍使用原分类，无分类时禁用入口', () => {
+    const refresh = vi.fn(async () => {}), rendered = render(<MainWindow library={library} refresh={refresh} />);
+    fireEvent.click(within(document.querySelector('.content-tabs')!).getByRole('button', { name: '文件' }));
+    fireEvent.contextMenu(screen.getByRole('listbox', { name: '文件列表' }));
+    const empty = { ...library, categories: library.categories.filter(c => c.kind !== 'file'), files: [] };
+    rendered.rerender(<MainWindow library={empty} refresh={refresh} />);
+    fireEvent.click(screen.getByRole('menuitem', { name: '关联文件' }));
+    expect(openWindow).toHaveBeenCalledWith('file-editor', '', '', '', 'local-files');
+    fireEvent.contextMenu(screen.getByRole('listbox', { name: '文件列表' }));
+    expect((screen.getByRole('menuitem', { name: '关联文件' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+  it('文件行菜单不被空白菜单覆盖，Esc关闭后焦点回到列表', () => {
+    view(); fireEvent.click(within(document.querySelector('.content-tabs')!).getByRole('button', { name: '文件' }));
+    fireEvent.contextMenu(document.querySelector('[data-row="F"]')!);
+    expect(screen.getByRole('menuitem', { name: '重新关联文件' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: '关联文件' })).toBeNull();
+    const list = screen.getByRole('listbox', { name: '文件列表' });
+    fireEvent.contextMenu(list); fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull(); expect(document.activeElement).toBe(list);
+  });
+});
 
 describe('新增话术继承右键所在分类', () => {
   function headingPositions(tops: number[]) {
@@ -105,7 +145,7 @@ it.each(['右键分类', '分类菜单'])('%s只保留分类操作，全局管�
   view();
   if (source === '右键分类') fireEvent.contextMenu(screen.getByRole('button', { name: /^常用$/ }));
   else fireEvent.click(screen.getByRole('button', { name: '一级分类菜单' }));
-  for (const name of ['新增话术', '新增云文件', '新增二级分类', '重命名', '删除', '导出该一级分类的话术', '设置一级分类背景色']) expect(screen.getByRole('menuitem', { name })).toBeTruthy();
+  for (const name of ['新增话术', '从云文件新建话术', '新增二级分类', '重命名', '删除', '导出该一级分类的话术', '设置一级分类背景色']) expect(screen.getByRole('menuitem', { name })).toBeTruthy();
   const management = ['账号与共享', '云文件', '账号管理', '共享话术管理'];
   for (const name of management) expect(screen.queryByRole('menuitem', { name: new RegExp(`^${name}$`) })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '主菜单' }));
@@ -148,8 +188,8 @@ describe('共享话术入口、独立状态和撤权', () => {
     const status = teamFixture(); const rendered = view();
     fireEvent.click(screen.getByRole('button', { name: '共享话术' })); fireEvent.click(screen.getByRole('menuitem', { name: /^售前小组/ }));
     await waitFor(() => expect(mapping()?.ids).toEqual(['team:A-team:shared:1:1']));
-    const input = screen.getByRole('textbox', { name: '搜索话术、本地文件' }); fireEvent.change(input, { target: { value: '欢迎' } });
-    await waitFor(() => expect(call).toHaveBeenCalledWith('search_scoped_content', { query: '欢迎', scope: 'team', teamId: 'A-team' }));
+    const input = screen.getByRole('textbox', { name: '搜索话术、文件' }); fireEvent.change(input, { target: { value: '欢迎' } });
+    await waitFor(() => expect(call).toHaveBeenCalledWith('search_scoped_content', { query: '欢迎', scope: 'all' }));
     fireEvent.click(screen.getByRole('button', { name: '共享话术' })); fireEvent.click(screen.getByRole('menuitem', { name: /^售后小组/ }));
     expect((input as HTMLInputElement).value).toBe(''); await waitFor(() => expect(mapping()?.ids).toEqual(['team:B-team:shared:1:1']));
     vi.mocked(useTeams).mockReturnValue({ status: { ...status, teams: [status.teams[0]] }, version: 2, loaded: true });
@@ -173,7 +213,7 @@ describe('用户自行创建分类与空库', () => {
     fireEvent.submit(document.querySelector('dialog form')!);
     await waitFor(() => expect(call).toHaveBeenCalledWith('save_category', { category: { id: '', name: '自己创建', kind: 'phrase', parentId: null, position: 0, background: '' } }));
     await waitFor(() => expect(document.querySelector('dialog')).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: '本地文件' }));
+    fireEvent.click(screen.getByRole('button', { name: '文件' }));
     expect(screen.getByText('还没有一级分类')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '新增关联文件' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '主菜单' }));
@@ -194,8 +234,8 @@ describe('用户自行创建分类与空库', () => {
     expect(openWindow).toHaveBeenCalledWith('delete-confirm', 'common', '', 'category');
     fireEvent.click(screen.getByRole('button', { name: '主菜单' }));
     for (const name of ['新增话术', '新增一级分类', '新增二级分类', '删除一级分类但保留话术', '退出闪语']) expect(screen.queryByRole('menuitem', { name })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '本地文件' }));
-    fireEvent.contextMenu(screen.getByRole('button', { name: '文件' }));
+    fireEvent.click(screen.getByRole('button', { name: '文件' }));
+    fireEvent.contextMenu(within(screen.getByRole('navigation', { name: '一级分类' })).getByRole('button', { name: '文件' }));
     expect((screen.getByRole('menuitem', { name: '删除' }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
@@ -206,16 +246,16 @@ describe('主窗口实际编号、搜索映射与列表导航', () => {
     await waitFor(() => expect(mapping()).toEqual({ ids: ['A','C'], loading: false }));
     expect(rendered.container.querySelector('[data-row="C"] .row-index')?.textContent).toBe('2.');
     fireEvent.click(screen.getByRole('button', { name: '其他' })); await waitFor(() => expect(mapping()?.ids).toEqual(['D']));
-    fireEvent.click(screen.getByRole('button', { name: '本地文件' })); await waitFor(() => expect(mapping()?.ids).toEqual([null]));
+    fireEvent.click(screen.getByRole('button', { name: '文件' })); await waitFor(() => expect(mapping()?.ids).toEqual([null]));
   });
   it('当前库搜索和组合输入暂停序号，Esc恢复列表', async () => {
     let resolve!: (value: SearchHit[]) => void;
     vi.mocked(call).mockImplementation(async name => name === 'search_scoped_content' ? new Promise<SearchHit[]>(done => { resolve = done; }) : null);
-    view(); const input = screen.getByRole('textbox', { name: '搜索话术、本地文件' });
+    view(); const input = screen.getByRole('textbox', { name: '搜索话术、文件' });
     fireEvent.change(input, { target: { value: '匹配' } });
     await waitFor(() => expect(mapping()?.loading).toBe(true));
     await waitFor(() => expect(resolve).toBeTypeOf('function'));
-    expect(call).toHaveBeenCalledWith('search_scoped_content', { query: '匹配', scope: 'private', teamId: null });
+    expect(call).toHaveBeenCalledWith('search_scoped_content', { query: '匹配', scope: 'all' });
     await act(async () => resolve([{ id: 'C', kind: 'phrase', phrase: library.phrases[2], file: null }, { id: 'A', kind: 'phrase', phrase: library.phrases[0], file: null }]));
     await waitFor(() => expect(mapping()).toEqual({ ids: ['C','A'], loading: false }));
     fireEvent.compositionStart(input); await waitFor(() => expect(mapping()?.loading).toBe(true));fireEvent.change(input, { target: { value: '匹配中' } });
@@ -247,7 +287,7 @@ function cloudFixture() {
 async function nextCloud() {
   await screen.findByText(cloudFile.name); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: '下一步' }));
 }
-describe('右键新增云文件话术', () => {
+describe('右键从云文件新建话术话术', () => {
   it.each(['话术行', '分组前空白', '分组后空白', '一级分类'])('%s带入正确分类，选择只打开编辑器不执行保存或投递', async source => {
     cloudFixture(); view();
     if (source === '话术行') fireEvent.contextMenu(document.querySelector('[data-row="B"]')!);
@@ -256,30 +296,30 @@ describe('右键新增云文件话术', () => {
       fireEvent.contextMenu(screen.getByRole('listbox', { name: '话术列表' }), { clientY: source === '分组前空白' ? 80 : 400 });
     }
     else fireEvent.contextMenu(screen.getByRole('button', { name: '其他' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: '新增云文件' })); await nextCloud();
+    fireEvent.click(screen.getByRole('menuitem', { name: '从云文件新建话术' })); await nextCloud();
     await waitFor(() => expect(openWindow).toHaveBeenCalledWith('editor', '', '', 'cloud:7:cloud-file', source === '一级分类' ? 'other' : 'common', source === '话术行' ? 'group' : source === '分组后空白' ? 'after' : '', ''));
     expect(vi.mocked(call).mock.calls.some(([name]) => ['save_phrase', 'save_company_private_phrase', 'download_company_file', 'deliver_content'].includes(name))).toBe(false);
   });
   it('二级分类原生菜单带入被右键的分组', async () => {
     cloudFixture(); view(); fireEvent.contextMenu(document.querySelector('.group-heading')!);
-    await waitFor(() => expect(nativeMenu.new).toHaveBeenCalled()); const item = nativeMenu.new.mock.calls.at(-1)![0].items!.find(item => item.text === '新增云文件')!;
+    await waitFor(() => expect(nativeMenu.new).toHaveBeenCalled()); const item = nativeMenu.new.mock.calls.at(-1)![0].items!.find(item => item.text === '从云文件新建话术')!;
     expect(item.enabled).toBe(true); act(() => item.action!()); await nextCloud();
     await waitFor(() => expect(openWindow).toHaveBeenCalledWith('editor', '', '', 'cloud:7:cloud-file', 'common', 'group', ''));
   });
   it('共享话术文件引用不要求上传权限，仍使用当前共享库及分组', async () => {
     cloudFixture(); view(); fireEvent.click(screen.getByRole('button', { name: '共享话术' })); fireEvent.click(screen.getByRole('menuitem', { name: /^售后小组/ }));
     await screen.findByText('售后小组话术'); fireEvent.contextMenu(document.querySelector('[data-row="team:B-team:shared:1:1"]')!);
-    fireEvent.click(screen.getByRole('menuitem', { name: '新增云文件' })); await nextCloud();
+    fireEvent.click(screen.getByRole('menuitem', { name: '从云文件新建话术' })); await nextCloud();
     await waitFor(() => expect(openWindow).toHaveBeenCalledWith('editor', '', '', 'cloud:7:cloud-file', 'B-team-root', 'B-team-child', 'B-team'));
   });
   it('取消选择不创建窗口；已有编辑草稿时展示现有窗口保护提示', async () => {
     cloudFixture(); view(); const list = screen.getByRole('listbox', { name: '话术列表' });
-    fireEvent.contextMenu(list); fireEvent.click(screen.getByRole('menuitem', { name: '新增云文件' })); await screen.findByText(cloudFile.name); fireEvent.click(screen.getByRole('button', { name: '取消' })); expect(openWindow).not.toHaveBeenCalled();
+    fireEvent.contextMenu(list); fireEvent.click(screen.getByRole('menuitem', { name: '从云文件新建话术' })); await screen.findByText(cloudFile.name); fireEvent.click(screen.getByRole('button', { name: '取消' })); expect(openWindow).not.toHaveBeenCalled();
     vi.mocked(openWindow).mockRejectedValueOnce(new Error('请先完成或关闭当前话术编辑窗口，再生成新话术。'));
-    fireEvent.contextMenu(list); fireEvent.click(screen.getByRole('menuitem', { name: '新增云文件' })); await nextCloud(); await screen.findByText(/请先完成或关闭当前话术编辑窗口/);
+    fireEvent.contextMenu(list); fireEvent.click(screen.getByRole('menuitem', { name: '从云文件新建话术' })); await nextCloud(); await screen.findByText(/请先完成或关闭当前话术编辑窗口/);
   });
   it.each(['账号', '个人库', '分类'])('选择期间%s变化取消旧目标，不打开编辑器', async change => {
-    const status = cloudFixture(); const rendered = view(); fireEvent.contextMenu(document.querySelector('[data-row="B"]')!); fireEvent.click(screen.getByRole('menuitem', { name: '新增云文件' })); await screen.findByText(cloudFile.name);
+    const status = cloudFixture(); const rendered = view(); fireEvent.contextMenu(document.querySelector('[data-row="B"]')!); fireEvent.click(screen.getByRole('menuitem', { name: '从云文件新建话术' })); await screen.findByText(cloudFile.name);
     if (change === '账号') { status.sessionEpoch = 8; vi.mocked(useTeams).mockReturnValue({ status: { ...status }, version: 2, loaded: true }); }
     const next = change === '个人库' ? { ...library, libraryId: 'new-library' } : change === '分类' ? { ...library, categories: library.categories.filter(c => c.id !== 'group') } : library;
     rendered.rerender(<MainWindow library={next} refresh={vi.fn(async () => {})} />);
@@ -289,8 +329,8 @@ describe('右键新增云文件话术', () => {
     const status = cloudFixture(); if (condition === '离线') status.offline = true; if (condition === '初始密码') status.user!.mustChangePassword = true;
     render(<MainWindow library={condition === '无分类' ? { ...library, categories: [] } : library} refresh={vi.fn(async () => {})} />);
     if (condition === '只读共享库') { fireEvent.click(screen.getByRole('button', { name: '共享话术' })); fireEvent.click(screen.getByRole('menuitem', { name: /^售前小组/ })); await screen.findByText('售前小组话术'); }
-    fireEvent.contextMenu(screen.getByRole('listbox', { name: '话术列表' })); expect((screen.getByRole('menuitem', { name: '新增云文件' }) as HTMLButtonElement).disabled).toBe(true);
-    cleanup(); vi.mocked(useTeams).mockReturnValue({ status: { ...status, companyFiles: false }, version: 2, loaded: true }); view(); fireEvent.contextMenu(screen.getByRole('listbox', { name: '话术列表' })); expect(screen.queryByRole('menuitem', { name: '新增云文件' })).toBeNull();
+    fireEvent.contextMenu(screen.getByRole('listbox', { name: '话术列表' })); expect((screen.getByRole('menuitem', { name: '从云文件新建话术' }) as HTMLButtonElement).disabled).toBe(true);
+    cleanup(); vi.mocked(useTeams).mockReturnValue({ status: { ...status, companyFiles: false }, version: 2, loaded: true }); view(); fireEvent.contextMenu(screen.getByRole('listbox', { name: '话术列表' })); expect(screen.queryByRole('menuitem', { name: '从云文件新建话术' })).toBeNull();
   });
 });
 
@@ -305,9 +345,10 @@ describe('主窗口四个设置开关独立保存', () => {
     let writes = 0;
     vi.mocked(call).mockImplementation(async (name, args) => {
       if (name === 'get_library') return { ...saved, settings: { ...saved.settings } };
-      if (name === 'save_settings') {
+      if (name === 'patch_settings') {
         if (++writes === 1) { await held; if (fail) throw new Error('模拟写入失败'); }
-        saved = { ...saved, settings: args!.settings as Library['settings'] };
+        saved = { ...saved, settings: { ...saved.settings, ...args!.patch as object } };
+        return { libraryId: args!.libraryId, settings: saved.settings, revision: writes };
       }
       return null;
     });
@@ -317,7 +358,7 @@ describe('主窗口四个设置开关独立保存', () => {
     return { release, refresh, rendered, saved: () => saved, fail: () => { fail = true; }, switchLibrary: () => { saved = { ...saved, libraryId: 'private-b' }; rendered.rerender(<MainWindow library={saved} refresh={refresh} />); } };
   }
   const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
-  const writes = () => vi.mocked(call).mock.calls.filter(([name]) => name === 'save_settings');
+  const writes = () => vi.mocked(call).mock.calls.filter(([name]) => name === 'patch_settings');
 
   it.each(names)('点击%s只禁用自身，重复点击不重复写入', async name => {
     const state = setup(); const clicked = button(name); fireEvent.click(clicked); fireEvent.click(clicked);
@@ -337,7 +378,8 @@ describe('主窗口四个设置开关独立保存', () => {
     await waitFor(() => expect(writes()).toHaveLength(4));
     expect(keys.map(key => state.saved().settings[key])).toEqual([true, true, true, false]);
     expect(writes().map(([, args]) => args!.libraryId)).toEqual(Array(4).fill('private-a'));
-    expect(state.refresh).toHaveBeenCalledTimes(4);
+    expect(state.refresh).not.toHaveBeenCalled();
+    expect(vi.mocked(call).mock.calls.some(([name]) => name === 'get_library')).toBe(false);
     fireEvent.click(button('吸附'));
     await waitFor(() => expect(button('吸附').getAttribute('aria-pressed')).toBe('false'));
     expect(state.saved().settings.pinned).toBe(true);
@@ -360,20 +402,19 @@ describe('主窗口四个设置开关独立保存', () => {
     expect(writes()[1][1]!.libraryId).toBe('private-b');
   });
 
-  it('读取最新设置期间切库，不提交已失效操作', async () => {
-    const state = setup(); let resolve!: (value: Library) => void;
-    const original = vi.mocked(call).getMockImplementation()!;
-    vi.mocked(call).mockImplementation((name, args) => name === 'get_library' ? new Promise(done => { resolve = done; }) : original(name, args));
-    fireEvent.click(button('吸附')); await waitFor(() => expect(resolve).toBeTruthy());
-    const old = state.saved(); state.switchLibrary(); await act(async () => resolve(old));
-    expect(writes()).toHaveLength(0);
+  it('保存期间切库，迟到回执不会改变新库的选项', async () => {
+    const state = setup(); fireEvent.click(button('吸附'));
+    await waitFor(() => expect(writes()).toHaveLength(1)); state.switchLibrary();
+    await act(async () => state.release());
+    expect(button('吸附').getAttribute('aria-pressed')).toBe('false');
+    expect(state.refresh).not.toHaveBeenCalled();
   });
 
   it('快捷键展开隐藏搜索和常用短语仍走独立保存，成功后恢复焦点', async () => {
     const state = setup(); fireEvent.click(button('隐藏搜索框')); await waitFor(() => expect(writes()).toHaveLength(1)); await act(async () => state.release());
     await waitFor(() => expect(button('显示搜索框').disabled).toBe(false));
     await act(async () => callbacks.get('ui-action')?.({ payload: 'search' }));
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '搜索话术、本地文件' })));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '搜索话术、文件' })));
     await act(async () => callbacks.get('ui-action')?.({ payload: 'common' }));
     await waitFor(() => expect(state.saved().settings.showCommon).toBe(true));
     expect(document.activeElement?.classList.contains('add-common')).toBe(true);
@@ -443,4 +484,25 @@ describe('成员分类混合显示且整类只读', () => {
     fireEvent.click(screen.getByRole('menuitem',{name:'新增话术'}));
     await waitFor(()=>expect(openWindow).toHaveBeenCalledWith('editor','','','','other','',''));
   });
+});
+
+it('共享A界面全局搜索同ID的个人与共享B结果，编辑按结果来源且筛选不改变浏览库', async () => {
+  const status = teamFixture();
+  const shared = { ...phrase('team:B-team:shared:1:1', null, 'B-team-root'), title: '共享B结果', contentRef: { source: 'team' as const, teamId: 'B-team', id: 'shared', revision: 1, lifecycleVersion: 1 } };
+  const personal = { ...phrase('shared'), title: '个人同ID结果', contentRef: { source: 'private' as const, libraryId: 'personal', id: 'shared', revision: 2 } };
+  const hits: SearchHit[] = [personal, shared].map(p => ({ id: 'shared', kind: 'phrase', phrase: p, file: null }));
+  vi.mocked(call).mockImplementation(async name => name === 'search_scoped_content' ? hits : name === 'get_team_view' ? { team: status.teams[1], categories: [], phrases: [shared], offline: false } : null);
+  view(); fireEvent.click(screen.getByRole('button', { name: '共享话术' })); fireEvent.click(screen.getByRole('menuitem', { name: /^售前小组/ }));
+  await screen.findByText('售前小组话术');
+  fireEvent.change(screen.getByRole('textbox', { name: '搜索话术、文件' }), { target: { value: '结果' } });
+  await screen.findByRole('button', { name: '直接发送 共享B结果' }); await screen.findByRole('button', { name: '直接发送 个人同ID结果' });
+  expect(mapping()?.ids).toEqual(['private:personal:phrase:shared:2', 'team:B-team:shared:1:1']);
+  const rows = document.querySelectorAll('#search-results [data-row]'); expect(rows).toHaveLength(2); expect(rows[0].getAttribute('data-row')).not.toBe(rows[1].getAttribute('data-row'));
+  fireEvent.contextMenu(rows[1]); const sharedEdit = await screen.findByRole('menuitem', { name: '编辑' }); await act(async () => { fireEvent.click(sharedEdit); });
+  expect(openWindow).toHaveBeenLastCalledWith('editor', shared.id, '', '', '', '', 'B-team');
+  fireEvent.focus(screen.getByRole('textbox', { name: '搜索话术、文件' }));
+  fireEvent.contextMenu(document.querySelectorAll('#search-results [data-row]')[0]); const privateEdit = await screen.findByRole('menuitem', { name: '编辑' }); await act(async () => { fireEvent.click(privateEdit); });
+  expect(openWindow).toHaveBeenLastCalledWith('editor', personal.id);
+  fireEvent.keyDown(screen.getByRole('textbox', { name: '搜索话术、文件' }), { key: 'Escape' });
+  await screen.findByText('售前小组话术'); expect(screen.queryByText('共享B结果')).toBeNull();
 });

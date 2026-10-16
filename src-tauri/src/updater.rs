@@ -37,12 +37,14 @@ pub struct Status {
     message: String,
     last_check: u64,
     revision: u64,
+    manual_install_available: bool,
 }
 struct Inner {
     preferences: Preferences,
     status: Status,
     release: Option<Release>,
     ready: Option<tempfile::TempDir>,
+    manual_path: Option<std::path::PathBuf>,
     cancel: CancellationToken,
 }
 /// 每次状态变化在同一把锁内递增序号，前端丢弃迟到的快照，避免进度倒退。
@@ -87,10 +89,12 @@ impl Updater {
                 message,
                 last_check: preferences.last_check,
                 revision: 0,
+                manual_install_available: false,
             },
             preferences,
             release: None,
             ready: None,
+            manual_path: None,
             cancel: CancellationToken::new(),
         }))
     }
@@ -147,6 +151,8 @@ pub fn save_update_config(
     // 新线路必须重新核对固定版本，不保留旧线路的待安装文件。
     inner.release = None;
     inner.ready = None;
+    inner.manual_path = None;
+    inner.status.manual_install_available = false;
     inner.status.release = None;
     inner.status.phase = "idle".into();
     inner.status.message.clear();
@@ -176,6 +182,8 @@ fn start_check(app: &tauri::AppHandle, automatic: bool) -> Result<Status> {
     }
     inner.status.last_check = inner.preferences.last_check;
     inner.ready = None;
+    inner.manual_path = None;
+    inner.status.manual_install_available = false;
     inner.release = None;
     inner.status.release = None;
     inner.status.message.clear();
@@ -231,7 +239,7 @@ pub fn start_background(app: tauri::AppHandle) {
 pub fn download_update(app: tauri::AppHandle) -> Result<Status> {
     let state = app.state::<AppState>();
     let mut inner = state.updater.0.lock().unwrap();
-    if inner.busy() || inner.ready.is_some() {
+    if inner.busy() || inner.ready.is_some() || inner.manual_path.is_some() {
         return Ok(inner.status.clone());
     }
     let release = inner.release.clone().ok_or("请先检查更新。")?;
@@ -316,18 +324,19 @@ pub fn ensure_update_idle() -> Result<()> {
 
 fn check_windows(app: &tauri::AppHandle) -> Result<()> {
     if app.webview_windows().keys().any(|label| {
-        [
-            "editor",
-            "file-editor",
-            "common-editor",
-            "common-sort",
-            "category-sort",
-            "file-sort",
-            "team-management",
-            "user-management",
-            "delete-confirm",
-        ]
-        .contains(&label.as_str())
+        label.starts_with("company-picker-")
+            || [
+                "editor",
+                "file-editor",
+                "common-editor",
+                "common-sort",
+                "category-sort",
+                "file-sort",
+                "team-management",
+                "user-management",
+                "delete-confirm",
+            ]
+            .contains(&label.as_str())
     }) {
         return Err("请先保存并关闭编辑、排序或管理窗口，再安装更新。".into());
     }
@@ -401,9 +410,37 @@ pub fn qa_load_update(app: tauri::AppHandle, state: State<AppState>) -> Result<S
     inner.status.release = Some(release.manifest.clone());
     inner.release = Some(release);
     inner.ready = Some(dir);
+    inner.manual_path = None;
+    inner.status.manual_install_available = false;
     inner.status.phase = "ready".into();
     inner.status.message = "隔离夹具已通过真实签名和文件校验。".into();
     Ok(inner.publish(&app))
+}
+
+#[tauri::command]
+pub fn open_update_download_directory(app: tauri::AppHandle, state: State<AppState>) -> Result<()> {
+    let mut inner = state.updater.0.lock().unwrap();
+    let path = inner
+        .manual_path
+        .clone()
+        .ok_or("没有可手动安装的更新包。")?;
+    let hash = inner
+        .release
+        .as_ref()
+        .ok_or("请重新检查更新。")?
+        .hash
+        .clone();
+    match verified_installer(&path, &hash) {
+        Ok(_file) => crate::native::open_file(&crate::model::external_path(&path), true),
+        Err(error) => {
+            inner.manual_path = None;
+            inner.status.manual_install_available = false;
+            inner.status.phase = "error".into();
+            inner.status.message = error.clone();
+            inner.publish(&app);
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command]
@@ -415,11 +452,15 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<()> {
         let mut inner = state.updater.0.lock().unwrap();
         let release = inner.release.as_ref().ok_or("请先下载更新。")?;
         let path = inner
-            .ready
-            .as_ref()
-            .ok_or("请先下载更新。")?
-            .path()
-            .join(release.manifest.installer());
+            .manual_path
+            .clone()
+            .or_else(|| {
+                inner
+                    .ready
+                    .as_ref()
+                    .map(|dir| dir.path().join(release.manifest.installer()))
+            })
+            .ok_or("请先下载更新。")?;
         let hash = release.hash.clone();
         inner.status.phase = "installing".into();
         inner.publish(&app);
@@ -431,15 +472,19 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<()> {
     .await
     .map_err(|_| "更新安装检查被中断。".to_string())
     .and_then(|v| v);
+    let verification_failed = result.is_err();
+    let launch_failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let failed = launch_failed.clone();
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let install_app = app.clone();
     // 窗口创建同样在 UI 线程串行执行；最终重查窗口后才启动安装器，不强制丢弃草稿。
     let scheduled = app.run_on_main_thread(move || {
         let result = result.and_then(|(path, _locked_file)| {
             check_windows(&install_app)?;
-            std::process::Command::new(path)
-                .spawn()
-                .map_err(|_| "无法启动安装器，请检查系统权限或安全软件后重试。".to_string())?;
+            std::process::Command::new(path).spawn().map_err(|_| {
+                failed.store(true, std::sync::atomic::Ordering::Release);
+                "无法启动安装器，请检查系统权限或安全软件后重试。".to_string()
+            })?;
             Ok(())
         });
         let _ = sender.send(result);
@@ -470,6 +515,29 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<()> {
         Err(e) => {
             inner.status.phase = "ready".into();
             inner.status.message = e.clone();
+            if launch_failed.load(std::sync::atomic::Ordering::Acquire) {
+                if let Some(dir) = inner.ready.take() {
+                    let name = inner.release.as_ref().unwrap().manifest.installer();
+                    inner.manual_path = Some(dir.keep().join(name));
+                }
+                inner.status.manual_install_available = inner.manual_path.is_some();
+                if let Some(path) = &inner.manual_path {
+                    match crate::native::open_file(&crate::model::external_path(path), true) {
+                        Ok(()) => inner.status.message.push_str(
+                            " 已打开下载目录，请先保存工作并退出闪语，再手动运行安装包。",
+                        ),
+                        Err(_) => inner
+                            .status
+                            .message
+                            .push_str(" 下载目录未能打开，可点击“打开下载目录”重试。"),
+                    }
+                }
+            } else if verification_failed {
+                inner.ready = None;
+                inner.manual_path = None;
+                inner.status.manual_install_available = false;
+                inner.status.phase = "error".into();
+            }
             inner.publish(&app);
             Err(e)
         }

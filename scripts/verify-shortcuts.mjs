@@ -97,6 +97,62 @@ try {
   const references=new Map([...ids,solo].map(id=>[id,`private:${library.libraryId}:phrase:${id}:${library.privateRevisions[`phrase:${id}`]}`]));
   const targetContext={hwnd:hostInfo.hwnd,focus:hostInfo.focus,pid:hostInfo.pid};
 
+  await test('设置页四个开关实际点击保存并控制原生触发和作用范围',async()=>{
+    const labels={sequenceHotkeys:'开启序号快捷键',sequenceDirectSend:'直接发送',customHotkeys:'开启自定义快捷键',globalPhraseHotkeys:'全局生效'};
+    const edit=async patch=>{
+      const previous=(await invoke('get_library')).settings;
+      await showMain();await page.getByRole('button',{name:'设置',exact:true}).click();
+      await poll(async()=>context.pages().some(p=>p.url().includes('#settings')),'打开设置');
+      settingsPage=context.pages().find(p=>p.url().includes('#settings'));await settingsPage.getByRole('button',{name:'快捷键',exact:true}).click();
+      for(const [field,name] of Object.entries(labels))assert.equal(await settingsPage.getByRole('checkbox',{name,exact:true}).isChecked(),previous[field],`${name}重开后与已保存值一致`);
+      for(const [field,value] of Object.entries(patch)) {
+        const box=settingsPage.getByRole('checkbox',{name:labels[field],exact:true});
+        await box.setChecked(value);
+        await poll(async()=>!await box.isDisabled()&&(await invoke('get_library')).settings[field]===value,`${labels[field]}保存`);
+      }
+      // 设置窗口打开期间，两个业务快捷键都应暂停。
+      await focusHost();await control('reset',{draft:'设置中：'});await chord();await key(49,['-Ctrl']);await delay(180);
+      assert.equal((await receipt()).draft,'设置中：qw');await noCandidate();
+      await settingsPage.getByRole('button',{name:'关闭窗口',exact:true}).click();
+      await poll(async()=>!context.pages().includes(settingsPage),'设置关闭');
+    };
+    await edit({sequenceHotkeys:false,sequenceDirectSend:false,customHotkeys:false,globalPhraseHotkeys:false});
+    await prepare();await chord();await key(49,['-Ctrl']);await delay(180);await noCandidate();await submitted('已有草稿：qw');await record('两个开启开关均关闭时不触发');
+    await edit({sequenceHotkeys:true});await prepare();await key(49,['-Ctrl']);await submitted('已有草稿：正文1');await record('界面开启序号后仅插入');
+    await edit({sequenceDirectSend:true});await prepare();await key(49,['-Ctrl']);await submitted('',1);assert.equal((await receipt()).events.find(e=>e.kind==='send').value.text,'已有草稿：正文1');await record('界面开启直接发送后提交一次');
+    await edit({sequenceDirectSend:false,sequenceHotkeys:false,customHotkeys:true});await prepare();await key(49,['-Ctrl']);await submitted('已有草稿：');await opened();await key(27);await noCandidate();await record('自定义开启独立于序号开关');
+    await edit({sequenceHotkeys:true});await prepare();await opened();await key(27);await noCandidate();await key(49,['-Ctrl']);await submitted('已有草稿：正文1');
+    const otherEvents=path.join(root,'four-switch-events.json'),otherControls=path.join(root,'four-switch-controls.json');
+    otherHost=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(repo,'tests','native-host.ps1'),'-EventsPath',otherEvents,'-ControlPath',otherControls],{windowsHide:true,stdio:'ignore'});
+    const other=await read(otherEvents);
+    const focusOther=async()=>{await native(['-Action','focus','-Handle',String(other.hwnd)]);await control('focus',{},otherControls);await delay(180);};
+    await focusOther();await control('reset',{draft:'范围关闭：'},otherControls);await chord();await key(49,['-Ctrl']);await delay(180);await noCandidate();assert.equal((await read(otherEvents)).draft,'范围关闭：qw');
+    await edit({globalPhraseHotkeys:true});await focusOther();await control('reset',{draft:'全局：'},otherControls);await opened();await key(27);await noCandidate();await key(49,['-Ctrl']);
+    await poll(async()=>(await read(otherEvents)).draft==='全局：正文1','全局序号插入其他窗口');receipts.push({name:'界面全局开启后两种快捷键均可用',...await read(otherEvents)});
+    await edit({globalPhraseHotkeys:false});await prepare();await focusOther();await control('reset',{draft:'再次关闭：'},otherControls);await chord();await key(49,['-Ctrl']);await delay(180);await noCandidate();assert.equal((await read(otherEvents)).draft,'再次关闭：qw');
+    // 重开读取持久化结果，不能只检查当前复选框的乐观状态。
+    await edit({sequenceHotkeys:false,sequenceDirectSend:false,customHotkeys:false,globalPhraseHotkeys:false});
+    const saved=(await invoke('get_library')).settings;for(const field of Object.keys(labels))assert.equal(saved[field],false);
+    await control('close',{},otherControls);otherHost=null;
+    await settings({customHotkeys:true,sequenceHotkeys:false,globalPhraseHotkeys:true});
+  });
+
+  await test('快捷键开关快速修改后立即关闭不会丢保存',async()=>{
+    const fields=['sequenceHotkeys','sequenceDirectSend','customHotkeys','globalPhraseHotkeys'];
+    await settings(Object.fromEntries(fields.map(field=>[field,false])));
+    await showMain();await page.getByRole('button',{name:'设置',exact:true}).click();
+    await poll(async()=>context.pages().some(p=>p.url().includes('#settings')),'设置窗口');
+    settingsPage=context.pages().find(p=>p.url().includes('#settings'));await settingsPage.getByRole('button',{name:'快捷键',exact:true}).click();
+    // 仅延迟第一项回执，真实SQLite保存仍由Rust执行，用于稳定复现关闭时排队项被丢弃。
+    await settingsPage.evaluate(()=>{const original=window.fetch.bind(window);let first=true;window.fetch=async(input,init)=>{const url=new URL(typeof input==='string'?input:input.url);if(url.hostname==='ipc.localhost'&&url.pathname==='/patch_settings'&&first){first=false;window.__delayedSettings=true;await new Promise(resolve=>setTimeout(resolve,700));}return original(input,init);};});
+    for(const name of ['开启序号快捷键','直接发送','开启自定义快捷键','全局生效'])await settingsPage.getByRole('checkbox',{name,exact:true}).check();
+    await settingsPage.waitForFunction(()=>window.__delayedSettings);
+    await settingsPage.getByRole('button',{name:'关闭窗口',exact:true}).click();
+    await poll(async()=>!context.pages().includes(settingsPage),'保存后关闭设置');await delay(900);
+    const saved=(await invoke('get_library')).settings;for(const field of fields)assert.equal(saved[field],true,`${field}不能因关闭窗口而丢失`);
+    await settings({customHotkeys:true,sequenceHotkeys:false,sequenceDirectSend:false,globalPhraseHotkeys:true});
+  });
+
   await test('双键完整匹配只显示候选，按分类排序、无激活且不占任务栏',async()=>{
     await prepare();const payload=await opened();assert.deepEqual(payload.phrases.map(p=>p.id),ids.map(id=>references.get(id)));assert.deepEqual(payload.target,targetContext);
     await poll(async()=>(await native(['-Handle',String(candidateHandle)])).visible,'候选窗口显示');
@@ -105,14 +161,28 @@ try {
     // 读取实际原生矩形与WebView视口，防止前端行高更新后原生窗口仍沿用旧高度。
     for (const count of [12, 1]) {
       if(count===1)await opened(()=>key(122,['-Ctrl','-Shift']));
-      const geometry=await native(['-Handle',String(candidateHandle)]), scale=await invoke('plugin:window|scale_factor',{},candidates), height=62+32*Math.min(count,10);
-      assert.equal(geometry.rect.right-geometry.rect.left,Math.round(370*scale));assert.equal(geometry.rect.bottom-geometry.rect.top,Math.round(height*scale));
-      await poll(()=>candidates.evaluate(height=>innerWidth===370&&innerHeight===height,height),'候选视口尺寸');
-      assert.equal(await candidates.locator('header').evaluate(el=>el.getBoundingClientRect().height),32);assert.equal(await candidates.locator('footer').evaluate(el=>el.getBoundingClientRect().height),28);
-      assert.equal(await candidates.locator('[data-candidate]').first().evaluate(el=>el.getBoundingClientRect().height),32);
-      receipts.push({name:'实际候选窗口尺寸',count,scale,rect:geometry.rect,width:370,height});
+      const geometry=await native(['-Handle',String(candidateHandle)]), scale=await invoke('plugin:window|scale_factor',{},candidates);
+      const viewport=await candidates.evaluate(()=>({width:innerWidth,height:innerHeight,row:document.querySelector('[data-candidate]').getBoundingClientRect().height,scroll:document.querySelector('.shortcut-candidates-list').scrollWidth,client:document.querySelector('.shortcut-candidates-list').clientWidth}));
+      assert.ok(viewport.width>=240&&viewport.width<=360);assert.ok(viewport.height<=420&&viewport.row>=32);assert.equal(viewport.scroll,viewport.client);
+      assert.ok(geometry.rect.right-geometry.rect.left<=Math.round(360*scale));assert.ok(geometry.rect.bottom-geometry.rect.top<=Math.round(420*scale));
+      if(count===1) {
+        const headerFits=await candidates.evaluate(()=>{
+          const header=document.querySelector('header'),label=header.querySelector('strong'),close=header.querySelector('button'),text=label.textContent;
+          try {label.textContent='Ctrl+Alt+Shift+Win+Y+C';const h=header.getBoundingClientRect(),b=close.getBoundingClientRect();return b.right<=h.right&&label.scrollWidth>label.clientWidth;}
+          finally {label.textContent=text;}
+        });
+        assert.equal(headerFits,true,'长快捷键省略且取消按钮保持可见');
+        assert.equal(await candidates.evaluate(()=>[...document.querySelectorAll('footer > span')].every(hint=>hint.getBoundingClientRect().height<=21)&&document.querySelectorAll('footer > span').length===4),true,'快捷键提示按完整操作分组换行');
+      }
+
+      receipts.push({name:'实际候选窗口尺寸',count,scale,rect:geometry.rect,...viewport});
+      const active=await invoke('get_shortcut_candidates');
+      await invoke('resize_shortcut_candidates',{sessionId:'expired',layoutKey:active.layoutKey,width:1,height:1});
+      await invoke('resize_shortcut_candidates',{sessionId:active.sessionId,layoutKey:'expired',width:1,height:1});
+      assert.deepEqual((await native(['-Handle',String(candidateHandle)])).rect,geometry.rect,'迟到测量不能改变当前候选尺寸');
+
       assert.equal((await receipt()).draft,'已有草稿：');await candidates.screenshot({path:path.join(evidence,count===12?'candidates-native.png':'candidate-single-native.png')});
-      if(count===12)await captureScales(candidates,'candidates',370,height);
+      if(count===12)await captureScales(candidates,'candidates',viewport.width,viewport.height);
       await key(27);await noCandidate();await record('Esc取消保留草稿');
     }
   });
@@ -126,6 +196,20 @@ try {
   await test('单条也弹候选；长按触发与重复提交只执行一次',async()=>{
     await prepare();const payload=await opened(()=>key(122,['-Ctrl','-Shift'],['-Repeats','5']));assert.equal(payload.phrases.length,1);assert.equal(payload.phrases[0].id,references.get(solo));
     await key(13,[],['-Repeats','8']);await submitted('',1);await delay(250);assert.equal((await receipt()).events.filter(e=>e.kind==='paste-text').length,1);await record('长按Enter只发送一次');
+  });
+  await test('同键双击、不同键重叠与Ctrl+Y+C连续触发',async()=>{
+    const repeated=await savePhrase('同键双击','1+1');
+    const modified=await savePhrase('带修饰序列','Ctrl+Y+C');
+    try {
+      for(const [keys,mods,extra,title] of [['49,49',[],[],'同键双击'],['81,87',[],['-Overlap'],'1'],['89,67',['-Ctrl'],['-Overlap'],'带修饰序列']]) {
+        for(let attempt=0;attempt<2;attempt++) {
+          await prepare();
+          const payload=await opened(()=>key(0,mods,['-Keys',keys,...extra]));
+          assert.equal(payload.phrases[0].title,title);
+          await key(27);await noCandidate();await submitted('已有草稿：');
+        }
+      }
+    } finally { for(const id of [repeated,modified])await invoke('delete_item',{id,kind:'phrase',recycle:false}); }
   });
   await test('双键超时在原输入区回放，焦点和外部点击取消候选',async()=>{
     await prepare('超时：');await key(81);await submitted('超时：q');await noCandidate();await record('双键超时回放');
@@ -153,16 +237,16 @@ try {
     assert.deepEqual(await page.locator('.content-list .row-index').allTextContents(),['1.','2.','3.']);
     await prepare();await key(51,['-Ctrl']);await submitted('已有草稿：正文单候选');await record('折叠后第三项');
     await invoke('window_action',{action:'hide'});await control('reset',{draft:'隐藏：'});await focusHost();await key(50,['-Ctrl']);await submitted('隐藏：正文2');await record('隐藏沿用最后列表');
-    await prepare('搜索输入：');await showMain();await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).fill('单候选');await page.locator('#search-results [data-row]').waitFor();
-    const searchBox=await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).boundingBox();await native(['-Action','focus','-Handle',String(main),'-X',String(Math.round(searchBox.x+12)),'-Y',String(Math.round(searchBox.y+12))]);
-    assert.equal(await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).evaluate(e=>e===document.activeElement),true);
+    await prepare('搜索输入：');await showMain();await page.getByRole('textbox',{name:'搜索话术、文件',exact:true}).fill('单候选');await page.locator('#search-results [data-row]').waitFor();
+    const searchBox=await page.getByRole('textbox',{name:'搜索话术、文件',exact:true}).boundingBox();await native(['-Action','focus','-Handle',String(main),'-X',String(Math.round(searchBox.x+12)),'-Y',String(Math.round(searchBox.y+12))]);
+    assert.equal(await page.getByRole('textbox',{name:'搜索话术、文件',exact:true}).evaluate(e=>e===document.activeElement),true);
     await key(49,['-Ctrl']);await submitted('搜索输入：正文单候选');await record('搜索框保持焦点时序号插入原目标');
     const attachment=path.join(root,'序号搜索文件.txt');await fs.writeFile(attachment,'隔离验收');await invoke('add_files',{categoryId:fileRoot,paths:[attachment]});
     // 文件搜索属于本地文件来源，先切页签再验证文件槽位不会触发话术。
-    await showMain();await page.getByRole('button',{name:'本地文件',exact:true}).click();await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).fill('序号搜索文件');await page.locator('#search-results [data-row]').waitFor();
+    await showMain();await page.getByRole('button',{name:'文件',exact:true}).click();await page.getByRole('textbox',{name:'搜索话术、文件',exact:true}).fill('序号搜索文件');await page.locator('#search-results [data-row]').waitFor();
     await control('reset',{draft:'文件占位：'});await focusHost();await key(49,['-Ctrl']);await delay(200);await submitted('文件占位：');await record('搜索文件槽位不发送话术');
     await invoke('sync_sequence_map',{ids:[ids[0]],loading:true});await key(49,['-Ctrl']);await delay(100);await submitted('文件占位：');
-    await showMain();await page.getByRole('textbox',{name:'搜索话术、本地文件',exact:true}).fill('');await page.getByRole('button',{name:'话术',exact:true}).click();await settings({sequenceDirectSend:true});await focusHost();await key(49,['-Ctrl']);await submitted('',1);await record('序号直接发送');
+    await showMain();await page.getByRole('textbox',{name:'搜索话术、文件',exact:true}).fill('');await page.getByRole('button',{name:'话术',exact:true}).click();await settings({sequenceDirectSend:true});await focusHost();await key(49,['-Ctrl']);await submitted('',1);await record('序号直接发送');
   });
   await test('序号与自定义开关独立，冲突失败保留配置，设置关闭才恢复业务快捷键',async()=>{
     await settings({sequenceHotkeys:false});await prepare();await opened();await key(27);await noCandidate();
@@ -176,7 +260,7 @@ try {
     await settings({customHotkeys:true,sequenceHotkeys:false});
   });
   await test('Alt搜索／侧栏与常用短语导航经过真实监听，短语Enter直接发送',async()=>{
-    await prepare();await key(56,['-Alt']);await poll(async()=>page.getByRole('textbox',{name:'搜索话术、本地文件'}).evaluate(e=>e===document.activeElement),'Alt搜索聚焦');
+    await prepare();await key(56,['-Alt']);await poll(async()=>page.getByRole('textbox',{name:'搜索话术、文件'}).evaluate(e=>e===document.activeElement),'Alt搜索聚焦');
     await key(27);await poll(async()=>page.locator('.content-list').evaluate(e=>e===document.activeElement),'Esc退出搜索');
     await key(57,['-Alt']);await poll(async()=>!(await native(['-Handle',String(main)])).visible,'Alt隐藏侧栏');
     await key(57,['-Alt']);await poll(async()=>page.locator('.content-list').evaluate(e=>e===document.activeElement),'Alt显示侧栏聚焦列表');
@@ -198,6 +282,66 @@ try {
     await settings({globalPhraseHotkeys:true});await opened();await key(27);await noCandidate();
     await key(49,['-Ctrl']);await poll(async()=>(await read(otherEvents)).draft==='范围：qw正文1','全局序号在其他窗口生效');receipts.push({name:'全局序号在其他窗口插入',...await read(otherEvents)});
     await focusHost();await control('reset',{draft:'未完成：'});await key(81);await native(['-Action','focus','-Handle',String(other.hwnd)]);await control('focus',{},otherControls);await delay(1200);assert.equal((await receipt()).draft,'未完成：');assert.equal((await read(otherEvents)).draft,'范围：qw正文1');await record('未完成序列切窗取消');
+  });
+  await test('候选紧凑定位跟随光标和窗口移动，无光标按控件及窗口回退',async()=>{
+    await settings({sequenceHotkeys:false,customHotkeys:true,globalPhraseHotkeys:true});
+    await prepare();
+    const initial=await native(['-Handle',String(hostInfo.hwnd)]), w=initial.rect.right-initial.rect.left, h=initial.rect.bottom-initial.rect.top;
+    const move=async(x,y)=>native(['-Action','move','-Handle',String(hostInfo.hwnd),'-X',String(x),'-Y',String(y),'-Width',String(w),'-Height',String(h)]);
+    try {
+      await move(initial.workArea.left+80,initial.workArea.top+240);
+      await opened(()=>key(122,['-Ctrl','-Shift']));
+      await poll(async()=>(await native(['-Handle',String(candidateHandle)])).visible,'紧凑候选显示');
+      const before=await native(['-Handle',String(candidateHandle)]), target=await native(['-Handle',String(hostInfo.hwnd)]), scale=target.dpi/96, gap=Math.round(6*scale);
+      assert.ok(target.caretRect,'宿主提供实际系统光标');
+      assert.equal(before.rect.left,target.caretRect.left);assert.equal(before.rect.bottom,target.caretRect.top-gap);
+      const dims=[before.rect.right-before.rect.left,before.rect.bottom-before.rect.top];
+      const snapshot=await invoke('get_shortcut_candidates');
+      // 观察真实 IPC，确认移动没有请求前端重新测量。
+      await candidates.evaluate(()=>{window.__candidateResizeCalls=0;window.__candidateOriginalInvoke=window.__TAURI_INTERNALS__.invoke;window.__TAURI_INTERNALS__.invoke=(command,args,options)=>{if(command==='resize_shortcut_candidates')window.__candidateResizeCalls++;return window.__candidateOriginalInvoke(command,args,options);};});
+      await move(target.rect.left+60,target.rect.top+40);
+      await poll(async()=>{const a=await native(['-Handle',String(candidateHandle)]);return a.rect.left===before.rect.left+60&&a.rect.top===before.rect.top+40;},'候选跟随同屏移动');
+      let actual=await native(['-Handle',String(candidateHandle)]);
+      assert.deepEqual([actual.rect.right-actual.rect.left,actual.rect.bottom-actual.rect.top],dims);
+      assert.equal(await candidates.evaluate(()=>window.__candidateResizeCalls),0);assert.equal((await invoke('get_shortcut_candidates')).sessionId,snapshot.sessionId);
+      await control('no-caret');
+      await poll(async()=>!(await native(['-Handle',String(hostInfo.hwnd)])).caretRect,'宿主移除系统光标');
+      const focus=(await native(['-Handle',String(hostInfo.hwnd)])).focusRect;
+      await poll(async()=>{const a=await native(['-Handle',String(candidateHandle)]);return a.rect.left===focus.left&&a.rect.bottom===focus.top-gap;},'候选回退当前输入控件');
+      await control('full-input');await delay(200);
+      const full=await native(['-Handle',String(hostInfo.hwnd)]);
+      await poll(async()=>{const a=await native(['-Handle',String(candidateHandle)]);return a.rect.left===full.rect.left+Math.round(12*scale)&&a.rect.bottom===full.rect.bottom-Math.round(12*scale);},'整窗焦点容器回退可见窗口内缩位置');
+      await control('restore-input');await key(27);await noCandidate();
+      await move(initial.workArea.left+80,initial.workArea.top);
+      await opened(()=>key(122,['-Ctrl','-Shift']));
+      const top=await native(['-Handle',String(hostInfo.hwnd)]);
+      await poll(async()=>(await native(['-Handle',String(candidateHandle)])).rect.top===top.caretRect.bottom+gap,'上方不足时放到光标下方');
+      await move(initial.workArea.right-200,initial.workArea.top+240);
+      await poll(async()=>{const a=await native(['-Handle',String(candidateHandle)]);return a.rect.right===a.workArea.right-gap;},'右边缘避让');
+      actual=await native(['-Handle',String(candidateHandle)]);assert.equal(actual.foreground,hostInfo.hwnd);assert.equal(actual.noActivate,true);
+      await candidates.screenshot({path:path.join(evidence,'candidate-compact-position.png')});
+      receipts.push({name:'候选定位及移动',before,after:actual,dims});
+    } finally {
+      await candidates.evaluate(()=>{if(window.__candidateOriginalInvoke)window.__TAURI_INTERNALS__.invoke=window.__candidateOriginalInvoke;});
+      await key(27);await control('restore-input');await move(initial.rect.left,initial.rect.top);
+    }
+  });
+  await test('大字号长标题正文及纯附件候选限制宽高，选择不重调尺寸',async()=>{
+    await settings({fontSize:18,customHotkeys:true});
+    const ids=[], images=await invoke('import_images',{paths:[path.join(repo,'public','shanyu.png')]});
+    for(let i=0;i<12;i++)ids.push(await invoke('save_phrase',{phrase:{id:'',title:i===1?'':'长标题'.repeat(25),rootId:phraseRoot,groupId:null,shortcut:'Ctrl+Shift+F9',color:'',background:'',position:0,segments:[{blocks:i===1?images:[{kind:'text',text:'很长的单行正文摘要'.repeat(30)}]}]},afterId:null}));
+    await prepare();await opened(()=>key(120,['-Ctrl','-Shift']));
+    await poll(async()=>await candidates.evaluate(()=>innerWidth>=350),'长内容扩展宽度');
+    const geometry=await native(['-Handle',String(candidateHandle)]);
+    const measured=await candidates.evaluate(()=>({width:innerWidth,height:innerHeight,row:document.querySelector('[data-candidate]').getBoundingClientRect().height,overflow:document.documentElement.scrollWidth>innerWidth,title:document.querySelector('[data-candidate]').title}));
+    assert.ok(measured.width<=360&&measured.height<=420&&measured.row>=32);assert.equal(measured.overflow,false);assert.ok(measured.title.length>200);
+    for(let i=0;i<11;i++)await key(40);
+    assert.deepEqual((await native(['-Handle',String(candidateHandle)])).rect,geometry.rect);
+    assert.equal(await candidates.evaluate(()=>{const row=document.querySelector('[aria-selected="true"]'),list=document.querySelector('.shortcut-candidates-list'),r=row.getBoundingClientRect(),l=list.getBoundingClientRect();return row===list.lastElementChild&&r.top>=l.top&&r.bottom<=l.bottom+1;}),true,'超过十项时末项自动滚动可见');
+    await candidates.screenshot({path:path.join(evidence,'candidates-long-large-font.png')});
+    await key(27);await noCandidate();
+    for(const id of ids)await invoke('delete_item',{id,kind:'phrase',recycle:false});
+    await settings({fontSize:14});
   });
   await fs.writeFile(path.join(evidence,'native-report.json'),JSON.stringify({root,results,receipts,scope:'Windows 11 独立输入桌面、标准 WinForms 及 Debug 吸附宿主；真实聊天软件未验收',scales:'WebView2 deviceScaleFactor 1/1.5/2；系统物理 DPI 与真实输入法未验收'},null,2));
 } catch(error) {

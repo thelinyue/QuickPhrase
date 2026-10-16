@@ -1,9 +1,15 @@
+import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { call, openWindow, useTeams } from './api';
-import { CompanyFilesWindow, CompanyFilePicker } from './CompanyFiles';
+import { CompanyFilesWindow, CloudFileTable } from './CompanyFiles';
 import { confirm, open } from '@tauri-apps/plugin-dialog';
 import type { CompanyFile, CompanyTransfer, TeamStatus, TeamUser } from './types';
+// 表格交互在当前宿主验证；独立窗口消息在 CompanyPicker 测试和 WebView2 脚本验证。
+function CompanyFilePicker({ limit, onConfirm, confirmLabel = '添加文件' }: { limit: number; onConfirm: (files: CompanyFile[], epoch: number) => void; close: () => void; confirmLabel?: string }) {
+  const [selected, setSelected] = useState<CompanyFile[]>([]);
+  return <><CloudFileTable status={status} limit={limit} selected={selected} onChange={setSelected} /><span>已选择 {selected.length}/{limit}</span><button disabled={!selected.length} onClick={() => onConfirm(selected, status.sessionEpoch!)}>{confirmLabel}</button></>;
+}
 const callbacks = vi.hoisted(() => new Map<string, (event: { payload: unknown }) => void>());
 type DragPayload = { type: 'enter' | 'over' | 'drop'; paths: string[]; position: { x: number; y: number } } | { type: 'leave' };
 const windowEvents = vi.hoisted(() => ({ close: vi.fn(), onCloseRequested: vi.fn(async (_callback: (event: { preventDefault: () => void }) => Promise<void>) => () => {}), onDragDropEvent: vi.fn(async (_callback: (event: { payload: DragPayload }) => void) => () => {}), toggleMaximize: vi.fn() }));
@@ -32,21 +38,21 @@ it('旧Hub关闭目录能力，忽略旧会话的传输通知', async () => {
 });
 it('云文件选择保持ID和会话，不将ID冒充本地路径', async () => {
   const confirm = vi.fn(), close = vi.fn(); render(<CompanyFilePicker limit={1} onConfirm={confirm} close={close} />); await screen.findByText(file.name);
-  fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: '添加文件' })); expect(confirm).toHaveBeenCalledWith([file], 1);
+  fireEvent.click(screen.getByRole('checkbox', { name: `选择 ${file.name}` })); fireEvent.click(screen.getByRole('button', { name: '添加文件' })); expect(confirm).toHaveBeenCalledWith([file], 1);
 });
 it('账号改变时丢弃先前目录响应', async () => {
   let resolve: (value: unknown) => void = () => {}; vi.mocked(call).mockImplementationOnce(() => new Promise(r => { resolve = r; }));
   const { rerender } = render(<CompanyFilesWindow />); status = { ...status, sessionEpoch: 2, companyFiles: false }; rerender(<CompanyFilesWindow />);
   await act(async () => resolve({ version: 1, files: [file], uploads: [] })); expect(screen.queryByText(file.name)).toBeNull();
 });
-it('跨搜索保留已选文件并遵守整条话术的附件上限', async () => {
+it('搜索清空已选文件并遵守整条话术的附件上限', async () => {
   const other: CompanyFile = { ...file, assetId: 'other', name: '说明.pdf' };
   vi.mocked(call).mockImplementation(async (_command, args) => ({ version: 1, files: args?.query === '说明' ? [other] : [file], uploads: [] }));
   const confirm = vi.fn(); render(<CompanyFilePicker limit={2} onConfirm={confirm} close={vi.fn()} />);
-  await screen.findByText(file.name); fireEvent.click(screen.getByRole('checkbox'));
+  await screen.findByText(file.name); fireEvent.click(screen.getByRole('checkbox', { name: `选择 ${file.name}` }));
   fireEvent.change(screen.getByRole('textbox', { name: '搜索云文件' }), { target: { value: '说明' } });
-  await screen.findByText(other.name); fireEvent.click(screen.getByRole('checkbox')); expect(screen.getByText('已选择 2/2')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '添加文件' })); expect(confirm).toHaveBeenCalledWith([file, other], 1);
+  await screen.findByText(other.name); expect(screen.getByText('已选择 0/2')).toBeTruthy(); fireEvent.click(screen.getByRole('checkbox', { name: `选择 ${other.name}` })); expect(screen.getByText('已选择 1/2')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '添加文件' })); expect(confirm).toHaveBeenCalledWith([other], 1);
 });
 it('账号切换清空文件选择，旧任务错误不进入新账号窗口', async () => {
   let reject: (value: unknown) => void = () => {};
@@ -56,7 +62,7 @@ it('账号切换清空文件选择，旧任务错误不进入新账号窗口', a
   status = { ...status, sessionEpoch: 2 }; rerender(<CompanyFilesWindow />);
   await act(async () => reject('旧账号下载失败')); expect(screen.queryByText('旧账号下载失败')).toBeNull();
   cleanup();
-  const picker = render(<CompanyFilePicker limit={1} onConfirm={vi.fn()} close={vi.fn()} />); await screen.findByText(file.name); fireEvent.click(screen.getByRole('checkbox'));
+  const picker = render(<CompanyFilePicker limit={1} onConfirm={vi.fn()} close={vi.fn()} />); await screen.findByText(file.name); fireEvent.click(screen.getByRole('checkbox', { name: `选择 ${file.name}` }));
   status = { ...status, sessionEpoch: 3 }; picker.rerender(<CompanyFilePicker limit={1} onConfirm={vi.fn()} close={vi.fn()} />);
   expect(screen.getByRole('button', { name: '添加文件' }).hasAttribute('disabled')).toBe(true);
 });
@@ -147,10 +153,10 @@ it('批量下载在后台运行，仍能进入下载管理停止任务', async (
   await act(async () => finish());
 });
 
-it('永久删除逐文件输入完整名称，回收站显示上传者和删除者', async () => {
+it('永久删除无需输入名称，回收站显示上传者和删除者', async () => {
   administrator(); vi.mocked(call).mockImplementation(async command => command === 'get_company_transfers' ? [] : command === 'get_file_icon' ? '' : { version: 1, files: [{ ...file, uploaderUsername: '1001', deleterUsername: '1003', deletedAt: 2 }], uploads: [] });
   render(<CompanyFilesWindow />); await screen.findByText(file.name); fireEvent.click(screen.getByRole('button', { name: '云文件回收站' })); await screen.findByRole('button', { name: '永久删除' }); expect(screen.getByText('1001')).toBeTruthy(); expect(screen.getByText('1003')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '永久删除' })); const dialog = screen.getByRole('dialog', { name: '永久删除云文件' }); fireEvent.change(within(dialog).getByRole('textbox', { name: '输入完整文件名' }), { target: { value: file.name } }); fireEvent.submit(dialog.querySelector('form')!);
+  fireEvent.click(screen.getByRole('button', { name: '永久删除' })); const dialog = screen.getByRole('dialog', { name: '永久删除云文件' }); expect(within(dialog).queryByRole('textbox')).toBeNull(); fireEvent.submit(dialog.querySelector('form')!);
   await waitFor(() => expect(call).toHaveBeenCalledWith('manage_company_file', { sessionEpoch: 1, id: file.assetId, operation: 'purge', confirmName: file.name }));
 });
 
@@ -236,14 +242,14 @@ it('右键已勾选行保留批量范围，未勾选行切为单选，空白菜�
   expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['刷新', '上传新文件', '下载管理', '上传管理']);
   expect(screen.getByText('已选 1 项')).toBeTruthy();
 });
-it('右键删除与回收站恢复保留确认，永久删除仍要求文件名', async () => {
+it('右键删除与回收站恢复保留确认，永久删除只需明确确认', async () => {
   administrator(); render(<CompanyFilesWindow />); await screen.findByText(file.name);
   fireEvent.contextMenu(screen.getByText(file.name).closest('tr')!); fireEvent.click(screen.getByRole('menuitem', { name: '删除' }));
   expect(screen.getByText('将所选文件移入回收站？已有话术继续可用，不能再新增引用。')).toBeTruthy(); expect(call).not.toHaveBeenCalledWith('manage_company_file', expect.anything());
   fireEvent.click(screen.getByRole('button', { name: '取消' })); fireEvent.click(screen.getByRole('button', { name: '云文件回收站' }));
   await screen.findByRole('button', { name: '恢复' }); fireEvent.contextMenu(screen.getByText(file.name).closest('tr')!);
   expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['恢复', '永久删除']);
-  fireEvent.click(screen.getByRole('menuitem', { name: '永久删除' })); expect(screen.getByLabelText('输入完整文件名')).toBeTruthy();
+  fireEvent.click(screen.getByRole('menuitem', { name: '永久删除' })); expect(screen.queryByLabelText('输入完整文件名')).toBeNull(); expect(screen.getByRole('dialog', { name: '永久删除云文件' })).toBeTruthy();
 });
 it('菜单支持键盘选择和Esc恢复焦点，失焦及权限变化关闭', async () => {
   administrator(); const { rerender } = render(<CompanyFilesWindow />); const row = (await screen.findByText(file.name)).closest('tr')!;
@@ -263,6 +269,43 @@ it('输入框保留编辑菜单，传输页空白不弹业务或默认菜单', a
 it('选择器新增入口使用下一步并只允许选择一个文件', async () => {
   const second = { ...file, assetId: 'second', name: '说明.pdf' }; vi.mocked(call).mockResolvedValue({ version: 1, files: [file, second], uploads: [] });
   const next = vi.fn(); render(<CompanyFilePicker limit={1} confirmLabel="下一步" onConfirm={next} close={vi.fn()} />); await screen.findByText(file.name);
-  fireEvent.click(screen.getAllByRole('checkbox')[0]); expect((screen.getAllByRole('checkbox')[1] as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('checkbox', { name: `选择 ${file.name}` })); expect((screen.getByRole('checkbox', { name: `选择 ${second.name}` }) as HTMLInputElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '下一步' })); expect(next).toHaveBeenCalledWith([file], 1); expect(openWindow).not.toHaveBeenCalled();
+});
+
+it('管理员清空回收站覆盖全部分页和搜索，其他失败保留并报告', async () => {
+  administrator();
+  const all = Array.from({ length: 12 }, (_, i) => ({ ...file, assetId: `R${i}`, name: `回收${i}.txt`, deletedAt: 2 }));
+  vi.mocked(call).mockImplementation(async (command, args) => {
+    if (command === 'get_company_transfers') return [];
+    if (command === 'get_file_icon') return '';
+    if (command === 'manage_company_file') { if (args?.id === 'R1') throw new Error('网络中断'); return null; }
+    return { version: 1, files: args?.query ? [all[0]] : all, uploads: [] };
+  });
+  render(<CompanyFilesWindow />); await screen.findByText('回收0.txt');
+  fireEvent.click(screen.getByRole('button', { name: '云文件回收站' }));
+  await screen.findByRole('button', { name: '清空回收站' });
+  fireEvent.change(screen.getByRole('textbox', { name: '搜索云文件' }), { target: { value: '回收0' } });
+  fireEvent.click(screen.getByRole('button', { name: '清空回收站' }));
+  const dialog = await screen.findByRole('dialog', { name: '清空云文件回收站' });
+  expect(dialog.textContent).toContain('12 个文件'); expect(within(dialog).queryByRole('textbox')).toBeNull();
+  expect(vi.mocked(call).mock.calls.filter(([name]) => name === 'manage_company_file')).toHaveLength(0);
+  fireEvent.submit(dialog.querySelector('form')!);
+  await waitFor(() => expect(vi.mocked(call).mock.calls.filter(([name]) => name === 'manage_company_file')).toHaveLength(12));
+  expect((await screen.findByRole('status')).textContent).toContain('失败 1 个');
+  expect(screen.getByRole('status').textContent).toContain('网络中断');
+  fireEvent.change(screen.getByRole('textbox', { name: '搜索云文件' }), { target: { value: '' } });
+  const failedRow = (await screen.findByText('回收1.txt')).closest('tr')!;
+  fireEvent.click(within(failedRow).getByRole('button', { name: '永久删除' }));
+  expect(screen.queryByRole('status')).toBeNull();
+  const retry = screen.getByRole('dialog', { name: '永久删除云文件' });
+  expect(retry.textContent).toContain('未缓存或清除缓存的设备将无法再下载');
+  fireEvent.submit(retry.querySelector('form')!);
+  expect((await within(retry).findByRole('alert')).textContent).toContain('网络中断');
+  expect(screen.queryByRole('status')).toBeNull();
+});
+it('普通成员没有清空回收站入口', async () => {
+  status = { ...status, user: { ...status.user!, companyFilePermissions: { version: 1, uploadVersion: 1, canUpload: false, canRecycle: true, canRestore: true } } };
+  render(<CompanyFilesWindow />); await screen.findByText(file.name);
+  expect(screen.queryByRole('button', { name: '清空回收站' })).toBeNull();
 });

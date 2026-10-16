@@ -85,9 +85,9 @@ try {
     assert.equal((await invoke('get_library')).phrases.length, 0);
   });
   await check('文件空态加载96像素插画，新增关联入口保持可用', async () => {
-    await click(page.locator('.content-tabs').getByRole('button', { name: '本地文件', exact: true })); await screenshot(page, 'files-empty');
+    await click(page.locator('.content-tabs').getByRole('button', { name: '文件', exact: true })); await screenshot(page, 'files-empty');
     assert.ok((await page.locator('.empty-illustration').getAttribute('src')).endsWith('files-empty.png'));
-    await click(page.getByRole('button', { name: '新增关联文件', exact: true })); const fileEditor = await view('file-editor', '.file-window');
+    await click(page.getByRole('button', { name: '新增关联文件', exact: true })); const fileEditor = await view('file-editor', '.file-association-window');
     await click(fileEditor.getByRole('button', { name: '取消', exact: true })); assert.equal((await invoke('get_library')).files.length, 0);
   });
   await click(page.getByRole('button', { name: '主菜单', exact: true })); await click(page.getByRole('menuitem', { name: '吸附设置', exact: true }));
@@ -140,7 +140,7 @@ try {
       await patchSettings({ theme }); await settings.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
       for (const target of [page, recycle, themedEditor]) await target.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
       await click(page.locator('.content-tabs').getByRole('button', { name: '话术', exact: true })); await screenshot(page, 'theme-' + theme + '-phrase');
-      await click(page.locator('.content-tabs').getByRole('button', { name: '本地文件', exact: true })); await screenshot(page, 'theme-' + theme + '-files');
+      await click(page.locator('.content-tabs').getByRole('button', { name: '文件', exact: true })); await screenshot(page, 'theme-' + theme + '-files');
       await click(settings.getByRole('button', { name: '吸附设置', exact: true })); await screenshot(settings, 'theme-' + theme + '-dock');
       await click(settings.getByRole('button', { name: '关于', exact: true })); await screenshot(settings, 'theme-' + theme + '-about');
       await screenshot(recycle, 'theme-' + theme + '-recycle'); await screenshot(themedEditor, 'theme-' + theme + '-shortcut');
@@ -158,8 +158,8 @@ try {
     await page.setViewportSize({ width: 330, height: 720 });
     const id = await invoke('save_phrase', { phrase: { id: '', rootId: phraseRoot, groupId: null, title: '插画状态验证', color: '#ff5100', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '仅用于隔离界面验收' }] }] }, afterId: null });
     await page.locator('.content-row').waitFor(); assert.equal(await page.locator('.content-list .empty-illustration').count(), 0);
-    await page.getByRole('textbox', { name: '搜索话术、本地文件', exact: true }).fill('不存在的话术'); await page.getByText('没有找到匹配的内容', { exact: true }).waitFor(); assert.equal(await page.locator('.search-panel img').count(), 0); await click(page.getByRole('button', { name: '清空搜索', exact: true }));
-    const source = path.join(evidence, '文件关联验证.txt'); await fs.writeFile(source, '隔离验收文件'); await invoke('add_files', { paths: [source], categoryId: fileRoot }); await click(page.locator('.content-tabs').getByRole('button', { name: '本地文件', exact: true })); await page.locator('.file-row').waitFor(); assert.equal(await page.locator('.content-list .empty-illustration').count(), 0);
+    await page.getByRole('textbox', { name: '搜索话术、文件', exact: true }).fill('不存在的话术'); await page.getByText('没有找到匹配的内容', { exact: true }).waitFor(); assert.equal(await page.locator('.search-panel img').count(), 0); await click(page.getByRole('button', { name: '清空搜索', exact: true }));
+    const source = path.join(evidence, '文件关联验证.txt'); await fs.writeFile(source, '隔离验收文件'); await invoke('add_files', { paths: [source], categoryId: fileRoot }); await click(page.locator('.content-tabs').getByRole('button', { name: '文件', exact: true })); await page.locator('.file-row').waitFor(); assert.equal(await page.locator('.content-list .empty-illustration').count(), 0);
     await invoke('delete_item', { id, kind: 'phrase', recycle: true }); await recycle.locator('.recycle-list [role="option"]').waitFor(); assert.equal(await recycle.locator('.empty-illustration').count(), 0);
     for (const target of views) if (!target.isClosed()) assert.equal(await invoke('plugin:window|is_visible', {}, target), false);
   });
@@ -231,7 +231,7 @@ try {
     await patchSettings({ fontSize: 14 });
   });
   await check('本地文件悬停覆盖选中色，移出恢复且标题与发送列不跳动', async () => {
-    await click(page.locator('.content-tabs').getByRole('button', { name: '本地文件', exact: true }));
+    await click(page.locator('.content-tabs').getByRole('button', { name: '文件', exact: true }));
     const file = page.locator('.file-row').first(); await click(file); await page.mouse.move(315, 12);
     assert.equal((await styles(page, '.file-row')).background, 'rgb(223, 232, 240)');
     const before = await file.locator('.row-title').boundingBox(); await file.hover();
@@ -301,7 +301,7 @@ try {
       await screenshot(page, 'shortcut-overlay-' + width + '-' + fontSize + '-' + showPreview);
     }
     await patchSettings({ fontSize: 14, showPreview: true, showTitle: true, dockSearch: true });
-    await page.getByRole('textbox', { name: '搜索话术、本地文件', exact: true }).fill(title);
+    await page.getByRole('textbox', { name: '搜索话术、文件', exact: true }).fill(title);
     const searchRow = page.locator('#search-results [data-row]').first(); await searchRow.locator('.row-shortcut').waitFor();
     const search = await measure(searchRow); assert.equal(search.copy.right - search.badge.right, 4);
     await screenshot(page, 'shortcut-overlay-search'); await click(page.getByRole('button', { name: '清空搜索', exact: true }));
@@ -371,8 +371,8 @@ try {
     }
     const before = (await invoke('get_library')).settings.filesFirst;
     const first = settings.getByRole('combobox', { name: '类目第1位', exact: true });
-    await first.selectOption(before ? '话术' : '本地文件');
-    await settings.waitForFunction(value => document.querySelector('[aria-label="类目第1位"]').value === value, before ? '话术' : '本地文件');
+    await first.selectOption(before ? '话术' : '文件');
+    await settings.waitForFunction(value => document.querySelector('[aria-label="类目第1位"]').value === value, before ? '话术' : '文件');
     assert.equal((await invoke('get_library')).settings.filesFirst, !before);
     await patchSettings({ filesFirst: before });
   });

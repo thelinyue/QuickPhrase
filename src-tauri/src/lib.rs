@@ -4,6 +4,9 @@ mod company_commands;
 mod data_directory;
 mod delivery;
 mod file_library;
+mod linked_files;
+mod mcp;
+mod mcp_credentials;
 mod member_commands;
 mod model;
 mod native;
@@ -14,11 +17,13 @@ mod recycle;
 mod search_history;
 mod search_history_confirm;
 mod search_match;
+mod settings_commands;
 mod startup;
 mod store;
 mod team;
 mod team_commands;
 mod team_credentials;
+mod team_preferences;
 mod transfer;
 mod update_activity;
 mod update_protocol;
@@ -40,6 +45,7 @@ use tauri::{Emitter, Manager, State};
 /// 应用状态按责任分开：数据库串行事务、待确认导入、发送锁和 Windows 服务。
 /// 编辑窗口只提交完整话术，不直接修改数据库或驱动外部窗口。
 struct AppState {
+    mcp: mcp::Mcp,
     updater: updater::Updater,
     data_directory: Mutex<data_directory::DataDirectory>,
     store: Mutex<Store>,
@@ -122,11 +128,18 @@ fn shortcut_conflict(settings: &Settings, phrases: &[Phrase]) -> Result<()> {
     Ok(())
 }
 #[tauri::command]
-fn get_library(state: State<AppState>) -> Result<private_commands::ClientLibrary> {
-    private_commands::library(&state)
+async fn get_library(state: State<'_, AppState>) -> Result<private_commands::ClientLibrary> {
+    let epoch = state.teams.status().session_epoch;
+    let mut library = private_commands::library(&state)?;
+    library.library.files = linked_files::view(&state).await?;
+    if state.teams.status().session_epoch != epoch {
+        return Err("账号已变化，旧资料已丢弃。".into());
+    }
+    Ok(library)
 }
 #[tauri::command]
 fn search_content(state: State<AppState>, query: String) -> Result<Vec<store::SearchHit>> {
+    let status = state.teams.status();
     let store = state.store.lock().unwrap();
     let mut hits = store.search(&query)?;
     let device = state.device_store.lock().unwrap();
@@ -138,6 +151,11 @@ fn search_content(state: State<AppState>, query: String) -> Result<Vec<store::Se
                 .filter(|hit| hit.kind == "file"),
         );
     }
+    hits.retain(|hit| {
+        hit.file
+            .as_ref()
+            .is_none_or(|file| linked_files::visible(file, &status))
+    });
     Ok(hits)
 }
 /// 编辑器确认快捷键只校验、不写库；完整保存在事务中再次检查，防止其他窗口并发修改。
@@ -311,8 +329,16 @@ fn cancel_shortcut_candidates(state: State<AppState>) {
     state.native.cancel_candidates();
 }
 #[tauri::command]
-fn resize_shortcut_candidates(state: State<AppState>) -> Result<()> {
-    state.native.resize_candidates()
+fn resize_shortcut_candidates(
+    state: State<AppState>,
+    session_id: String,
+    layout_key: String,
+    width: f64,
+    height: f64,
+) -> Result<()> {
+    state
+        .native
+        .resize_candidates(&session_id, &layout_key, width, height)
 }
 
 /// 原生候选提交复用普通话术发送链路；重新读取活动记录，删除或改绑的旧候选不会发送。
@@ -548,6 +574,7 @@ fn delete_category(
     recycle: Option<bool>,
     library_id: Option<String>,
 ) -> Result<()> {
+    linked_files::check_category_removal(&state, &id)?;
     private_commands::category_store(&state, &id, library_id.as_deref())?.delete_category(
         &id,
         keep_phrases.unwrap_or(false),
@@ -604,6 +631,7 @@ fn delete_item(
     library_id: Option<String>,
 ) -> Result<()> {
     if kind == "file" {
+        linked_files::check_visible(&state, std::slice::from_ref(&id))?;
         state
             .device_store
             .lock()
@@ -711,6 +739,7 @@ fn rename_linked_file(
     id: String,
     name: String,
 ) -> Result<()> {
+    linked_files::check_visible(&state, std::slice::from_ref(&id))?;
     state.device_store.lock().unwrap().rename_file(&id, &name)?;
     changed(&app, &state)
 }
@@ -721,6 +750,7 @@ fn move_linked_files(
     ids: Vec<String>,
     category_id: String,
 ) -> Result<()> {
+    linked_files::check_visible(&state, &ids)?;
     state
         .device_store
         .lock()
@@ -734,6 +764,7 @@ fn remove_linked_files(
     state: State<AppState>,
     ids: Vec<String>,
 ) -> Result<()> {
+    linked_files::check_visible(&state, &ids)?;
     state.device_store.lock().unwrap().remove_files(&ids)?;
     changed(&app, &state)
 }
@@ -744,6 +775,36 @@ fn reorder_files(
     ids: Vec<String>,
     category_id: String,
 ) -> Result<()> {
+    linked_files::check_visible(&state, &ids)?;
+    let status = state.teams.status();
+    let all = state.device_store.lock().unwrap().library()?.files;
+    let category_files: Vec<_> = all
+        .iter()
+        .filter(|f| f.category_id == category_id)
+        .collect();
+    let visible: Vec<_> = category_files
+        .iter()
+        .filter(|f| linked_files::visible(f, &status))
+        .map(|f| f.id.clone())
+        .collect();
+    if visible.len() != ids.len()
+        || ids.iter().collect::<std::collections::HashSet<_>>().len() != ids.len()
+        || ids.iter().any(|id| !visible.contains(id))
+    {
+        return Err("文件列表已变化，请刷新后重新排序。".into());
+    }
+    let mut ordered = ids.iter();
+    let ids: Vec<_> = category_files
+        .iter()
+        .map(|f| {
+            if linked_files::visible(f, &status) {
+                ordered.next().unwrap().clone()
+            } else {
+                f.id.clone()
+            }
+        })
+        .collect();
+
     state
         .device_store
         .lock()
@@ -752,32 +813,57 @@ fn reorder_files(
     changed(&app, &state)
 }
 #[tauri::command]
-fn copy_linked_files(
+async fn copy_linked_files(
     app: tauri::AppHandle,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     ids: Vec<String>,
 ) -> Result<()> {
     let _guard = state.delivery.acquire()?;
-    let paths = state
-        .device_store
-        .lock()
-        .unwrap()
-        .linked_files(&ids)?
-        .into_iter()
-        .map(|f| f.path)
-        .collect::<Vec<_>>();
+    let epoch = state.teams.status().session_epoch;
+    let files = linked_files::resolve(&app, &state, &ids).await?;
+    let ctx = if files.iter().any(|f| f.cloud.is_some()) {
+        Some(
+            state
+                .teams
+                .company_context(epoch, shanyu_team_model::CompanyOperation::Read)?,
+        )
+    } else {
+        None
+    };
+    let paths = files.into_iter().map(|f| f.path).collect::<Vec<_>>();
     let owner = app
         .get_webview_window("main")
         .ok_or("主窗口不存在。")?
         .hwnd()
         .map_err(|e| e.to_string())?
         .0 as i64;
-    native::copy_files(owner, &paths)
+    if let Some(ctx) = ctx {
+        state
+            .teams
+            .with_account(&ctx, || native::copy_files(owner, &paths))
+    } else {
+        native::copy_files(owner, &paths)
+    }
 }
 #[tauri::command]
-fn open_linked_file(state: State<AppState>, id: String, reveal: Option<bool>) -> Result<()> {
-    let files = state.device_store.lock().unwrap().linked_files(&[id])?;
-    native::open_file(&files[0].path, reveal.unwrap_or(false))
+async fn open_linked_file(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    reveal: Option<bool>,
+) -> Result<()> {
+    let epoch = state.teams.status().session_epoch;
+    let files = linked_files::resolve(&app, &state, &[id]).await?;
+    if files[0].cloud.is_some() {
+        let ctx = state
+            .teams
+            .company_context(epoch, shanyu_team_model::CompanyOperation::Read)?;
+        state.teams.with_account(&ctx, || {
+            native::open_file(&files[0].path, reveal.unwrap_or(false))
+        })
+    } else {
+        native::open_file(&files[0].path, reveal.unwrap_or(false))
+    }
 }
 #[tauri::command]
 fn move_copy_phrase(
@@ -804,6 +890,7 @@ fn sort_item(
     library_id: Option<String>,
 ) -> Result<()> {
     if kind == "file" {
+        linked_files::check_visible(&state, std::slice::from_ref(&id))?;
         state
             .device_store
             .lock()
@@ -840,6 +927,7 @@ fn relink_file(
     path: String,
     category_id: String,
 ) -> Result<()> {
+    linked_files::check_visible(&state, std::slice::from_ref(&id))?;
     state
         .device_store
         .lock()
@@ -922,6 +1010,17 @@ async fn deliver_content_checked(
     } else {
         None
     };
+    let linked_epoch = state.teams.status().session_epoch;
+    let linked = if kind == "file" {
+        Some(
+            linked_files::resolve(&app, &state, std::slice::from_ref(&id))
+                .await?
+                .remove(0),
+        )
+    } else {
+        None
+    };
+    let is_cloud = linked.as_ref().is_some_and(|f| f.cloud.is_some());
     let (settings, segments) = {
         let store = state.store.lock().unwrap();
         let settings = store.settings()?;
@@ -953,15 +1052,7 @@ async fn deliver_content_checked(
                 }]
             }
             "file" => {
-                let file = state
-                    .device_store
-                    .lock()
-                    .unwrap()
-                    .library()?
-                    .files
-                    .into_iter()
-                    .find(|f| f.id == id)
-                    .ok_or("文件关联已不存在。")?;
+                let file = linked.ok_or("文件关联已不存在。")?;
                 vec![Segment {
                     blocks: vec![Block::File {
                         path: file.path,
@@ -979,6 +1070,9 @@ async fn deliver_content_checked(
         .hwnd()
         .map_err(|e| e.to_string())?
         .0 as i64;
+    if is_cloud {
+        state.teams.begin_company_delivery(linked_epoch)?;
+    }
     let cancelled = state.delivery.cancelled.clone();
     let _ = app.emit("delivery-busy", true);
     let event_app = app.clone();
@@ -1129,21 +1223,22 @@ fn change_data_directory(
     state: State<AppState>,
     path: String,
 ) -> Result<()> {
-    let _activity = update_activity::Activity::enter()?;
+    let handoff = update_activity::InstallHandoff::begin()?;
     if app.webview_windows().keys().any(|label| {
-        [
-            "editor",
-            "file-editor",
-            "common-editor",
-            "common-sort",
-            "category-sort",
-            "file-sort",
-            "team-management",
-            "user-management",
-            "delete-confirm",
-            "search-history-confirm",
-        ]
-        .contains(&label.as_str())
+        label.starts_with("company-picker-")
+            || [
+                "editor",
+                "file-editor",
+                "common-editor",
+                "common-sort",
+                "category-sort",
+                "file-sort",
+                "team-management",
+                "user-management",
+                "delete-confirm",
+                "search-history-confirm",
+            ]
+            .contains(&label.as_str())
     }) {
         return Err("请先保存并关闭编辑、排序或管理窗口。".into());
     }
@@ -1158,6 +1253,7 @@ fn change_data_directory(
         .lock()
         .unwrap()
         .prepare(Path::new(&path))?;
+    handoff.commit();
     app.request_restart();
     Ok(())
 }
@@ -1358,6 +1454,7 @@ pub fn run() {
             let show_directory_result = data_directory.show_result;
             let updater = updater::Updater::new(&device_store);
             app.manage(AppState {
+                mcp: mcp::Mcp::default(),
                 updater,
                 data_directory: Mutex::new(data_directory),
                 store: Mutex::new(store),
@@ -1379,6 +1476,7 @@ pub fn run() {
                 Err(error) => log::warn!("{error}"),
             }
             updater::start_background(app.handle().clone());
+            mcp::start(app.handle().clone());
             tauri::WebviewWindowBuilder::new(
                 app,
                 "common-dock",
@@ -1566,6 +1664,16 @@ pub fn run() {
         .on_window_event(|window, event| {
             search_history_confirm::window_event(window, event);
             if let Some(state) = window.try_state::<AppState>() {
+                if window.label() == "file-editor" || window.label().starts_with("company-picker-")
+                {
+                    let mut files = state.native.management_windows.file_windows.lock().unwrap();
+                    if matches!(event, tauri::WindowEvent::Destroyed) {
+                        files.remove(window.label());
+                    } else {
+                        files.insert(window.label().to_owned());
+                    }
+                }
+
                 if matches!(event, tauri::WindowEvent::Focused(false)) {
                     if let Ok(handle) = window.hwnd() {
                         // 原生失焦立即释放本窗口的输入标记，不清除另一窗口刚取得的输入锁。
@@ -1639,6 +1747,7 @@ pub fn run() {
                 updater::download_update,
                 updater::cancel_update,
                 updater::install_update,
+                updater::open_update_download_directory,
                 updater::ensure_update_idle,
                 search_history::get_search_history,
                 search_history::record_search_history,
@@ -1646,6 +1755,8 @@ pub fn run() {
                 startup::get_usage_guide_state,
                 startup::mark_usage_guide_shown,
                 company_commands::get_company_files,
+                linked_files::add_cloud_files,
+                linked_files::rename_company_file,
                 company_commands::prepare_company_upload,
                 company_commands::enqueue_company_uploads,
                 company_commands::upload_company_file,
@@ -1669,6 +1780,8 @@ pub fn run() {
                 private_commands::download_private_materials,
                 private_commands::backup_private_server,
                 team_commands::get_team_status,
+                team_preferences::get_default_team,
+                team_preferences::set_default_team,
                 team_commands::get_team_view,
                 team_commands::team_login,
                 team_commands::team_logout,
@@ -1744,6 +1857,7 @@ pub fn run() {
                 cancel_delivery,
                 copy_phrase_text,
                 save_settings,
+                settings_commands::patch_settings,
                 transfer::preview_import,
                 transfer::has_legacy_private_content,
                 transfer::preview_legacy_private_content,
@@ -1760,6 +1874,10 @@ pub fn run() {
                 open_directory,
                 get_data_directory,
                 change_data_directory,
+                mcp::get_mcp_status,
+                mcp::patch_mcp_settings,
+                mcp::reset_mcp_token,
+                mcp::get_mcp_connection,
                 window_action,
                 report_error
             ];

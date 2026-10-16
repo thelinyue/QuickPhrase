@@ -23,9 +23,12 @@ use tokio_util::sync::CancellationToken;
 const LIMIT: u64 = 128 * 1024 * 1024;
 #[path = "company_client.rs"]
 mod company;
+#[path = "mcp_team.rs"]
+mod mcp;
+pub use mcp::McpWrite;
 #[path = "member_client.rs"]
 pub mod member;
-pub use company::{CompanySelection, CompanyTransfer, CompanyUpload, CompanyView};
+pub use company::{CompanyEntry, CompanySelection, CompanyTransfer, CompanyUpload, CompanyView};
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Connection {
@@ -71,6 +74,7 @@ struct Inner {
     active: Option<Active>,
     slots: HashMap<String, Slot>,
     delivery_team: Option<(String, u64)>,
+    delivery_company: Option<u64>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -140,6 +144,7 @@ pub struct TeamClient {
     download_locks: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     company_transfers: Mutex<HashMap<String, CancellationToken>>,
     company_history: Arc<Mutex<HashMap<String, CompanyTransfer>>>,
+    company_names: Mutex<company::CompanyNames>,
     member: Mutex<member::MemberState>,
     member_refresh: AsyncMutex<()>,
     member_wake: tokio::sync::Notify,
@@ -414,6 +419,7 @@ impl TeamClient {
             uploads: Semaphore::new(2),
             company_transfers: Mutex::new(HashMap::new()),
             company_history: Arc::new(Mutex::new(HashMap::new())),
+            company_names: Mutex::new(company::CompanyNames::default()),
             download_locks: Mutex::new(HashMap::new()),
             member: Mutex::new(member::MemberState::default()),
             member_refresh: AsyncMutex::new(()),
@@ -740,7 +746,13 @@ impl TeamClient {
         if let Some(state) = app.try_state::<AppState>() {
             let cancel = {
                 let inner = self.inner.lock().unwrap();
-                inner
+                inner.delivery_company.is_some_and(|epoch| {
+                    inner.active.as_ref().is_none_or(|a| {
+                        a.epoch != epoch
+                            || a.authorization.user.disabled
+                            || a.authorization.user.must_change_password
+                    })
+                }) || inner
                     .delivery_team
                     .as_ref()
                     .is_some_and(|(team, lifecycle)| {
@@ -1145,10 +1157,14 @@ impl TeamClient {
                                             .lines()
                                             .any(|l| l == "event: company-files-version")
                                         {
+                                            let _ = this
+                                                .company_view(active.epoch, false, String::new())
+                                                .await;
                                             let _ = app.emit(
                                                 "company-files-changed",
                                                 this.status().session_epoch,
                                             );
+                                            this.emit(&app);
                                         } else if let Some(notice) = event
                                             .lines()
                                             .find_map(|l| l.strip_prefix("data: "))
@@ -1200,10 +1216,15 @@ impl TeamClient {
                         wire::Block::Text { text } => local::Block::Text { text: text.clone() },
                         wire::Block::Image { asset_id, name }
                         | wire::Block::File { asset_id, name } => {
+                            let name = if ctx.company_asset_ids.contains(asset_id) {
+                                self.current_company_name(ctx.active.epoch, asset_id, name)
+                            } else {
+                                name.clone()
+                            };
                             let path = self.asset_path(
                                 ctx,
                                 asset_id,
-                                name,
+                                &name,
                                 matches!(b, wire::Block::Image { .. }),
                             );
                             let available = ready_path(&path);
@@ -1316,7 +1337,10 @@ impl TeamClient {
     }
     fn asset_path(&self, ctx: &Context, asset: &str, name: &str, image: bool) -> PathBuf {
         if !image && ctx.company_asset_ids.iter().any(|id| id == asset) {
-            return self.company_cache_path(&ctx.active, asset, name);
+            let name = self.current_company_name(ctx.active.epoch, asset, name);
+            return self
+                .existing_company_cache(&ctx.active, asset, &name)
+                .unwrap_or_else(|| self.company_cache_path(&ctx.active, asset, &name));
         }
         let safe: String = name
             .chars()
@@ -1365,6 +1389,14 @@ impl TeamClient {
             .clone();
         let _lock = lock.lock().await;
         let path = self.asset_path(ctx, asset, name, image);
+        if !image && ctx.company_asset_ids.iter().any(|id| id == asset) {
+            self.reuse_company_named_cache(
+                &ctx.active,
+                asset,
+                &self.current_company_name(ctx.active.epoch, asset, name),
+                None,
+            )?;
+        }
         if ready_path(&path) {
             return Ok(());
         }
@@ -2116,8 +2148,23 @@ impl TeamClient {
         Ok(())
     }
     pub fn end_delivery(&self) {
-        self.inner.lock().unwrap().delivery_team = None;
+        let mut inner = self.inner.lock().unwrap();
+        inner.delivery_team = None;
+        inner.delivery_company = None;
+        drop(inner);
         self.member.lock().unwrap().delivery = None;
+    }
+    pub fn begin_company_delivery(&self, epoch: u64) -> Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+        if !inner
+            .active
+            .as_ref()
+            .is_some_and(|a| a.epoch == epoch && !a.cancel.is_cancelled() && !a.offline)
+        {
+            return Err("账号已变化，请重新触发。".into());
+        }
+        inner.delivery_company = Some(epoch);
+        Ok(())
     }
 
     pub async fn save_category(

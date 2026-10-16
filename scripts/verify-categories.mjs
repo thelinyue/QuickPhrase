@@ -107,7 +107,7 @@ try {
     await invoke('delete_category', { id: first.id });
     assert.deepEqual((await invoke('get_library')).categories, []);
     await page.getByText('还没有一级分类', { exact: true }).waitFor();
-    await click(page.getByRole('button', { name: '本地文件', exact: true }));
+    await click(page.getByRole('button', { name: '文件', exact: true }));
     await page.getByText('还没有一级分类', { exact: true }).waitFor();
     await page.screenshot({ path: path.join(evidence, 'files-no-categories.png') });
     await click(page.locator('.empty-state button'));
@@ -291,9 +291,9 @@ try {
     await setInput(page, 'dialog input[name="name"]', '空白菜单新分组'); await submit();
     const saved = (await invoke('get_library')).categories.find(c => c.name === '空白菜单新分组'); assert.equal(saved.parentId, second);
     await invoke('delete_category', { id: saved.id, recycle: false });
-    await click(page.getByRole('button', { name: '本地文件', exact: true }));
+    await click(page.getByRole('button', { name: '文件', exact: true }));
     await page.locator('.content-list').evaluate(el => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 150, clientY: 450 })));
-    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['刷新']); await click(page.getByRole('menuitem', { name: '刷新', exact: true }));
+    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['关联文件', '刷新']); await click(page.getByRole('menuitem', { name: '刷新', exact: true }));
     await click(page.getByRole('button', { name: '话术', exact: true })); await click(page.getByRole('button', { name: '常用', exact: true }));
     await click(page.getByRole('button', { name: '主菜单', exact: true })); assert.ok((await page.getByRole('menuitem').allTextContents()).includes('界面设置'));
     await click(page.getByRole('menuitem', { name: '界面设置', exact: true }));
@@ -450,7 +450,7 @@ try {
     await page.getByRole('menuitem', { name: '账号与共享', exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(evidence, 'main-menu-compact.png') }); await page.keyboard.press('Escape');
     // 未登录的话术菜单较短；文件菜单多两项，用它验证空间不足时确实滚动。
-    await click(page.getByRole('button', { name: '本地文件', exact: true })); await page.getByRole('button', { name: '主菜单', exact: true }).click();
+    await click(page.getByRole('button', { name: '文件', exact: true })); await page.getByRole('button', { name: '主菜单', exact: true }).click();
     assert.ok(await page.getByRole('menu').evaluate(el => el.scrollHeight > el.clientHeight));
     const fileTrigger = await page.getByRole('button', { name: '主菜单', exact: true }).boundingBox(); const fileMenu = await page.getByRole('menu').boundingBox();
     assert.ok(Math.abs(fileTrigger.y - fileMenu.y - fileMenu.height - 4) < 1); assert.ok(fileMenu.y >= 2);
@@ -581,7 +581,7 @@ try {
     await click(settings.getByRole('button', { name: '设置 个人分类 背景色', exact: true })); await click(settings.getByRole('button', { name: '颜色 #ff9800', exact: true }));
     await page.waitForFunction(() => document.querySelector('.category-tabs .active').style.backgroundColor === 'rgb(255, 152, 0)');
     await click(settings.getByRole('button', { name: '设置 文件分类 背景色', exact: true })); await click(settings.getByRole('button', { name: '颜色 #929eaa', exact: true }));
-    await click(page.getByRole('button', { name: '本地文件', exact: true }));
+    await click(page.getByRole('button', { name: '文件', exact: true }));
     await page.waitForFunction(() => document.querySelector('.category-tabs .active').style.backgroundColor === 'rgb(146, 158, 170)');
     await click(page.getByRole('button', { name: '话术', exact: true })); await click(page.getByRole('button', { name: '常用', exact: true }));
     assert.equal(await page.locator('.category-tabs .active').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(136, 179, 250)');
@@ -594,15 +594,15 @@ try {
     await choose(settings, '显示主窗口搜索功能'); await page.locator('#search-bar').waitFor({ state: 'detached' });
     await choose(settings, '显示主窗口常用短语'); await page.locator('.common-phrases').waitFor({ state: 'detached' });
     await choose(settings, '显示底部吸附常用短语'); await dock.locator('.common-phrases').waitFor({ state: 'detached' });
-    await choose(settings, '显示底部吸附搜索栏'); await dock.getByRole('textbox', { name: '底部搜索话术、本地文件', exact: true }).waitFor();
+    await choose(settings, '显示底部吸附搜索栏'); await dock.getByRole('textbox', { name: '底部搜索话术、文件', exact: true }).waitFor();
     const order = settings.getByRole('group', { name: '类目显示位置排序', exact: true });
     assert.equal(await order.locator('select').count(), 2);
     const saves = await settings.evaluate(() => window.__categoryQA.commands.filter(c => c === 'save_settings').length);
     await click(order.getByRole('combobox').nth(0)); await settings.keyboard.press('Escape');
     assert.equal(await settings.evaluate(() => window.__categoryQA.commands.filter(c => c === 'save_settings').length), saves);
-    await order.getByRole('combobox').nth(0).selectOption('本地文件');
-    await page.waitForFunction(() => document.querySelector('.content-tabs button').textContent === '本地文件');
-    assert.deepEqual(await order.locator('select').evaluateAll(selects => selects.map(s => s.value)), ['本地文件', '话术']);
+    await order.getByRole('combobox').nth(0).selectOption('文件');
+    await page.waitForFunction(() => document.querySelector('.content-tabs button').textContent === '文件');
+    assert.deepEqual(await order.locator('select').evaluateAll(selects => selects.map(s => s.value)), ['文件', '话术']);
     const scopeOrder = settings.getByRole('group', { name: '话术库显示位置排序', exact: true });
     await scopeOrder.getByRole('combobox').nth(0).selectOption('共享话术');
     await page.waitForFunction(() => document.querySelector('.scope-bar').firstElementChild.classList.contains('team-selector'));
@@ -612,8 +612,8 @@ try {
     const firstBox = await order.locator('select').nth(0).boundingBox(); const secondBox = await order.locator('select').nth(1).boundingBox(); const scopeBox = await scopeOrder.boundingBox(); const themeBox = await settings.getByRole('combobox', { name: '主题风格', exact: true }).boundingBox();
     assert.equal(firstBox.y, secondBox.y); assert.equal(firstBox.height, secondBox.height); assert.equal(firstBox.x, themeBox.x); assert.equal(Math.round(secondBox.x + secondBox.width), Math.round(themeBox.x + themeBox.width));
     assert.equal(firstBox.y, scopeBox.y); assert.equal(firstBox.height, scopeBox.height);
-    await order.getByRole('combobox').nth(1).selectOption('本地文件'); await page.waitForFunction(() => document.querySelector('.content-tabs button').textContent === '话术');
-    assert.deepEqual(await order.locator('select').evaluateAll(selects => selects.map(s => s.value)), ['话术', '本地文件']);
+    await order.getByRole('combobox').nth(1).selectOption('文件'); await page.waitForFunction(() => document.querySelector('.content-tabs button').textContent === '话术');
+    assert.deepEqual(await order.locator('select').evaluateAll(selects => selects.map(s => s.value)), ['话术', '文件']);
     await settings.screenshot({ path: path.join(evidence, 'settings-order.png') });
     await scopeOrder.getByRole('combobox').nth(0).selectOption('个人话术'); await page.waitForFunction(() => document.querySelector('.scope-bar').firstElementChild.textContent === '个人话术');
     // 设置通知由主窗口异步应用；等待真实原生属性，不能把 IPC 返回当成窗口已更新。
@@ -625,7 +625,7 @@ try {
     assert.equal(await dock.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|is_visible', {})), false);
   });
   await check('分类与侧边短语高度验证，底部短语1至3行及自适应可滚动访问全部记录', async () => {
-    await number('文件分类区域高度', 200); await click(page.getByRole('button', { name: '本地文件', exact: true }));
+    await number('文件分类区域高度', 200); await click(page.getByRole('button', { name: '文件', exact: true }));
     await page.waitForFunction(() => document.querySelector('.category-tabs').getBoundingClientRect().height === 200);
     await number('文件分类区域高度', 201); assert.equal(await settings.getByLabel('文件分类区域高度', { exact: true }).inputValue(), '200'); assert.equal((await invoke('get_library')).settings.fileCategoryHeight, 200);
     await number('侧边短语区域最大高度', 72); await page.waitForFunction(() => document.querySelector('.common-phrases').getBoundingClientRect().height <= 72);
@@ -642,7 +642,7 @@ try {
   });
   await check('底部搜索使用真实搜索服务，匹配方式、高亮、Enter插入、发送按钮、右键及Esc正确路由', async () => {
     await click(settings.getByRole('button', { name: '常用设置', exact: true }));
-    await choose(settings, '模糊匹配'); const input = dock.getByRole('textbox', { name: '底部搜索话术、本地文件', exact: true });
+    await choose(settings, '模糊匹配'); const input = dock.getByRole('textbox', { name: '底部搜索话术、文件', exact: true });
     await input.fill('悬停 色验证'); await dock.locator('.dock-search-results [data-row]').first().waitFor(); assert.ok(await dock.locator('.dock-search-results mark').count());
     await input.press('Enter'); await dock.waitForFunction(() => window.__categoryQA.deliveries.length === 3); assert.equal(await dock.evaluate(() => window.__categoryQA.deliveries[2].mode), 'insert'); assert.equal(await input.inputValue(), '悬停 色验证');
     await choose(settings, '精确匹配'); await dock.getByText('没有找到匹配的话术', { exact: true }).waitFor();

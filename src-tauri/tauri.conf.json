@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "闪语 (QuickPhrase)", "version": "0.2.7", "identifier": "com.quickphrase.desktop",
+  "productName": "闪语 (QuickPhrase)", "version": "0.2.8", "identifier": "com.quickphrase.desktop",
   "build": { "beforeDevCommand": "npm run dev", "beforeBuildCommand": "npm run build", "devUrl": "http://localhost:1420", "frontendDist": "../dist" },
   "app": {
     "windows": [{ "label": "main", "title": "闪语", "width": 304, "height": 718, "minWidth": 300, "minHeight": 400, "decorations": false, "resizable": true, "maximizable": false, "visible": false, "focus": false, "skipTaskbar": true, "generalAutofillEnabled": false }],

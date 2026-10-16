@@ -69,12 +69,12 @@ describe('底部短语整栏隐藏', () => {
     const library = { commonPhrases: [{ id: 'B', text: '谢谢', position: 0 }], settings: { commonSingleClick: 'select', dockCommon: true, dockSearch, showCommon: true, commonHeight: 144, dockCommonRows: 0 } } as Library;
     const view = render(<CommonDockWindow library={library} />);
     await userEvent.click(screen.getByRole('button', { name: '隐藏短语' }));
-    expect(call).toHaveBeenCalledWith('save_settings', { settings: { ...library.settings, dockCommon: false } });
+    expect(call).toHaveBeenCalledWith('patch_settings', { patch: { dockCommon: false } });
     view.rerender(<CommonDockWindow library={{ ...library, settings: { ...library.settings, dockCommon: false } }} />);
     expect(view.container.querySelector('.common-phrases')).toBeNull();
     expect(screen.queryByRole('button', { name: '常用短语菜单' })).toBeNull();
     expect(screen.queryByRole('button', { name: '新增常用短语' })).toBeNull();
-    expect(Boolean(screen.queryByRole('textbox', { name: '底部搜索话术、本地文件' }))).toBe(dockSearch);
+    expect(Boolean(screen.queryByRole('textbox', { name: '底部搜索话术、文件' }))).toBe(dockSearch);
     view.rerender(<CommonDockWindow library={library} />);
     expect(screen.getByRole('option', { name: '谢谢' })).toBeTruthy();
   });
@@ -86,7 +86,7 @@ describe('底部短语整栏隐藏', () => {
     render(<CommonDockWindow library={library} />);
     const hide = screen.getByRole('button', { name: '隐藏短语' });
     fireEvent.click(hide); fireEvent.click(hide);
-    expect(vi.mocked(call).mock.calls.filter(([name]) => name === 'save_settings')).toHaveLength(1);
+    expect(vi.mocked(call).mock.calls.filter(([name]) => name === 'patch_settings')).toHaveLength(1);
     rejectSave(new Error('设置保存失败'));
     expect((await screen.findByRole('status')).textContent).toContain('设置保存失败');
     expect(screen.getByRole('option', { name: '谢谢' })).toBeTruthy();

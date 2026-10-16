@@ -28,7 +28,7 @@ describe.each(['主搜索', '底部搜索'])('%s后台刷新', location => {
   function setup() {
     const element = (value: Library) => location === '主搜索' ? <MainWindow library={value} refresh={vi.fn(async () => {})} /> : <CommonDockWindow library={value} />;
     const view = render(element(library));
-    const input = view.getByRole('textbox', { name: location === '主搜索' ? '搜索话术、本地文件' : '底部搜索话术、本地文件' });
+    const input = view.getByRole('textbox', { name: location === '主搜索' ? '搜索话术、文件' : '底部搜索话术、文件' });
     const panel = () => view.container.querySelector<HTMLElement>(location === '主搜索' ? '#search-results' : '.dock-search-results')!;
     const row = (id: string) => panel().querySelector<HTMLElement>(`[data-row="${id}"]`)!;
     fireEvent.change(input, { target: { value: 'P' } });

@@ -1,0 +1,46 @@
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { McpSettings } from './McpSettings';
+import { call } from './api';
+import type { Library } from './types';
+const state = vi.hoisted(() => ({ teams: { server: '', user: null, teams: [], sessionEpoch: 1 } }));
+vi.mock('./api', () => ({ call: vi.fn(), useTeams: () => ({ status: state.teams }) }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
+afterEach(() => { cleanup(); vi.resetAllMocks(); });
+const library = { libraryId: 'A' } as Library;
+const initial = { account: 'account-A', config: { enabled: false, port: 17823, grants: [], roots: [] }, running: false, error: '' };
+it('启停失败只恢复开关，授权操作继续排队且端口草稿不重建', async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(call).mockImplementation(async (name, args) => {
+    if (name === 'get_mcp_status') return initial;
+    if (name === 'patch_mcp_settings' && (args?.patch as { enabled?: boolean }).enabled) return new Promise((_, no) => { reject = no; });
+    return { ...initial, config: { ...initial.config, ...args?.patch as object } };
+  });
+  render(<McpSettings library={library} />);
+  const toggle = await screen.findByRole('checkbox', { name: '启用本机 MCP 服务' });
+  const port = screen.getByRole('spinbutton', { name: 'MCP 端口' });
+  fireEvent.focus(port); fireEvent.change(port, { target: { value: '18000' } });
+  fireEvent.click(toggle);
+  expect((toggle as HTMLInputElement).checked).toBe(true);
+  const grant = screen.getByRole('checkbox', { name: '个人话术' }); expect((grant as HTMLInputElement).disabled).toBe(false);
+  fireEvent.click(grant); await waitFor(() => expect(reject).toBeTypeOf('function'));
+  await act(async () => { reject(new Error('端口被占用')); });
+  await screen.findByText('Error: 端口被占用');
+  expect((toggle as HTMLInputElement).checked).toBe(false); expect((grant as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByRole('spinbutton', { name: 'MCP 端口' })).toBe(port); expect((port as HTMLInputElement).value).toBe('18000');
+  expect(vi.mocked(call).mock.calls.filter(([name]) => name === 'patch_mcp_settings')).toHaveLength(2);
+  expect(vi.mocked(call).mock.calls.some(([name]) => name === 'get_library')).toBe(false);
+});
+it('切库后迟到的保存不能恢复旧库的授权列表', async () => {
+  let resolve!: (value: unknown) => void;
+  vi.mocked(call).mockImplementation(async name => name === 'get_mcp_status' ? initial : new Promise(done => { resolve = done; }));
+  const view = render(<McpSettings library={library} />);
+  fireEvent.click(await screen.findByRole('checkbox', { name: '个人话术' }));
+  await waitFor(() => expect(resolve).toBeTypeOf('function'));
+  vi.mocked(call).mockResolvedValue({ ...initial, account: 'account-B' });
+  view.rerender(<McpSettings library={{ ...library, libraryId: 'B' }} />);
+  await waitFor(() => expect((screen.getByRole('checkbox', { name: '个人话术' }) as HTMLInputElement).checked).toBe(false));
+  await act(async () => { resolve({ ...initial, config: { ...initial.config, grants: [{ source: 'private', libraryId: 'B' }] } }); });
+  expect((screen.getByRole('checkbox', { name: '个人话术' }) as HTMLInputElement).checked).toBe(false);
+});

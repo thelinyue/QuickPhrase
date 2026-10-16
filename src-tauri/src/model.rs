@@ -29,19 +29,19 @@ pub struct Category {
 }
 
 /// 分段内使用有序内容块。文字、图片与文件共享同一顺序，避免附件被统一挪到末尾。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Block {
     Text { text: String },
     Image { path: String, name: String },
     File { path: String, name: String },
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Segment {
     pub blocks: Vec<Block>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Phrase {
     pub id: String,
@@ -89,6 +89,25 @@ pub struct LinkedFile {
     pub position: i64,
     #[serde(default)]
     pub missing: bool,
+    #[serde(default)]
+    pub cloud: Option<CloudFileReference>,
+    #[serde(default)]
+    pub custom_name: bool,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub can_rename: bool,
+    #[serde(default)]
+    pub source_name: String,
+}
+
+/// 本机文件关联只保存云端身份，不保存凭据或缓存路径；账号切换不能复用另一账号的引用。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudFileReference {
+    pub server: String,
+    pub user_id: String,
+    pub asset_id: String,
 }
 
 /// 常用短语是独立的有序文字集合，不依赖一级分类，也不包含图片或附件。

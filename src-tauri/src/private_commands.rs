@@ -16,6 +16,7 @@ use tauri::State;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientLibrary {
+    pub settings_revision: u64,
     #[serde(flatten)]
     pub library: Library,
     pub library_id: String,
@@ -52,6 +53,7 @@ pub fn library(state: &AppState) -> Result<ClientLibrary> {
         .map(|p| (p.id.clone(), local::materials_ready(&store, p)))
         .collect();
     Ok(ClientLibrary {
+        settings_revision: crate::settings_commands::revision(),
         library,
         library_id: local::identity(&store)?,
         private_revisions: local::revisions(&store)?,

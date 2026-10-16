@@ -34,7 +34,7 @@
 ```yaml
 services:
   quickphrase-hub:
-    image: ghcr.io/thelinyue/quickphrase-hub:0.2.2
+    image: ghcr.io/thelinyue/quickphrase-hub:0.2.3
     user: "0:0"
     restart: unless-stopped
     ports:
@@ -61,7 +61,7 @@ services:
 ```yaml
 services:
   prepare-restore:
-    image: ghcr.io/thelinyue/quickphrase-hub:0.2.2
+    image: ghcr.io/thelinyue/quickphrase-hub:0.2.3
     user: "0:0"
     restart: "no"
     command: ["--prepare-restore"]
@@ -118,3 +118,7 @@ node scripts/verify-teams.mjs
 客户端与服务端独立维护和发布，协议变更需显式升级并联调，实际支持范围见 [Hub 兼容记录](https://github.com/thelinyue/QuickPhrase-Hub/blob/main/docs/compatibility.md)。固定协议提交只保证构建复现。已发布0.2.2包含成员话术开放共享和共享回收站清空；旧 SQLite 库事务迁移，保留主键、话术、成员和原编辑角色，创建共享话术授权默认关闭。成员为 `member/editor/manager`，管理写请求核验成员及生命周期版本，共享话术资源携带 `x-team-lifecycle`。移交及退出使用专用接口，拒绝冲突，不自动重试写请求；旧 Hub PostgreSQL 转换不纳入本次迁移。
 
 首版不包含续费到期、公共资源库、表情库、网页后台、审批、企业微信登录或多租户。
+
+## Hub 0.2.3 与客户端 0.2.8
+
+云文件改名和新的回收站清理规则需要Hub 0.2.3，建议先升级Hub再升级客户端。管理员可清理仍被引用的云文件本体；已有话术和回收记录保留原引用，完整本机缓存仍可使用，未缓存设备及清除缓存后无法重新下载。还原话术不会恢复已清理的云端本体。升级前先停服并完整备份实际挂载的数据库及素材，保留旧镜像与数据备份；镜像发布不会自动更新现有部署。

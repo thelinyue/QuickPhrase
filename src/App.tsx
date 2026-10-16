@@ -1,3 +1,7 @@
+import { orderSearchResults, SearchResults } from './SearchResults';
+import { cloudRenameDialog } from './cloudRename';
+import { CompanyPickerWindow } from './CompanyPicker';
+import { useSettingsSave } from './useSettingsSave';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { Menu as NativeMenu, type MenuItemOptions } from '@tauri-apps/api/menu';
@@ -15,17 +19,20 @@ import { Editor, FileEditor, TeamEditor } from './Editor';
 import { TeamManagementWindow } from './TeamManagement';
 import { CompanyFilePicker, CompanyFilesWindow } from './CompanyFiles';
 import { UsageGuideWindow } from './UsageGuide';
+import { useDefaultTeam } from './useDefaultTeam';
 import { TeamSelector } from './TeamSelector';
 import { useMembers } from './useMembers';
 import { SettingsWindow } from './Settings';
 import { UpdateBadge } from './Updater';
 import { CategorySort, CommonDockWindow, CommonPhraseBar, CommonPhraseEditor, CommonPhraseSort, FileSort } from './CommonPhrases';
 import { DeletionWindow, RecycleWindow } from './RecycleBin';
-import { categoryLabel, contentKey, labelOf, type Category, type DeliveryReport, type Library, type LinkedFile, type Phrase, type SearchHit, type TargetContext } from './types';
+import { categoryLabel, contentKey, searchHitKey, searchDeliveryKey, labelOf, type CompanyView, type Category, type DeliveryReport, type Library, type LinkedFile, type Phrase, type SearchHit, type TargetContext, type TeamView } from './types';
 
 type MenuItem = { label: string; action: () => unknown; enabled?: boolean } | null;
 type MainSetting = 'dock' | 'pinned' | 'showCommon' | 'showSearch';
-interface Menu { x: number; y: number; bottom?: number; items: MenuItem[]; primary?: boolean }
+interface Menu { x: number; y: number; bottom?: number; items: MenuItem[]; primary?: boolean; search?: boolean }
+// 搜索结果的菜单属于同一次搜索交互，获得焦点不能卸载结果；其他菜单仍按离开搜索处理。
+const searchInteractionSelector = '#search-bar,.search-history,.search-panel,[data-search-menu="true"]';
 export function App() {
   const { library, error, refresh } = useLibrary(); const route = location.hash.slice(1).split('?')[0];
   const [guideError, setGuideError] = useState('');
@@ -77,6 +84,7 @@ export function App() {
   if (route === 'phrase-preview') return <PhrasePreviewWindow />;
   if (route === 'shortcut-candidates') return <ShortcutCandidatesWindow titleColor={library?.settings.titleColor} />;
   if (route === 'usage-guide') return <UsageGuideWindow settings={library?.settings} />;
+  if (route === 'company-picker') return <CompanyPickerWindow />;
   if (!library) return <div className="loading-screen"><strong>闪语</strong><span>{error || '正在读取本地话术…'}</span>{error && <button className="secondary-button" onClick={() => void refresh()}>重试</button>}</div>;
   if (route === 'editor') { const props = { library, id: params.get('id') || '', afterId: params.get('afterId') || '', categoryId: params.get('categoryId') || '', groupId: params.get('groupId') || '' }; return params.get('teamId') ? <TeamEditor {...props} teamId={params.get('teamId')!} /> : <Editor {...props} />; }
   if (route === 'file-editor') return <FileEditor library={library} id={params.get('id') || ''} categoryId={params.get('categoryId') || ''} />;
@@ -97,9 +105,13 @@ export function App() {
 /** 吸附、置顶与面板开关统一保存设置；快捷键打开搜索时会先展开被隐藏的搜索栏。 */
 export function MainWindow({ library: privateLibrary, refresh }: { library: Library; refresh: () => Promise<void> }) {
   const { status: teamStatus, version: teamVersion } = useTeams(); const [teamId, setTeamId] = useState('');
+  const defaultTeam = useDefaultTeam(teamStatus);
   const { view: teamView, error: teamError } = useTeamView(teamId, teamStatus, teamVersion);
   const members = useMembers(teamStatus);
-  const library = useMemo(() => teamId ? { ...privateLibrary, categories: [...(teamView?.categories || []), ...privateLibrary.categories.filter(c => c.kind === 'file')], phrases: teamView?.phrases || [] } : { ...privateLibrary, categories: [...privateLibrary.categories, ...(members?.categories || [])], phrases: [...privateLibrary.phrases, ...(members?.phrases || [])] }, [privateLibrary, teamId, teamView, members]);
+  const library = useMemo(() => {
+    const files = privateLibrary.files.filter(f => !f.cloud || (f.cloud.server === teamStatus.server && f.cloud.userId === teamStatus.user?.id));
+    return teamId ? { ...privateLibrary, files, categories: [...(teamView?.categories || []), ...privateLibrary.categories.filter(c => c.kind === 'file')], phrases: teamView?.phrases || [] } : { ...privateLibrary, files, categories: [...privateLibrary.categories, ...(members?.categories || [])], phrases: [...privateLibrary.phrases, ...(members?.phrases || [])] };
+  }, [privateLibrary, teamId, teamView, members, teamStatus.server, teamStatus.user?.id]);
   const scopeCanEdit = !teamId || teamView?.team.editable === true;
   const writableCategory = (id: string) => scopeCanEdit && library.categories.some(c => c.id === id && !c.readOnly);
   const scopeMemory = useRef(new Map<string, { root: string; collapsed: Set<string>; scroll: number }>());
@@ -111,9 +123,9 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]); const fileAnchor = useRef('');
   const [query, setQuery] = useState(''); const [storedResults, setResults] = useState<SearchHit[]>([]); const [searchIndex, setSearchIndex] = useState(0); const [searching, setSearching] = useState(false);
   // 比较搜索实际使用的内容，忽略主题、同步时间等状态。身份与内容分开：同一来源更新可保留列表，换源不能保留。
-  const scopeTeam = teamStatus.teams.find(t => t.teamId === teamId);
-  const searchScope = JSON.stringify([privateLibrary.libraryId, teamStatus.server, teamStatus.user?.id, teamStatus.sessionEpoch, teamStatus.user?.mustChangePassword, kind, teamId, scopeTeam?.membershipVersion, scopeTeam?.lifecycleVersion, teamStatus.memberPhraseSync, members?.subscription]);
-  const searchStamp = useMemo(() => JSON.stringify([library.settings.searchMode, kind === 'file' ? library.files : library.phrases, kind === 'phrase' ? library.categories : null, kind === 'phrase' && teamId ? [scopeTeam?.version, teamView?.team.version] : null]), [library.settings.searchMode, library.files, library.phrases, library.categories, kind, teamId, scopeTeam?.version, teamView?.team.version]);
+  const searchScope = JSON.stringify([privateLibrary.libraryId, teamStatus.server, teamStatus.user?.id, teamStatus.sessionEpoch, teamStatus.user?.mustChangePassword, teamStatus.memberPhraseSync, members?.subscription, teamStatus.teams.map(t => [t.teamId, t.membershipVersion, t.lifecycleVersion])]);
+  const teamContent = JSON.stringify(teamStatus.teams.map(t => [t.teamId, t.version]));
+  const searchStamp = useMemo(() => JSON.stringify([privateLibrary.settings.searchMode, privateLibrary.phrases, privateLibrary.categories, privateLibrary.files, members?.phrases, members?.categories, teamContent]), [privateLibrary.settings.searchMode, privateLibrary.phrases, privateLibrary.categories, privateLibrary.files, members?.phrases, members?.categories, teamContent]);
   const [searchFailed, setSearchFailed] = useState(false);
   const [searchSource, setSearchSource] = useState<{ query: string; scope: string; source: string; valid: boolean } | null>(null);
   const results = searchSource?.query === query && searchSource.scope === searchScope ? storedResults : [];
@@ -138,13 +150,11 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   useEffect(() => { setMenu(null); void nativeMenuRef.current?.close().catch(() => {}); }, [teamStatus.sessionEpoch, teamStatus.server, teamStatus.user?.id, teamStatus.offline, teamStatus.companyFiles, teamStatus.user?.mustChangePassword, scopeCanEdit, cloudAvailable, teamId, privateLibrary.libraryId]);
   const nativeMenuRef = useRef<NativeMenu | null>(null);
   useEffect(() => () => { void nativeMenuRef.current?.close().catch(() => {}); }, []);
-  const [busy, setBusy] = useState(false); const busyRef = useRef(false); const settings = library.settings;
-  // 按钮独立等待，整份设置仍串行写入；上下文身份使切库前排队的操作立即失效。
-  const settingsContext = useMemo(() => ({ libraryId: privateLibrary.libraryId, pending: new Set<MainSetting>(), active: true }), [privateLibrary.libraryId]);
-  const settingsContextRef = useRef(settingsContext); settingsContextRef.current = settingsContext;
-  const settingsQueue = useRef(Promise.resolve());
-  const [, updateSettingsButtons] = useState(0);
-  useEffect(() => { settingsContext.active = true; return () => { settingsContext.active = false; }; }, [settingsContext]);
+  const [busy, setBusy] = useState(false); const busyRef = useRef(false);
+  const settingsSave = useSettingsSave(privateLibrary.settings, privateLibrary.libraryId, privateLibrary.settingsRevision);
+  const settings = settingsSave.settings;
+  libraryRef.current = { ...library, settings };
+  useEffect(() => { const error = Object.values(settingsSave.errors).filter(Boolean).join(' '); if (error) setMessage(`设置保存失败：${error}`); }, [settingsSave.errors]);
   const [focusCommon, setFocusCommon] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => { scopeMemory.current.clear(); }, [teamStatus.server, teamStatus.user?.id]);
@@ -181,22 +191,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   const run = (action: () => unknown) => { try { Promise.resolve(action()).catch(e => setMessage(String(e))); } catch (e) { setMessage(String(e)); } };
   const clearSearch = () => { setQuery(''); setResults([]); setSearchIndex(0); setSearching(false); };
   function changeSettings(key: MainSetting, value?: boolean) {
-    const context = settingsContextRef.current;
-    if (context.pending.has(key)) return;
-    context.pending.add(key); updateSettingsButtons(v => v + 1);
-    const current = () => context.active && context === settingsContextRef.current;
-    settingsQueue.current = settingsQueue.current.then(async () => {
-      try {
-        if (!current()) return;
-        // 不依赖广播到达或 React 重绘的时序，后续按钮从已保存的设置继续合并。
-        const latest = await call<Library>('get_library');
-        if (!current() || latest.libraryId !== context.libraryId) return;
-        await call('save_settings', { libraryId: context.libraryId, settings: { ...latest.settings, [key]: value ?? !latest.settings[key] } });
-        // 主动读取确认状态，广播延迟也不会让按钮恢复后仍显示旧值。
-        if (current()) await refresh();
-      } catch (e) { if (current()) setMessage(`设置保存失败：${String(e)}`); }
-      finally { context.pending.delete(key); if (current()) updateSettingsButtons(v => v + 1); }
-    });
+    void settingsSave.change({ [key]: value ?? !settings[key] });
   }
   useEffect(() => { if (!settings.showSearch) { clearSearch(); setHistoryActive(false); } }, [settings.showSearch]);
   useEffect(() => { if (focusSearch && settings.showSearch) { setHistoryActive(true); searchRef.current?.focus(); setFocusSearch(false); } }, [focusSearch, settings.showSearch]);
@@ -236,17 +231,18 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   useEffect(() => {
     if (!query.trim() || composing.current) { if (!query.trim()) setResults([]); return; }
     let active = true; setSearching(true); setSearchFailed(false);
-    const timer = setTimeout(() => { void call<SearchHit[]>('search_scoped_content', { query, scope: kind === 'file' ? 'file' : teamId ? 'team' : 'private', teamId: teamId || null }).then(found => {
+    const timer = setTimeout(() => { void call<SearchHit[]>('search_scoped_content', { query, scope: 'all' }).then(hits => {
       if (!active) return;
+      const found = orderSearchResults(hits);
       const selected = searchSelection.current;
-      setSearchIndex(Math.max(0, found.findIndex(hit => hit.id === selected?.id && hit.kind === selected.kind && hit.teamId === selected.teamId)));
+      setSearchIndex(Math.max(0, found.findIndex(hit => !!selected && searchHitKey(hit) === searchHitKey(selected))));
       setResults(previous => JSON.stringify(previous) === JSON.stringify(found) ? previous : found);
       setSearchSource({ query, scope: searchScope, source: searchStamp, valid: true }); setSearching(false);
     }).catch(e => { if (active) { setSearchSource(previous => previous ? { ...previous, valid: false } : null); setMessage(String(e)); setSearching(false); setSearchFailed(true); } }); }, 100);
     return () => { active = false; clearTimeout(timer); };
-  }, [query, searchScope, searchStamp, compositionVersion, kind, teamId, searchVersion]);
+  }, [query, searchScope, searchStamp, compositionVersion, searchVersion]);
   useEffect(() => { const close = (e: globalThis.MouseEvent) => { if (!(e.target as Element).closest('.context-menu')) setMenu(null); }; const escape = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing && !composing.current) { if (document.querySelector('.context-menu')) { setMenu(null); menuTrigger.current?.focus(); } else { clearSearch(); setHistoryActive(false); } } }; const blur = () => setMenu(null); window.addEventListener('blur', blur); document.addEventListener('pointerdown', close); document.addEventListener('keydown', escape); return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', escape); window.removeEventListener('blur', blur); }; }, []);
-  const popup = (items: MenuItem[], x: number, y: number, primary = false, bottom?: number) => { menuTrigger.current = document.activeElement as HTMLElement; setMenu({ items, primary, bottom, x: Math.max(2, Math.min(x, innerWidth - (primary ? 178 : 190))), y: Math.max(2, Math.min(y, innerHeight - items.reduce((n, i) => n + (i ? 32 : 7), 4))) }); };
+  const popup = (items: MenuItem[], x: number, y: number, primary = false, bottom?: number, search = false) => { menuTrigger.current = document.activeElement as HTMLElement; setMenu({ items, primary, bottom, search, x: Math.max(2, Math.min(x, innerWidth - (primary ? 178 : 190))), y: Math.max(2, Math.min(y, innerHeight - items.reduce((n, i) => n + (i ? 32 : 7), 4))) }); };
   // 原生分类菜单可展开到主窗口外，右键动作始终绑定被点击分类，而不是后来切换的选中项。
   async function categoryPopup(items: MenuItemOptions[], e: MouseEvent) {
     const position = new LogicalPosition(e.clientX, e.clientY); setMenu(null);
@@ -270,7 +266,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       { label: '新增话术', enabled: hasCategory && canEdit, action: () => openWindow('editor', '', '', '', root, groupId, teamId) },
       ...cloudItems(hasCategory ? root : '', groupId),
       { label: '新增二级分类', enabled: hasCategory && canEdit, action: () => categoryDialog(undefined, root, 'phrase') },
-    ] : [{ label: '刷新', action: refresh }], e.clientX, e.clientY);
+    ] : [{ label: '关联文件', enabled: hasCategory, action: () => openWindow('file-editor', '', '', '', fileCategory) }, { label: '刷新', action: refresh }], e.clientX, e.clientY);
   }
   function validCloudTarget(target: NonNullable<typeof cloudTarget>) {
     const current = cloudContext.current, status = current.teamStatus;
@@ -284,7 +280,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     if (!validCloudTarget(target)) { setMessage('账号、分类或编辑权限已变化，请重新选择。'); return; }
     setCloudTarget(target);
   }
-  const cloudItems = (categoryId: string, groupId = ''): MenuItem[] => teamStatus.companyFiles ? [{ label: '新增云文件', enabled: cloudAvailable && writableCategory(categoryId), action: () => newCloudFile(categoryId, groupId) }] : [];
+  const cloudItems = (categoryId: string, groupId = ''): MenuItem[] => teamStatus.companyFiles ? [{ label: '从云文件新建话术', enabled: cloudAvailable && writableCategory(categoryId), action: () => newCloudFile(categoryId, groupId) }] : [];
   useEffect(() => { if (cloudTarget && !validCloudTarget(cloudTarget)) { setCloudTarget(null); setMessage('账号、分类或编辑权限已变化，请重新选择云文件。'); } }, [cloudTarget, teamStatus, teamId, privateLibrary.libraryId, library.categories, cloudAvailable]);
   function categoryDialog(c?: Category, parentId: string | null = null, categoryKind = kind) { if (categoryKind === 'phrase' && (!scopeCanEdit || c?.readOnly || (parentId && !writableCategory(parentId)))) return; setDialog({ title: c ? '重命名' : parentId ? '新增二级分类' : '新增一级分类', fields: <label>分类名称<input name="name" type="text" defaultValue={c?.name || ''} maxLength={40} required autoFocus /></label>, onSubmit: async form => { const category = c ? { ...c, name: String(form.get('name')) } : { id: '', name: String(form.get('name')), kind: categoryKind, parentId, position: library.categories.length, background: '' }; if (teamId && categoryKind === 'phrase') { await call('save_team_category', { teamId, expectedVersion: teamView!.team.version, expectedLifecycleVersion: teamView!.team.lifecycleVersion, category }); return; } const id = await call<string>('save_category', { category }); if (!c && !parentId) { if (categoryKind === 'phrase') setRoot(id); else setFileCategory(id); } await refresh(); } }); }
   function sortDialog(id: string, kind: string, current: number, count: number) { setDialog({ title: '排序', fields: <label>分类中的位置<input type="number" name="position" min={1} max={Math.max(1, count)} defaultValue={current} required /></label>, onSubmit: async f => { await call('sort_item', { id, kind, position: Number(f.get('position')) }); await refresh(); } }); }
@@ -315,6 +311,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     e.preventDefault(); e.stopPropagation(); chooseCategory(c);
     if (c.kind === 'phrase' && !c.parentId) { showPrimaryCategoryMenu(c, e); return; }
     if (c.kind === 'file') { popup([
+      { label: '关联文件', action: () => openWindow('file-editor', '', '', '', c.id) },
       { label: '新增分类', action: () => categoryDialog(undefined, null, 'file') },
       { label: '重命名', action: () => categoryDialog(c) },
       { label: '删除', action: () => deleteCategory(c) },
@@ -323,7 +320,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     const targets = roots.filter(v => !v.readOnly && v.id !== (c.parentId || c.id));
     const items: MenuItemOptions[] = [
       { text: '新增话术', action: () => run(() => newPhrase(c)) },
-      ...(teamStatus.companyFiles ? [{ text: '新增云文件', enabled: cloudAvailable, action: () => newCloudFile(c.parentId || c.id, c.parentId ? c.id : '') }] : []),
+      ...(teamStatus.companyFiles ? [{ text: '从云文件新建话术', enabled: cloudAvailable, action: () => newCloudFile(c.parentId || c.id, c.parentId ? c.id : '') }] : []),
       { text: '新增同级分类', action: () => categoryDialog(undefined, c.parentId, c.kind) },
       { text: '重命名', action: () => categoryDialog(c) },
       { text: '删除', action: () => run(() => deleteCategory(c)) },
@@ -334,37 +331,45 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     ];
     run(() => categoryPopup(items, e));
   }
-  function phraseMenu(p: Phrase, e: MouseEvent, isSearch = false) { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); setSelected(p.id); const usage = isSearch ? searchUsage() : undefined; const followed = library.categories.find(c => c.id === p.rootId)?.readOnly === true; popup([
+  async function phraseMenu(p: Phrase, e: MouseEvent, isSearch = false) { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); setSelected(p.id); const usage = isSearch ? searchUsage() : undefined; const followed = p.contentRef?.source === 'member';
+    const guard = { ...searchGuard.current };
+    const sourceTeam = p.contentRef?.source === 'team' ? p.contentRef.teamId : '';
+    let sourceView: TeamView | null = sourceTeam && sourceTeam === teamId ? teamView : null;
+    if (sourceTeam && !sourceView) { try { sourceView = await call<TeamView>('get_team_view', { teamId: sourceTeam }); } catch (error) { setMessage(String(error)); return; } }
+    if (searchGuard.current.scope !== guard.scope || (isSearch && (searchGuard.current.pending || searchGuard.current.query !== guard.query || searchGuard.current.source !== guard.source))) return;
+    const canEdit = !!sourceView?.team.editable && !teamStatus.offline;
+    const library = privateLibrary;
+    popup([
     { label: '添加到输入区（双击）', action: () => deliver(contentKey(p), 'phrase', 'insert', undefined, usage) }, { label: '直接发送', action: () => deliver(contentKey(p), 'phrase', 'send', undefined, usage) },
     { label: '复制正文到剪贴板', action: () => call('copy_phrase_text', { id: contentKey(p) }) }, null,
     ...(followed ? [
       { label: '自定义快捷键', action: () => setShortcutPhrase({ ...p, shortcutEpoch: teamStatus.sessionEpoch }) },
       { label: '下载全部素材', enabled: !!teamStatus.user && !teamStatus.offline, action: () => call('download_member_materials', { ids: [contentKey(p)], attachments: true }) },
       { label: '分类只读，由来源成员维护', enabled: false, action: () => {} },
-    ] : teamId ? [
+    ] : sourceTeam ? [
       { label: '下载全部素材', action: () => call('prepare_team_phrase', { id: p.id }) },
       { label: '复制到个人话术', action: async () => { if (await confirm(`将「${labelOf(p)}」及其图片、文件复制到个人库？副本之后独立维护。`, { title: '复制到个人话术' })) await call('copy_team_to_private', { id: p.id }); } },
-      { label: '新增话术', enabled: canEdit, action: () => openWindow('editor', '', '', '', p.rootId, p.groupId || '', teamId) }, ...cloudItems(p.rootId, p.groupId || ''),
-      { label: '编辑', enabled: canEdit, action: () => openWindow('editor', p.id, '', '', '', '', teamId) },
-      { label: '移入回收站', enabled: canEdit, action: async () => { if (await confirm(`将「${labelOf(p)}」移入「${teamView?.team.name}」的回收站？`, { title: '删除话术', kind: 'warning' })) await call('delete_team_content', { teamId, request: { expectedVersion: teamView!.team.version, expectedLifecycleVersion: teamView!.team.lifecycleVersion, kind: 'phrase', id: p.contentRef!.id } }); } },
+      { label: '新增话术', enabled: canEdit, action: () => openWindow('editor', '', '', '', p.rootId, p.groupId || '', sourceTeam) }, ...(isSearch ? [] : cloudItems(p.rootId, p.groupId || '')),
+      { label: '编辑', enabled: canEdit, action: () => openWindow('editor', p.id, '', '', '', '', sourceTeam) },
+      { label: '移入回收站', enabled: canEdit, action: async () => { if (sourceView?.phrases.find(item => item.contentRef?.id === p.contentRef?.id)?.contentRef?.revision !== p.contentRef?.revision) throw new Error('话术已更新，请重新搜索后操作。'); if (await confirm(`将「${labelOf(p)}」移入「${sourceView?.team.name}」的回收站？`, { title: '删除话术', kind: 'warning' })) await call('delete_team_content', { teamId: sourceTeam, request: { expectedVersion: sourceView!.team.version, expectedLifecycleVersion: sourceView!.team.lifecycleVersion, kind: 'phrase', id: p.contentRef!.id } }); } },
     ] : [
     ...(p.ready === false ? [{ label: '下载素材', enabled: !!teamStatus.user && !teamStatus.offline, action: async () => { await call('download_private_materials', { ids: [p.id], attachments: true }); setMessage('下载中，完成后重新投递'); } }] : []),
     { label: '复制到共享话术', enabled: teamStatus.teams.some(t => t.editable), action: () => publishToTeam(p.id, 'phrase') },
-    { label: '新增话术', action: () => openWindow('editor', '', '', '', p.rootId, p.groupId || '', '') }, ...cloudItems(p.rootId, p.groupId || ''), { label: '插入一条话术', action: () => openWindow('editor', '', p.id) }, { label: '编辑', action: () => openWindow('editor', p.id) },
+    { label: '新增话术', action: () => openWindow('editor', '', '', '', p.rootId, p.groupId || '', '') }, ...(isSearch ? [] : cloudItems(p.rootId, p.groupId || '')), { label: '插入一条话术', action: () => openWindow('editor', '', p.id) }, { label: '编辑', action: () => openWindow('editor', p.id) },
     { label: '标题背景色', action: () => setDialog({ title: '标题背景色', fields: <><label>选择颜色<input name="color" type="color" defaultValue={p.background || '#fff2bc'} /></label><label><span><input name="reset" type="checkbox" />恢复默认背景</span></label></>, onSubmit: async f => { await call('save_phrase', { phrase: { ...p, background: f.has('reset') ? '' : String(f.get('color')) }, afterId: null }); } }) },
     { label: '自定义快捷键', action: () => setShortcutPhrase(p) },
     { label: '排序', action: () => { const siblings = library.phrases.filter(v => v.rootId === p.rootId && v.groupId === p.groupId); sortDialog(p.id, 'phrase', siblings.findIndex(v => v.id === p.id) + 1, siblings.length); } },
     ...[false, true].map(copy => ({ label: copy ? '复制到其他分类' : '移动到其他分类', action: () => setDialog({ title: copy ? '复制话术' : '移动话术', fields: <CategoryPicker categories={library.categories.filter(c => !c.readOnly)} rootId={p.rootId} groupId={p.groupId} />, onSubmit: async f => { await call('move_copy_phrase', { id: p.id, rootId: f.get('root'), groupId: f.get('group') || null, copy }); await refresh(); } }) })),
     { label: '删除', action: () => openWindow('delete-confirm', p.id, '', 'phrase') },
     ]),
-  ], e.clientX, e.clientY); }
+  ], e.clientX, e.clientY, false, undefined, isSearch); }
   function publishToTeam(id: string, contentKind: 'phrase' | 'category') {
     const phrases = privateLibrary.phrases.filter(p => contentKind === 'phrase' ? p.id === id : p.rootId === id);
     setDialog({ title: '复制到共享话术', submit: '确认复制', fields: <><p>将{contentKind === 'phrase' ? `「${labelOf(phrases[0])}」` : `该一级分类的 ${phrases.length} 条话术`}连同图片、附件复制到目标共享话术，新建独立分类。成员将可以看到这些内容。</p><label>目标共享话术<select name="team" required>{teamStatus.teams.filter(t => t.editable).map(t => <option key={t.teamId} value={t.teamId}>{t.name}</option>)}</select></label><div className="publish-preview">{phrases.slice(0, 20).map(p => <p key={p.id}>{labelOf(p)} · 图片 {p.segments.flatMap(s => s.blocks).filter(b => b.kind === 'image').length} · 文件 {p.segments.flatMap(s => s.blocks).filter(b => b.kind === 'file').length}</p>)}</div></>, onSubmit: async f => { await call('publish_private_to_team', { teamId: String(f.get('team')), id, kind: contentKind }); setMessage('已复制到共享话术，私人原件独立保留'); } });
   }
   /** 文件右键绑定点击时的主键集合；多选复制、移动与移除均由 Rust 事务处理。 */
   function fileMenu(f: LinkedFile, e: MouseEvent, isSearch = false) {
-    e.preventDefault(); const ids = !query && selectedFiles.includes(f.id) ? selectedFiles : [f.id]; setSelectedFiles(ids); setSelected(f.id);
+    e.preventDefault(); (e.currentTarget as HTMLElement).focus(); const ids = !query && selectedFiles.includes(f.id) ? selectedFiles : [f.id]; setSelectedFiles(ids); setSelected(f.id);
     const single = ids.length === 1; const targets = fileCats.filter(c => c.id !== f.categoryId);
     const usage = isSearch ? searchUsage() : undefined;
     popup([
@@ -372,7 +377,12 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       { label: '直接发送', enabled: single && !busy && !f.missing, action: () => deliver(f.id, 'file', 'send', undefined, usage) },
       { label: '复制文件', enabled: !busy, action: async () => { await call('copy_linked_files', { ids }); setMessage(`已复制${ids.length}个文件，可在目标程序粘贴`); } }, null,
       { label: '新增', action: () => openWindow('file-editor', '', '', '', f.categoryId) },
-      { label: '修改显示名', enabled: single, action: () => setDialog({ title: '修改显示名', fields: <><label>显示名<input type="text" name="name" defaultValue={f.name} maxLength={200} required autoFocus /></label><p>只修改列表显示名，源文件名称保持不变。</p></>, onSubmit: async form => { await call('rename_linked_file', { id: f.id, name: String(form.get('name')) }); } }) },
+      { label: '修改显示名', enabled: single, action: () => setDialog({ title: '修改显示名', fields: <><label>显示名<input type="text" name="name" defaultValue={f.name} maxLength={200} required autoFocus /></label><p>只修改列表显示名，源文件名称保持不变；云端名称也不会修改。</p></>, onSubmit: async form => { await call('rename_linked_file', { id: f.id, name: String(form.get('name')) }); } }) },
+      ...(f.cloud && f.canRename ? [{ label: '重命名云文件', enabled: single, action: async () => {
+        const epoch = teamStatus.sessionEpoch || 0, view = await call<CompanyView>('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' });
+        const file = view.files.find(item => item.assetId === f.cloud!.assetId); if (!file) throw new Error('云文件已不可用，请刷新。');
+        setDialog(cloudRenameDialog(file, epoch, refresh));
+      } }] : []),
       { label: '移除关联', action: async () => { if (await confirm(`确定移除${ids.length > 1 ? `选中的${ids.length}个文件` : `「${f.name}」`}的关联？源文件会保留。`, { title: '移除文件关联', kind: 'warning' })) await call('remove_linked_files', { ids }); } }, null,
       { label: '快速排序文件', enabled: library.files.filter(v => v.categoryId === f.categoryId).length > 1, action: () => openWindow('file-sort', '', '', '', f.categoryId) },
       { label: '移动到其它分类', enabled: targets.length > 0, action: () => setDialog({ title: '移动到其它分类', fields: <><p>移动{ids.length}条文件关联，源文件路径保持不变。</p><label>目标分类<select name="target" required>{targets.map(c => <option key={c.id} value={c.id}>{categoryLabel(c, library.categories)}</option>)}</select></label></>, onSubmit: async form => { const targetId = String(form.get('target')); await call('move_linked_files', { ids, categoryId: targetId }); setFileCategory(targetId); } }) },
@@ -380,8 +390,8 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       { label: '打开文件位置', enabled: single, action: () => call('open_linked_file', { id: f.id, reveal: true }) },
       { label: '重新关联文件', enabled: single, action: () => openWindow('file-editor', f.id) },
       { label: '刷新文件关联状态', action: refresh }, null,
-      { label: '如何批量操作？', action: () => setDialog({ title: '本地文件批量操作', submit: '知道了', fields: <><p>按住 Ctrl 单击可多选，Shift 单击可选择连续文件，Ctrl+A 选择当前分类全部文件。</p><p>右键可批量复制、移动分类或移除关联。发送、修改显示名和打开文件使用单项选择。</p><p>新增窗口可一次关联多个文件；快速排序支持 Ctrl 多选拖动，确定后保存。</p><p>所有关联管理操作均保留磁盘上的源文件。</p></>, onSubmit: async () => {} }) },
-    ], e.clientX, e.clientY);
+      { label: '如何批量操作？', action: () => setDialog({ title: '文件批量操作', submit: '知道了', fields: <><p>按住 Ctrl 单击可多选，Shift 单击可选择连续文件，Ctrl+A 选择当前分类全部文件。</p><p>右键可批量复制、移动分类或移除关联。发送、修改显示名和打开文件使用单项选择。</p><p>新增窗口可一次关联多个文件；快速排序支持 Ctrl 多选拖动，确定后保存。</p><p>所有关联管理操作均保留磁盘上的源文件。</p></>, onSubmit: async () => {} }) },
+    ], e.clientX, e.clientY, false, undefined, isSearch);
   }
   function selectFile(f: LinkedFile, e: MouseEvent) {
     const siblings = library.files.filter(v => v.categoryId === f.categoryId).map(v => v.id);
@@ -426,7 +436,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       { label: '导出该一级分类的话术', enabled: !!c, action: () => c && exportCategory(c) },
       { label: '复制到共享话术', enabled: !!c && teamStatus.teams.some(t => t.editable), action: () => c && publishToTeam(c.id, 'category') },
       { label: '设置一级分类背景色', enabled: !!c, action: () => c && openWindow('settings', '', '', '界面设置', c.id) },
-      { label: '设置一级分类区域高度', action: () => setDialog({ title: '设置一级分类区域高度', fields: <><label>最小高度（31—200像素）<input name="height" type="number" min={31} max={200} defaultValue={settings.categoryHeight} required autoFocus /></label><p>一级分类自动换行，超过200像素可滚动。</p></>, onSubmit: async f => { await call('save_settings', { settings: { ...libraryRef.current.settings, categoryHeight: Number(f.get('height')) } }); } }) },
+      { label: '设置一级分类区域高度', action: () => setDialog({ title: '设置一级分类区域高度', fields: <><label>最小高度（31—200像素）<input name="height" type="number" min={31} max={200} defaultValue={settings.categoryHeight} required autoFocus /></label><p>一级分类自动换行，超过200像素可滚动。</p></>, onSubmit: async f => { await call('patch_settings', { patch: { categoryHeight: Number(f.get('height')) } }); } }) },
     ], e.clientX || anchor.left, e.clientY || anchor.bottom, true);
   }
   const topCategoryMenu = (e: MouseEvent) => showPrimaryCategoryMenu(roots.find(v => v.id === root), e);
@@ -439,10 +449,10 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     { label: '使用指引', action: () => openWindow('usage-guide') }, null,
     { label: '回收站', action: () => openWindow('recycle-bin', '', '', '', '', '', teamId) }, null, ...managementMenu(),
   ], anchor.left, anchor.top, false, innerHeight - anchor.top + 4); }
-  const row = (p: Phrase | null, f: LinkedFile | null, index: number, isSearch = false) => {
+  const row = (p: Phrase | null, f: LinkedFile | null, index: number, isSearch = false, hit?: SearchHit) => {
     const id = (p?.id || f?.id)!;
-    return <PhraseRow key={id} phrase={p || undefined} file={f || undefined} index={index} settings={settings} sourceLabel={isSearch ? results.find(h => h.id === id)?.sourceLabel : undefined} selected={isSearch ? index === searchIndex : f ? selectedFiles.includes(id) : selected === id} query={isSearch ? query : undefined} busy={busy || (isSearch && searchPending)}
-      onSelect={e => { if (f && !isSearch) selectFile(f, e); else setSelected(id); if (isSearch) setSearchIndex(index); }} onDeliver={(mode, triggerKey) => { if (isSearch && searchGuard.current.pending) return; void deliver(p ? (isSearch ? results.find(hit => hit.id === p.id)?.privateKey : '') || contentKey(p) : id, f ? 'file' : 'phrase', mode, triggerKey, isSearch ? searchUsage() : undefined); }} onContext={e => { if (isSearch && searchPending) { e.preventDefault(); return; } p ? phraseMenu(p, e, isSearch) : fileMenu(f!, e, isSearch); }} />;
+    return <PhraseRow key={hit ? searchHitKey(hit) : id} phrase={p || undefined} file={f || undefined} index={index} settings={settings} selected={isSearch ? index === searchIndex : f ? selectedFiles.includes(id) : selected === id} query={isSearch ? query : undefined} busy={busy || (isSearch && searchPending)}
+      onSelect={e => { if (f && !isSearch) selectFile(f, e); else setSelected(id); if (isSearch) setSearchIndex(index); }} onDeliver={(mode, triggerKey) => { if (isSearch && searchGuard.current.pending) return; void deliver(p ? hit ? searchDeliveryKey(hit) : contentKey(p) : id, f ? 'file' : 'phrase', mode, triggerKey, isSearch ? searchUsage() : undefined); }} onContext={e => { if (isSearch && searchPending) { e.preventDefault(); return; } p ? phraseMenu(p, e, isSearch) : fileMenu(f!, e, isSearch); }} />;
   };
   let sequence = 0; const content: ReactNode[] = []; const visible: { id: string; kind: 'phrase' | 'file'; privateKey?: string }[] = [];
   const addRow = (p: Phrase | null, f: LinkedFile | null) => { visible.push({ id: (p?.id || f?.id)!, kind: p ? 'phrase' : 'file', privateKey: p ? contentKey(p) : undefined }); content.push(row(p, f, sequence++)); };
@@ -453,7 +463,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       const phrases = library.phrases.filter(p => p.rootId === root && p.groupId === c.id); if (!isCollapsed) phrases.forEach(p => addRow(p, null));
     });
   } else library.files.filter(f => f.categoryId === fileCategory).forEach(f => addRow(null, f));
-  const sequenceIds = JSON.stringify((settings.showSearch && historyActive && query.trim() ? results : visible).slice(0, 10).map(item => item.kind === 'phrase' ? item.privateKey || item.id : null));
+  const sequenceIds = JSON.stringify((settings.showSearch && historyActive && query.trim() ? results.map(hit => hit.kind === 'phrase' ? searchDeliveryKey(hit) : null) : visible.map(item => item.kind === 'phrase' ? item.privateKey || item.id : null)).slice(0, 10));
   const sequenceLoading = !!(teamId && !teamView) || pendingScope.current !== null || !!(settings.showSearch && historyActive && query.trim() && searchPending);
   useEffect(() => { void call('sync_sequence_map', { ids: JSON.parse(sequenceIds), loading: sequenceLoading, generation: ++sequenceGeneration.current }).catch(e => setMessage(String(e))); }, [sequenceIds, sequenceLoading]);
   useEffect(() => { if (!teamId || !teamView) return; const ids = visible.filter(v => v.kind === 'phrase').map(v => v.id); const visibleRows = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-row]') || [])].filter(e => { const rect = e.getBoundingClientRect(); return rect.bottom > 0 && rect.top < innerHeight; }).map(e => e.dataset.row!); void call('preload_team_images', { teamId, ids: [...visibleRows, ...ids.filter(id => !visibleRows.includes(id))] }).catch(() => {}); }, [teamId, root, collapsed, sequenceIds]);
@@ -477,28 +487,28 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     }
     if (event.key === 'Enter' && enterSubmit()) { event.preventDefault(); const item = visible.find(item => item.id === selected) || visible[0]; if (item) void deliver(item.id, item.kind, 'insert', 13); }
   }
-  return <section className="client-window main-window" onFocusCapture={e => setHistoryActive(!!(e.target as Element).closest('#search-bar,.search-history,.search-panel'))} onBlurCapture={e => {
-    if (e.relatedTarget && !(e.relatedTarget as Element).closest('#search-bar,.search-history,.search-panel')) setHistoryActive(false);
-  }} onPointerDownCapture={e => { if (!(e.target as Element).closest('.search-backdrop')) setHistoryActive(!!(e.target as Element).closest('#search-bar,.search-history,.search-panel')); }} onClickCapture={e => { if (!(e.target as Element).closest('.content-row,.context-menu,dialog')) setSelected(''); }} onContextMenu={e => { if (!(e.target as Element).closest('input,textarea')) e.preventDefault(); }}>
-    <header className="main-titlebar"><img className="app-symbol" src="/shanyu.png" alt="闪语" draggable={false} /><nav className="content-tabs">{(settings.filesFirst ? ['file', 'phrase'] as const : ['phrase', 'file'] as const).map(tab => <button key={tab} className={kind === tab ? 'active' : ''} onClick={() => { setKind(tab); clearSearch(); }}>{tab === 'phrase' ? '话术' : '本地文件'}</button>)}</nav><span className="titlebar-spacer" data-tauri-drag-region /><div className="titlebar-actions"><button aria-label="吸附" title="吸附" aria-pressed={settings.dock} disabled={settingsContext.pending.has('dock')} aria-busy={settingsContext.pending.has('dock')} onClick={() => changeSettings('dock')}><Icon name={settings.dock ? 'dock' : 'dock-off'} /></button><button aria-label="置顶" title="置顶" aria-pressed={settings.pinned} disabled={settingsContext.pending.has('pinned')} aria-busy={settingsContext.pending.has('pinned')} onClick={() => changeSettings('pinned')}><Icon name="pin" /></button><button aria-label="最小化" title="最小化" onClick={() => run(() => call('window_action', { action: 'minimize' }))}><Icon name="minus" /></button></div></header>
+  return <section className="client-window main-window" onFocusCapture={e => setHistoryActive(!!(e.target as Element).closest(searchInteractionSelector))} onBlurCapture={e => {
+    if (e.relatedTarget && !(e.relatedTarget as Element).closest(searchInteractionSelector)) setHistoryActive(false);
+  }} onPointerDownCapture={e => { if (!(e.target as Element).closest('.search-backdrop')) setHistoryActive(!!(e.target as Element).closest(searchInteractionSelector)); }} onClickCapture={e => { if (!(e.target as Element).closest('.content-row,.context-menu,dialog')) setSelected(''); }} onContextMenu={e => { if (!(e.target as Element).closest('input,textarea')) e.preventDefault(); }}>
+    <header className="main-titlebar"><img className="app-symbol" src="/shanyu.png" alt="闪语" draggable={false} /><nav className="content-tabs">{(settings.filesFirst ? ['file', 'phrase'] as const : ['phrase', 'file'] as const).map(tab => <button key={tab} className={kind === tab ? 'active' : ''} onClick={() => { setKind(tab); clearSearch(); }}>{tab === 'phrase' ? '话术' : '文件'}</button>)}</nav><span className="titlebar-spacer" data-tauri-drag-region /><div className="titlebar-actions"><button aria-label="吸附" title="吸附" aria-pressed={settings.dock} disabled={settingsSave.busy('dock')} aria-busy={settingsSave.busy('dock')} onClick={() => changeSettings('dock')}><Icon name={settings.dock ? 'dock' : 'dock-off'} /></button><button aria-label="置顶" title="置顶" aria-pressed={settings.pinned} disabled={settingsSave.busy('pinned')} aria-busy={settingsSave.busy('pinned')} onClick={() => changeSettings('pinned')}><Icon name="pin" /></button><button aria-label="最小化" title="最小化" onClick={() => run(() => call('window_action', { action: 'minimize' }))}><Icon name="minus" /></button></div></header>
     <div className="main-search-content">
     {kind === 'phrase' && <div className="scope-bar">{(settings.teamsFirst ? ['team', 'private'] : ['private', 'team']).map(scope => scope === 'private' ? <button key={scope} className={`scope-name${!teamId ? ' active' : ''}`} onClick={() => changeScope('')}>个人话术</button> : <TeamSelector key={scope} status={teamStatus} teamId={teamId} onChange={changeScope} onError={setMessage} />)}<button id="top-menu" aria-label="一级分类菜单" onClick={topCategoryMenu}><Icon name="menu" /></button></div>}
     <nav className={`category-tabs${kind === 'file' ? ' files-tabs' : ' auto-wrapping'}${kind === 'phrase' || settings.fileCategoryHeight > 31 ? ' wrapping' : ''}`} style={kind === 'phrase' ? { minHeight: settings.categoryHeight } : { height: settings.fileCategoryHeight }} aria-label="一级分类">{(kind === 'phrase' ? roots : fileCats).map(c => { const background = c.background || (c.kind === 'file' ? settings.fileCategoryColor : settings.phraseCategoryColor); return <button key={c.id} title={c.readOnly ? `${c.name} · 来自${c.sourceLabel} · 只读` : categoryLabel(c, library.categories)} className={(kind === 'phrase' ? root : fileCategory) === c.id ? 'active' : ''} style={{ backgroundColor: background || undefined, color: background ? categoryTextColor(background) : undefined }} onClick={() => chooseCategory(c)} onContextMenu={e => categoryMenu(c, e)}>{c.name}{c.readOnly && <small className="member-source">{c.sourceLabel} · 只读</small>}</button>; })}<button className="add-category" aria-label="新增一级分类" disabled={kind === 'phrase' && !scopeCanEdit} onClick={() => categoryDialog()}>＋</button></nav>
-    <div className="list-area"><div ref={listRef} tabIndex={0} className="content-list" role="listbox" aria-label={kind === 'phrase' ? '话术列表' : '本地文件列表'} aria-multiselectable={kind === 'file'} onKeyDown={listKey} onContextMenu={listMenu}>{content.length ? content : <div className="empty-state"><img className="empty-illustration" src={`/illustrations/${kind === 'phrase' ? 'phrase' : 'files'}-empty.png`} width="96" height="96" alt="" draggable={false} /><span>{teamId && kind === 'phrase' && !teamView ? teamError || '正在加载共享话术…' : !hasCategory ? '还没有一级分类' : kind === 'phrase' ? '这个分类还没有话术' : '还没有关联文件'}</span><button disabled={kind === 'phrase' && !canEdit} onClick={() => hasCategory ? run(newContent) : categoryDialog()}>{!hasCategory ? '新增一级分类' : kind === 'phrase' ? '新增话术' : '新增关联文件'}</button></div>}</div>
+    <div className="list-area"><div ref={listRef} tabIndex={0} className="content-list" role="listbox" aria-label={kind === 'phrase' ? '话术列表' : '文件列表'} aria-multiselectable={kind === 'file'} onKeyDown={listKey} onContextMenu={listMenu}>{content.length ? content : <div className="empty-state"><img className="empty-illustration" src={`/illustrations/${kind === 'phrase' ? 'phrase' : 'files'}-empty.png`} width="96" height="96" alt="" draggable={false} /><span>{teamId && kind === 'phrase' && !teamView ? teamError || '正在加载共享话术…' : !hasCategory ? '还没有一级分类' : kind === 'phrase' ? '这个分类还没有话术' : '还没有关联文件'}</span><button disabled={kind === 'phrase' && !canEdit} onClick={() => hasCategory ? run(newContent) : categoryDialog()}>{!hasCategory ? '新增一级分类' : kind === 'phrase' ? '新增话术' : '新增关联文件'}</button></div>}</div>
     </div>
     {settings.showCommon && <CommonPhraseBar library={library} busy={busy} onDeliver={(id, mode, triggerKey) => void deliver(id, 'common', mode, triggerKey)} onError={setMessage} />}
     {settings.showSearch && historyActive && <div className="search-backdrop" onPointerDown={e => { e.preventDefault(); e.stopPropagation(); }} onClick={() => setHistoryActive(false)} />}
-    {settings.showSearch && historyActive && query.trim() && <section className="search-panel" aria-label="搜索结果"><header><span>搜索结果</span><button aria-label="关闭搜索" onClick={clearSearch}>×</button></header><div className="search-kind">{kind === 'phrase' ? '话术' : '本地文件'}</div><div id="search-results" aria-busy={searchPending && !searchFailed}>{results.length ? results.map((hit, i) => row(hit.phrase, hit.file, i, true)) : <div className="no-results">{searchFailed ? '搜索失败，请重新输入关键词' : searchPending ? '正在搜索…' : '没有找到匹配的内容'}</div>}</div></section>}
+    {settings.showSearch && historyActive && query.trim() && <section className="search-panel" aria-label="搜索结果"><header><span>搜索结果</span><button aria-label="关闭搜索" onClick={clearSearch}>×</button></header><div id="search-results" aria-busy={searchPending && !searchFailed}>{results.length ? <SearchResults results={results} renderRow={(hit, i) => row(hit.phrase, hit.file, i, true, hit)} /> : <div className="no-results">{searchFailed ? '搜索失败，请重新输入关键词' : searchPending ? '正在搜索…' : '没有找到匹配的内容'}</div>}</div></section>}
     {settings.showSearch && historyActive && !query.trim() && <SearchHistoryBar presentation="main" items={history.items} clearing={history.clearing} onSelect={chooseHistory} onClear={() => run(() => call('open_search_history_confirm', { libraryId: privateLibrary.libraryId }))} />}
     </div>
-    {settings.showSearch && <div className="search-bar" id="search-bar"><Icon name="search" /><input ref={searchRef} data-shortcut-search aria-label="搜索话术、本地文件" placeholder="搜索话术、本地文件" value={query} onChange={e => { setHistoryActive(true); setQuery(e.target.value); setSearchIndex(0); setSearching(!!e.target.value.trim()); }} onCompositionStart={() => { composing.current = true; setSearching(true); }} onCompositionEnd={e => { composing.current = false; setQuery(e.currentTarget.value); endComposition(v => v + 1); }} onKeyDown={e => {
+    {settings.showSearch && <div className="search-bar" id="search-bar"><Icon name="search" /><input ref={searchRef} data-shortcut-search aria-label="搜索话术、文件" placeholder="搜索话术、文件" value={query} onChange={e => { setHistoryActive(true); setQuery(e.target.value); setSearchIndex(0); setSearching(!!e.target.value.trim()); }} onCompositionStart={() => { composing.current = true; setSearching(true); }} onCompositionEnd={e => { composing.current = false; setQuery(e.currentTarget.value); endComposition(v => v + 1); }} onKeyDown={e => {
       if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setSearchIndex(i => Math.max(0, Math.min(results.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))); requestAnimationFrame(() => document.querySelector('#search-results .selected')?.scrollIntoView({ block: 'nearest' })); }
-      if (e.key === 'Enter' && historyActive && query.trim() && !sequenceLoading && results[searchIndex] && enterSubmit()) { e.preventDefault(); const item = results[searchIndex]; void deliver(item.privateKey || item.id, item.kind, 'insert', 13, searchUsage()); }
+      if (e.key === 'Enter' && historyActive && query.trim() && !sequenceLoading && results[searchIndex] && enterSubmit()) { e.preventDefault(); const item = results[searchIndex]; void deliver(searchDeliveryKey(item), item.kind, 'insert', 13, searchUsage()); }
       if (e.key === 'Escape') { e.preventDefault(); clearSearch(); e.currentTarget.blur(); listRef.current?.focus(); }
     }} />{query && <button aria-label="清空搜索" onClick={clearSearch}>×</button>}</div>}
-    <footer className="main-footer"><button aria-label="主菜单" onClick={mainMenu}><Icon name="menu" /></button><button aria-label={settings.showCommon ? '隐藏常用短语' : '显示常用短语'} title={settings.showCommon ? '隐藏常用短语' : '显示常用短语'} aria-pressed={settings.showCommon} disabled={settingsContext.pending.has('showCommon')} aria-busy={settingsContext.pending.has('showCommon')} onClick={() => changeSettings('showCommon')}><Icon name={settings.showCommon ? 'eye' : 'eye-off'} /></button><button aria-label={settings.showSearch ? '隐藏搜索框' : '显示搜索框'} title={settings.showSearch ? '隐藏搜索框' : '显示搜索框'} aria-controls="search-bar" aria-expanded={settings.showSearch} aria-pressed={settings.showSearch} disabled={settingsContext.pending.has('showSearch')} aria-busy={settingsContext.pending.has('showSearch')} onClick={() => changeSettings('showSearch')}><Icon name={settings.showSearch ? 'eye' : 'eye-off'} /></button>{busy && <button className="stop-delivery" onClick={() => run(() => call('cancel_delivery'))}>停止</button>}<span className="footer-spacer" data-tauri-drag-region /><UpdateBadge /><button aria-label="设置" title="设置" className="settings-button" onClick={() => run(() => openWindow('settings'))}><Icon name="settings" /></button></footer>
-    {menu && <div className={`context-menu${menu.primary ? ' category-context-menu' : ''}`} role="menu" tabIndex={-1} style={menu.bottom === undefined ? { left: menu.x, top: menu.y } : { left: menu.x, bottom: menu.bottom, maxHeight: Math.max(0, innerHeight - menu.bottom - 2) }} onKeyDown={e => {
+    <footer className="main-footer"><button aria-label="主菜单" onClick={mainMenu}><Icon name="menu" /></button><button aria-label={settings.showCommon ? '隐藏常用短语' : '显示常用短语'} title={settings.showCommon ? '隐藏常用短语' : '显示常用短语'} aria-pressed={settings.showCommon} disabled={settingsSave.busy('showCommon')} aria-busy={settingsSave.busy('showCommon')} onClick={() => changeSettings('showCommon')}><Icon name={settings.showCommon ? 'eye' : 'eye-off'} /></button><button aria-label={settings.showSearch ? '隐藏搜索框' : '显示搜索框'} title={settings.showSearch ? '隐藏搜索框' : '显示搜索框'} aria-controls="search-bar" aria-expanded={settings.showSearch} aria-pressed={settings.showSearch} disabled={settingsSave.busy('showSearch')} aria-busy={settingsSave.busy('showSearch')} onClick={() => changeSettings('showSearch')}><Icon name={settings.showSearch ? 'eye' : 'eye-off'} /></button>{busy && <button className="stop-delivery" onClick={() => run(() => call('cancel_delivery'))}>停止</button>}<span className="footer-spacer" data-tauri-drag-region /><UpdateBadge /><button aria-label="设置" title="设置" className="settings-button" onClick={() => run(() => openWindow('settings'))}><Icon name="settings" /></button></footer>
+    {menu && <div className={`context-menu${menu.primary ? ' category-context-menu' : ''}`} data-search-menu={menu.search} role="menu" tabIndex={-1} style={menu.bottom === undefined ? { left: menu.x, top: menu.y } : { left: menu.x, bottom: menu.bottom, maxHeight: Math.max(0, innerHeight - menu.bottom - 2) }} onKeyDown={e => {
       if (e.key === 'Tab') { setMenu(null); return; }
       if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
       e.preventDefault();
@@ -506,6 +516,6 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : e.key === 'ArrowDown' ? (index + 1) % buttons.length : index < 0 ? buttons.length - 1 : (index - 1 + buttons.length) % buttons.length;
       buttons[next]?.focus();
     }}>{menu.items.map((item, i) => item ? <button key={i} role="menuitem" disabled={item.enabled === false} onClick={() => { setMenu(null); run(item.action); }}>{item.label}</button> : <div className="menu-separator" key={i} />)}</div>}
-    {cloudTarget && <CompanyFilePicker limit={1} confirmLabel="下一步" close={() => { setCloudTarget(null); menuTrigger.current?.focus(); }} onConfirm={(files, epoch) => { const target = cloudTarget; setCloudTarget(null); run(async () => { if (epoch !== target.epoch || !validCloudTarget(target)) throw new Error('账号、分类或编辑权限已变化，请重新选择云文件。'); await openWindow('editor', '', '', `cloud:${epoch}:${files[0].assetId}`, target.categoryId, target.groupId, target.teamId); }); }} />}{dialog && <FormDialog key={dialog.title} spec={dialog} close={() => setDialog(null)} />}{shortcutPhrase && <ShortcutDialog id={shortcutPhrase.id} value={shortcutPhrase.shortcut} onConfirm={async shortcut => { const latest = libraryRef.current.phrases.find(p => p.id === shortcutPhrase.id); if (!latest) throw new Error('话术已被删除，无法设置快捷键。'); if (shortcutPhrase.id.startsWith('member:')) await call('save_member_shortcut', { id: shortcutPhrase.id, shortcut, sessionEpoch: shortcutPhrase.shortcutEpoch }); else await call('save_phrase', { phrase: { ...latest, shortcut }, afterId: null }); }} close={() => setShortcutPhrase(null)} />}<Feedback message={message} clear={() => setMessage('')} />
+    {cloudTarget && <CompanyFilePicker limit={1} confirmLabel="下一步" close={() => { setCloudTarget(null); menuTrigger.current?.focus(); }} onConfirm={(files, epoch) => { const target = cloudTarget; setCloudTarget(null); run(async () => { if (epoch !== target.epoch || !validCloudTarget(target)) throw new Error('账号、分类或编辑权限已变化，请重新选择云文件。'); await openWindow('editor', '', '', `cloud:${epoch}:${files[0].assetId}`, target.categoryId, target.groupId, target.teamId); }); }} />}{dialog && <FormDialog key={dialog.title} spec={dialog} close={() => setDialog(null)} />}{shortcutPhrase && <ShortcutDialog id={shortcutPhrase.id} value={shortcutPhrase.shortcut} onConfirm={async shortcut => { const latest = [...privateLibrary.phrases, ...(members?.phrases || [])].find(p => p.id === shortcutPhrase.id); if (!latest) throw new Error('话术已被删除，无法设置快捷键。'); if (shortcutPhrase.id.startsWith('member:')) await call('save_member_shortcut', { id: shortcutPhrase.id, shortcut, sessionEpoch: shortcutPhrase.shortcutEpoch }); else await call('save_phrase', { phrase: { ...latest, shortcut }, afterId: null }); }} close={() => setShortcutPhrase(null)} />}<Feedback message={message} clear={() => setMessage('')} />
   </section>;
 }

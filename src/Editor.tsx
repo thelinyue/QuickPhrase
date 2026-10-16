@@ -100,13 +100,4 @@ export function TeamEditor({ library, teamId, id, afterId, categoryId, groupId }
   return <><Editor library={{ ...library, categories: view.categories, phrases: view.phrases }} team={{ ...view.team, editable }} id={id} afterId={afterId} categoryId={categoryId} groupId={groupId} />{!editable && <div className="review-toast" role="status">该库已离线、权限或状态已变化，草稿保留，当前无法保存。</div>}</>;
 }
 
-export function FileEditor({ library, id, categoryId }: { library: Library; id: string; categoryId: string }) {
-  const file = library.files.find(f => f.id === id); const categories = library.categories.filter(c => c.kind === 'file');
-  const [category, setCategory] = useState(file?.categoryId || categoryId || categories[0]?.id || ''); const [paths, setPaths] = useState<string[]>([]); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const busyRef = useRef(false);
-  async function choose() { try { const chosen = await open({ title: id ? '重新关联文件' : '批量关联文件', directory: false, multiple: !id }); if (chosen) setPaths(typeof chosen === 'string' ? [chosen] : chosen); setError(''); } catch (e) { setError(String(e)); } }
-  async function save(e: FormEvent) { e.preventDefault(); if (busyRef.current) return; if (!paths.length) { setError('请先选择文件。'); return; } busyRef.current = true; setBusy(true);
-    try { if (id) await call('relink_file', { id, path: paths[0], categoryId: category }); else await call('add_files', { paths, categoryId: category }); await closeWindow(); }
-    catch (e) { setError(String(e)); } finally { busyRef.current = false; setBusy(false); }
-  }
-  return <section className="client-window file-window"><Titlebar title={id ? '重新关联文件' : '新增文件'} /><form className="file-form" onSubmit={save}>{file && <p className="field-hint">原关联：{file.name}</p>}<label>请选择分类<select value={category} onChange={e => setCategory(e.target.value)} required>{categories.map(c => <option key={c.id} value={c.id}>{categoryLabel(c, library.categories)}</option>)}</select></label><button className="primary-button add-files" type="button" onClick={() => void choose()}>＋ 添加文件</button><div className="chosen-files">{paths.map(path => <span key={path} title={path}>{basename(path)}</span>)}</div>{error && <p className="validation-error" role="alert">{error}</p>}<div className="file-form-footer"><span>{id ? '关联变更不会删除原文件' : '温馨提示：按住Ctrl键多选，可以批量添加文件'}</span><span className="toolbar-spacer" /><button className="secondary-button" type="button" onClick={() => void closeWindow()}>取消</button><button className="primary-button" type="submit" disabled={busy}>{busy ? '保存中' : '确定'}</button></div></form></section>;
-}
+export { FileEditor } from './FileAssociation';

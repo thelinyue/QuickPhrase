@@ -84,9 +84,12 @@ try {
   await check('编辑窗口阻止安装；关闭后启动失败保留应用并释放操作互斥', async () => {
     const editor = await window('editor', 'editor');
     await assert.rejects(invoke('install_update'), /关闭编辑/);
+    assert.equal((await invoke('get_update_status')).manualInstallAvailable, false);
     await invoke('ensure_update_idle'); await invoke('plugin:window|close', {}, editor).catch(e => { if (!/closed/.test(String(e))) throw e; }); await until(() => editor.isClosed());
     await assert.rejects(invoke('install_update'), /无法启动安装器/); assert.equal(app.exitCode, null);
-    await invoke('ensure_update_idle'); assert.equal((await invoke('get_update_status')).phase, 'ready');
+    await invoke('ensure_update_idle'); const failed = await invoke('get_update_status'); assert.equal(failed.phase, 'ready'); assert.equal(failed.manualInstallAvailable, true);
+    await settings.getByRole('button', { name: '打开下载目录', exact: true }).waitFor();
+    await invoke('open_update_download_directory');
   });
   await check('免安装转安装说明、稍后和取消确认不启动安装器', async () => {
     await click(settings.getByRole('button', { name: '稍后', exact: true })); assert.equal(app.exitCode, null);

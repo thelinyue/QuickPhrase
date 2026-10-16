@@ -308,7 +308,7 @@ try {
   });
   await test('文件库原生图标、双击文件、失效保留和重新关联', async () => {
     await invoke('add_files', { categoryId: fileRoot, paths: [filePath] }); const linked = (await invoke('get_library')).files[0];
-    await page.getByRole('button', { name: '本地文件', exact: true }).click(); await row(linked.id).locator('img').waitFor();
+    await page.getByRole('button', { name: '文件', exact: true }).click(); await row(linked.id).locator('img').waitFor();
     await poll(async () => row(linked.id).locator('img').evaluate(img => img.naturalWidth > 0), '文件系统图标');
     await row(linked.id).click(); await page.screenshot({ path: path.join(root, 'files.png') });
     await prepare(); await row(linked.id).locator('.row-title').dblclick(); await poll(async () => (await receipt()).events.some(e => e.kind === 'paste-files'), '文件粘贴'); assert.equal((await sent()).length, 0);
@@ -319,7 +319,7 @@ try {
     await invoke('add_files', { categoryId: fileRoot, paths: [filePath] }); await page.getByRole('button', { name: '话术', exact: true }).click();
   });
   await test('搜索附件名高亮、上下选择、Enter 插入和 Esc 关闭', async () => {
-    await prepare(); const search = page.getByRole('textbox', { name: '搜索话术、本地文件' }); await search.fill('发送验收');
+    await prepare(); const search = page.getByRole('textbox', { name: '搜索话术、文件' }); await search.fill('发送验收');
     await page.locator('.search-panel mark').first().waitFor(); assert.equal(await page.locator('.search-panel .content-row').count(), 2);
     assert.equal(await page.locator('.search-panel mark').count(), 2); await page.screenshot({ path: path.join(root, 'search.png') });
     await search.press('ArrowDown'); await search.press('Enter'); await poll(async () => (await receipt()).events.some(e => e.kind === 'paste-files'), '搜索 Enter 插入');

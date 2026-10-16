@@ -1,6 +1,8 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { SettingsWindow } from './Settings';
+
+vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ onCloseRequested: vi.fn(async () => () => {}) }) }));
 import type { Library } from './types';
 const callbacks=vi.hoisted(()=>new Map<string,(e:{payload:unknown})=>void>());
 vi.mock('./api',()=>({call:vi.fn(async()=>({})),closeWindow:vi.fn()}));

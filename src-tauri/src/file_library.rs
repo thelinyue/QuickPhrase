@@ -31,7 +31,10 @@ impl Store {
         }
         if self
             .conn
-            .execute("UPDATE files SET name=?2 WHERE id=?1", params![id, name])
+            .execute(
+                "UPDATE files SET name=?2,custom_name=1 WHERE id=?1",
+                params![id, name],
+            )
             .map_err(db_error)?
             == 0
         {
@@ -106,6 +109,59 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cloud_links_preserve_identity_alias_backup_and_external_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = crate::store::test_store(dir.path()).unwrap();
+        let source = dir.path().join("源文件.txt");
+        std::fs::write(&source, b"keep").unwrap();
+        store
+            .add_files("local-files", vec![external_path(&source)])
+            .unwrap();
+        let reference = CloudFileReference {
+            server: "https://example.test".into(),
+            user_id: "owner".into(),
+            asset_id: id(),
+        };
+        let cloud_id = id();
+        store.conn.execute("INSERT INTO files(id,category_id,path,name,position,cloud) VALUES(?1,'local-files','','云端.pdf',1,?2)", params![cloud_id,serde_json::to_string(&reference).unwrap()]).unwrap();
+        store.rename_file(&cloud_id, "我的显示名").unwrap();
+        let serialized = serde_json::to_value(store.library().unwrap()).unwrap();
+        let library: Library = serde_json::from_value(serialized).unwrap();
+        assert_eq!(library.files[1].cloud.as_ref(), Some(&reference));
+        assert!(library.files[1].path.is_empty());
+        assert!(library.files[1].custom_name);
+        let target = tempfile::tempdir().unwrap();
+        let mut restored = Store::open(target.path()).unwrap();
+        restored.import(&library, false, false, &[]).unwrap();
+        let restored_files = restored.library().unwrap().files;
+        assert_eq!(restored_files[1].cloud.as_ref(), Some(&reference));
+        assert_eq!(restored_files[1].name, "我的显示名");
+        store
+            .reorder_files(
+                &[cloud_id.clone(), library.files[0].id.clone()],
+                "local-files",
+            )
+            .unwrap();
+        store
+            .remove_files(&[cloud_id, library.files[0].id.clone()])
+            .unwrap();
+        assert_eq!(std::fs::read(source).unwrap(), b"keep");
+    }
+    #[test]
+    fn old_file_schema_is_migrated_without_changing_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = rusqlite::Connection::open(dir.path().join("shanyu.sqlite3")).unwrap();
+        conn.execute_batch("CREATE TABLE files(id TEXT PRIMARY KEY,category_id TEXT NOT NULL,path TEXT NOT NULL,name TEXT NOT NULL,position INTEGER NOT NULL); INSERT INTO files VALUES('old','category','C:\\old.txt','原显示名',7);").unwrap();
+        drop(conn);
+        let store = Store::open(dir.path()).unwrap();
+        let file = store.library().unwrap().files.remove(0);
+        assert_eq!(
+            (file.id.as_str(), file.name.as_str(), file.position),
+            ("old", "原显示名", 7)
+        );
+        assert!(file.cloud.is_none());
+    }
     #[test]
     fn file_management_preserves_sources_and_rolls_back_invalid_batches() {
         let dir = tempfile::tempdir().unwrap();

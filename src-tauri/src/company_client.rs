@@ -3,6 +3,30 @@
 use super::*;
 use std::io::{Read, Write};
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompanyMetadata {
+    #[serde(flatten)]
+    file: wire::CompanyFile,
+    #[serde(default)]
+    original_name: Option<String>,
+}
+impl CompanyMetadata {
+    fn upload_matches(&self, id: &str, name: &str, size: u64) -> bool {
+        self.file.asset_id == id
+            && self.original_name.as_deref().unwrap_or(&self.file.name) == name
+            && self.file.size == size
+    }
+}
+
+#[derive(Default)]
+pub(super) struct CompanyNames {
+    epoch: u64,
+    version: u64,
+    names: HashMap<String, String>,
+    catalog: Option<wire::CompanyFiles>,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanySelection {
@@ -231,6 +255,75 @@ impl TeamClient {
             .join(id)
             .join(safe_filename(name))
     }
+    pub(super) fn current_company_name(&self, epoch: u64, id: &str, fallback: &str) -> String {
+        let names = self.company_names.lock().unwrap();
+        if names.epoch == epoch {
+            names
+                .names
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| fallback.into())
+        } else {
+            fallback.into()
+        }
+    }
+    /// 云端清理不删除本机完整缓存；按账号和不可变 ID 查找，兼容改名前的文件路径。
+    pub(super) fn existing_company_cache(
+        &self,
+        active: &Active,
+        id: &str,
+        name: &str,
+    ) -> Option<PathBuf> {
+        if uuid::Uuid::parse_str(id).is_err() {
+            return None;
+        }
+        let preferred = self.company_cache_path(active, id, name);
+        if ready_path(&preferred) {
+            return Some(preferred);
+        }
+        fs::read_dir(preferred.parent()?)
+            .ok()?
+            .flatten()
+            .find_map(|entry| {
+                let path = entry.path();
+                (entry.file_type().ok()?.is_file() && ready_path(&path)).then_some(path)
+            })
+    }
+    pub fn linked_company_existing_cache(
+        &self,
+        epoch: u64,
+        id: &str,
+        name: &str,
+    ) -> Result<Option<PathBuf>> {
+        let ctx = self.company_context(epoch, wire::CompanyOperation::Read)?;
+        let active = self.active()?;
+        self.with_account(&ctx, || Ok(self.existing_company_cache(&active, id, name)))
+    }
+    /// 全局搜索只读取已授权的完整目录快照，不随每个搜索词发起网络请求。
+    pub fn cached_company_files(&self, epoch: u64) -> Option<Vec<CompanyEntry>> {
+        let active = self.active().ok()?;
+        if active.epoch != epoch || !active.authorization.capabilities.company_files {
+            return None;
+        }
+        let names = self.company_names.lock().unwrap();
+        if names.epoch != epoch {
+            return None;
+        }
+        Some(
+            names
+                .catalog
+                .as_ref()?
+                .files
+                .iter()
+                .cloned()
+                .map(|file| {
+                    let cached =
+                        ready_path(&self.company_cache_path(&active, &file.asset_id, &file.name));
+                    CompanyEntry { file, cached }
+                })
+                .collect(),
+        )
+    }
     fn company_progress(
         &self,
         app: &tauri::AppHandle,
@@ -260,6 +353,88 @@ impl TeamClient {
             advance_transfer(app, &self.company_history, &key, bytes, status);
             Ok(())
         });
+    }
+    /// 不可变 ID 允许复用已校验缓存；保留在用路径，改名不会重新下载完整文件。
+    fn reuse_company_cache(&self, active: &Active, file: &wire::CompanyFile) -> Result<PathBuf> {
+        self.reuse_company_named_cache(active, &file.asset_id, &file.name, Some(file.size))
+    }
+    pub(super) fn reuse_company_named_cache(
+        &self,
+        active: &Active,
+        id: &str,
+        name: &str,
+        expected_size: Option<u64>,
+    ) -> Result<PathBuf> {
+        let path = self.company_cache_path(active, id, name);
+        if ready_path(&path) {
+            return Ok(path);
+        }
+        if let Ok(entries) = fs::read_dir(path.parent().ok_or("缓存目录无效。")?) {
+            for entry in entries.flatten() {
+                let source = entry.path();
+                if source != path
+                    && !entry.file_type().map_err(io_error)?.is_symlink()
+                    && ready_path(&source)
+                    && fs::metadata(&source)
+                        .is_ok_and(|m| expected_size.is_none_or(|size| m.len() == size))
+                {
+                    let mut temp = tempfile::NamedTempFile::new_in(path.parent().unwrap())
+                        .map_err(io_error)?;
+                    let size =
+                        std::io::copy(&mut fs::File::open(source).map_err(io_error)?, &mut temp)
+                            .map_err(io_error)?;
+                    temp.persist(&path).map_err(io_error)?;
+                    save_json(&path.with_extension("ready.json"), &size)?;
+                    break;
+                }
+            }
+        }
+        Ok(path)
+    }
+    pub fn linked_company_cached(
+        &self,
+        epoch: u64,
+        file: &wire::CompanyFile,
+    ) -> Result<Option<PathBuf>> {
+        let ctx = self.company_context(epoch, wire::CompanyOperation::Read)?;
+        let active = self.active()?;
+        self.with_account(&ctx, || {
+            let path = self.reuse_company_cache(&active, file)?;
+            Ok(ready_path(&path).then_some(path))
+        })
+    }
+    pub async fn rename_company(
+        &self,
+        app: &tauri::AppHandle,
+        epoch: u64,
+        id: &str,
+        expected: &str,
+        name: &str,
+    ) -> Result<()> {
+        if uuid::Uuid::parse_str(id).is_err() {
+            return Err("云文件编号无效。".into());
+        }
+        let ctx = self.company_context(epoch, wire::CompanyOperation::Read)?;
+        let active = self.active()?;
+        self.with_account(&ctx, || Ok(()))?;
+        self.response(
+            &active,
+            Method::PATCH,
+            &format!("company/files/{id}"),
+            Some(serde_json::json!({"name":name,"expectedName":expected})),
+        )
+        .await
+        .map_err(|error| {
+            // response 已统一转换非成功状态，需在这里识别旧 Hub 不支持的 PATCH。
+            if error.starts_with("405:") {
+                "当前 Hub 不支持重命名，请升级服务端。".to_owned()
+            } else {
+                error
+            }
+        })?;
+        self.with_account(&ctx, || Ok(()))?;
+        let _ = app.emit("company-files-changed", epoch);
+        Ok(())
     }
     fn upload_tasks(&self, ctx: &AccountContext) -> Vec<CompanyUpload> {
         let mut uploads = vec![];
@@ -392,6 +567,7 @@ impl TeamClient {
         )?;
         let active = self.active()?;
         self.with_account(&ctx, || Ok(()))?;
+        let complete = !recycled && query.is_empty();
         let url = Url::parse_with_params(
             &format!("{}/api/company/files", ctx.server),
             &[("recycled", recycled.to_string()), ("q", query)],
@@ -413,12 +589,36 @@ impl TeamClient {
             .await
             .map_err(|_| "云文件目录无法读取。")?;
         self.with_account(&ctx, || {
+            {
+                let mut names = self.company_names.lock().unwrap();
+                if names.epoch != epoch {
+                    *names = CompanyNames {
+                        epoch,
+                        ..Default::default()
+                    };
+                }
+                if catalog.version >= names.version {
+                    names.version = catalog.version;
+                    for file in &catalog.files {
+                        names.names.insert(file.asset_id.clone(), file.name.clone());
+                    }
+                }
+                if complete
+                    && names
+                        .catalog
+                        .as_ref()
+                        .is_none_or(|old| catalog.version >= old.version)
+                {
+                    names.catalog = Some(catalog.clone());
+                }
+            }
             let files = catalog
                 .files
                 .into_iter()
                 .map(|file| {
-                    let cached =
-                        ready_path(&self.company_cache_path(&active, &file.asset_id, &file.name));
+                    let cached = self
+                        .reuse_company_cache(&active, &file)
+                        .is_ok_and(|path| ready_path(&path));
                     CompanyEntry { file, cached }
                 })
                 .collect();
@@ -790,13 +990,13 @@ impl TeamClient {
             let file = self
                 .check(response)
                 .await?
-                .json::<wire::CompanyFile>()
+                .json::<CompanyMetadata>()
                 .await
                 .map_err(|_| "上传结果无法读取。")?;
-            if file.asset_id != *id || file.name != task.name || file.size != task.size {
+            if !file.upload_matches(id, &task.name, task.size) {
                 return Err("上传结果与原任务不符，源副本已保留。".into());
             }
-            self.with_account(ctx, || Ok(file))?
+            self.with_account(ctx, || Ok(file.file))?
         } else {
             if !retry {
                 return Err("原任务尚未登记，源副本已保留；获得上传权限后可明确继续。".into());
@@ -837,16 +1037,16 @@ impl TeamClient {
                 _ = cancel.cancelled() => return Err("上传已停止，结果需查询原任务；不会自动重试。".into()),
                 response = request.send() => response.map_err(|_| "上传中断或回执丢失，请查询原任务结果。")?,
             };
-            let file: wire::CompanyFile = self
+            let file: CompanyMetadata = self
                 .check(response)
                 .await?
                 .json()
                 .await
                 .map_err(|_| "上传结果无法读取，请查询原任务。")?;
-            if file.asset_id != *id || file.name != task.name || file.size != task.size {
+            if !file.upload_matches(id, &task.name, task.size) {
                 return Err("上传结果与原任务不符，源副本已保留。".into());
             }
-            self.with_upload_authority(ctx, job.version, cancel, || Ok(file))?
+            self.with_upload_authority(ctx, job.version, cancel, || Ok(file.file))?
         };
         self.with_account(ctx, || {
             fs::remove_dir_all(self.upload_dir(id)?).map_err(io_error)?;
@@ -938,10 +1138,13 @@ impl TeamClient {
         let ctx = self.company_context(epoch, wire::CompanyOperation::Read)?;
         let active = self.active()?;
         self.with_account(&ctx, || Ok(()))?;
-        let file: wire::CompanyFile = self
+        let mut file: wire::CompanyFile = self
             .request(&active, Method::GET, &format!("company/files/{id}"), None)
             .await?;
-        let path = self.company_cache_path(&active, id, &file.name);
+        if file.deleted_at.is_some() {
+            return Err("云文件已回收，请重新选择。".into());
+        }
+        let mut path = self.company_cache_path(&active, id, &file.name);
         let key = format!("{}:company:{id}", ctx.epoch);
         let lock = self
             .download_locks
@@ -951,6 +1154,7 @@ impl TeamClient {
             .or_insert_with(|| Arc::new(AsyncMutex::new(())))
             .clone();
         let _lock = lock.lock().await;
+        self.with_account(&ctx, || self.reuse_company_cache(&active, &file))?;
         if ready_path(&path) {
             self.company_progress(
                 app,
@@ -1016,9 +1220,13 @@ impl TeamClient {
             if done != file.size || done == 0 {
                 return Err("云文件未完整下载。".into());
             }
-            let _: wire::CompanyFile = self
+            file = self
                 .request(&active, Method::GET, &format!("company/files/{id}"), None)
                 .await?;
+            if file.deleted_at.is_some() {
+                return Err("云文件已回收，下载结果已丢弃。".into());
+            }
+            path = self.company_cache_path(&active, id, &file.name);
             if cancel.is_cancelled() {
                 return Err("下载已取消。".into());
             }
@@ -1113,6 +1321,66 @@ mod tests {
     use super::super::tests::setup;
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn purged_company_cache_keeps_identity_and_requires_complete_local_bytes() {
+        let (_dir, client, mut ctx) = setup();
+        let id = local::id();
+        ctx.company_asset_ids = vec![id.clone()];
+        let path = client.company_cache_path(&ctx.active, &id, "改名后.pdf");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"data").unwrap();
+        assert!(client
+            .existing_company_cache(&ctx.active, &id, "旧快照.pdf")
+            .is_none());
+        save_json(&path.with_extension("ready.json"), &4_u64).unwrap();
+        assert_eq!(client.asset_path(&ctx, &id, "旧快照.pdf", false), path);
+        let mut other = ctx.active.clone();
+        other.authorization.user.id = "other".into();
+        assert!(client
+            .existing_company_cache(&other, &id, "旧快照.pdf")
+            .is_none());
+        assert!(client
+            .existing_company_cache(&ctx.active, "../outside", "旧快照.pdf")
+            .is_none());
+        fs::write(&path, b"partial").unwrap();
+        assert!(client
+            .existing_company_cache(&ctx.active, &id, "旧快照.pdf")
+            .is_none());
+    }
+
+    #[test]
+    fn renamed_upload_uses_original_name_and_cache_reuses_only_same_identity() {
+        let (_dir, client, ctx) = setup();
+        let id = local::id();
+        let metadata: CompanyMetadata = serde_json::from_value(serde_json::json!({
+            "assetId":id,"name":"新名称.pdf","originalName":"原名称.pdf","size":4,
+            "uploadedBy":"owner","uploaderName":"上传者","createdAt":1,"deletedAt":null
+        }))
+        .unwrap();
+        assert!(metadata.upload_matches(&id, "原名称.pdf", 4));
+        assert!(!metadata.upload_matches(&id, "新名称.pdf", 4));
+        assert!(!metadata.upload_matches(&id, "原名称.pdf", 5));
+        let old = client.company_cache_path(&ctx.active, &id, "原名称.pdf");
+        fs::create_dir_all(old.parent().unwrap()).unwrap();
+        fs::write(&old, b"data").unwrap();
+        save_json(&old.with_extension("ready.json"), &4_u64).unwrap();
+        let new = client
+            .reuse_company_cache(&ctx.active, &metadata.file)
+            .unwrap();
+        assert_eq!(fs::read(new).unwrap(), b"data");
+        assert!(old.is_file(), "旧路径可能正在投递，不能删除");
+        let mut other = ctx.active.clone();
+        other.authorization.user.id = "other".into();
+        assert!(!client
+            .reuse_company_cache(&other, &metadata.file)
+            .unwrap()
+            .exists());
+        assert!(!client
+            .reuse_company_named_cache(&ctx.active, &local::id(), "新名称.pdf", Some(4))
+            .unwrap()
+            .exists());
+    }
 
     fn authorize_uploads(client: &TeamClient) -> UploadJob {
         {

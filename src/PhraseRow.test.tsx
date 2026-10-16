@@ -13,13 +13,12 @@ function Harness({ action }: { action: (id: string, mode: string) => void }) {
   return <>{['A', 'B'].map((id, i) => <PhraseRow key={id} phrase={phrase(id)} index={i} selected={selected === id} busy={busy} settings={settings} onSelect={() => select(id)} onContext={() => {}} onDeliver={mode => { if (!busy) { action(id, mode); setBusy(true); } }} />)}</>;
 }
 describe('话术行发送规则', () => {
-  it('快捷键浮层点击和双击沿用话术行操作，状态与来源位于覆盖区域外', async () => {
+  it('快捷键浮层点击和双击沿用话术行操作，状态位于覆盖区域外', async () => {
     const props = { index: 0, selected: false, busy: false, settings, onSelect: vi.fn(), onContext: vi.fn(), onDeliver: vi.fn() };
-    render(<PhraseRow {...props} phrase={{ ...phrase('B'), shortcut: 'Ctrl+1+2', ready: false }} sourceLabel="共享话术" />);
+    render(<PhraseRow {...props} phrase={{ ...phrase('B'), shortcut: 'Ctrl+1+2', ready: false }} />);
     const badge = screen.getByTitle('Ctrl+1+2');
     expect(badge.closest('.row-copy')).toBeTruthy();
     expect(screen.getByText('未缓存').closest('.row-copy')).toBeNull();
-    expect(screen.getByText('共享话术').closest('.row-copy')).toBeNull();
     await userEvent.click(badge); expect(props.onSelect).toHaveBeenCalledTimes(1); expect(props.onDeliver).not.toHaveBeenCalled();
     await userEvent.dblClick(badge); expect(props.onDeliver.mock.calls).toEqual([['insert']]);
   });
