@@ -34,7 +34,7 @@
 ```yaml
 services:
   quickphrase-hub:
-    image: ghcr.io/thelinyue/quickphrase-hub:0.2.1
+    image: ghcr.io/thelinyue/quickphrase-hub:0.2.2
     user: "0:0"
     restart: unless-stopped
     ports:
@@ -46,7 +46,7 @@ services:
       - "./data:/data"
 ```
 
-服务名称统一为 `quickphrase-hub`。旧项目使用 `shanyu` 时，在图形界面先停止并移除旧容器，保留原项目目录和 `data`，再应用新配置，避免同时启动两个服务。0.2.1支持 `QUICKPHRASE_*` 并兼容旧 `SHANYU_*` 变量；原0.2.0镜像及其配置继续可用，新变量需升级镜像后使用。
+服务名称统一为 `quickphrase-hub`。旧项目使用 `shanyu` 时，在图形界面先停止并移除旧容器，保留原项目目录和 `data`，再应用新配置，避免同时启动两个服务。0.2.2支持 `QUICKPHRASE_*` 并兼容旧 `SHANYU_*` 变量，提供成员话术开放共享和共享回收站清空；原0.2.0镜像及其配置继续可用，新变量需升级镜像后使用。
 
 默认用户名为 `admin`，可自行修改；首次登录必须修改初始密码。用户名支持1—64个字符的普通名称，昵称和联系方式可选。已有数据库不会被初始化变量覆盖；初始化完成后可从图形界面移除初始密码变量。
 
@@ -61,7 +61,7 @@ services:
 ```yaml
 services:
   prepare-restore:
-    image: ghcr.io/thelinyue/quickphrase-hub:0.2.1
+    image: ghcr.io/thelinyue/quickphrase-hub:0.2.2
     user: "0:0"
     restart: "no"
     command: ["--prepare-restore"]
@@ -115,6 +115,6 @@ node scripts/verify-teams.mjs
 
 5秒性能目标使用发布编译测试，Debug 下明确跳过该计时检查。2026-10-13 本机50个在线用户名、两个共享话术合计5000条话术，同时通知、下载、解压及读取快照完成于0.944秒；这是本机回环网络证据，不代替真实局域网和代理部署的验收。真实企业微信图文／附件、Docker／Nginx实际部署和安装／多DPI仍需环境验收。
 
-客户端与服务端独立维护和发布，协议变更需显式升级并联调，实际支持范围见 [Hub 兼容记录](https://github.com/thelinyue/QuickPhrase-Hub/blob/main/docs/compatibility.md)。固定协议提交只保证构建复现。已发布 `v0.2.0` 包含共享话术及个人同步；当前0.2.1源码进行英文名称统一，尚未发布。旧 SQLite 库事务迁移，保留主键、话术、成员和原编辑角色，创建共享话术授权默认关闭。成员为 `member/editor/manager`，管理写请求核验成员及生命周期版本，共享话术资源携带 `x-team-lifecycle`。移交及退出使用专用接口，拒绝冲突，不自动重试写请求；旧 Hub PostgreSQL 转换不纳入本次迁移。
+客户端与服务端独立维护和发布，协议变更需显式升级并联调，实际支持范围见 [Hub 兼容记录](https://github.com/thelinyue/QuickPhrase-Hub/blob/main/docs/compatibility.md)。固定协议提交只保证构建复现。已发布0.2.2包含成员话术开放共享和共享回收站清空；旧 SQLite 库事务迁移，保留主键、话术、成员和原编辑角色，创建共享话术授权默认关闭。成员为 `member/editor/manager`，管理写请求核验成员及生命周期版本，共享话术资源携带 `x-team-lifecycle`。移交及退出使用专用接口，拒绝冲突，不自动重试写请求；旧 Hub PostgreSQL 转换不纳入本次迁移。
 
 首版不包含续费到期、公共资源库、表情库、网页后台、审批、企业微信登录或多租户。
