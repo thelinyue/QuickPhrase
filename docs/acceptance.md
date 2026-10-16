@@ -1014,3 +1014,13 @@ WSL Debian本地镜像 `quickphrase-hub:cleanup-local-20261016` 构建及8组容
 使用0.2.8客户端与0.2.3 Hub隔离产物重跑：[资料库32组](../.build/library-ui-1792168149176/report.json)、[云文件31组](../.build/company-1792168165734/report.json)、[共享与MCP20组](../.build/teams-1792168202780/report.json)、[搜索13组](../.build/search-history-1792168236101/report.json)通过。候选与设置四开关的Windows输入验收沿用上文同一实现的检查记录。
 
 本轮更新专项通过线路配置与重启持久化两项，随后因本地进程未提供签名私钥环境变量停止，未绕过签名校验或导出GitHub Secrets；该轮不计为完整更新专项通过。正式工作流使用已有Secrets签名，发布后另行核对公共下载、清单、签名与更新入口。真实企业微信、用户安装版在线升级、Windows10、多屏DPI、实体键盘／输入法及现有Hub部署升级仍未完成本轮验收。
+
+## 2026-10-17：0.2.8正式发布与公共下载验证
+
+客户端正式标签 `v0.2.8` 指向 `4d908ce2134c11c2619b171a00c78242df25cc58`，[正式发布工作流](https://github.com/thelinyue/QuickPhrase/actions/runs/38932817692)从该标签构建、签名并生成[正式Release](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.8)。[主分支CI](https://github.com/thelinyue/QuickPhrase/actions/runs/38932771592)和[标签CI](https://github.com/thelinyue/QuickPhrase/actions/runs/38932815017)通过；标签CI首次因PowerShell启动超过20秒而失败，保持同一提交和标签重跑后通过。
+
+Release不是草稿或预发布，GitHub latest与公共更新清单均指向0.2.8。五项资产已使用匿名HTTPS重新下载，ZIP、安装器及manifest均匹配既有SHA256清单；产品公钥验证Minisign签名、manifest及安装器通过。ZIP内容、主程序和安装器版本均已核对，程序与安装器均为NotSigned；安装器15,206,454字节，没有执行用户安装升级。证据保存在 `.build/public-release-0.2.8/verification.json` 与 `signature.json`。
+
+产品相同Rust网络层的直连、默认代理及备用代理均实际下载0.2.8并匹配官方清单。默认和备用首次连接失败，重试后通过，不能据此保证代理长期可用；保留首次日志与重试结果，不自动更换用户线路。
+
+配套Hub正式标签 `v0.2.3` 指向 `b36540c88ffa9fbe9a201de65eb313ac38241a11`。[镜像发布](https://github.com/thelinyue/QuickPhrase-Hub/actions/runs/38932241013)与[latest推广](https://github.com/thelinyue/QuickPhrase-Hub/actions/runs/38933164104)均通过，独立未登录GHCR作业匿名拉取并完成8组容器验收。`ghcr.io/thelinyue/quickphrase-hub:0.2.3` 与 `latest` 指向同一镜像，旧固定版本保留；本次未修改现有部署及用户数据。未验证环境仍以上节边界为准。
