@@ -1092,3 +1092,11 @@ Release不是草稿或预发布，GitHub latest与公共更新清单均指向0.2
 [0.2.9 独立输入桌面完整快捷键专项](../.build/shortcuts-1792228852633/native-report.json) 18 组通过，覆盖目标同步、开关联动、普通输入透传、候选选择与旧内容拒绝、布局以及诊断 ZIP；[0.2.9 成员重启专项](../.build/member-1792229320281/report.json) 12 组通过，覆盖联网／离线恢复、成员 Y+C、撤权与退出清理。两份报告均记录运行客户端版本 0.2.9。默认桌面运行时，快捷键专项首项通过，第二项被其他前台窗口抢焦点，随后在独立输入桌面通过同一项，不能把默认桌面那轮计为全套通过。
 
 通用 `npm run test:native` 不是本次快捷键专项：它的旧常用短语用例仍要求单击后草稿不变，并查找已由独立窗口取代的 Windows 原生菜单，本轮因此中断。这些断言与当前已实现的单击插入、独立菜单不符，未将该轮视为产品行为失败或全套通过。真实企业微信、实体键盘和微软拼音组字期间插入、系统多屏 DPI、Windows 10 及安装版在线升级仍未通过本轮实机验收；正式发布说明会明确这些边界。
+
+## 2026-10-17：0.2.9 正式发布与公开下载验证
+
+客户端标签 `v0.2.9` 指向提交 `895c680e255fe63d3bd6f111c295acc4a6d7f8b3`。[主分支 CI](https://github.com/thelinyue/QuickPhrase/actions/runs/39021460923)、[标签 CI](https://github.com/thelinyue/QuickPhrase/actions/runs/39021469671)与[手动正式发布工作流](https://github.com/thelinyue/QuickPhrase/actions/runs/39021479274)均成功。工作流从标签重新验证、构建未签名资产、签署更新清单并创建[正式 Release](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.9)；Release 不是草稿或预发布，GitHub latest 指向 v0.2.9。
+
+五项资产均已匿名下载到 `.build/public-release-0.2.9`。ZIP（15,609,762 字节）、安装器（15,310,362 字节）和 manifest 的 SHA256 与公开清单一致；产品内置公钥验证 Minisign 签名、manifest 和安装器通过。latest manifest 与固定版本逐字节一致，记录稳定通道、0.2.9.0 文件版本和上述来源提交；ZIP 内程序及安装器版本为 0.2.9，均为 `NotSigned`。产品相同 Rust 下载层直连取得 0.2.9 安装器并与官方清单匹配，没有执行安装器。
+
+匿名 manifest 首次下载遇到 TLS 握手失败，重试成功。默认代理 `gh-proxy.com` 和备用代理 `ghfast.top` 的产品下载探测各尝试两次，均报连接失败；直接请求两个代理入口也在 TLS 握手阶段失败。这轮没有验证代理可用性，不能据此归因为发布资产错误或保证用户网络可访问代理。用户可选择直连或自定义线路；没有在本轮执行真实安装升级、企业微信发送、Windows 10 或多屏 DPI 验收。
