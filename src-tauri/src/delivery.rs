@@ -64,6 +64,15 @@ pub fn execute(
     driver: &mut impl DeliveryDriver,
     cancel: &AtomicBool,
 ) -> DeliveryReport {
+    let started = std::time::Instant::now();
+    let mut stage = 1;
+    crate::diagnostics::record(crate::diagnostics::Event::Delivery {
+        stage: 0,
+        ok: true,
+        blocks: 0,
+        segments: 0,
+        elapsed_ms: 0,
+    });
     let mut report = DeliveryReport {
         status: "submitted".into(),
         completed_segments: 0,
@@ -77,10 +86,13 @@ pub fn execute(
                 return Err("操作已停止，已执行的内容不会自动重发。".into());
             }
             if mode == Mode::Insert && si > 0 {
+                stage = 2;
                 driver.ensure_target()?;
+                stage = 3;
                 driver.paste(&Block::Text {
                     text: "\r\n".into(),
                 })?;
+                stage = 4;
                 driver.pause(100, cancel)?;
             }
             for block in &segment.blocks {
@@ -90,17 +102,23 @@ pub fn execute(
                 if cancel.load(Ordering::Acquire) {
                     return Err("操作已停止。".into());
                 }
+                stage = 2;
                 driver.ensure_target()?;
+                stage = 3;
                 driver.paste(block)?;
                 report.completed_blocks += 1;
+                stage = 4;
                 driver.pause(120, cancel)?;
             }
             if mode == Mode::Send {
+                stage = 2;
                 driver.ensure_target()?;
+                stage = 5;
                 driver.send_key(settings.enter == "ctrl-enter")?;
             }
             report.completed_segments += 1;
             if mode == Mode::Send && si + 1 < segments.len() {
+                stage = 4;
                 driver.pause(settings.interval, cancel)?;
             }
         }
@@ -116,12 +134,20 @@ pub fn execute(
         report.error = Some(error);
     }
     if let Err(error) = driver.finish() {
+        stage = 6;
         report.status = "interrupted".into();
         report.error = Some(match report.error {
             Some(previous) => format!("{previous}；{error}"),
             None => error,
         });
     }
+    crate::diagnostics::record(crate::diagnostics::Event::Delivery {
+        stage,
+        ok: report.error.is_none(),
+        blocks: report.completed_blocks,
+        segments: report.completed_segments,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+    });
     report
 }
 

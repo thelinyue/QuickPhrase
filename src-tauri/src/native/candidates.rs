@@ -36,6 +36,9 @@ pub struct CandidateState {
     pub payload: Option<CandidatePayload>,
     pub context: Option<(i64, i64)>,
     consumed: HashSet<u32>,
+    held: HashSet<u32>,
+    /// 透传触发键在真实松开前仍交给输入法，数字长按不能变成候选选择。
+    passthrough_triggers: HashSet<u32>,
     submitting: bool,
     /// 仅记录本次候选已通过身份校验的测量；移动目标时复用尺寸，不要求前端重测正文。
     measured_size: Option<(f64, f64)>,
@@ -43,7 +46,14 @@ pub struct CandidateState {
 impl CandidateState {
     pub fn open(&mut self, payload: CandidatePayload, context: (i64, i64)) {
         if let Ok(key) = crate::native::parse_shortcut(&payload.shortcut) {
-            self.consumed.insert(key.next_key.unwrap_or(key.key));
+            if key.passes_input() {
+                self.passthrough_triggers.insert(key.next_key.unwrap());
+                if self.held.contains(&key.key) {
+                    self.passthrough_triggers.insert(key.key);
+                }
+            } else {
+                self.consumed.insert(key.next_key.unwrap_or(key.key));
+            }
         }
         self.payload = Some(payload);
         self.context = Some(context);
@@ -81,6 +91,20 @@ impl CandidateState {
         context: Option<(i64, i64)>,
         modifiers: u32,
     ) -> CandidateAction {
+        if event.down {
+            self.held.insert(event.key);
+        } else {
+            self.held.remove(&event.key);
+        }
+        if self.passthrough_triggers.contains(&event.key) {
+            if !event.down {
+                self.passthrough_triggers.remove(&event.key);
+            }
+            return CandidateAction {
+                changed: self.payload.is_some() && !self.valid(context) && self.cancel(),
+                ..Default::default()
+            };
+        }
         if self.consumed.contains(&event.key) {
             if !event.down {
                 self.consumed.remove(&event.key);
@@ -310,7 +334,8 @@ mod window {
         ))
     }
 
-    /// 布局上限扣除原生非客户区；跨屏时以目标窗口 DPI 换算，再由布局身份拒绝旧测量。
+    /// 目标只决定屏幕与锚点，候选内容必须按自身 DPI 换算；企业微信可能始终报告96 DPI。
+    /// 跨屏移动后 Windows 更新候选 DPI，再由布局身份触发重测并拒绝旧测量，避免裁掉右侧内容。
     unsafe fn layout_limits(
         target: HWND,
         window: HWND,
@@ -327,17 +352,14 @@ mod window {
         {
             return Err("无法读取候选屏幕工作区。".into());
         }
-        let dpi = GetDpiForWindow(target).max(96);
+        let dpi = GetDpiForWindow(window).max(96);
         let scale = dpi as f64 / 96.0;
         let mut outer = RECT::default();
         let mut client = RECT::default();
         GetWindowRect(window, &mut outer).map_err(|_| "无法读取候选窗口范围。")?;
         GetClientRect(window, &mut client).map_err(|_| "无法读取候选内容范围。")?;
-        let ratio = dpi as f64 / GetDpiForWindow(window).max(96) as f64;
-        let ix = ((outer.right - outer.left - client.right + client.left).max(0) as f64 * ratio)
-            .round() as i32;
-        let iy = ((outer.bottom - outer.top - client.bottom + client.top).max(0) as f64 * ratio)
-            .round() as i32;
+        let ix = (outer.right - outer.left - client.right + client.left).max(0);
+        let iy = (outer.bottom - outer.top - client.bottom + client.top).max(0);
         let work = info.rcWork;
         let width = (360.0_f64.min((work.right - work.left) as f64 / scale * 0.7)
             - ix as f64 / scale)
@@ -349,7 +371,7 @@ mod window {
             width,
             height,
             format!(
-                "{}:{}:{}:{}:{dpi}",
+                "{}:{}:{}:{}:{dpi}:{ix}:{iy}",
                 work.left, work.top, work.right, work.bottom
             ),
             ix,
@@ -357,6 +379,31 @@ mod window {
         ))
     }
     impl NativeState {
+        /// SetWindowPos 跨线程等待窗口消息时会重入监听线程的键盘钩子；若仍持候选锁，
+        /// 钩子会等待自己而永久卡死。巡检与定位交给窗口所属线程，保持原有会话锁和
+        /// 焦点复核；最多排队一次，界面繁忙时不能积累过期的定位任务。
+        pub fn schedule_candidate_check(self: &std::sync::Arc<Self>) {
+            let Some(app) = self.app.get() else {
+                return;
+            };
+            if self.candidates.lock().unwrap().payload.is_none() {
+                return;
+            }
+            if self.candidate_check_queued.swap(true, Ordering::AcqRel) {
+                return;
+            }
+            let state = self.clone();
+            if app
+                .run_on_main_thread(move || {
+                    state.check_candidates();
+                    state.position_current_candidates();
+                    state.candidate_check_queued.store(false, Ordering::Release);
+                })
+                .is_err()
+            {
+                self.candidate_check_queued.store(false, Ordering::Release);
+            }
+        }
         pub fn candidate_payload(&self) -> Option<CandidatePayload> {
             self.candidates.lock().unwrap().payload.clone()
         }
@@ -375,6 +422,10 @@ mod window {
         }
         pub fn cancel_candidates(&self) {
             if self.candidates.lock().unwrap().cancel() {
+                crate::diagnostics::record(crate::diagnostics::Event::Candidate {
+                    action: 2,
+                    count: 0,
+                });
                 self.publish_candidates();
             }
         }
@@ -394,6 +445,10 @@ mod window {
                     self.busy.load(Ordering::Acquire)
                 );
                 state.cancel();
+                crate::diagnostics::record(crate::diagnostics::Event::Candidate {
+                    action: 2,
+                    count: 0,
+                });
                 drop(state);
                 self.publish_candidates();
                 return;
@@ -404,16 +459,24 @@ mod window {
                     unsafe { layout_limits(hwnd(payload.target.hwnd), hwnd(*window)) }
                 {
                     if payload.layout_key != key {
+                        crate::diagnostics::record(crate::diagnostics::Event::Candidate {
+                            action: 3,
+                            count: payload.phrases.len(),
+                        });
                         payload.layout_key = key;
                         payload.max_width = width;
                         payload.max_height = height;
                         state.measured_size = None;
                         drop(state);
                         self.publish_candidates();
-                        return;
                     }
                 }
             }
+        }
+        /// 只有 UI 线程定位窗口。异步投递仍可调用 check_candidates 做焦点复核，
+        /// 但不能在工作线程持候选锁跨线程移动窗口，否则 UI 的查询也可能反向等锁。
+        fn position_current_candidates(&self) {
+            let state = self.candidates.lock().unwrap();
             if let (Some(payload), Some(window), Some((width, height))) = (
                 &state.payload,
                 self.candidate_window.get(),
@@ -519,7 +582,9 @@ mod window {
                 selected_index: 0,
                 target,
             };
+            let count = payload.phrases.len();
             self.candidates.lock().unwrap().open(payload, context);
+            crate::diagnostics::record(crate::diagnostics::Event::Candidate { action: 1, count });
             self.publish_candidates();
         }
         pub fn resize_candidates(
@@ -557,6 +622,11 @@ mod window {
         width: f64,
         height: f64,
     ) -> crate::model::Result<()> {
+        debug_assert_eq!(
+            GetWindowThreadProcessId(window, None),
+            windows::Win32::System::Threading::GetCurrentThreadId(),
+            "候选定位必须在窗口所属线程执行，避免键盘钩子重入候选锁。"
+        );
         let target = hwnd(payload.target.hwnd);
         let (max_width, max_height, current_key, ix, iy) = layout_limits(target, window)?;
         if current_key != payload.layout_key {
@@ -574,7 +644,7 @@ mod window {
         {
             return Err("无法读取候选所在的屏幕工作区。".into());
         }
-        let scale = GetDpiForWindow(target).max(96) as f64 / 96.0;
+        let scale = GetDpiForWindow(window).max(96) as f64 / 96.0;
         let gap = (6.0 * scale).round() as i32;
         let work = RECT {
             left: info.rcWork.left + gap,
@@ -613,6 +683,14 @@ mod window {
             SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_SHOWWINDOW,
         )
         .map_err(|e| format!("无法显示快捷键候选：{e}"))?;
+        crate::diagnostics::record(crate::diagnostics::Event::Layout {
+            window: 2,
+            x: rect.left,
+            y: rect.top,
+            width: rect.right - rect.left,
+            height: rect.bottom - rect.top,
+            dpi: (scale * 96.0).round() as u32,
+        });
         Ok(())
     }
     #[cfg(test)]
@@ -803,5 +881,60 @@ mod tests {
         let mut s = state();
         assert!(s.event(key(0x1B, true), Some((10, 11)), 0).swallowed);
         assert!(s.payload.is_none());
+    }
+
+    #[test]
+    fn passthrough_number_triggers_require_release_before_candidate_selection() {
+        for shortcut in ["1+1", "1+2"] {
+            let mut s = state();
+            let mut payload = s.payload.take().unwrap();
+            payload.shortcut = shortcut.into();
+            s.event(key(0x31, true), Some((10, 11)), 0);
+            s.open(payload, (10, 11));
+            let last = shortcut.as_bytes()[2] as u32;
+            for code in [0x31, last] {
+                for _ in 0..5 {
+                    let repeat = s.event(key(code, true), Some((10, 11)), 0);
+                    assert!(!repeat.swallowed);
+                    assert!(repeat.submit.is_none());
+                }
+            }
+            for code in [0x31, last] {
+                assert!(!s.event(key(code, false), Some((10, 11)), 0).swallowed);
+            }
+            assert_eq!(
+                s.event(key(0x31, true), Some((10, 11)), 0).submit,
+                Some((0, Mode::Insert))
+            );
+            s.take(0).unwrap();
+            assert!(s.event(key(0x31, true), Some((10, 11)), 0).swallowed);
+            assert!(s.event(key(0x31, false), Some((10, 11)), 0).swallowed);
+        }
+    }
+
+    #[test]
+    fn typing_cancels_candidate_without_eating_input_or_trigger_release() {
+        let mut s = state();
+        let typed = s.event(key(0x45, true), Some((10, 11)), 0);
+        assert!(typed.changed);
+        assert!(!typed.swallowed);
+        assert!(typed.submit.is_none());
+        assert!(!s.event(key(0x57, false), Some((10, 11)), 0).swallowed);
+        let mut s = state();
+        let moved = s.event(key(0x57, true), Some((10, 12)), 0);
+        assert!(moved.changed);
+        assert!(!moved.swallowed);
+        assert!(!s.event(key(0x57, false), None, 0).swallowed);
+    }
+
+    #[test]
+    fn modified_trigger_remains_consumed_until_release() {
+        let mut s = state();
+        let mut payload = s.payload.take().unwrap();
+        payload.shortcut = "Ctrl+1+1".into();
+        s.open(payload, (10, 11));
+        assert!(s.event(key(0x31, true), Some((10, 11)), 1).swallowed);
+        s.cancel();
+        assert!(s.event(key(0x31, false), None, 0).swallowed);
     }
 }

@@ -80,18 +80,19 @@ try {
   await page.locator('.category-tabs button:not(.add-category)').first().waitFor();
   const settings = { ...initial.settings, startup: false, dock: false, autoHide: false, pinned: false, dockCommon: false, dockSearch: false, customHotkeys: false, searchHotkey: '8', windowHotkey: '9', commonHotkey: '0' };
   await poll(async () => { try { await invoke('save_settings', { settings }); return true; } catch (error) { if (!String(error).includes('服务尚未启动')) throw error; return false; } }, '原生设置服务');
-  await check('Alt+Q松键后上下键导航搜索结果，不误唤起Windows系统菜单', async () => {
+  await check('Alt导航松键后上下键导航搜索结果，不误唤起Windows系统菜单', async () => {
     const nativeKey = async (key, args = []) => JSON.parse((await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(repo, 'tests/native-driver.ps1'), '-Action', 'key', '-Handle', String(mainHandle), '-Key', String(key), ...args], { windowsHide: true, encoding: 'utf8' })).stdout);
-    await invoke('save_settings', { settings: { ...settings, dock: true, showSearch: true, searchHotkey: 'Q', windowHotkey: 'W', commonHotkey: 'E' } });
+    // 沿用隔离验收绑定，避免用户安装版占用默认 Alt+Q 导致几何专项无法运行。
+    await invoke('save_settings', { settings: { ...settings, dock: true, showSearch: true } });
     await focusHost(); await delay(180);
     for (const from of ['host', 'main']) {
-      await nativeKey(81, ['-Alt', '-HoldMilliseconds', '350']);
+      await nativeKey(56, ['-Alt', '-HoldMilliseconds', '350']);
       if (from === 'main') await control('alt-menu', { handle: mainHandle });
       for (const key of [40, 38]) {
-        const native = await nativeKey(key); snapshots.push({ name: 'alt-q-' + from + '-arrow-' + key, native });
+        const native = await nativeKey(key); snapshots.push({ name: 'alt-search-' + from + '-arrow-' + key, native });
         // 系统菜单会进入原生模态循环，失败前取消菜单，避免阻塞 WebView 诊断与退出。
         if (native.menuMode) { await nativeKey(27); await control('cancel-move', { handle: mainHandle }); }
-        assert.equal(native.menuMode, false, 'Alt+Q之后的上下键不能打开系统菜单');
+        assert.equal(native.menuMode, false, 'Alt导航之后的上下键不能打开系统菜单');
       }
     }
     const search = page.getByRole('textbox', { name: '搜索话术、文件', exact: true });

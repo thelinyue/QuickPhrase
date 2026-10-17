@@ -159,6 +159,7 @@ pub struct NativeState {
     pub settings: RwLock<Settings>,
     pub bindings: RwLock<ShortcutBindings>,
     pub candidates: Mutex<candidates::CandidateState>,
+    candidate_check_queued: AtomicBool,
     /// 只由主窗口同步绘制结果；文件槽位为空，隐藏窗口继续沿用最后快照。
     pub sequence_map: RwLock<(Vec<Option<String>>, bool)>,
     /// 当前正在编辑或录入快捷键的客户端窗口。输入框与模态框中不触发话术，避免抢走录入按键。
@@ -207,6 +208,7 @@ impl NativeState {
             settings: RwLock::new(settings),
             bindings: RwLock::new(ShortcutBindings::default()),
             candidates: Mutex::new(candidates::CandidateState::default()),
+            candidate_check_queued: AtomicBool::new(false),
             sequence_map: RwLock::new((vec![], true)),
             common_menu: Mutex::new(crate::common_menu::MenuState::default()),
             search_history_confirm: Mutex::new(None),
@@ -441,6 +443,18 @@ impl NativeState {
                 member_epoch,
             };
         }
+        crate::diagnostics::record(crate::diagnostics::Event::Bindings {
+            count: current.keys.len(),
+            member_phrases: current
+                .phrases
+                .iter()
+                .filter(|p| p.id.starts_with("member:") && !p.shortcut.is_empty())
+                .count(),
+            member: current.member_epoch.is_some(),
+            generation: current.generation,
+            custom: settings.custom_hotkeys,
+            global: settings.global_phrase_hotkeys,
+        });
         Ok(())
     }
     /// 搜索仅放行序号组合键；编辑和模态输入由上下文校验整体暂停。
@@ -889,7 +903,7 @@ mod platform {
                                 || kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN,
                             extended: status.IsExtendedKey.as_bool(),
                         };
-                        if shortcut_event(&state, event) {
+                        if shortcut_event(&state, event).0 {
                             args.SetHandled(true)?;
                         }
                         Ok(())
@@ -902,7 +916,7 @@ mod platform {
             })
             .map_err(|e| format!("无法接入窗口快捷键监听：{e}"))
     }
-    unsafe fn shortcut_event(state: &NativeState, event: KeyEvent) -> bool {
+    unsafe fn shortcut_event(state: &NativeState, event: KeyEvent) -> (bool, u8, bool) {
         let context = shortcut_context(state);
         let current_modifiers = modifiers();
         let (candidate_active, candidate_action) = {
@@ -955,12 +969,40 @@ mod platform {
         {
             state.cancelled.store(true, Ordering::Release);
         }
+        if action.fired.is_some()
+            || action.discarded
+            || !action.replay.is_empty()
+            || candidate_action.swallowed
+        {
+            crate::diagnostics::record(crate::diagnostics::Event::Match {
+                fired: action.fired.is_some(),
+                replay: action.replay.len(),
+                cancelled: action.discarded,
+                candidate: candidate_active,
+            });
+        }
         if let Some(id) = action.fired.take() {
             state.fire_shortcut(&id, &snapshot);
         }
         let swallowed = action.swallowed || candidate_action.swallowed;
+        // 复用已有绑定和上下文快照，诊断不能在键盘钩子中增加系统查询或等待。
+        let role = if !crate::diagnostics::enabled(crate::diagnostics::Category::Input) {
+            0
+        } else if snapshot.keys.iter().any(|(_, s)| s.key == event.key) {
+            1
+        } else if snapshot
+            .keys
+            .iter()
+            .any(|(_, s)| s.next_key == Some(event.key))
+        {
+            2
+        } else if candidate_action.swallowed {
+            3
+        } else {
+            0
+        };
         apply_key_action(state, action);
-        swallowed
+        (swallowed, role, context.is_some())
     }
     unsafe extern "system" fn keyboard_hook(code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
         if code >= 0 {
@@ -979,10 +1021,34 @@ mod platform {
                         down: message == WM_KEYDOWN || message == WM_SYSKEYDOWN,
                         extended: key.flags.contains(LLKHF_EXTENDED),
                     };
-                    let swallowed = shortcut_event(state, event);
-                    if swallowed {
-                        return LRESULT(1);
+                    let (swallowed, role, context) = shortcut_event(state, event);
+                    let result = if swallowed {
+                        LRESULT(1)
+                    } else {
+                        CallNextHookEx(None, code, w, l)
+                    };
+                    if role != 0 {
+                        crate::diagnostics::record(crate::diagnostics::Event::Key {
+                            role,
+                            down: event.down,
+                            local_blocked: swallowed,
+                            chain_blocked: result.0 != 0,
+                            context,
+                        });
                     }
+                    // 仅追踪隔离 Debug 宿主明确标记的合成按键，不记录真实用户的键盘输入。
+                    // 同时区分本程序拦截与后续钩子的最终返回，不能把“本程序放行”当成输入已送达。
+                    #[cfg(debug_assertions)]
+                    if test_key {
+                        log::info!(
+                            "隔离按键：code={}，down={}，吞键={}，本程序拦截={}。",
+                            event.key,
+                            event.down,
+                            result.0 != 0,
+                            swallowed
+                        );
+                    }
+                    return result;
                 }
             }
         }
@@ -1056,12 +1122,18 @@ mod platform {
             }
             let module = GetModuleHandleW(None).ok().map(|m| HINSTANCE(m.0));
             let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0).ok();
+            crate::diagnostics::record(crate::diagnostics::Event::Hook {
+                installed: hook.is_some(),
+            });
             let mouse_state = state.clone();
             let mouse = std::thread::spawn(move || listen_mouse(mouse_state));
             if hook.is_none() {
                 state.notify_error("无法安装话术快捷键监听，请检查系统权限。".into());
             }
             let mut dock = Dock::default();
+            let mut diagnostic_context = None;
+            let mut diagnostic_dock = None;
+            let mut diagnostic_tick = Instant::now();
             while state.running.load(Ordering::Acquire) {
                 while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
                     if msg.message == WM_HOTKEY {
@@ -1182,8 +1254,60 @@ mod platform {
                         }
                     }
                 }
+                let foreground = GetForegroundWindow();
+                let owned = pid(foreground) == std::process::id();
+                dock.refresh_target(foreground);
+                if owned && !was_owned {
+                    *state.target.lock().unwrap() = last_external.clone();
+                }
+                if let Some(external) = capture() {
+                    // 自动识别聊天窗口后同步快捷键目标，不能等用户点击闪语才更新。
+                    // 识别与吸附开关无关；仅接受仍在前台的已确认窗口，不能把所有外部
+                    // 窗口都变成目标，否则会绕过“全局生效”开关。切窗后的旧捕获也不能沿用。
+                    if dock.visible_target(foreground).is_some_and(|target| {
+                        target == foreground && external.hwnd == target.0 as i64
+                    }) {
+                        *state.target.lock().unwrap() = Some(external.clone());
+                    }
+                    last_external = Some(external);
+                }
+                was_owned = owned;
                 // 被钩子消费的键不会可靠更新异步键态；必须等实际 KeyUp 才能解除消费。
                 let current_context = shortcut_context(&state);
+                if crate::diagnostics::enabled(crate::diagnostics::Category::Input) {
+                    let target_matches = state
+                        .target
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .is_some_and(|t| t.hwnd == foreground.0 as i64);
+                    let observation = (
+                        current_context,
+                        target_matches,
+                        state.management_windows.is_open(),
+                        state.busy.load(Ordering::Acquire),
+                    );
+                    if diagnostic_context != Some(observation) {
+                        crate::diagnostics::record(crate::diagnostics::Event::Context {
+                            allowed: current_context.is_some(),
+                            target_matches,
+                            management: observation.2,
+                            busy: observation.3,
+                            focus_changed: diagnostic_context
+                                .is_some_and(|previous| previous.0 != current_context),
+                        });
+                        diagnostic_context = Some(observation);
+                    }
+                } else {
+                    diagnostic_context = None;
+                }
+                let elapsed = diagnostic_tick.elapsed();
+                if elapsed >= Duration::from_secs(2) {
+                    crate::diagnostics::record(crate::diagnostics::Event::Heartbeat {
+                        elapsed_ms: elapsed.as_millis() as u64,
+                    });
+                    diagnostic_tick = Instant::now();
+                }
                 let submit_down = GetAsyncKeyState(VK_RETURN.0 as i32) < 0;
                 let timed = {
                     let mut matcher = MATCHER
@@ -1200,20 +1324,11 @@ mod platform {
                     timed
                 };
                 apply_key_action(&state, timed);
-                state.check_candidates();
-                let foreground = GetForegroundWindow();
-                let owned = pid(foreground) == std::process::id();
+                state.schedule_candidate_check();
                 if let Some(app) = state.app.get() {
                     crate::common_menu::poll(app, &state, foreground);
                     crate::search_history_confirm::poll(app, &state);
                 }
-                if owned && !was_owned {
-                    *state.target.lock().unwrap() = last_external.clone();
-                }
-                if let Some(external) = capture() {
-                    last_external = Some(external);
-                }
-                was_owned = owned;
                 if let Some(windows) = state.windows.get() {
                     state
                         .preview
@@ -1221,13 +1336,31 @@ mod platform {
                         .unwrap()
                         .update(hwnd(windows.2), foreground);
                 }
-                dock.refresh_target(foreground);
                 if dock.edge.ready() && dock.floating.ready() {
                     if let Some(action) = dock.show_action.take() {
                         dock.show(&state, &action);
                     }
                 }
                 dock.update(&state, foreground);
+                if crate::diagnostics::enabled(crate::diagnostics::Category::Window) {
+                    let observation = (
+                        state.settings.read().unwrap().dock,
+                        dock.target,
+                        dock.original_rect.is_some(),
+                    );
+                    if diagnostic_dock != Some(observation) {
+                        crate::diagnostics::record(crate::diagnostics::Event::Dock {
+                            enabled: observation.0,
+                            target: observation.1.is_some(),
+                            attached: observation.2,
+                            target_changed: diagnostic_dock
+                                .is_some_and(|previous| previous.1 != observation.1),
+                        });
+                        diagnostic_dock = Some(observation);
+                    }
+                } else {
+                    diagnostic_dock = None;
+                }
                 if dock.original_rect.is_some() {
                     // 启动即吸附时高度由目标决定；已恢复的逻辑宽度仍沿用，不能和跟随定位争抢高度。
                     state.window_size.lock().unwrap().restore_pending = false;

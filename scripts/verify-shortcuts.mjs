@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import net from 'node:net';
+import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
@@ -27,7 +28,12 @@ const control = async (command, fields={}, filename=controls) => {
   await delay(120);
 };
 const poll = async (check,label) => {for(let i=0;i<100;i++){if(await check())return;await delay(35);}throw Error(`等待超时：${label}`);};
-const invoke = (cmd,args={},window=page) => window.evaluate(({cmd,args})=>window.__TAURI_INTERNALS__.invoke(cmd,args),{cmd,args});
+// 原生锁等待时 evaluate 不会自动超时；保留明确命令名，不能等到整套桌面验收被强制终止。
+const invoke = async (cmd,args={},window=page) => {
+  let timer;
+  try {return await Promise.race([window.evaluate(({cmd,args})=>window.__TAURI_INTERNALS__.invoke(cmd,args),{cmd,args}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(`原生请求超时：${cmd}`)),10000);})]);}
+  finally {clearTimeout(timer);}
+};
 const key = async (code, modifiers=[], extra=[]) => {const result=await native(['-Action','key','-Key',String(code),...modifiers,...extra]);assert.equal(result.desktop,result.inputDesktop,'测试按键应进入隔离输入桌面');return result;};
 const chord = () => native(['-Action','key','-Keys','81,87']);
 const focusHost = async () => { for(let i=0;i<3;i++){await native(['-Action','focus','-Handle',String(hostInfo.hwnd)]);await control('focus');await delay(300);if((await native(['-Handle',String(hostInfo.hwnd)])).foreground===hostInfo.hwnd)return;}throw Error('隔离宿主未取得稳定输入焦点。'); };
@@ -49,7 +55,9 @@ const submitted = async (draft, sends=0) => {
   await poll(async()=>await page.locator('.stop-delivery').count()===0,'发送完成回执');
   const paste=(await receipt()).events.filter(e=>e.kind==='paste-text').at(-1);
   if(paste)expectedClipboard=paste.value;
-  assert.equal((await native(['-ClipboardExpected',expectedClipboard])).clipboardMatches,true,'保留最后投递内容；没有投递时不改剪贴板');
+  const clipboard=await native(['-ClipboardExpected',expectedClipboard]);
+  if(!clipboard.clipboardMatches)receipts.push({name:'剪贴板检查失败',expectedLength:expectedClipboard.length,clipboard});
+  assert.equal(clipboard.clipboardMatches,true,'保留最后投递内容；没有投递时不改剪贴板');
 };
 const record = async name => {receipts.push({name,...await receipt()});};
 const test = async (name,fn) => {if(filter&&!name.includes(filter))return;try{await fn();results.push({name,passed:true});console.log(`通过：${name}`);}catch(error){results.push({name,passed:false,error:String(error)});throw error;}};
@@ -97,6 +105,55 @@ try {
   const references=new Map([...ids,solo].map(id=>[id,`private:${library.libraryId}:phrase:${id}:${library.privateRevisions[`phrase:${id}`]}`]));
   const targetContext={hwnd:hostInfo.hwnd,focus:hostInfo.focus,pid:hostInfo.pid};
 
+  await test('自动吸附目标同步后非全局快捷键无需点击闪语或重开吸附',async()=>{
+    const otherEvents=path.join(root,'target-other-events.json'),otherControls=path.join(root,'target-other-controls.json');
+    const neutral=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(repo,'tests','native-host.ps1'),'-EventsPath',otherEvents,'-ControlPath',otherControls],{windowsHide:true,stdio:'ignore'});
+    const chats=[];
+    const focus=async(info,controls)=>{for(let i=0;i<3;i++){await native(['-Action','focus','-Handle',String(info.hwnd),'-X','550','-Y','400']);await control('focus',{},controls);if((await native(['-Handle',String(info.hwnd)])).foreground===info.hwnd)return;}throw Error('宿主未取得前台输入焦点。');};
+    const visibleCandidate=async(info)=>{
+      const payload=await opened();assert.deepEqual(payload.target,{hwnd:info.hwnd,focus:info.focus,pid:info.pid});
+      await poll(async()=>(await native(['-Handle',String(candidateHandle)])).visible,'非全局候选实际可见');
+      assert.equal((await native(['-Handle',String(candidateHandle)])).foreground,info.hwnd,'候选不抢输入焦点');
+      return payload;
+    };
+    try {
+      const other=await read(otherEvents);
+      for(const dock of [true,false]) {
+        await settings({dock,customHotkeys:true,sequenceHotkeys:false,globalPhraseHotkeys:false});
+        await focus(other,otherControls);await showMain();
+        await poll(async()=>(await invoke('get_target'))?.hwnd===other.hwnd,'准备残留的其他窗口目标');
+        // 从这里开始不激活闪语、不调用 show、不改吸附，直接进入已识别的聊天窗口。
+        await focusHost();await control('reset',{draft:'自动目标：'});
+        if(dock)await poll(async()=>{const panel=await native(['-Handle',String(main)]),target=await native(['-Handle',String(hostInfo.hwnd)]);return panel.visible&&Math.abs(panel.rect.top-target.rect.top)<16&&Math.abs(panel.rect.bottom-target.rect.bottom)<16;},'侧栏已经自动吸附');
+        await visibleCandidate(hostInfo);await key(27);await noCandidate();
+        assert.equal((await receipt()).draft,'自动目标：qw');
+        receipts.push({name:`自动目标同步 dock=${dock}`,target:await invoke('get_target')});
+      }
+      // 同时存活的主窗／独立聊天窗互切，随后关闭并重新创建独立窗口。
+      for(const [index,windowClass] of ['WwStandaloneConversationWnd','CRMCustomerStandaloneWindow','WwStandaloneConversationWnd'].entries()) {
+        const output=path.join(root,`target-chat-${index}.json`),controls=path.join(root,`target-chat-${index}-control.json`);
+        const process=spawn(hostExe,[output,controls,windowClass],{windowsHide:true,stdio:'ignore'});chats.push({process,controls});
+        const info=await read(output);await focus(info,controls);await visibleCandidate(info);
+        await focusHost();await noCandidate();await control('reset',{draft:'自动目标：'});await visibleCandidate(hostInfo);
+        await focus(info,controls);await noCandidate();await visibleCandidate(info);
+        // 确认输入控件变化也取消旧会话，重新按键才打开新会话。
+        await control('blur',{},controls);await noCandidate();await focus(info,controls);await visibleCandidate(info);await key(27);await noCandidate();
+        await control('reset',{draft:'未完成：'},controls);await key(81);await focusHost();await delay(1200);await noCandidate();
+        assert.equal((await read(output)).draft,'未完成：q');assert.equal((await receipt()).draft,'自动目标：qw');
+        await focus(info,controls);await visibleCandidate(info);await control('close',{},controls);
+        await poll(async()=>process.exitCode!==null,'独立窗口关闭');await noCandidate();await focusHost();await visibleCandidate(hostInfo);await key(27);await noCandidate();
+        receipts.push({name:`独立窗口切换及关闭重开 ${index}`,windowClass,hwnd:info.hwnd});
+      }
+      await focus(other,otherControls);await control('reset',{draft:'范围：'},otherControls);await chord();await delay(200);await noCandidate();
+      assert.equal((await read(otherEvents)).draft,'范围：qw','非全局模式不放行无关窗口');
+      await settings({globalPhraseHotkeys:true});await visibleCandidate(other);await key(27);await noCandidate();
+    } finally {
+      for(const chat of chats){if(chat.process.exitCode===null){await control('close',{},chat.controls).catch(()=>{});chat.process.kill();}}
+      await control('close',{},otherControls).catch(()=>{});if(neutral.exitCode===null)neutral.kill();
+      await settings({dock:false,globalPhraseHotkeys:true});
+    }
+  });
+
   await test('设置页四个开关实际点击保存并控制原生触发和作用范围',async()=>{
     const labels={sequenceHotkeys:'开启序号快捷键',sequenceDirectSend:'直接发送',customHotkeys:'开启自定义快捷键',globalPhraseHotkeys:'全局生效'};
     const edit=async patch=>{
@@ -121,14 +178,14 @@ try {
     await edit({sequenceHotkeys:true});await prepare();await key(49,['-Ctrl']);await submitted('已有草稿：正文1');await record('界面开启序号后仅插入');
     await edit({sequenceDirectSend:true});await prepare();await key(49,['-Ctrl']);await submitted('',1);assert.equal((await receipt()).events.find(e=>e.kind==='send').value.text,'已有草稿：正文1');await record('界面开启直接发送后提交一次');
     await edit({sequenceDirectSend:false,sequenceHotkeys:false,customHotkeys:true});await prepare();await key(49,['-Ctrl']);await submitted('已有草稿：');await opened();await key(27);await noCandidate();await record('自定义开启独立于序号开关');
-    await edit({sequenceHotkeys:true});await prepare();await opened();await key(27);await noCandidate();await key(49,['-Ctrl']);await submitted('已有草稿：正文1');
+    await edit({sequenceHotkeys:true});await prepare();await opened();await key(27);await noCandidate();await key(49,['-Ctrl']);await submitted('已有草稿：qw正文1');
     const otherEvents=path.join(root,'four-switch-events.json'),otherControls=path.join(root,'four-switch-controls.json');
     otherHost=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(repo,'tests','native-host.ps1'),'-EventsPath',otherEvents,'-ControlPath',otherControls],{windowsHide:true,stdio:'ignore'});
     const other=await read(otherEvents);
     const focusOther=async()=>{await native(['-Action','focus','-Handle',String(other.hwnd)]);await control('focus',{},otherControls);await delay(180);};
     await focusOther();await control('reset',{draft:'范围关闭：'},otherControls);await chord();await key(49,['-Ctrl']);await delay(180);await noCandidate();assert.equal((await read(otherEvents)).draft,'范围关闭：qw');
     await edit({globalPhraseHotkeys:true});await focusOther();await control('reset',{draft:'全局：'},otherControls);await opened();await key(27);await noCandidate();await key(49,['-Ctrl']);
-    await poll(async()=>(await read(otherEvents)).draft==='全局：正文1','全局序号插入其他窗口');receipts.push({name:'界面全局开启后两种快捷键均可用',...await read(otherEvents)});
+    await poll(async()=>(await read(otherEvents)).draft==='全局：qw正文1','全局序号插入其他窗口');receipts.push({name:'界面全局开启后两种快捷键均可用',...await read(otherEvents)});
     await edit({globalPhraseHotkeys:false});await prepare();await focusOther();await control('reset',{draft:'再次关闭：'},otherControls);await chord();await key(49,['-Ctrl']);await delay(180);await noCandidate();assert.equal((await read(otherEvents)).draft,'再次关闭：qw');
     // 重开读取持久化结果，不能只检查当前复选框的乐观状态。
     await edit({sequenceHotkeys:false,sequenceDirectSend:false,customHotkeys:false,globalPhraseHotkeys:false});
@@ -181,17 +238,17 @@ try {
       await invoke('resize_shortcut_candidates',{sessionId:active.sessionId,layoutKey:'expired',width:1,height:1});
       assert.deepEqual((await native(['-Handle',String(candidateHandle)])).rect,geometry.rect,'迟到测量不能改变当前候选尺寸');
 
-      assert.equal((await receipt()).draft,'已有草稿：');await candidates.screenshot({path:path.join(evidence,count===12?'candidates-native.png':'candidate-single-native.png')});
+      assert.equal((await receipt()).draft,'已有草稿：qw');await candidates.screenshot({path:path.join(evidence,count===12?'candidates-native.png':'candidate-single-native.png')});
       if(count===12)await captureScales(candidates,'candidates',viewport.width,viewport.height);
       await key(27);await noCandidate();await record('Esc取消保留草稿');
     }
   });
   await test('数字1与0、空格插入；Enter直接发送；超过十项可选择且选择不限时',async()=>{
-    for(const [selection,expected] of [[49,'正文1'],[48,'正文10']]){await prepare();await opened();await key(selection);await submitted(`已有草稿：${expected}`);await record(`数字${selection-48}插入`);}
-    await prepare();await opened();await key(40);await key(32);await submitted('已有草稿：正文2');await record('空格插入当前项');
-    await prepare();await opened();await key(13);await submitted('',1);assert.equal((await receipt()).events.find(e=>e.kind==='send').value.text,'已有草稿：正文1');await record('Enter直接发送');
+    for(const [selection,expected] of [[49,'正文1'],[48,'正文10']]){await prepare();await opened();await key(selection);await submitted(`已有草稿：qw${expected}`);await record(`数字${selection-48}插入`);}
+    await prepare();await opened();await key(40);await key(32);await submitted('已有草稿：qw正文2');await record('空格插入当前项');
+    await prepare();await opened();await key(13);await submitted('',1);assert.equal((await receipt()).events.find(e=>e.kind==='send').value.text,'已有草稿：qw正文1');await record('Enter直接发送');
     await prepare();await opened();for(let i=0;i<12;i++)await key(40);assert.equal((await invoke('get_shortcut_candidates')).selectedIndex,11);
-    await delay(1300);assert.equal((await invoke('get_shortcut_candidates')).selectedIndex,11);await key(32);await submitted('已有草稿：正文12');await record('第十二候选不限时插入');
+    await delay(1300);assert.equal((await invoke('get_shortcut_candidates')).selectedIndex,11);await key(32);await submitted('已有草稿：qw正文12');await record('第十二候选不限时插入');
   });
   await test('单条也弹候选；长按触发与重复提交只执行一次',async()=>{
     await prepare();const payload=await opened(()=>key(122,['-Ctrl','-Shift'],['-Repeats','5']));assert.equal(payload.phrases.length,1);assert.equal(payload.phrases[0].id,references.get(solo));
@@ -206,17 +263,30 @@ try {
           await prepare();
           const payload=await opened(()=>key(0,mods,['-Keys',keys,...extra]));
           assert.equal(payload.phrases[0].title,title);
-          await key(27);await noCandidate();await submitted('已有草稿：');
+          await key(27);await noCandidate();await submitted(`已有草稿：${mods.length?'':keys==='49,49'?'11':'qw'}`);
         }
       }
     } finally { for(const id of [repeated,modified])await invoke('delete_item',{id,kind:'phrase',recycle:false}); }
   });
-  await test('双键超时在原输入区回放，焦点和外部点击取消候选',async()=>{
-    await prepare('超时：');await key(81);await submitted('超时：q');await noCandidate();await record('双键超时回放');
+  await test('普通输入保留触发文字，继续打字关闭候选，数字触发长按不投递',async()=>{
+    await prepare();await key(0,[],['-Keys','81,87,69']);await noCandidate();await submitted('已有草稿：qwe');await record('继续输入正常透传');
+    const repeated=await savePhrase('数字长按','1+1');
+    const overlap=await savePhrase('数字重叠','1+2');
+    try {
+      for(const [keys,extra,draft] of [['49,49',[],'1111111111'],['49,50',['-Overlap'],'1111122222']]) {
+        await prepare();await opened(()=>key(0,[],['-Keys',keys,'-Repeats','5',...extra]));
+        await submitted(`已有草稿：${draft}`);assert.equal((await receipt()).events.filter(e=>e.kind==='paste-text'||e.kind==='send').length,0);
+        await key(49,[],['-Repeats','5']);await submitted(`已有草稿：${draft}正文${keys==='49,49'?'数字长按':'数字重叠'}`);
+        assert.equal((await receipt()).events.filter(e=>e.kind==='paste-text').length,1);await record('数字触发松键后才能选择且长按不重复投递');
+      }
+    } finally {for(const id of [repeated,overlap])await invoke('delete_item',{id,kind:'phrase',recycle:false});}
+  });
+  await test('普通首键即时输入且超时不回放，焦点和外部点击取消候选',async()=>{
+    await prepare('超时：');const timing=await key(81);await submitted('超时：q');const latency=Date.parse((await receipt()).lastTextChangedAt)-Date.parse(timing.keyStartedAt);assert.ok(latency>=0&&latency<800,`首键应立即输入，实际延迟 ${latency} ms`);receipts.push({name:'首键即时输入',latency});await delay(1200);await submitted('超时：q');await noCandidate();await record('超时不重复回放');
     await prepare();await opened();await control('blur');await noCandidate();await record('输入控件变化取消');
-    assert.equal((await receipt()).draft,'已有草稿：');
+    assert.equal((await receipt()).draft,'已有草稿：qw');
     await prepare();await opened();await native(['-Action','focus','-Handle',String(hostInfo.hwnd)]);await noCandidate();await record('点击候选外部取消');
-    await prepare();await opened();await showMain();await noCandidate();assert.equal((await receipt()).draft,'已有草稿：');await record('窗口切换取消');
+    await prepare();await opened();await showMain();await noCandidate();assert.equal((await receipt()).draft,'已有草稿：qw');await record('窗口切换取消');
   });
   await test('提交前核对库和修订，正文更新、改绑或删除后拒绝旧候选并保留草稿',async()=>{
     await prepare();await opened(()=>key(122,['-Ctrl','-Shift']));
@@ -280,9 +350,53 @@ try {
     otherHost=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(repo,'tests','native-host.ps1'),'-EventsPath',otherEvents,'-ControlPath',otherControls],{windowsHide:true,stdio:'ignore'});const other=await read(otherEvents);
     await prepare();await settings({globalPhraseHotkeys:false,sequenceHotkeys:true,sequenceDirectSend:false});await native(['-Action','focus','-Handle',String(other.hwnd)]);await control('reset',{draft:'范围：'},otherControls);await control('focus',{},otherControls);await chord();await key(49,['-Ctrl']);await delay(180);assert.equal((await read(otherEvents)).draft,'范围：qw');await noCandidate();
     await settings({globalPhraseHotkeys:true});await opened();await key(27);await noCandidate();
-    await key(49,['-Ctrl']);await poll(async()=>(await read(otherEvents)).draft==='范围：qw正文1','全局序号在其他窗口生效');receipts.push({name:'全局序号在其他窗口插入',...await read(otherEvents)});
-    await focusHost();await control('reset',{draft:'未完成：'});await key(81);await native(['-Action','focus','-Handle',String(other.hwnd)]);await control('focus',{},otherControls);await delay(1200);assert.equal((await receipt()).draft,'未完成：');assert.equal((await read(otherEvents)).draft,'范围：qw正文1');await record('未完成序列切窗取消');
+    await key(49,['-Ctrl']);await poll(async()=>(await read(otherEvents)).draft==='范围：qwqw正文1','全局序号在其他窗口生效');receipts.push({name:'全局序号在其他窗口插入',...await read(otherEvents)});
+    await focusHost();await control('reset',{draft:'未完成：'});await key(81);await native(['-Action','focus','-Handle',String(other.hwnd)]);await control('focus',{},otherControls);await delay(1200);assert.equal((await receipt()).draft,'未完成：q');assert.equal((await read(otherEvents)).draft,'范围：qwqw正文1');await record('未完成序列切窗取消');
   });
+  await test('候选跨屏重测期间视口缩小仍完整显示数量关闭按钮和底部提示',async()=>{
+    const id=await savePhrase('跨屏长标题'.repeat(15),'Ctrl+Shift+F10');
+    const session=await context.newCDPSession(candidates);
+    try {
+      await prepare();await opened(()=>key(121,['-Ctrl','-Shift']));
+      await poll(async()=>await candidates.evaluate(()=>innerWidth>=350),'跨屏前宽候选');
+      // 模拟 DPI 通知与原生重测间的窄视口，不把浏览器模拟结果当成系统双屏验收。
+      await session.send('Emulation.setDeviceMetricsOverride',{width:240,height:420,deviceScaleFactor:1.5,mobile:false});await delay(180);
+      const actual=await candidates.evaluate(()=>{
+        const root=document.querySelector('section'),close=root.querySelector('header button'),count=root.querySelector('header span');
+        const fits=element=>{const r=element.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;};
+        const fixed={root:fits(root),close:fits(close),count:fits(count),hints:[...root.querySelectorAll('footer span')].every(fits),overflow:document.documentElement.scrollWidth>innerWidth};
+        // 同一真实 WebView 中去掉本次约束应重现旧布局的右侧裁切。
+        root.style.maxWidth='none';const previousClipped=!fits(close);root.style.removeProperty('max-width');
+        return {...fixed,previousClipped};
+      });
+      assert.deepEqual(actual,{root:true,close:true,count:true,hints:true,overflow:false,previousClipped:true});
+      receipts.push({name:'候选跨屏过渡视口模拟',...actual});
+      // WebView2 的虚拟视口截图可能重复拼接原生表面；恢复真实视口后才保留视觉证据。
+      await session.send('Emulation.clearDeviceMetricsOverride');await delay(180);
+      await native(['-Handle',String(candidateHandle),'-Screenshot',path.join(evidence,'candidate-dpi-restored.png')]);
+    } finally {await session.send('Emulation.clearDeviceMetricsOverride');await session.detach();await key(27);await noCandidate();await invoke('delete_item',{id,kind:'phrase',recycle:false});}
+  });
+  const dpiName='候选跨屏实际系统DPI往返后内容与客户区一致';
+  if(!filter||dpiName.includes(filter)) {
+    const monitors=(await native([])).monitors;
+    if(monitors.length<2)results.push({name:dpiName,skipped:true,reason:'只有一个显示器，未执行真实跨屏 DPI 验收'});
+    else await test(dpiName,async()=>{
+      await prepare();await opened();const original=await native(['-Handle',String(hostInfo.hwnd)]),observed=new Set();
+      try {
+        for(let round=0;round<2;round++)for(const [index,monitor] of monitors.entries()) {
+          await native(['-Action','move','-Handle',String(hostInfo.hwnd),'-X',String(monitor.work.left+80),'-Y',String(monitor.work.top+120),'-Width','600','-Height','450']);
+          await poll(async()=>{
+            const actual=await native(['-Handle',String(candidateHandle)]),payload=await invoke('get_shortcut_candidates');
+            const view=await candidates.evaluate(()=>({width:innerWidth,height:innerHeight,root:document.querySelector('section').getBoundingClientRect().width,close:document.querySelector('header button').getBoundingClientRect().right,footer:document.querySelector('footer').getBoundingClientRect().bottom,dpr:devicePixelRatio}));
+            if(!actual.visible||actual.workArea.left!==monitor.work.left||Math.abs(view.dpr-actual.dpi/96)>.01||Math.abs(actual.clientRect.right-view.width*actual.dpi/96)>1||view.root>view.width+.5||view.close>view.width+.5||view.footer>view.height+.5)return false;
+            observed.add(actual.dpi);receipts.push({name:`系统跨屏 ${round}/${index}`,actual,view,layoutKey:payload.layoutKey});return true;
+          },'跨屏候选尺寸与自身DPI一致');
+          await candidates.screenshot({path:path.join(evidence,`candidate-monitor-${round}-${index}.png`)});
+        }
+        receipts.push({name:'跨屏实际覆盖DPI',values:[...observed]});
+      } finally {await key(27);await native(['-Action','move','-Handle',String(hostInfo.hwnd),'-X',String(original.rect.left),'-Y',String(original.rect.top),'-Width',String(original.rect.right-original.rect.left),'-Height',String(original.rect.bottom-original.rect.top)]);}
+    });
+  }
   await test('候选紧凑定位跟随光标和窗口移动，无光标按控件及窗口回退',async()=>{
     await settings({sequenceHotkeys:false,customHotkeys:true,globalPhraseHotkeys:true});
     await prepare();
@@ -292,7 +406,7 @@ try {
       await move(initial.workArea.left+80,initial.workArea.top+240);
       await opened(()=>key(122,['-Ctrl','-Shift']));
       await poll(async()=>(await native(['-Handle',String(candidateHandle)])).visible,'紧凑候选显示');
-      const before=await native(['-Handle',String(candidateHandle)]), target=await native(['-Handle',String(hostInfo.hwnd)]), scale=target.dpi/96, gap=Math.round(6*scale);
+      const before=await native(['-Handle',String(candidateHandle)]), target=await native(['-Handle',String(hostInfo.hwnd)]), scale=before.dpi/96, gap=Math.round(6*scale);
       assert.ok(target.caretRect,'宿主提供实际系统光标');
       assert.equal(before.rect.left,target.caretRect.left);assert.equal(before.rect.bottom,target.caretRect.top-gap);
       const dims=[before.rect.right-before.rect.left,before.rect.bottom-before.rect.top];
@@ -342,6 +456,60 @@ try {
     await key(27);await noCandidate();
     for(const id of ids)await invoke('delete_item',{id,kind:'phrase',recycle:false});
     await settings({fontSize:14});
+  });
+  await test('统一诊断按类启用、透传与导出隐私、重启保留', async()=>{
+    await settings({customHotkeys:true,globalPhraseHotkeys:true,sequenceHotkeys:false});
+    await prepare('诊断草稿：');
+    assert.equal((await invoke('diagnostics_status')).running,false);
+    await showMain();await page.getByRole('button',{name:'设置',exact:true}).click();
+    await poll(async()=>context.pages().some(p=>p.url().includes('#settings')),'诊断设置窗口');
+    settingsPage=context.pages().find(p=>p.url().includes('#settings'));
+    await settingsPage.getByRole('button',{name:'问题诊断',exact:true}).click();
+    await settingsPage.getByRole('button',{name:'开始记录'}).waitFor();
+    for(const name of ['账号与同步','窗口与显示','卡顿与响应'])await settingsPage.getByRole('checkbox',{name:new RegExp(name)}).check();
+    await settingsPage.screenshot({path:path.join(evidence,'diagnostics-settings.png')});
+    await captureScales(settingsPage,'diagnostics-small',480,480);
+    await settingsPage.getByRole('button',{name:'开始记录'}).click();
+    await poll(async()=>!context.pages().includes(settingsPage),'开始记录后正常关闭设置');
+    assert.equal((await invoke('diagnostics_status')).running,true);
+    await focusHost();await opened();
+    assert.equal((await receipt()).draft,'诊断草稿：qw','开启诊断仍透传触发字母');
+    assert.equal((await native(['-Handle',String(candidateHandle)])).foreground,hostInfo.hwnd);
+    await key(49);await submitted('诊断草稿：qw正文1');
+    // 本机临时HTTP宿主返回带隐私哨兵的错误，证明导出不会复制原始错误或账号字段。
+    const server=http.createServer((_req,res)=>{res.writeHead(401,{'content-type':'application/json'});res.end(JSON.stringify({message:'DIAG_SECRET_SERVER_ERROR'}));});
+    await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+    try {await assert.rejects(invoke('team_login',{server:`http://127.0.0.1:${server.address().port}`,username:'DIAG_SECRET_USER',password:'DIAG_SECRET_PASSWORD'}));}
+    finally {await new Promise(resolve=>server.close(resolve));}
+    await delay(2200);await invoke('diagnostics_stop');
+    const zipPath=path.join(evidence,'diagnostics.zip');await invoke('diagnostics_export',{path:zipPath});
+    const unzip=async filename=>JSON.parse((await run('python',['-c','import json,sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); print(json.dumps({n:z.read(n).decode("utf-8") for n in z.namelist()},ensure_ascii=True))',filename],{encoding:'utf8'})).stdout);
+    const entries=await unzip(zipPath),raw=JSON.stringify(entries);
+    assert.deepEqual(Object.keys(entries).sort(),['events.jsonl','manifest.json','说明.txt'].sort());
+    for(const secret of ['DIAG_SECRET_','正文1','诊断草稿：',hostInfo.hwnd.toString(),'Q+W'])assert.equal(raw.includes(secret),false,`诊断不得包含${secret}`);
+    const records=entries['events.jsonl'].trim().split('\n').map(JSON.parse),events=records.map(r=>r.event);
+    const trigger=events.filter(e=>e.event==='key'&&[1,2].includes(e.role));
+    assert.ok(trigger.length>=4);assert.ok(trigger.every(e=>!e.local_blocked&&!e.chain_blocked));
+    assert.ok(trigger.some(e=>e.down)&&trigger.some(e=>!e.down));
+    for(const name of ['startup','bindings','hook','context','candidate','delivery','layout','network','ipc','heartbeat'])assert.ok(events.some(e=>e.event===name),`缺少${name}记录`);
+    assert.ok(events.some(e=>e.event==='network'&&e.status===401));
+    const manifest=JSON.parse(entries['manifest.json']);assert.equal(manifest.imeComposition,'unknown');assert.ok(manifest.windowsBuild>0);
+    await focusHost();await key(81);await key(87);await key(27);
+    await invoke('diagnostics_export',{path:zipPath});
+    const stopped=await unzip(zipPath);assert.equal(stopped['events.jsonl'].trim().split('\n').map(JSON.parse).filter(r=>r.event.event==='key').length,events.filter(e=>e.event==='key').length);
+    // 只重启本套验收进程，不操作安装版；持久记录可导出且详细采集不会自启。
+    await invoke('window_action',{action:'exit'});await poll(async()=>app.exitCode!==null,'诊断隔离进程退出');await browser.close().catch(()=>{});
+    app=spawn(path.join(repo,'src-tauri','target','debug','QuickPhrase.exe'),['--autostart'],{cwd:repo,windowsHide:true,stdio:'ignore',env:{...process.env,SHANYU_TEST_DATA_DIR:path.join(root,'data'),WEBVIEW2_USER_DATA_FOLDER:path.join(root,'webview'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${debuggerPort}`}});
+    browser=null;for(let i=0;i<80;i++){try{browser=await chromium.connectOverCDP(`http://127.0.0.1:${debuggerPort}`);break;}catch{await delay(200);}}
+    assert.ok(browser);context=browser.contexts()[0];page=context.pages().find(p=>!new URL(p.url()).hash);await page.locator('.main-window').waitFor();
+    assert.equal((await invoke('diagnostics_status')).running,false);
+    await invoke('diagnostics_export',{path:path.join(evidence,'diagnostics-restarted.zip')});
+    const restarted=await unzip(path.join(evidence,'diagnostics-restarted.zip'));
+    const restored=restarted['events.jsonl'].trim().split('\n').map(JSON.parse);
+    assert.ok(new Set(restored.map(r=>r.process)).size>=2);
+    assert.equal(restored.filter(r=>r.event.event==='key').length,events.filter(e=>e.event==='key').length);
+    await invoke('diagnostics_clear');assert.equal((await invoke('diagnostics_status')).records,0);
+    receipts.push({name:'统一诊断包',path:zipPath,records:records.length,manifest});
   });
   await fs.writeFile(path.join(evidence,'native-report.json'),JSON.stringify({root,results,receipts,scope:'Windows 11 独立输入桌面、标准 WinForms 及 Debug 吸附宿主；真实聊天软件未验收',scales:'WebView2 deviceScaleFactor 1/1.5/2；系统物理 DPI 与真实输入法未验收'},null,2));
 } catch(error) {

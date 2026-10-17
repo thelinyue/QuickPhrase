@@ -11,6 +11,14 @@ beforeEach(() => { Element.prototype.scrollIntoView=vi.fn(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const payload: ShortcutCandidates = { sessionId:'test',layoutKey:'test-layout',maxWidth:360,maxHeight:420,shortcut:'Q+W',selectedIndex:0,target:{hwnd:1,focus:2,pid:3},phrases:Array.from({length:12},(_,i)=>({id:String(i),rootId:'R',groupId:null,title:`话术${i+1}`,shortcut:'Q+W',position:i,color:'',background:'',segments:[]})) };
 describe('原生候选快照绘制', () => {
+  it('跨屏布局身份变化即使逻辑尺寸相同也重新测量，不复用旧屏幕回执', async () => {
+    vi.mocked(call).mockImplementation(async name => name === 'get_shortcut_candidates' ? payload : null);
+    render(<ShortcutCandidatesWindow />);
+    await waitFor(() => expect(call).toHaveBeenCalledWith('resize_shortcut_candidates', expect.objectContaining({ layoutKey: payload.layoutKey })));
+    const before = vi.mocked(call).mock.calls.find(([name]) => name === 'resize_shortcut_candidates')![1];
+    await act(async () => handler.fn({ payload: { ...payload, layoutKey: 'same-monitor-new-candidate-dpi' } }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith('resize_shortcut_candidates', { ...before as object, layoutKey: 'same-monitor-new-candidate-dpi' }));
+  });
   it.each([[80, 360, 240], [600, 360, 360], [600, 180, 180]])('自然内容宽度 %i 在布局上限 %i 下测为 %i，选择不重测', async (natural, maxWidth, expected) => {
     const scroll = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function(this: HTMLElement) {
       return this.classList.contains('candidate-content') ? natural : 0;

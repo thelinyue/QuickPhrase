@@ -14,6 +14,13 @@ pub struct Shortcut {
     pub next_key: Option<u32>,
 }
 impl Shortcut {
+    /// 可输入首键立即交给输入法；即使后接 F 键，也不能因共享首键而延迟普通输入。
+    /// Ctrl／Alt／Win 组合仍保留原来的拦截语义，Shift 允许正常输入大写字母。
+    pub fn passes_input(&self) -> bool {
+        self.next_key.is_some()
+            && self.modifiers & (1 | 2 | 8) == 0
+            && ((0x30..=0x39).contains(&self.key) || (0x41..=0x5A).contains(&self.key))
+    }
     pub fn canonical(&self) -> String {
         let mut parts = [(1, "Ctrl"), (2, "Alt"), (4, "Shift"), (8, "Win")]
             .into_iter()
@@ -109,9 +116,11 @@ struct Pending {
     key: u32,
     started: Instant,
     events: Vec<KeyEvent>,
+    passes_input: bool,
 }
 
-/// 首键暂存一秒。匹配后吞掉两键，失败或超时在原输入位置回放原事件，避免留下触发文字。
+/// 可输入双键只观察匹配、不截留或回放，选择话术后也保留触发文字。
+/// 功能组合仍暂存首键一秒，失败或超时只在原输入位置回放。
 /// 原生窗口或输入控件变化时取消且不向新焦点回放；长按重复、合成事件不会重复触发。
 #[derive(Default)]
 pub struct ShortcutMatcher {
@@ -194,14 +203,11 @@ impl ShortcutMatcher {
             return action;
         };
         if let Some(pending) = &mut self.pending {
-            if event.key == pending.key && !event.down {
-                pending.events.push(event);
-                action.swallowed = true;
-                return action;
-            }
-            if repeat && event.key == pending.key {
-                pending.events.push(event);
-                action.swallowed = true;
+            if event.key == pending.key && (!event.down || repeat) {
+                if !pending.passes_input {
+                    pending.events.push(event);
+                    action.swallowed = true;
+                }
                 return action;
             }
             if event.down && !repeat && modifiers == pending.modifiers {
@@ -210,18 +216,20 @@ impl ShortcutMatcher {
                         && s.key == pending.key
                         && s.next_key == Some(event.key)
                 }) {
-                    // 快速输入允许不同键重叠；两枚尚未松开的触发键都必须消费到松开。
-                    if self.held.contains(&pending.key) {
-                        self.consumed.insert(pending.key);
+                    // 普通输入的按下和松开都放行；仅拦截型组合消费尚未松开的触发键。
+                    if !pending.passes_input {
+                        if self.held.contains(&pending.key) {
+                            self.consumed.insert(pending.key);
+                        }
+                        self.consumed.insert(event.key);
+                        action.swallowed = true;
                     }
                     self.pending = None;
-                    self.consumed.insert(event.key);
-                    action.swallowed = true;
                     action.fired = Some(id.clone());
                     return action;
                 }
             }
-            // 其他按键（含松开修饰键）先还原首键，不重新把该事件解释为另一条快捷键。
+            // 其他按键（含松开修饰键）结束匹配；仅还原拦截的首键，不把该事件重新解释为快捷键。
             let flushed = self.flush(Some(context));
             action.replay.extend(flushed.replay);
             return action;
@@ -233,14 +241,19 @@ impl ShortcutMatcher {
             .iter()
             .find(|(_, s)| s.key == event.key && s.modifiers == modifiers)
         {
-            action.swallowed = true;
+            action.swallowed = !shortcut.passes_input();
             if shortcut.next_key.is_some() {
                 self.pending = Some(Pending {
                     context,
                     modifiers,
                     key: event.key,
                     started: now,
-                    events: vec![event],
+                    events: if action.swallowed {
+                        vec![event]
+                    } else {
+                        vec![]
+                    },
+                    passes_input: shortcut.passes_input(),
                 });
             } else {
                 self.consumed.insert(event.key);
@@ -360,27 +373,30 @@ mod tests {
         );
     }
     #[test]
-    fn overlapping_ordered_keys_fire_once_and_consume_both_releases() {
-        for (binding, modifiers) in [("A+B", 0), ("Ctrl+A+B", 1)] {
+    fn overlapping_ordered_keys_fire_once_and_preserve_input_policy() {
+        for (binding, modifiers) in [("A+B", 0), ("Shift+A+B", 4), ("Ctrl+A+B", 1)] {
             let mut matcher = ShortcutMatcher::default();
             let now = Instant::now();
             let bindings = bindings(&[binding]);
-            assert!(
+            assert_eq!(
                 matcher
                     .event(event('A', true), CONTEXT, modifiers, &bindings, now)
-                    .swallowed
+                    .swallowed,
+                modifiers == 1
             );
             let second = matcher.event(event('B', true), CONTEXT, modifiers, &bindings, now);
             assert_eq!(second.fired.as_deref(), Some("0"));
+            assert_eq!(second.swallowed, modifiers == 1);
             assert!(second.replay.is_empty());
             for key in ['A', 'B'] {
                 let repeat = matcher.event(event(key, true), CONTEXT, modifiers, &bindings, now);
-                assert!(repeat.swallowed);
+                assert_eq!(repeat.swallowed, modifiers == 1);
                 assert!(repeat.fired.is_none());
-                assert!(
+                assert_eq!(
                     matcher
                         .event(event(key, false), CONTEXT, modifiers, &bindings, now)
-                        .swallowed
+                        .swallowed,
+                    modifiers == 1
                 );
             }
         }
@@ -390,16 +406,16 @@ mod tests {
     fn consumed_keys_require_real_release_even_after_context_change() {
         let mut matcher = ShortcutMatcher::default();
         let now = Instant::now();
-        let keys = bindings(&["1+1"]);
-        matcher.event(event('1', true), CONTEXT, 0, &keys, now);
-        matcher.event(event('1', false), CONTEXT, 0, &keys, now);
+        let keys = bindings(&["Ctrl+1+1"]);
+        matcher.event(event('1', true), CONTEXT, 1, &keys, now);
+        matcher.event(event('1', false), CONTEXT, 1, &keys, now);
         assert!(matcher
-            .event(event('1', true), CONTEXT, 0, &keys, now)
+            .event(event('1', true), CONTEXT, 1, &keys, now)
             .fired
             .is_some());
         matcher.tick(None, now + SEQUENCE_TIMEOUT);
         for context in [None, CONTEXT] {
-            let action = matcher.event(event('1', true), context, 0, &keys, now);
+            let action = matcher.event(event('1', true), context, 1, &keys, now);
             assert!(action.swallowed);
             assert!(action.fired.is_none());
         }
@@ -408,10 +424,10 @@ mod tests {
                 .event(event('1', false), None, 0, &keys, now)
                 .swallowed
         );
-        matcher.event(event('1', true), CONTEXT, 0, &keys, now);
-        matcher.event(event('1', false), CONTEXT, 0, &keys, now);
+        matcher.event(event('1', true), CONTEXT, 1, &keys, now);
+        matcher.event(event('1', false), CONTEXT, 1, &keys, now);
         assert!(matcher
-            .event(event('1', true), CONTEXT, 0, &keys, now)
+            .event(event('1', true), CONTEXT, 1, &keys, now)
             .fired
             .is_some());
     }
@@ -435,7 +451,7 @@ mod tests {
             Some("0")
         );
         assert!(
-            matcher
+            !matcher
                 .event(event('1', false), CONTEXT, 0, &bindings, now)
                 .swallowed
         );
@@ -462,10 +478,10 @@ mod tests {
         }
         let mut matcher = ShortcutMatcher::default();
         let now = Instant::now();
-        let bindings = bindings(&["1+1"]);
-        matcher.event(event('1', true), CONTEXT, 0, &bindings, now);
-        matcher.event(event('1', true), CONTEXT, 0, &bindings, now);
-        matcher.event(event('1', false), CONTEXT, 0, &bindings, now);
+        let bindings = bindings(&["Ctrl+1+1"]);
+        matcher.event(event('1', true), CONTEXT, 1, &bindings, now);
+        matcher.event(event('1', true), CONTEXT, 1, &bindings, now);
+        matcher.event(event('1', false), CONTEXT, 1, &bindings, now);
         let timed = matcher.tick(CONTEXT, now + SEQUENCE_TIMEOUT);
         assert_eq!(
             timed.replay,
@@ -510,6 +526,34 @@ mod tests {
         matcher.event(event('Y', false), CONTEXT, 0, &all, now);
         let deleted = matcher.event(event('C', true), CONTEXT, 0, &[], now);
         assert!(deleted.fired.is_none());
-        assert_eq!(deleted.replay.len(), 2);
+        assert!(deleted.replay.is_empty());
+    }
+
+    #[test]
+    fn ordinary_prefix_is_immediate_and_never_replayed_on_failure_or_rebind() {
+        for ending in 0..4 {
+            let mut matcher = ShortcutMatcher::default();
+            let now = Instant::now();
+            let keys = bindings(&["Q+W", "Q+F1"]);
+            for event in [event('Q', true), event('Q', true), event('Q', false)] {
+                let action = matcher.event(event, CONTEXT, 0, &keys, now);
+                assert!(!action.swallowed);
+                assert!(action.replay.is_empty());
+                assert!(action.fired.is_none());
+            }
+            let action = match ending {
+                0 => matcher.event(event('X', true), CONTEXT, 0, &keys, now),
+                1 => matcher.tick(CONTEXT, now + SEQUENCE_TIMEOUT),
+                2 => matcher.rebind(1, CONTEXT),
+                _ => matcher.tick(Some((10, 12)), now),
+            };
+            assert!(!action.swallowed);
+            assert!(action.replay.is_empty());
+            assert!(action.fired.is_none());
+            assert!(matcher
+                .event(event('W', true), CONTEXT, 0, &keys, now)
+                .fired
+                .is_none());
+        }
     }
 }

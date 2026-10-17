@@ -45,6 +45,7 @@ export function ShortcutDialog({ id, value, onConfirm, close }: { id: string; va
       <div className="shortcut-footer"><button type="button" className="shortcut-help-toggle" aria-label="自定义快捷键使用说明" aria-expanded={help} onClick={() => setHelp(v => !v)}>使用说明</button><button type="button" className="secondary-button" disabled={busy} onClick={close}>取消</button><button type="submit" className="primary-button" disabled={!ready || busy}>{busy ? '保存中' : '确定'}</button></div>
       {help && <div className="shortcut-help"><p><strong>设置：</strong>组合键只填第一键；无功能键时需填两键。</p>
         <p className="shortcut-timing"><strong>触发：</strong>双键依次按，两键间隔不超过 1 秒；使用功能键时保持按住。</p>
+        <p>普通字母、数字双键不拦截输入，选择话术后保留触发文字。候选显示时，数字、空格和 Enter 操作话术候选。</p>
         {/* 按住修饰键与依次按下普通键分别展示，避免把顺序双键误读为同时按下。 */}
         <div className="shortcut-examples"><figure><figcaption>Ctrl+Y+C</figcaption><div className="shortcut-sequence"><div><kbd>Ctrl</kbd><small>按住</small></div><span aria-hidden="true">＋</span><div><kbd>Y</kbd><small>按下 · 松开</small></div><span aria-hidden="true">→</span><div><kbd>C</kbd><small>按下 · 松开</small></div></div></figure>
           <figure><figcaption>1+1（无功能键）</figcaption><div className="shortcut-sequence"><div><kbd>1</kbd><small>按下 · 松开</small></div><span aria-hidden="true">→</span><div><kbd>1</kbd><small>再按一次</small></div></div></figure></div>

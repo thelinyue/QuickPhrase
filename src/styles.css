@@ -480,9 +480,17 @@ select, input[type="text"], input[type="number"], #phrase-title { border: 1px so
 .settings-window { width: 594px; height: 620px; background: var(--theme-surface, #f5f5f5); display: flex; flex-direction: column; }
 .settings-layout { display: flex; flex: 1; min-height: 0; }
 .settings-sidebar { background: var(--theme-panel); width: 112px; flex-shrink: 0; display: flex; flex-direction: column; padding: 10px 7px 0; border-right: 1px solid var(--line); }
-.settings-sidebar nav { display: flex; flex-direction: column; gap: 2px; }
-.settings-sidebar nav button { background: transparent; border: 0; padding: 0 10px; height: 36px; text-align: left; color: var(--theme-muted); }
+.settings-sidebar nav { display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; scrollbar-width: thin; margin-bottom: 12px; }
+.settings-sidebar nav button { background: transparent; border: 0; padding: 0 10px; height: 36px; flex-shrink: 0; white-space: nowrap; text-align: left; color: var(--theme-muted); }
 .settings-sidebar nav button.active { color: var(--blue); background: var(--theme-selection); font-weight: 600; }
+.diagnostics-options { border: 1px solid var(--line); border-radius: 6px; margin: 16px 0; padding: 12px; display: grid; gap: 12px; min-width: 0; }
+.diagnostics-options label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.diagnostics-options small { display: block; color: var(--theme-muted); margin-top: 4px; line-height: 1.5; }
+.diagnostics-settings > p { line-height: 1.6; }
+.diagnostics-status { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.diagnostics-status .settings-hint { margin: 0; width: auto; }
+.diagnostics-details { margin-top: 20px; color: var(--theme-muted); font-size: 12px; line-height: 1.6; }
+.diagnostics-details summary { cursor: pointer; width: fit-content; }
 .settings-brand { margin-top: auto; text-align: center; padding: 0 0 25px; display: flex; flex-direction: column; gap: 5px; }
 .settings-brand small { color: var(--theme-muted, #8f9ead); font-size: 11px; }
 .about-brand { display: flex; align-items: center; gap: 16px; margin: 4px 0 14px; }
@@ -611,7 +619,8 @@ select, input[type="text"], input[type="number"], #phrase-title { border: 1px so
 .sequence-binding button { height: 32px; border: 0; padding: 0; background: transparent; font-size: 11px; }
 .custom-hotkey-settings > .settings-hint { margin-top: 8px; }
 /* 候选复用主题的内容底色和边框；只绘制原生快照，紧凑单行保持数字和选择位置清晰。 */
-.shortcut-candidates-window { height: 100vh; display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--theme-surface); color: var(--theme-text); font-size: var(--phrase-size); overflow: hidden; }
+/* 跨屏重测前仍可能保留旧逻辑宽度，内容先收在当前视口内，确保数量和关闭按钮不被裁掉。 */
+.shortcut-candidates-window { max-width: 100%; height: 100vh; display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--theme-surface); color: var(--theme-text); font-size: var(--phrase-size); overflow: hidden; }
 .shortcut-candidates-window > header { height: 32px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-bottom: 1px solid var(--line); font-size: 13px; background: var(--blue); color: #fff; }
 .shortcut-candidates-window > header > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shortcut-candidates-window > header > span { flex-shrink: 0; color: inherit; margin-left: auto; font-size: 11px; }

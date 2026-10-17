@@ -4,6 +4,7 @@ import { getCurrentWindow, currentMonitor } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useEffect, useRef, useState } from 'react';
 import type { Library, Settings, TeamStatus, TeamView } from './types';
+import { reportDiagnosticOperation } from './diagnosticsClient';
 let activeLibraryId = '';
 const privateWrites = new Set(['save_phrase', 'save_category', 'save_common_phrase', 'reorder_common_phrases', 'delete_category', 'move_copy_category', 'reorder_categories', 'delete_item', 'delete_local_content', 'restore_recycled', 'remove_recycled', 'empty_recycle', 'move_copy_phrase', 'sort_item', 'save_settings', 'patch_settings', 'import_images', 'import_pasted_images']);
 
@@ -16,8 +17,9 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
     const query = new URLSearchParams(location.hash.split('?')[1]); const libraryId = query.get('libraryId') || activeLibraryId;
     if (libraryId) args = { ...args, libraryId };
   }
-  try { return await invoke<T>(command, args); }
-  catch (error) { const message = String(error); void invoke('report_error', { message }).catch(() => {}); throw new Error(message); }
+  const started = performance.now();
+  try { const result = await invoke<T>(command, args); reportDiagnosticOperation(command, true, started); return result; }
+  catch (error) { reportDiagnosticOperation(command, false, started); const message = String(error); void invoke('report_error', { message }).catch(() => {}); throw new Error(message); }
 }
 
 export interface SettingsSnapshot { libraryId: string; settings: Settings; revision: number }

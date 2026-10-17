@@ -303,6 +303,8 @@ impl TeamClient {
         name: &str,
         path: &Path,
     ) -> Result<wire::private::Asset> {
+        let mut diagnostic =
+            crate::diagnostics::NetworkSpan::new(crate::diagnostics::NetworkOperation::Upload);
         let active = self.active()?;
         self.with_account(ctx, || Ok(()))?;
         let file = tokio::fs::File::open(path)
@@ -327,13 +329,16 @@ impl TeamClient {
             ))
             .timeout(Duration::from_secs(120));
         let response = tokio::select! {_=ctx.cancel.cancelled()=>return Err("旧上传已取消。".into()),r=request.send()=>r.map_err(|_|"素材上传失败或超时，稍后继续。".to_owned())?};
+        diagnostic.response(response.status().as_u16());
         let asset = self
             .check(response)
             .await?
             .json()
             .await
             .map_err(|_| "素材响应无法读取。".to_owned())?;
-        self.with_account(ctx, || Ok(asset))
+        let result = self.with_account(ctx, || Ok(asset))?;
+        diagnostic.complete();
+        Ok(result)
     }
     pub async fn account_download(
         &self,
@@ -361,6 +366,8 @@ impl TeamClient {
         expected: u64,
         image: bool,
     ) -> Result<tempfile::NamedTempFile> {
+        let mut diagnostic =
+            crate::diagnostics::NetworkSpan::new(crate::diagnostics::NetworkOperation::Download);
         let _permit = tokio::select! {_=ctx.cancel.cancelled()=>return Err("旧下载已取消。".into()),p=self.downloads.acquire()=>p.map_err(|_|"下载已停止。".to_owned())?};
         let active = self.active()?;
         self.with_account(ctx, || Ok(()))?;
@@ -399,7 +406,9 @@ impl TeamClient {
             .await
             .map_err(|_| "图片处理失败。".to_owned())??;
         }
-        self.with_account(ctx, || Ok(temp))
+        let result = self.with_account(ctx, || Ok(temp))?;
+        diagnostic.complete();
+        Ok(result)
     }
     pub fn new(dir: &Path) -> Result<Arc<Self>> {
         let dir = dir.join("teams");
@@ -580,7 +589,13 @@ impl TeamClient {
         }
     }
     fn emit(&self, app: &tauri::AppHandle) {
-        let _ = app.emit("teams-changed", self.status());
+        let status = self.status();
+        crate::diagnostics::record(crate::diagnostics::Event::Authorization {
+            signed_in: status.user.is_some(),
+            offline: status.offline,
+            teams: status.teams.len(),
+        });
+        let _ = app.emit("teams-changed", status);
         if let Some(state) = app.try_state::<AppState>() {
             state.private_sync.wake();
         }
@@ -592,6 +607,8 @@ impl TeamClient {
         path: &str,
         body: Option<serde_json::Value>,
     ) -> Result<Response> {
+        let mut diagnostic =
+            crate::diagnostics::NetworkSpan::new(crate::diagnostics::NetworkOperation::route(path));
         let mut request = self
             .client
             .request(method, format!("{}/api/{path}", active.connection.server))
@@ -613,8 +630,11 @@ impl TeamClient {
         if let Some(body) = body {
             request = request.json(&body);
         }
-        let response = tokio::select! { _=active.cancel.cancelled()=>return Err("账号已退出，旧请求已取消。".into()),response=request.send()=>response.map_err(|_|"服务器连接失败或请求超时。写入不会自动重试，请刷新确认结果。".to_owned())? };
-        self.check(response).await
+        let response = tokio::select! { _=active.cancel.cancelled()=>return Err("账号已退出，旧请求已取消。".into()),response=request.send()=>response.map_err(|error| { diagnostic.transport_error(&error); "服务器连接失败或请求超时。写入不会自动重试，请刷新确认结果。".to_owned() })? };
+        diagnostic.response(response.status().as_u16());
+        let response = self.check(response).await?;
+        diagnostic.complete();
+        Ok(response)
     }
     async fn check(&self, response: Response) -> Result<Response> {
         if response.status().is_success() {
@@ -648,6 +668,8 @@ impl TeamClient {
         username: String,
         password: String,
     ) -> Result<Status> {
+        let mut diagnostic =
+            crate::diagnostics::NetworkSpan::new(crate::diagnostics::NetworkOperation::Login);
         let _lock = self.login_lock.lock().await;
         let server = normalize_server(&server)?;
         let response = self
@@ -660,9 +682,11 @@ impl TeamClient {
             })
             .send()
             .await
-            .map_err(|_| {
+            .map_err(|error| {
+                diagnostic.transport_error(&error);
                 "登录连接失败，请检查地址、证书和网络。HTTPS 错误不会降级为 HTTP。".to_owned()
             })?;
+        diagnostic.response(response.status().as_u16());
         let session = self
             .check(response)
             .await?
@@ -696,6 +720,7 @@ impl TeamClient {
         self.refresh_authorization(app).await?;
         self.start(app.clone());
         self.emit(app);
+        diagnostic.complete();
         Ok(self.status())
     }
     fn clear_session(&self, app: &tauri::AppHandle) -> Result<()> {
@@ -1372,6 +1397,8 @@ impl TeamClient {
         name: &str,
         image: bool,
     ) -> Result<()> {
+        let mut diagnostic =
+            crate::diagnostics::NetworkSpan::new(crate::diagnostics::NetworkOperation::Download);
         if uuid::Uuid::parse_str(asset).is_err() {
             return Err("素材ID无效。".into());
         }
@@ -1398,6 +1425,7 @@ impl TeamClient {
             )?;
         }
         if ready_path(&path) {
+            diagnostic.complete();
             return Ok(());
         }
         let cancellation = {
@@ -1448,6 +1476,7 @@ impl TeamClient {
             let _ = app.emit("company-files-changed", ctx.active.epoch);
         }
         self.emit(app);
+        diagnostic.complete();
         Ok(())
     }
     fn persist_download(

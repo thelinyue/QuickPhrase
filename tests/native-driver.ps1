@@ -26,6 +26,7 @@ public static class ShanyuQaWindows {
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
  [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint thread,ref GuiThreadInfo info);
  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out Rect r);
+ [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect r);
  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h,uint attribute,out Rect r,int size);
  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
  [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
@@ -42,9 +43,11 @@ public static class ShanyuQaWindows {
   [FieldOffset(24)] public UIntPtr extra;
  }
  [DllImport("user32.dll",SetLastError=true)] static extern uint SendInput(uint count,TestInput[] inputs,int size);
+ [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code,uint type);
  // 验收宿主与客户端均为 x64；SendInput 走与产品相同的系统输入队列。
  public static void keybd_event(byte key,byte scan,uint flags,UIntPtr extra) {
-  var input=new TestInput{type=1,key=key,scan=scan,flags=flags,extra=extra};
+  // 验收按键同时提供扫描码，减少仅提供虚拟键码与实体键盘输入的差异。
+  var input=new TestInput{type=1,key=key,scan=scan==0?(ushort)MapVirtualKey(key,0):scan,flags=flags,extra=extra};
   if(SendInput(1,new[]{input},40)!=1)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(),"无法提交验收按键");
  }
  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int command);
@@ -54,6 +57,14 @@ public static class ShanyuQaWindows {
  [StructLayout(LayoutKind.Sequential)] public struct Point { public int x,y; }
  [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr h,uint flags);
  [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor,ref MonitorInfo info);
+ public delegate bool MonitorCallback(IntPtr monitor,IntPtr dc,ref Rect rect,IntPtr data);
+ [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr dc,IntPtr clip,MonitorCallback callback,IntPtr data);
+ public static MonitorInfo[] Monitors() {
+  var values=new System.Collections.Generic.List<MonitorInfo>();
+  EnumDisplayMonitors(IntPtr.Zero,IntPtr.Zero,(IntPtr monitor,IntPtr dc,ref Rect rect,IntPtr data)=>{
+   var info=new MonitorInfo{size=Marshal.SizeOf(typeof(MonitorInfo))};if(GetMonitorInfo(monitor,ref info))values.Add(info);return true;
+  },IntPtr.Zero);return values.ToArray();
+ }
  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
  [DllImport("user32.dll")] public static extern IntPtr GetThreadDesktop(uint thread);
  [DllImport("user32.dll")] public static extern IntPtr OpenInputDesktop(uint flags,bool inherit,uint access);
@@ -109,6 +120,7 @@ if ($Action -eq 'key') {
   if ($Shift) { [ShanyuQaWindows]::keybd_event(16,0,0,$testMarker) }
   Start-Sleep -Milliseconds 40
   $keyList = if ($Keys) { $Keys.Split(',') | ForEach-Object { [int]$_ } } else { @($Key) }
+  $keyStartedAt = [DateTime]::UtcNow.ToString('o')
   foreach ($testKey in $keyList) {
     for ($repeat = 0; $repeat -lt $Repeats; $repeat++) { [ShanyuQaWindows]::keybd_event([byte]$testKey,0,0,$testMarker); Start-Sleep -Milliseconds 20 }
     if ($HoldMilliseconds) { Start-Sleep -Milliseconds $HoldMilliseconds }
@@ -136,6 +148,11 @@ $result = @{ handle=$nativeHandle.ToInt64(); topmost=($extendedStyle -band 8) -n
 $clipboardOwnerProcess = [uint32]0
 [ShanyuQaWindows]::GetWindowThreadProcessId([ShanyuQaWindows]::GetClipboardOwner(),[ref]$clipboardOwnerProcess) | Out-Null
 $result.clipboardOwnerPid = $clipboardOwnerProcess
+if ($Action -eq 'key') { $result.keyStartedAt = $keyStartedAt }
+$clientRect = New-Object ShanyuQaWindows+Rect
+[ShanyuQaWindows]::GetClientRect($nativeHandle,[ref]$clientRect) | Out-Null
+$result.clientRect = $clientRect
+$result.monitors = @([ShanyuQaWindows]::Monitors())
 $result.desktop = [ShanyuQaWindows]::DesktopName([ShanyuQaWindows]::GetThreadDesktop([ShanyuQaWindows]::GetCurrentThreadId()))
 $result.enterDown = [ShanyuQaWindows]::GetAsyncKeyState(13) -lt 0
 # 只读指定窗口线程的菜单状态，区分 WebView 导航与 Windows 系统菜单抢走方向键。
@@ -162,7 +179,11 @@ $inputDesktop = [ShanyuQaWindows]::OpenInputDesktop(0,$false,1)
 try { $result.inputDesktop = [ShanyuQaWindows]::DesktopName($inputDesktop) } finally { [ShanyuQaWindows]::CloseDesktop($inputDesktop) | Out-Null }
 if ($PSBoundParameters.ContainsKey('ClipboardExpected')) {
   Add-Type -AssemblyName System.Windows.Forms
-  $result.clipboardMatches = [Windows.Forms.Clipboard]::ContainsText() -and [Windows.Forms.Clipboard]::GetText() -ceq $ClipboardExpected
+  $clipboardText = [Windows.Forms.Clipboard]::GetText()
+  $result.clipboardHasText = [Windows.Forms.Clipboard]::ContainsText()
+  $result.clipboardTextLength = $clipboardText.Length
+  $result.clipboardExpectedLength = $ClipboardExpected.Length
+  $result.clipboardMatches = $result.clipboardHasText -and $clipboardText -ceq $ClipboardExpected
 }
 if ($PSBoundParameters.ContainsKey('ClipboardImageSnapshot')) {
   # 在独立进程记录系统提供的测试图片；WinForms 跨进程转换后可能不再具有源 PNG 的透明度。
@@ -183,4 +204,4 @@ if ($Screenshot) {
   try { $graphics.CopyFromScreen($rect.left,$rect.top,0,0,$bitmap.Size); $bitmap.Save($Screenshot,[Drawing.Imaging.ImageFormat]::Png) }
   finally { $graphics.Dispose(); $bitmap.Dispose() }
 }
-$result | ConvertTo-Json -Compress
+$result | ConvertTo-Json -Compress -Depth 4

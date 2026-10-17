@@ -155,7 +155,8 @@ try {
       await control('raise'); await poll(async () => windowOf(await inspect(), 'bar').topmost, '展开时跟随目标置顶');
       await control('unpin'); await poll(async () => !windowOf(await inspect(), 'bar').topmost, '展开时撤销目标置顶');
       await invoke('record_search_history', { libraryId: library.libraryId, query: '定位验证' });
-      await dock.locator('.search-history').waitFor(); await poll(anchored, '历史增加后输入行仍固定');
+      // 搜索结果与历史互斥；后台记录刷新不能在非空搜索时自动打开历史。
+      await dock.locator('.search-history').waitFor({ state: 'hidden' }); await poll(anchored, '历史记录刷新后输入行仍固定');
       await focus(neutralHandle); await poll(async () => !windowOf(await inspect(), 'bar').visible, '展开时切换其他程序隐藏');
       await focus(hostHandle); await poll(async () => windowOf(await inspect(), 'bar').visible, '返回宿主恢复展开');
       await dock.getByRole('button', { name: '收起底部搜索' }).evaluate(el => el.click());

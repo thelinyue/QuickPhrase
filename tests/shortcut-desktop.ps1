@@ -1,8 +1,8 @@
-﻿param([ValidatePattern('^[\p{L}\p{N} _／]+$')][string]$Filter)
+﻿param([ValidatePattern('^[\p{L}\p{N} _／]+$')][string]$Filter, [ValidateSet('shortcuts','member','ime')][string]$Suite = 'shortcuts')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $node = (Get-Command node.exe).Source
-$log = Join-Path $repo '.build\shortcuts-desktop.log'
+$log = Join-Path $repo ".build\$Suite-desktop.log"
 New-Item -ItemType Directory -Path (Split-Path $log -Parent) -Force | Out-Null
 
 # 验收期间使用独立的 Windows 输入桌面，防止真实聊天软件弹窗抢焦点。
@@ -62,7 +62,7 @@ public static class ShanyuShortcutDesktop {
 }
 '@
 $filterArg = if ($Filter) { ' "--filter=' + $Filter + '"' } else { '' }
-$command = '"' + $env:ComSpec + '" /d /s /c ""' + $node + '" "' + (Join-Path $repo 'scripts\verify-shortcuts.mjs') + '"' + $filterArg + ' > "' + $log + '" 2>&1"'
+$command = '"' + $env:ComSpec + '" /d /s /c ""' + $node + '" "' + (Join-Path $repo "scripts\verify-$Suite.mjs") + '"' + $filterArg + ' > "' + $log + '" 2>&1"'
 $result = [ShanyuShortcutDesktop]::Run($command, $repo)
 Get-Content -LiteralPath $log -Encoding UTF8
 exit $result

@@ -3,6 +3,7 @@ mod common_menu;
 mod company_commands;
 mod data_directory;
 mod delivery;
+mod diagnostics;
 mod file_library;
 mod linked_files;
 mod mcp;
@@ -1408,6 +1409,10 @@ pub fn run() {
                 .map(std::path::PathBuf::from)
                 .unwrap_or(dir);
             let window_size_dir = dir.clone();
+            // 诊断保存在固定应用目录，切换业务数据目录也能追踪启动失败；失败不阻止使用。
+            if let Err(error) = diagnostics::initialize(&dir) {
+                eprintln!("{error}");
+            }
             let mut data_directory =
                 data_directory::DataDirectory::startup(&dir).map_err(std::io::Error::other)?;
             let dir = data_directory.root();
@@ -1569,6 +1574,9 @@ pub fn run() {
             .general_autofill_enabled(false)
             .build()?;
             native.start(app.handle()).map_err(std::io::Error::other)?;
+            // 成员缓存和本机绑定在 TeamClient 创建时已恢复；必须在后台同步前加入监听表。
+            // 未开启本人同步、离线或服务端内容未变化时，不会有后续内容通知补做这次刷新。
+            refreshed(app.handle(), &app.state::<AppState>()).map_err(std::io::Error::other)?;
             team_commands::start(app.handle());
             private_sync.start(app.handle().clone());
             for label in ["main", "common-dock"] {
@@ -1662,6 +1670,35 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if diagnostics::enabled(diagnostics::Category::Window)
+                && matches!(
+                    event,
+                    tauri::WindowEvent::Moved(_)
+                        | tauri::WindowEvent::Resized(_)
+                        | tauri::WindowEvent::ScaleFactorChanged { .. }
+                )
+            {
+                if let (Ok(position), Ok(size), Ok(scale)) = (
+                    window.outer_position(),
+                    window.outer_size(),
+                    window.scale_factor(),
+                ) {
+                    diagnostics::record(diagnostics::Event::Layout {
+                        window: match window.label() {
+                            "main" => 1,
+                            "shortcut-candidates" => 2,
+                            "search" => 3,
+                            "settings" => 4,
+                            _ => 0,
+                        },
+                        x: position.x,
+                        y: position.y,
+                        width: size.width as i32,
+                        height: size.height as i32,
+                        dpi: (scale * 96.0).round() as u32,
+                    });
+                }
+            }
             search_history_confirm::window_event(window, event);
             if let Some(state) = window.try_state::<AppState>() {
                 if window.label() == "file-editor" || window.label().starts_with("company-picker-")
@@ -1807,6 +1844,12 @@ pub fn run() {
                 member_commands::set_member_subscription,
                 member_commands::download_member_materials,
                 get_library,
+                diagnostics::diagnostics_status,
+                diagnostics::diagnostics_start,
+                diagnostics::diagnostics_stop,
+                diagnostics::diagnostics_clear,
+                diagnostics::diagnostics_export,
+                diagnostics::diagnostics_frontend,
                 search_content,
                 save_phrase,
                 validate_phrase_shortcut,
@@ -1891,6 +1934,9 @@ pub fn run() {
             std::process::exit(1);
         })
         .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                diagnostics::flush_on_exit();
+            }
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
                 if let Some(state) = app.try_state::<AppState>() {
                     state.native.remember_main_size(true);

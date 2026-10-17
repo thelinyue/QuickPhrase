@@ -10,6 +10,7 @@ import { McpSettings } from './McpSettings';
 import { TeamSettings } from './TeamSettings';
 import { DataTransfer } from './DataTransfer';
 import { UpdateSettings } from './Updater';
+import { Diagnostics } from './Diagnostics';
 import { useSettingsSave } from './useSettingsSave';
 
 /** 序号只录入一次组合键。草稿显示到保存回执，失败后回到原绑定，不遗留看似已保存的值。 */
@@ -27,7 +28,7 @@ function SequenceBinding({ index, value, disabled, save, error }: { index: numbe
   }} /><button type="button" aria-label={`关闭序号${index + 1}快捷键`} disabled={disabled || !value} onClick={() => void record('')}>关闭</button></div>;
 }
 
-const tabs = ['常用设置', '界面设置', '吸附设置', '账号与共享', 'AI 连接', '导入数据', '导出数据', '快捷键', '缓存管理', '关于'];
+const tabs = ['常用设置', '界面设置', '吸附设置', '账号与共享', 'AI 连接', '导入数据', '导出数据', '快捷键', '缓存管理', '问题诊断', '关于'];
 const accountTab = (tab: string) => ['共享话术', '账号与同步'].includes(tab) ? '账号与共享' : tab;
 const FieldErrors = createContext<Record<string, string>>({});
 function Row({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
@@ -192,5 +193,6 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '', in
   else content = <><div className="about-brand"><img src="/shanyu.png" width="72" height="72" alt="" draggable={false} /><div><h2 className="settings-heading">闪语 QuickPhrase</h2><p>Windows 本地话术工具{appVersion && ` · v${appVersion}`}</p></div></div><div className="setting-block"><p>快速找到话术，添加到输入区，按需直接发送。</p><p>支持本地文件、图片附件和分段话术。</p></div><UpdateSettings /><div className="setting-block"><p>本地数据目录</p><p className="data-path">{dataDirectory?.path || '正在读取…'}</p><div className="setting-buttons"><button className="secondary-button" onClick={() => folder('data')}>打开数据文件夹</button><button className="secondary-button" disabled={!dataDirectory?.path || choosingDirectory || saving || pending} onClick={() => void chooseDataDirectory()}>{choosingDirectory ? '选择中…' : '更换目录'}</button></div>{dataDirectory?.message && <p role="status">{dataDirectory.message}</p>}<p className="settings-hint">升级与卸载会保留本地数据。</p></div></>;
   if (tab === '账号与共享') content = <TeamSettings />;
   if (tab === 'AI 连接') content = <McpSettings library={library} />;
+  if (tab === '问题诊断') content = <Diagnostics />;
   return <FieldErrors.Provider value={errors}><section className="client-window settings-window"><Titlebar title="设置" minimize /><div className="settings-layout"><aside className="settings-sidebar"><nav>{tabs.map(t => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav><div className="settings-brand"><span>闪语</span><small>本地话术工具{appVersion && ` · ${appVersion}`}</small></div></aside><div className="settings-content">{content}{[...new Set(Object.entries(errors).filter(([key]) => ['searchHotkey', 'windowHotkey', 'commonHotkey', 'sequenceBindings', 'sequenceDirectSend', 'sequenceHotkeys', 'customHotkeys', 'globalPhraseHotkeys', 'dock', 'dockSide'].includes(key)).map(([, error]) => error))].map(error => <p key={error} role="alert" className="validation-error">{error}</p>)}</div></div>{dialog && <FormDialog spec={dialog} close={() => setDialog(null)} />}<Feedback message={message} clear={() => setMessage('')} /></section></FieldErrors.Provider>;
 }
