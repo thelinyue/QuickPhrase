@@ -109,6 +109,10 @@ pub struct KeyAction {
     pub replay: Vec<KeyEvent>,
     pub fired: Option<String>,
     pub discarded: bool,
+    /// 只记录已透传的触发输入，不把它们作为失败序列回放。
+    pub input_started: bool,
+    pub observing_input: bool,
+    pub passed_input: Option<Vec<KeyEvent>>,
 }
 struct Pending {
     context: (i64, i64),
@@ -119,7 +123,7 @@ struct Pending {
     passes_input: bool,
 }
 
-/// 可输入双键只观察匹配、不截留或回放，选择话术后也保留触发文字。
+/// 可输入双键只观察匹配、不截留或回放；已透传事件供候选核验替换范围。
 /// 功能组合仍暂存首键一秒，失败或超时只在原输入位置回放。
 /// 原生窗口或输入控件变化时取消且不向新焦点回放；长按重复、合成事件不会重复触发。
 #[derive(Default)]
@@ -159,7 +163,11 @@ impl ShortcutMatcher {
         };
         if context == Some(pending.context) {
             KeyAction {
-                replay: pending.events,
+                replay: if pending.passes_input {
+                    vec![]
+                } else {
+                    pending.events
+                },
                 ..Default::default()
             }
         } else {
@@ -204,8 +212,9 @@ impl ShortcutMatcher {
         };
         if let Some(pending) = &mut self.pending {
             if event.key == pending.key && (!event.down || repeat) {
+                pending.events.push(event);
+                action.observing_input = pending.passes_input;
                 if !pending.passes_input {
-                    pending.events.push(event);
                     action.swallowed = true;
                 }
                 return action;
@@ -223,6 +232,9 @@ impl ShortcutMatcher {
                         }
                         self.consumed.insert(event.key);
                         action.swallowed = true;
+                    } else {
+                        pending.events.push(event);
+                        action.passed_input = Some(pending.events.clone());
                     }
                     self.pending = None;
                     action.fired = Some(id.clone());
@@ -243,16 +255,13 @@ impl ShortcutMatcher {
         {
             action.swallowed = !shortcut.passes_input();
             if shortcut.next_key.is_some() {
+                action.input_started = shortcut.passes_input();
                 self.pending = Some(Pending {
                     context,
                     modifiers,
                     key: event.key,
                     started: now,
-                    events: if action.swallowed {
-                        vec![event]
-                    } else {
-                        vec![]
-                    },
+                    events: vec![event],
                     passes_input: shortcut.passes_input(),
                 });
             } else {
@@ -554,6 +563,27 @@ mod tests {
                 .event(event('W', true), CONTEXT, 0, &keys, now)
                 .fired
                 .is_none());
+        }
+    }
+    #[test]
+    fn matched_input_includes_actual_prefix_repeats_without_replaying() {
+        let mut matcher = ShortcutMatcher::default();
+        let now = Instant::now();
+        let keys = bindings(&["1+2"]);
+        let mut passed = vec![];
+        for event in [
+            event('1', true),
+            event('1', true),
+            event('1', false),
+            event('2', true),
+        ] {
+            passed.push(event);
+            let action = matcher.event(event, CONTEXT, 0, &keys, now);
+            assert!(!action.swallowed);
+            assert!(action.replay.is_empty());
+            if action.fired.is_some() {
+                assert_eq!(action.passed_input.unwrap(), passed);
+            }
         }
     }
 }

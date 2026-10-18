@@ -113,24 +113,32 @@ if ($Action -eq 'menu') {
   Start-Sleep -Milliseconds 80
 }
 if ($Action -eq 'key') {
+  function Assert-KeyTarget {
+    if ($Handle -ne 0 -and [ShanyuQaWindows]::GetForegroundWindow() -ne $nativeHandle) { throw '目标已失去前台焦点，停止提交测试按键。' }
+  }
+  Assert-KeyTarget
   # 只有隔离 Debug 客户端识别此标记，产品回放与发送事件仍被原生监听忽略。
   $testMarker = [UIntPtr]::new([uint32]0x53595141)
-  if ($Ctrl) { [ShanyuQaWindows]::keybd_event(17,0,0,$testMarker) }
-  if ($Alt) { [ShanyuQaWindows]::keybd_event(18,0,0,$testMarker) }
-  if ($Shift) { [ShanyuQaWindows]::keybd_event(16,0,0,$testMarker) }
-  Start-Sleep -Milliseconds 40
-  $keyList = if ($Keys) { $Keys.Split(',') | ForEach-Object { [int]$_ } } else { @($Key) }
-  $keyStartedAt = [DateTime]::UtcNow.ToString('o')
-  foreach ($testKey in $keyList) {
-    for ($repeat = 0; $repeat -lt $Repeats; $repeat++) { [ShanyuQaWindows]::keybd_event([byte]$testKey,0,0,$testMarker); Start-Sleep -Milliseconds 20 }
-    if ($HoldMilliseconds) { Start-Sleep -Milliseconds $HoldMilliseconds }
-    if (-not $Overlap) { [ShanyuQaWindows]::keybd_event([byte]$testKey,0,2,$testMarker) }
+  $heldTestKeys = [Collections.Generic.HashSet[int]]::new()
+  try {
+    if ($Ctrl) { [ShanyuQaWindows]::keybd_event(17,0,0,$testMarker) }
+    if ($Alt) { [ShanyuQaWindows]::keybd_event(18,0,0,$testMarker) }
+    if ($Shift) { [ShanyuQaWindows]::keybd_event(16,0,0,$testMarker) }
     Start-Sleep -Milliseconds 40
+    $keyList = if ($Keys) { $Keys.Split(',') | ForEach-Object { [int]$_ } } else { @($Key) }
+    $keyStartedAt = [DateTime]::UtcNow.ToString('o')
+    foreach ($testKey in $keyList) {
+      for ($repeat = 0; $repeat -lt $Repeats; $repeat++) { Assert-KeyTarget; [ShanyuQaWindows]::keybd_event([byte]$testKey,0,0,$testMarker); $heldTestKeys.Add($testKey) | Out-Null; Start-Sleep -Milliseconds 20 }
+      if ($HoldMilliseconds) { Start-Sleep -Milliseconds $HoldMilliseconds }
+      if (-not $Overlap) { [ShanyuQaWindows]::keybd_event([byte]$testKey,0,2,$testMarker); $heldTestKeys.Remove($testKey) | Out-Null }
+      Start-Sleep -Milliseconds 40
+    }
+  } finally {
+    foreach ($testKey in $heldTestKeys) { [ShanyuQaWindows]::keybd_event([byte]$testKey,0,2,$testMarker) }
+    if ($Shift) { [ShanyuQaWindows]::keybd_event(16,0,2,$testMarker) }
+    if ($Alt) { [ShanyuQaWindows]::keybd_event(18,0,2,$testMarker) }
+    if ($Ctrl) { [ShanyuQaWindows]::keybd_event(17,0,2,$testMarker) }
   }
-  if ($Overlap) { foreach ($testKey in $keyList) { [ShanyuQaWindows]::keybd_event([byte]$testKey,0,2,$testMarker) } }
-  if ($Shift) { [ShanyuQaWindows]::keybd_event(16,0,2,$testMarker) }
-  if ($Alt) { [ShanyuQaWindows]::keybd_event(18,0,2,$testMarker) }
-  if ($Ctrl) { [ShanyuQaWindows]::keybd_event(17,0,2,$testMarker) }
 }
 $foreground = [ShanyuQaWindows]::GetForegroundWindow()
 $owner = [uint32]0
@@ -162,6 +170,8 @@ $guiProcess = [uint32]0
 $guiWindow = if ($nativeHandle -ne [IntPtr]::Zero) { $nativeHandle } else { $foreground }
 $guiThread = [ShanyuQaWindows]::GetWindowThreadProcessId($guiWindow,[ref]$guiProcess)
 if ([ShanyuQaWindows]::GetGUIThreadInfo($guiThread,[ref]$guiInfo)) {
+  $result.focus = $guiInfo.focus.ToInt64()
+  $result.caretWindow = $guiInfo.caret.ToInt64()
   $result.menuMode = ($guiInfo.flags -band 28) -ne 0
   $result.menuOwner = $guiInfo.menuOwner.ToInt64()
   $result.dpi = [ShanyuQaWindows]::GetDpiForWindow($guiWindow)

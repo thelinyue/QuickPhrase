@@ -12,6 +12,9 @@ pub use shortcuts::{parse_shortcut, Shortcut};
 #[path = "native/candidates.rs"]
 mod candidates;
 pub use candidates::CandidatePayload;
+#[path = "native/trigger_input.rs"]
+mod trigger_input;
+pub(crate) use trigger_input::TriggerInput;
 #[cfg(windows)]
 #[path = "native/dock_target.rs"]
 mod dock_target;
@@ -159,6 +162,7 @@ pub struct NativeState {
     pub settings: RwLock<Settings>,
     pub bindings: RwLock<ShortcutBindings>,
     pub candidates: Mutex<candidates::CandidateState>,
+    trigger_input: Mutex<Option<TriggerInput>>,
     candidate_check_queued: AtomicBool,
     /// 只由主窗口同步绘制结果；文件槽位为空，隐藏窗口继续沿用最后快照。
     pub sequence_map: RwLock<(Vec<Option<String>>, bool)>,
@@ -202,12 +206,18 @@ enum Control {
     HideFloat,
 }
 impl NativeState {
+    fn invalidate_trigger_input(&self) {
+        if let Some(input) = self.trigger_input.lock().unwrap().take() {
+            input.invalidate();
+        }
+    }
     pub fn new(settings: Settings, busy: Arc<AtomicBool>, cancelled: Arc<AtomicBool>) -> Self {
         Self {
             target: Mutex::new(None),
             settings: RwLock::new(settings),
             bindings: RwLock::new(ShortcutBindings::default()),
             candidates: Mutex::new(candidates::CandidateState::default()),
+            trigger_input: Mutex::new(None),
             candidate_check_queued: AtomicBool::new(false),
             sequence_map: RwLock::new((vec![], true)),
             common_menu: Mutex::new(crate::common_menu::MenuState::default()),
@@ -951,6 +961,25 @@ mod platform {
             Instant::now(),
         );
         drop(matcher);
+        if action.input_started {
+            state.invalidate_trigger_input();
+            if let Some(context) = context {
+                *state.trigger_input.lock().unwrap() =
+                    Some(TriggerInput::capture(context, current_modifiers));
+            }
+        }
+        if action.discarded
+            || (event.down
+                && !modifier_key(event.key)
+                && !action.input_started
+                && !action.observing_input
+                && action.passed_input.is_none()
+                && !action.swallowed
+                && !candidate_action.swallowed
+                && !candidate_action.passed_trigger)
+        {
+            state.invalidate_trigger_input();
+        }
         if !previous.replay.is_empty() {
             let mut events = previous.replay;
             events.append(&mut action.replay);
@@ -982,7 +1011,16 @@ mod platform {
             });
         }
         if let Some(id) = action.fired.take() {
-            state.fire_shortcut(&id, &snapshot);
+            let replacement = action.passed_input.take().map(|events| {
+                let mut stored = state.trigger_input.lock().unwrap();
+                let input = stored.get_or_insert_with(|| {
+                    TriggerInput::capture(context.unwrap(), current_modifiers)
+                });
+                input.events = events;
+                input.matched_at = Instant::now();
+                input.clone()
+            });
+            state.fire_shortcut(&id, &snapshot, replacement);
         }
         let swallowed = action.swallowed || candidate_action.swallowed;
         // 复用已有绑定和上下文快照，诊断不能在键盘钩子中增加系统查询或等待。
@@ -1050,6 +1088,14 @@ mod platform {
                     }
                     return result;
                 }
+                if key.dwExtraInfo != INTERNAL_INPUT_MARKER
+                    && [WM_KEYDOWN, WM_SYSKEYDOWN].contains(&message)
+                    && !modifier_key(key.vkCode)
+                {
+                    // 外部合成输入不触发快捷键，但仍可能改变输入区，不能继续沿用旧替换范围。
+                    state.invalidate_trigger_input();
+                    state.cancel_candidates();
+                }
             }
         }
         CallNextHookEx(None, code, w, l)
@@ -1066,7 +1112,9 @@ mod platform {
             .contains(&(w.0 as u32))
         {
             if let Some(state) = HOOK_STATE.get() {
-                if state.candidates.lock().unwrap().payload.is_some() {
+                if state.candidates.lock().unwrap().payload.is_some()
+                    || state.trigger_input.lock().unwrap().is_some()
+                {
                     let pointer = (*(l.0 as *const MSLLHOOKSTRUCT)).pt;
                     let mut rect = RECT::default();
                     let inside = state.candidate_window.get().is_some_and(|window| {
@@ -1077,6 +1125,10 @@ mod platform {
                             && pointer.y < rect.bottom
                     });
                     if !inside {
+                        state.invalidate_trigger_input();
+                        if state.busy.load(Ordering::Acquire) {
+                            state.cancelled.store(true, Ordering::Release);
+                        }
                         state.cancel_candidates();
                     }
                 }
@@ -1274,6 +1326,16 @@ mod platform {
                 was_owned = owned;
                 // 被钩子消费的键不会可靠更新异步键态；必须等实际 KeyUp 才能解除消费。
                 let current_context = shortcut_context(&state);
+                let trigger_context = candidates::input_context();
+                let invalid_trigger = state
+                    .trigger_input
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .is_some_and(|input| !input.valid_context(trigger_context));
+                if invalid_trigger {
+                    state.invalidate_trigger_input();
+                }
                 if crate::diagnostics::enabled(crate::diagnostics::Category::Input) {
                     let target_matches = state
                         .target

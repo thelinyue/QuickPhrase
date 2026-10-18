@@ -18,6 +18,7 @@ const native = async args => JSON.parse((await powershell(['-File',path.join(rep
 const events = path.join(root,'events.json'), controls = path.join(root,'control.json');
 const results = [], receipts = [];
 const filter = process.argv.find(arg=>arg.startsWith('--filter='))?.slice(9);
+const keyboard = process.argv.includes('--keyboard');
 let host, otherHost, app, browser, page, candidates, settingsPage, dockPage, context, hostInfo, main, candidateHandle;
 let expectedClipboard = '快捷键验收剪贴板';
 const read = async filename => { for(let i=0;i<150;i++) {try{return JSON.parse(await fs.readFile(filename,'utf8'));}catch{await delay(30);}} throw Error(`无法读取宿主记录：${filename}`); };
@@ -78,7 +79,7 @@ const captureScales = async (window, name, width, height) => {
 try {
   await fs.mkdir(root,{recursive:true});await fs.mkdir(evidence,{recursive:true});
   const hostExe=path.join(root,'ShanyuDockHost.exe');await powershell(['-File',path.join(repo,'tests','build-dock-host.ps1'),'-OutputPath',hostExe]);
-  host=spawn(hostExe,[events,controls],{windowsHide:true,stdio:['ignore','ignore','pipe']});host.stderr.on('data',b=>console.error(b.toString()));hostInfo=await receipt();
+  host=spawn(hostExe,[events,controls,'WeWorkWindow',keyboard?'keyboard':''],{windowsHide:true,stdio:['ignore','ignore','pipe']});host.stderr.on('data',b=>console.error(b.toString()));hostInfo=await receipt();
   // 连续切换隔离输入桌面时，旧WebView进程可能尚未释放公共配置目录；每次独立配置和调试端口。
   const debuggerSocket=net.createServer();await new Promise(resolve=>debuggerSocket.listen(0,'127.0.0.1',resolve));
   const debuggerPort=debuggerSocket.address().port;await new Promise(resolve=>debuggerSocket.close(resolve));
@@ -86,6 +87,7 @@ try {
   for(let i=0;i<80;i++){try{browser=await chromium.connectOverCDP(`http://127.0.0.1:${debuggerPort}`);break;}catch{await delay(200);}}
   if(!browser)throw Error('无法连接隔离客户端。');context=browser.contexts()[0];context.setDefaultTimeout(6000);page=context.pages().find(p=>!new URL(p.url()).hash);
   await page.locator('.main-window').waitFor();assert.equal((await invoke('get_library')).dataDir,path.join(root,'data'));
+  const clientVersion=await invoke('plugin:app|version');assert.equal(clientVersion,JSON.parse(await fs.readFile(path.join(repo,'package.json'),'utf8')).version);
   await poll(async()=>{try{await settings({dock:false,searchHotkey:'8',windowHotkey:'9',commonHotkey:'0',sequenceHotkeys:false,globalPhraseHotkeys:true,showCommon:true});return true;}catch(error){if(String(error).includes('服务尚未启动'))return false;throw error;}},'Windows监听服务');await showMain();
   main=(await native(['-ProcessId',String(app.pid),'-Title','闪语'])).handle;
   candidates=context.pages().find(p=>p.url().includes('#shortcut-candidates'));await candidates.locator('.shortcut-candidates-window').waitFor();
@@ -104,6 +106,28 @@ try {
   const library=await invoke('get_library');
   const references=new Map([...ids,solo].map(id=>[id,`private:${library.libraryId}:phrase:${id}:${library.privateRevisions[`phrase:${id}`]}`]));
   const targetContext={hwnd:hostInfo.hwnd,focus:hostInfo.focus,pid:hostInfo.pid};
+
+  if(keyboard) await test('企业微信键盘撤回保留草稿且按实际次数清理，中断不重试',async()=>{
+    await settings({customHotkeys:true,sequenceHotkeys:false,globalPhraseHotkeys:true});
+    await prepare('原草稿：后文');await control('select',{start:4});await opened();await key(32);await submitted('原草稿：正文1后文');
+    assert.equal((await receipt()).events.filter(e=>e.kind==='trigger-backspace').length,2);
+    assert.equal((await receipt()).events.filter(e=>e.kind==='paste-text').length,1);
+    const repeated=await savePhrase('数字长按','1+1');
+    try {
+      await prepare();await opened(()=>key(0,[],['-Keys','49,49','-Repeats','5']));await key(49);await submitted('已有草稿：正文数字长按');
+      assert.equal((await receipt()).events.filter(e=>e.kind==='trigger-backspace').length,10);
+      await prepare();await opened();await key(27);await noCandidate();await submitted('已有草稿：qw');
+      assert.equal((await receipt()).events.filter(e=>e.kind==='trigger-backspace').length,0);
+      await prepare();await opened();await control('select',{start:0});
+      await invoke('submit_shortcut_candidate',{index:0,mode:'insert'}).then(r=>assert.equal(r.status,'failed'),e=>assert.match(String(e),/候选已关闭/));
+      assert.equal((await receipt()).draft,'已有草稿：qw');assert.equal((await receipt()).events.filter(e=>e.kind==='trigger-backspace').length,0);
+      await prepare();await opened();await control('copy-on-backspace',{text:'退格期间新复制'});
+      const report=await invoke('submit_shortcut_candidate',{index:0,mode:'insert'});assert.equal(report.status,'interrupted');assert.equal(report.completedBlocks,0);assert.match(report.error,/退格已提交.*不会自动重试或回填/);
+      await delay(250);const result=await receipt();assert.equal(result.draft,'已有草稿：');assert.equal(result.events.filter(e=>e.kind==='trigger-backspace').length,2);assert.equal(result.events.filter(e=>e.kind==='paste-text').length,0);
+      assert.equal((await native(['-ClipboardExpected','退格期间新复制'])).clipboardMatches,true);
+      await record('自绘输入区键盘替换、实际重复次数、取消、光标失效与退格后新复制');
+    } finally {await invoke('delete_item',{id:repeated,kind:'phrase',recycle:false});}
+  });
 
   await test('自动吸附目标同步后非全局快捷键无需点击闪语或重开吸附',async()=>{
     const otherEvents=path.join(root,'target-other-events.json'),otherControls=path.join(root,'target-other-controls.json');
@@ -244,11 +268,11 @@ try {
     }
   });
   await test('数字1与0、空格插入；Enter直接发送；超过十项可选择且选择不限时',async()=>{
-    for(const [selection,expected] of [[49,'正文1'],[48,'正文10']]){await prepare();await opened();await key(selection);await submitted(`已有草稿：qw${expected}`);await record(`数字${selection-48}插入`);}
-    await prepare();await opened();await key(40);await key(32);await submitted('已有草稿：qw正文2');await record('空格插入当前项');
-    await prepare();await opened();await key(13);await submitted('',1);assert.equal((await receipt()).events.find(e=>e.kind==='send').value.text,'已有草稿：qw正文1');await record('Enter直接发送');
+    for(const [selection,expected] of [[49,'正文1'],[48,'正文10']]){await prepare();await opened();await key(selection);await submitted(`已有草稿：${expected}`);await record(`数字${selection-48}插入`);}
+    await prepare();await opened();await key(40);await key(32);await submitted('已有草稿：正文2');await record('空格插入当前项');
+    await prepare();await opened();await key(13);await submitted('',1);assert.equal((await receipt()).events.find(e=>e.kind==='send').value.text,'已有草稿：正文1');await record('Enter直接发送');
     await prepare();await opened();for(let i=0;i<12;i++)await key(40);assert.equal((await invoke('get_shortcut_candidates')).selectedIndex,11);
-    await delay(1300);assert.equal((await invoke('get_shortcut_candidates')).selectedIndex,11);await key(32);await submitted('已有草稿：qw正文12');await record('第十二候选不限时插入');
+    await delay(1300);assert.equal((await invoke('get_shortcut_candidates')).selectedIndex,11);await key(32);await submitted('已有草稿：正文12');await record('第十二候选不限时插入');
   });
   await test('单条也弹候选；长按触发与重复提交只执行一次',async()=>{
     await prepare();const payload=await opened(()=>key(122,['-Ctrl','-Shift'],['-Repeats','5']));assert.equal(payload.phrases.length,1);assert.equal(payload.phrases[0].id,references.get(solo));
@@ -268,7 +292,7 @@ try {
       }
     } finally { for(const id of [repeated,modified])await invoke('delete_item',{id,kind:'phrase',recycle:false}); }
   });
-  await test('普通输入保留触发文字，继续打字关闭候选，数字触发长按不投递',async()=>{
+  await test('普通输入即时透传，继续打字关闭候选，数字长按只替换本次触发文字',async()=>{
     await prepare();await key(0,[],['-Keys','81,87,69']);await noCandidate();await submitted('已有草稿：qwe');await record('继续输入正常透传');
     const repeated=await savePhrase('数字长按','1+1');
     const overlap=await savePhrase('数字重叠','1+2');
@@ -276,10 +300,42 @@ try {
       for(const [keys,extra,draft] of [['49,49',[],'1111111111'],['49,50',['-Overlap'],'1111122222']]) {
         await prepare();await opened(()=>key(0,[],['-Keys',keys,'-Repeats','5',...extra]));
         await submitted(`已有草稿：${draft}`);assert.equal((await receipt()).events.filter(e=>e.kind==='paste-text'||e.kind==='send').length,0);
-        await key(49,[],['-Repeats','5']);await submitted(`已有草稿：${draft}正文${keys==='49,49'?'数字长按':'数字重叠'}`);
+        await key(49,[],['-Repeats','5']);await submitted(`已有草稿：正文${keys==='49,49'?'数字长按':'数字重叠'}`);
         assert.equal((await receipt()).events.filter(e=>e.kind==='paste-text').length,1);await record('数字触发松键后才能选择且长按不重复投递');
       }
     } finally {for(const id of [repeated,overlap])await invoke('delete_item',{id,kind:'phrase',recycle:false});}
+  });
+  await test('范围替换保留前后草稿，失效素材和光标变化不清理，清理后失败不重试',async()=>{
+    await prepare('原草稿：后文');await control('select',{start:'原草稿：'.length});
+    const payload=await opened();assert.equal('replacement' in payload,false,'原生输入上下文不得通过 IPC 暴露');
+    await key(49);await submitted('原草稿：正文1后文');
+    assert.equal((await receipt()).events.filter(e=>e.kind==='trigger-clear').length,1);await record('范围替换保留原草稿及光标后文字');
+
+    const shifted=await savePhrase('大写触发','Shift+Q+W');
+    const missing=await invoke('save_phrase',{phrase:{id:'',title:'首块失效文件',rootId:phraseRoot,groupId:null,shortcut:'P+P',color:'',background:'',position:0,segments:[{blocks:[{kind:'file',path:path.join(root,'不存在的触发素材.txt'),name:'触发素材.txt'}]}]}});
+    try {
+      await prepare();await opened(()=>key(0,['-Shift'],['-Keys','81,87']));await key(32);await submitted('已有草稿：正文大写触发');await record('Shift大写触发范围替换');
+      await prepare();await opened(()=>key(0,[],['-Keys','80,80']));
+      await assert.rejects(invoke('submit_shortcut_candidate',{index:0,mode:'insert'}),/素材未缓存/);
+      await submitted('已有草稿：pp');assert.equal((await receipt()).events.filter(e=>e.kind==='trigger-clear').length,0);await record('首块素材失败不清理');
+    } finally {for(const id of [shifted,missing])await invoke('delete_item',{id,kind:'phrase',recycle:false});}
+
+    await prepare();await opened();await control('select',{start:0});
+    await invoke('submit_shortcut_candidate',{index:0,mode:'insert'}).then(r=>assert.equal(r.status,'failed'),e=>assert.match(String(e),/候选已关闭/));
+    assert.equal((await receipt()).draft,'已有草稿：qw');
+    assert.equal((await receipt()).events.filter(e=>e.kind==='trigger-clear'||e.kind==='paste-text').length,0);await record('程序移动光标后拒绝清理');
+
+    await prepare();await opened();await control('ignore-clear');
+    const unconfirmed=await invoke('submit_shortcut_candidate',{index:0,mode:'insert'});
+    assert.equal(unconfirmed.status,'interrupted');assert.match(unconfirmed.error,/无法确认快捷键清理结果/);assert.ok(!unconfirmed.error.includes('本次快捷键已清理'));
+    assert.equal((await receipt()).draft,'已有草稿：qw');assert.equal((await receipt()).events.filter(e=>e.kind==='paste-text'||e.kind==='send').length,0);await record('清理命令未生效时不宣称已清理且不粘贴');
+
+    await prepare();await opened();await control('copy-on-clear',{text:'清理后新复制'});
+    const interrupted=await invoke('submit_shortcut_candidate',{index:0,mode:'insert'});
+    assert.equal(interrupted.status,'interrupted');assert.equal(interrupted.completedBlocks,0);assert.match(interrupted.error,/本次快捷键已清理.*不会自动重试或回填/);
+    await delay(250);const after=await receipt();assert.equal(after.draft,'已有草稿：');
+    assert.equal(after.events.filter(e=>e.kind==='trigger-clear').length,1);assert.equal(after.events.filter(e=>e.kind==='paste-text'||e.kind==='send').length,0);
+    assert.equal((await native(['-ClipboardExpected','清理后新复制'])).clipboardMatches,true);await record('清理后新复制中断并保留剪贴板');
   });
   await test('普通首键即时输入且超时不回放，焦点和外部点击取消候选',async()=>{
     await prepare('超时：');const timing=await key(81);await submitted('超时：q');const latency=Date.parse((await receipt()).lastTextChangedAt)-Date.parse(timing.keyStartedAt);assert.ok(latency>=0&&latency<800,`首键应立即输入，实际延迟 ${latency} ms`);receipts.push({name:'首键即时输入',latency});await delay(1200);await submitted('超时：q');await noCandidate();await record('超时不重复回放');
@@ -344,6 +400,23 @@ try {
     await control('reset',{draft:'主栏短语：'});await showMain();await key(48,['-Alt']);await poll(async()=>page.locator(`[data-common="${commonId}"]`).evaluate(e=>e===document.activeElement),'Alt主窗口短语聚焦');
     await key(39);assert.equal(await page.locator(`[data-common="${nextCommon}"]`).evaluate(e=>e===document.activeElement),true);await key(37);
     await key(13,[],['-Repeats','5']);await submitted('',1);assert.equal((await receipt()).events.find(e=>e.kind==='send').value.text,'主栏短语：谢谢');await record('主窗口短语Enter直接发送');
+  });
+  await test('点击常用短语后立即回车只发送一次且不误报中断',async()=>{
+    await settings({dock:false,dockCommon:true,dockSearch:false});
+    const commonId=await invoke('save_common_phrase',{phrase:{id:'',text:'好的',position:0}});
+    for(const [label,window] of [['底栏',dockPage],['主窗口',page]]) {
+      await prepare(`${label}草稿：`);
+      if(window===page)await showMain();
+      else {await key(48,['-Alt']);await poll(async()=>window.locator('[data-common]').first().evaluate(e=>e===document.activeElement),'底栏短语聚焦');}
+      await control('enter-on-paste');
+      await window.locator(`[data-common="${commonId}"]`).click();
+      await submitted('',1);await delay(200);
+      const r=await receipt();
+      assert.equal(r.events.filter(e=>e.kind==='paste-text').length,1,'短语只插入一次');
+      assert.equal(r.events.find(e=>e.kind==='send').value.text,`${label}草稿：好的`);
+      assert.equal(await window.getByRole('status').filter({hasText:'操作已停止'}).count(),0,'插入完成后的回车不应误报中断');
+      await record(`${label}单击后立即回车`);
+    }
   });
   await test('共同全局范围开关限制其他窗口，不向新目标回放未完成序列',async()=>{
     const otherEvents=path.join(root,'other-events.json'),otherControls=path.join(root,'other-controls.json');
@@ -475,7 +548,7 @@ try {
     await focusHost();await opened();
     assert.equal((await receipt()).draft,'诊断草稿：qw','开启诊断仍透传触发字母');
     assert.equal((await native(['-Handle',String(candidateHandle)])).foreground,hostInfo.hwnd);
-    await key(49);await submitted('诊断草稿：qw正文1');
+    await key(49);await submitted('诊断草稿：正文1');
     // 本机临时HTTP宿主返回带隐私哨兵的错误，证明导出不会复制原始错误或账号字段。
     const server=http.createServer((_req,res)=>{res.writeHead(401,{'content-type':'application/json'});res.end(JSON.stringify({message:'DIAG_SECRET_SERVER_ERROR'}));});
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -511,7 +584,7 @@ try {
     await invoke('diagnostics_clear');assert.equal((await invoke('diagnostics_status')).records,0);
     receipts.push({name:'统一诊断包',path:zipPath,records:records.length,manifest});
   });
-  await fs.writeFile(path.join(evidence,'native-report.json'),JSON.stringify({root,results,receipts,scope:'Windows 11 独立输入桌面、标准 WinForms 及 Debug 吸附宿主；真实聊天软件未验收',scales:'WebView2 deviceScaleFactor 1/1.5/2；系统物理 DPI 与真实输入法未验收'},null,2));
+  await fs.writeFile(path.join(evidence,'native-report.json'),JSON.stringify({root,results,receipts,keyboard,clientVersion,scope:'Windows 11 独立输入桌面、固定测试输入宿主及 Debug 客户端；真实聊天软件单独验收',scales:'WebView2 deviceScaleFactor 1/1.5/2；系统物理 DPI 与真实输入法未验收'},null,2));
 } catch(error) {
   const diagnosis={windows:{main,candidates:candidateHandle},foreground:hostInfo?await native(['-Handle',String(hostInfo.hwnd)]).catch(()=>null):null,log:await fs.readFile(path.join(root,'data','shanyu.log'),'utf8').catch(()=>''),receipt:hostInfo?await receipt().catch(()=>null):null};
   diagnosis.uiKeys={main:page?await page.evaluate(()=>window.__shortcutQaKeys).catch(()=>null):null,dock:dockPage?await dockPage.evaluate(()=>({keys:window.__shortcutQaKeys,active:document.activeElement?.outerHTML})).catch(()=>null):null};

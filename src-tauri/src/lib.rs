@@ -350,12 +350,8 @@ async fn submit_shortcut_candidate(
     index: usize,
     mode: Mode,
 ) -> Result<DeliveryReport> {
-    let payload = state
-        .native
-        .candidate_payload()
-        .ok_or("快捷键候选已关闭。")?;
     // 先取走候选，再核对活动记录；已删除或改绑的候选失败后也能退出，长按不会重复提交。
-    let (id, target) = state.native.take_candidate(index)?;
+    let (id, payload) = state.native.take_candidate(index)?;
     {
         let current = if id.starts_with("member:") {
             state.teams.member_phrase(&id, false)?
@@ -376,8 +372,8 @@ async fn submit_shortcut_candidate(
         id,
         "phrase".into(),
         mode,
-        target,
-        (None, payload.member_epoch),
+        payload.target,
+        (None, payload.member_epoch, payload.replacement),
     )
     .await
 }
@@ -981,7 +977,16 @@ async fn deliver_content(
     target: TargetContext,
     trigger_key: Option<u32>,
 ) -> Result<DeliveryReport> {
-    deliver_content_checked(app, state, id, kind, mode, target, (trigger_key, None)).await
+    deliver_content_checked(
+        app,
+        state,
+        id,
+        kind,
+        mode,
+        target,
+        (trigger_key, None, None),
+    )
+    .await
 }
 /// 内部候选携带触发时的账号；普通点击沿用既有接口，投递仍统一取得发送锁并核验目标。
 async fn deliver_content_checked(
@@ -991,9 +996,9 @@ async fn deliver_content_checked(
     kind: String,
     mode: Mode,
     target: TargetContext,
-    trigger: (Option<u32>, Option<u64>),
+    trigger: (Option<u32>, Option<u64>, Option<native::TriggerInput>),
 ) -> Result<DeliveryReport> {
-    let (trigger_key, member_epoch) = trigger;
+    let (trigger_key, member_epoch, replacement) = trigger;
     let guard = state.delivery.acquire()?;
     native::consume_delivery_key(trigger_key);
     if state.native.target.lock().unwrap().as_ref() != Some(&target) {
@@ -1080,6 +1085,7 @@ async fn deliver_content_checked(
     let result = tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
         let mut driver = native::WindowsDriver::new(owner, target, cancelled.clone());
+        driver.set_trigger_input(replacement);
         delivery::execute(&segments, mode, &settings, &mut driver, &cancelled)
     })
     .await

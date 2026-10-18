@@ -11,6 +11,7 @@ import { chromium } from 'playwright';
 const repo = process.cwd(), evidence = path.join(repo, '.build', `member-${Date.now()}`);
 // 微软拼音需要当前交互桌面的 TSF 服务；此选项仍只输入隔离宿主的固定测试内容。
 const verifyIme = process.argv.includes('--ime');
+const keyboard = process.argv.includes('--keyboard');
 if (!process.env.SHANYU_TEAM_SERVER_EXE) throw new Error('请通过 SHANYU_TEAM_SERVER_EXE 指定 Hub 程序。');
 await fs.mkdir(evidence, { recursive: true });
 const serverExe = path.join(evidence, 'quickphrase-hub.exe');
@@ -27,16 +28,17 @@ const startServer = () => spawn(serverExe, [], { cwd: repo, windowsHide: true, s
 const api = async (who, method, route, body) => { const response = await fetch(`${base}/api/${route}`, { method, headers: { ...(tokens[who] ? { Authorization: 'Bearer ' + tokens[who] } : {}), 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }); assert.ok(response.ok, `接口返回 ${response.status}`); return response.json(); };
 const invoke = (cmd, args = {}, view = page) => view.evaluate(({ cmd, args }) => window.__TAURI_INTERNALS__.invoke(cmd, args), { cmd, args });
 // 重启回归必须直接按系统键；读取偏好字符串不能证明绑定已进入原生监听表。
-async function memberCandidate(expected = true, letters = false, invalidate) {
+async function memberCandidate(expected = true, letters = false, invalidate, deliver = false) {
   const run = promisify(execFile), events = path.join(evidence, 'restart-host.json'), controls = path.join(evidence, 'restart-control.json');
   const ps = args => run('powershell.exe', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', ...args], { windowsHide: true, encoding: 'utf8' });
   const native = async args => JSON.parse((await ps(['-File', path.join(repo, 'tests/native-driver.ps1'), ...args])).stdout);
   const fixture = path.join(evidence, 'ShanyuDockHost.exe');
   if (!await fs.access(fixture).then(() => true, () => false)) await ps(['-File', path.join(repo, 'tests/build-dock-host.ps1'), '-OutputPath', fixture]);
   await fs.rm(events, { force: true });
+  await fs.rm(controls, { force: true });
   const ime = verifyIme && letters;
-  const host = spawn(fixture, [events, controls, 'WeWorkWindow', ...(ime ? ['ime'] : [])], { windowsHide: true, stdio: 'ignore' });
-  const control = async command => { await fs.writeFile(controls, JSON.stringify({ command, nonce: Date.now() })); await delay(180); };
+  const host = spawn(fixture, [events, controls, 'WeWorkWindow', ime ? 'ime' : keyboard && deliver ? 'keyboard' : ''], { windowsHide: true, stdio: 'ignore' });
+  const control = async (command, fields = {}) => { await fs.writeFile(controls, JSON.stringify({ command, ...fields, nonce: Date.now() })); await delay(180); };
   const imeSamples = [];
   const imeState = async label => {
     await control('ime-status');
@@ -66,7 +68,15 @@ async function memberCandidate(expected = true, letters = false, invalidate) {
       assert.ok(state.open && (state.conversion & 1) && state.compositionBytes >= 4 && state.focused);
       await native(['-Handle', String(info.hwnd), '-Screenshot', path.join(evidence, 'member-ime-candidates.png')]);
     }
-    if (invalidate) {
+    if (deliver) {
+      const report = await invoke('submit_shortcut_candidate', { index: 0, mode: 'insert' });
+      assert.equal(report.status, 'submitted'); assert.equal(report.completedBlocks, 3);
+      const result = await until(async () => JSON.parse(await fs.readFile(events, 'utf8')), value => value.events.some(e => e.kind === 'paste-files'));
+      assert.equal(result.draft, '已有草稿：成员联调内容');
+      assert.equal(result.events.filter(e => e.kind === (keyboard ? 'trigger-backspace' : 'trigger-clear')).length, keyboard ? 2 : 1);
+      for (const kind of ['paste-text', 'paste-image', 'paste-files']) assert.equal(result.events.filter(e => e.kind === kind).length, 1);
+      await fs.writeFile(path.join(evidence, 'member-replacement.json'), JSON.stringify({ report, result }, null, 2));
+    } else if (invalidate) {
       await invalidate();
       await until(() => invoke('get_shortcut_candidates'), value => value === null);
     } else await native(['-Action', 'key', '-Key', '27']);
@@ -84,8 +94,15 @@ async function memberCandidate(expected = true, letters = false, invalidate) {
       const triggers = log.split('\n').filter(line => /隔离按键：code=(89|67)，/.test(line));
       assert.ok(triggers.length >= 8 && triggers.every(line => line.includes('吞键=false')));
       assert.ok(imeSamples.every(sample => !sample.events.some(e => e.kind === 'send' || e.kind.startsWith('paste-'))));
-    } else assert.equal((await until(async () => JSON.parse(await fs.readFile(events, 'utf8')))).events.length, 0);
-  } finally { host.kill(); }
+    } else if (!deliver) assert.equal((await until(async () => JSON.parse(await fs.readFile(events, 'utf8')))).events.length, 0);
+  } finally {
+    if (deliver && host.exitCode === null) {
+      const clipboard = await native([]).catch(() => null);
+      if (clipboard?.clipboardOwnerPid === app.pid) await control('adopt', { ownerPid: app.pid, sequence: clipboard.clipboardSequence }).catch(() => {});
+      await control('close').catch(() => {});
+    }
+    if (host.exitCode === null) host.kill();
+  }
 }
 async function hook(view) {
   view.on('pageerror', error => faults.push(String(error)));
@@ -252,6 +269,12 @@ try {
     for (const scope of ['private', 'all']) { const hits = await invoke('search_scoped_content', { query: '成员验收', scope }); assert.equal(hits.length, 1); assert.equal(hits[0].phrase.contentRef.source, 'member'); assert.match(hits[0].sourceLabel, /001/); }
     await until(() => invoke('get_member_view'), v => v.phrases[0].ready); assert.equal((await invoke('get_library')).phrases.length, 1);
   });
+  if (!verifyIme) await check('成员双键候选共用范围替换，首块清理一次且文字图片附件各投递一次', async () => {
+    const epoch = (await invoke('get_team_status')).sessionEpoch;
+    await invoke('save_member_shortcut', { id: oldKey, shortcut: 'Y+C', sessionEpoch: epoch });
+    try { await memberCandidate(true, true, undefined, true); }
+    finally { await invoke('save_member_shortcut', { id: oldKey, shortcut: 'Ctrl+Shift+F11', sessionEpoch: epoch }); }
+  });
   await startClient('recipient-b'); await login('002');
   await check('同账号第二设备读取使用选择，停止会清除缓存并同步回第一设备', async () => {
     const member = await memberView(v => v.phrases.length === 1); const account = await invoke('get_team_status');
@@ -388,7 +411,7 @@ try {
     await closeView(view); await invoke('team_logout'); assert.equal((await invoke('get_member_view')).phrases.length, 0);
   });
   assert.deepEqual(faults, []);
-  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ checks, clientVersion: await invoke('plugin:app|version'), limits: ['真实 Windows WebView2、IPC、SQLite、凭据和回环 HTTP/SSE；接收方两个隔离设备轮流运行', '快捷键通过系统按键进入隔离宿主，缺失素材拒绝投递；未操作真实企业微信或剪贴板；局域网、代理、DPI和安装升级未验证'] }, null, 2));
+  await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify({ checks, keyboard, clientVersion: await invoke('plugin:app|version'), limits: ['真实 Windows WebView2、IPC、SQLite、凭据和回环 HTTP/SSE；接收方两个隔离设备轮流运行', '快捷键通过系统按键进入隔离宿主，缺失素材拒绝投递；投递使用系统剪贴板，仅核对宿主固定测试内容；未操作真实企业微信；局域网、代理、DPI和安装升级未验证'] }, null, 2));
   console.log('证据：' + evidence);
 } catch (error) {
   await page?.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});

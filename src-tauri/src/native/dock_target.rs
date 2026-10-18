@@ -132,6 +132,11 @@ unsafe fn candidate(window: HWND) -> Option<Target> {
         })
 }
 
+/// 键盘撤回仅放行已识别的企业微信输入宿主；不把全局快捷键扩展到未知自绘控件。
+pub(super) unsafe fn supports_keyboard_replacement(window: HWND) -> bool {
+    candidate(window).is_some()
+}
+
 unsafe fn detect_loop(shared: Arc<Mutex<Observation>>, rx: mpsc::Receiver<()>) {
     let mut failed = false;
     loop {

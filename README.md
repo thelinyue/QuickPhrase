@@ -2,11 +2,11 @@
 
 “设置 → 问题诊断”可按问题临时记录，复现后导出 ZIP 反馈；使用方法与收集边界见[诊断说明](docs/diagnostics.md)。
 
-Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.9。
+Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.10。
 
-正式下载：[v0.2.9 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.9) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.9/QuickPhrase-Setup-0.2.9-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.9/QuickPhrase-0.2.9-win-x64.zip)。安装器和程序未代码签名；[Hub 公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
+正式下载：[v0.2.10 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.10) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.10/QuickPhrase-Setup-0.2.10-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.10/QuickPhrase-0.2.10-win-x64.zip)。安装器和程序未代码签名；[Hub 公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
 
-0.2.1统一英文名称 QuickPhrase；0.2.3新增在线更新、数据目录迁移、搜索历史、使用指引与云文件批量上传。0.2.4完善主题、账号管理、底部搜索，并新增贴边隐藏及最小化悬浮窗。0.2.5优化悬浮窗双击与隐藏菜单、贴边隐藏及搜索刷新。0.2.6完善常用短语菜单与底部布局，主搜索改为覆盖浮层，并支持拼音匹配与清空记录确认。0.2.7修复贴边误弹出与收回、解除吸附跨屏跳转和升级尺寸变化，完善自适应预览、成员个人快捷键及底栏升级角标。0.2.8新增本机MCP、统一文件关联和云文件改名，优化设置局部保存、全局混合搜索及紧凑快捷键候选。0.2.9改进快捷键目标同步与成员绑定恢复，并新增问题诊断。普通用户使用安装器安装和升级；ZIP供免安装启动，需预装WebView2，用户数据仍保存于用户目录。0.2.0的历史下载文件保留原名。
+0.2.1统一英文名称 QuickPhrase；0.2.3新增在线更新、数据目录迁移、搜索历史、使用指引与云文件批量上传。0.2.4完善主题、账号管理、底部搜索，并新增贴边隐藏及最小化悬浮窗。0.2.5优化悬浮窗双击与隐藏菜单、贴边隐藏及搜索刷新。0.2.6完善常用短语菜单与底部布局，主搜索改为覆盖浮层，并支持拼音匹配与清空记录确认。0.2.7修复贴边误弹出与收回、解除吸附跨屏跳转和升级尺寸变化，完善自适应预览、成员个人快捷键及底栏升级角标。0.2.8新增本机MCP、统一文件关联和云文件改名，优化设置局部保存、全局混合搜索及紧凑快捷键候选。0.2.10改进快捷键目标同步与成员绑定恢复，并新增问题诊断。普通用户使用安装器安装和升级；ZIP供免安装启动，需预装WebView2，用户数据仍保存于用户目录。0.2.0的历史下载文件保留原名。
 
 设置 → 关于新增 GitHub 在线更新：默认自动检查、手动下载安装，可选择默认／备用代理、自定义地址或直连；更新清单和安装包验证通过后才允许安装。免安装版更新时转为安装版并保留原文件夹。首次使用在线更新需要先手动安装0.2.3；发布密钥配置见[在线更新](docs/online-update.md)。
 
@@ -89,7 +89,7 @@ Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、Reac
 
 设置修改即保存；连续修改后关闭设置窗口会等待已提交的保存队列完成，失败时留窗显示错误，不自动重试。序号区的“直接发送”只控制序号快捷键，自定义快捷键仍先打开候选。
 
-序号与自定义话术各有独立开启开关，共用“全局生效”：默认只在闪语或记录的目标窗口生效，开启后可用于其他前台窗口。编辑、录入、模态交互和设置窗口存在期间暂停业务快捷键；搜索允许已配置的序号组合键。普通字母／数字双键即时进入输入框或输入法，匹配后显示话术候选，选择后保留触发文字；Ctrl／Alt／Win 组合及 F 键开头的序列仍拦截，未完成时仅在原输入区回放。候选显示时数字、空格和 Enter 操作话术候选；继续普通输入、切换窗口／输入控件或点击外部区域即取消。普通拼音仍可能命中简码，此行为不保证完全避免误触。单键与双键前缀冲突，以及序号之间、序号与导航或自定义话术的冲突会显示中文原因并保留原配置。
+序号与自定义话术各有独立开启开关，共用“全局生效”：默认只在闪语或记录的目标窗口生效，开启后可用于其他前台窗口。编辑、录入、模态交互和设置窗口存在期间暂停业务快捷键；搜索允许已配置的序号组合键。普通字母／数字双键即时进入输入框或输入法，匹配后显示话术候选，选择后在标准 Windows 编辑框或已识别的企业微信输入区替换本次触发文字，保留原草稿与光标后内容；取消保留输入。微软拼音下先临时关闭组字，清理实际透传的触发输入并粘贴，再恢复输入法模式；此前未确认的拼音会先上屏，内容保留。中文数字可能用于选择此前拼音，自绘输入区无法核对时停止替换，可改用字母双键或 Ctrl／Alt 组合键。未知自绘输入区不执行自动清理；Ctrl／Alt／Win 组合及 F 键开头的序列仍拦截，未完成时仅在原输入区回放。候选显示时数字、空格和 Enter 操作话术候选；继续普通输入、切换窗口／输入控件或点击外部区域即取消。普通拼音仍可能命中简码，此行为不保证完全避免误触。单键与双键前缀冲突，以及序号之间、序号与导航或自定义话术的冲突会显示中文原因并保留原配置。
 
 发送统一使用 Windows 剪贴板和按键。插入和发送会替换原剪贴板，结束后保留最后写入的内容块，不备份或恢复旧内容；期间发生新的复制会立即停止并保留新内容。目标输入区需要支持对应的文字、图片或文件格式；发送键应与目标软件一致。程序记录的是系统操作提交情况。企业微信识别用于窗口吸附与快捷键目标同步，投递仍使用通用输入链路。
 
@@ -124,7 +124,7 @@ services:
 
 共享数据备份包含账号、共享话术、云文件、回收记录及实际素材，排除个人内容和会话；个人内容使用个人完整备份。完整运维备份在停服后保存整个 `data`。全目录恢复须使用同一份备份还原到新目录，并执行恢复准备以清除旧会话、更换个人同步世代；维护流程见下文。
 
-可复制的配置及备份细节见[共享话术与部署](docs/team-sharing.md)，客户端本版变化见[0.2.9 发布说明](docs/releases/v0.2.9.md)。
+可复制的配置及备份细节见[共享话术与部署](docs/team-sharing.md)，客户端本版变化见[0.2.10 发布说明](docs/releases/v0.2.10.md)。
 
 ## 数据与备份
 
@@ -157,11 +157,11 @@ npm run tauri -- dev
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -InnoCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
-脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.9，产物为 `artifacts/QuickPhrase-Setup-0.2.9-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
+脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.10，产物为 `artifacts/QuickPhrase-Setup-0.2.10-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
 
-默认仍只生成安装器。候选构建可加 `-Version 0.2.9-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.9`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.9` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
+默认仍只生成安装器。候选构建可加 `-Version 0.2.10-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.10`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.10` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
 
-GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.9-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
+GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.10-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
 
 检测到已验证的新版本后，右下角“闪语”显示“新”角标；悬停提示当前版本和最新版本，点击进入关于页查看并手动升级。不在顶部增加提醒栏，下载中或选择稍后安装时仍可从此进入。
 
@@ -202,10 +202,12 @@ node scripts/verify-member.mjs --ime
 npm run test:native
 npm run test:native -- --dock-only
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/shortcut-desktop.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/shortcut-desktop.ps1 -Keyboard -Filter 企业微信键盘撤回
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/shortcut-desktop.ps1 -Suite member -Keyboard
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installer.ps1 -InnoCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
-调研企业微信的 UI Automation 可访问性时，在聊天、搜索及图片页面分别运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/inspect-wecom-input.ps1`。此调研脚本不参与吸附识别，只读控件类型、标识、状态和边界，不读取正文、不点击或发送；默认检查主窗口，可用 `-Handle` 指定窗口。没有运行企业微信时明确报错，不启动企业微信。
+调研企业微信的 UI Automation 可访问性时，在聊天、搜索及图片页面分别运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/inspect-wecom-input.ps1`。此调研脚本不参与吸附识别，通过原生 COM 只读控件类型、标识、状态、边界及 Value／Text／Text2／TextEdit 接口可用性，不读取正文、不点击或发送；默认检查主窗口，可用 `-Handle` 指定窗口或编辑控件。Text 接口可用不表示能够读取输入法组字范围。没有运行企业微信时明确报错，不启动企业微信。
 
 独立窗口贴边专项 `node scripts/verify-edge-hide.mjs` 使用实际拖动和悬停，覆盖默认尺寸、外部点击及长按连续采样、临时置顶和恢复、左右2 DIP边条、三档等待、短暂停留取消、输入暂停、手动唤起／隐藏、最小化、吸附切换以及设置页默认／窄窗口布局。运行时暂停键鼠操作；仅操作隔离客户端与宿主，不访问系统剪贴板或聊天发送。
 
@@ -215,9 +217,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installer
 
 鼠标延迟专项运行前退出普通客户端，避免旧实例的全局钩子干扰测量。每组120次左右1像素往返移动，不点击、不按键、不访问剪贴板；比较未启动、关闭吸附、正在吸附、连续移动缩放及退出后的钩子链延迟。检测到其他鼠标移动时不恢复旧光标位置，避免覆盖用户后来移动的位置。
 
-快捷键专项 `tests/shortcut-desktop.ps1` 在独立 Windows 输入桌面运行完整监听与发送链路，结束后切回原桌面，使用标准 WinForms 输入宿主。隔离 Debug 实例才接受带专用标记的测试按键。报告和宿主草稿／发送记录保存在 `docs/ui/runtime/shortcuts`，历史渲染截图已清理；这些渲染倍率不代表系统 DPI 或真实聊天软件验收。可加 `-Filter Alt` 单独复现导航组。
+快捷键专项 `tests/shortcut-desktop.ps1` 在独立 Windows 输入桌面运行完整监听与发送链路，结束后切回原桌面，使用标准 WinForms 输入宿主。隔离 Debug 实例才接受带专用标记的测试按键。报告和宿主草稿／发送记录保存在 `.build/shortcuts-*`；这些渲染倍率不代表系统 DPI 或真实聊天软件验收。可加 `-Filter Alt` 单独复现导航组。
 
-成员重启专项可运行 `tests/shortcut-desktop.ps1 -Suite member`，需通过 `SHANYU_TEAM_SERVER_EXE` 指定 Hub 程序。微软拼音对照使用 `node scripts/verify-ime.mjs`，在当前交互桌面选择测试宿主进程的微软拼音，运行时暂停键鼠操作；数据和输入仍只在隔离客户端／宿主内。先验证关闭快捷键时的真实组字，再检查开启后的 Y、Y+C、焦点、候选与长按；记录消息种类、组字长度及专用合成按键的最终吞键结果，不记录真实用户输入。独立 Windows 桌面可能无法建立微软拼音组字，不能用这种失败对照推断产品吞键。当前组字期间的话术插入验收尚未通过，脚本会返回失败并保留已通过项；结果见验收记录，不能作为实体键盘或企业微信验收替代品。
+成员重启专项可运行 `tests/shortcut-desktop.ps1 -Suite member`，需通过 `SHANYU_TEAM_SERVER_EXE` 指定 Hub 程序。微软拼音对照使用 `node scripts/verify-ime.mjs`，在当前交互桌面选择测试宿主进程的微软拼音，运行时暂停键鼠操作；数据和输入仍只在隔离客户端／宿主内。先验证关闭快捷键时的真实组字，再检查开启后的 Y、Y+C、焦点、候选与长按；记录消息种类、组字长度及专用合成按键的最终吞键结果，不记录真实用户输入。独立 Windows 桌面可能无法建立微软拼音组字，不能用这种失败对照推断产品吞键。加 `--keyboard` 验证不提供标准 Edit 类名的输入宿主，要求产品走企业微信键盘清理路径，宿主内部状态只用于核对结果。覆盖此前拼音上屏、前后草稿、长按、选择、发送及中文数字安全拒绝；结果见验收记录，不能作为实体键盘或企业微信验收替代品。
 
 [架构说明](docs/architecture.md) · [导入导出](docs/data-transfer.md) · [验收记录](docs/acceptance.md) · [已确认的界面稿](docs/ui/reference-client-review.html)
 

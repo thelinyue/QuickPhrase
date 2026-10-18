@@ -54,7 +54,13 @@ pub trait DeliveryDriver {
     fn paste(&mut self, block: &Block) -> Result<()>;
     fn send_key(&mut self, ctrl: bool) -> Result<()>;
     fn pause(&mut self, millis: u64, cancel: &AtomicBool) -> Result<()>;
+    /// 最后一次插入已提交，只等待目标读取剪贴板；保留发送锁，不再因用户接管输入而报中断。
+    fn settle(&mut self, millis: u64);
     fn finish(&mut self) -> Result<()>;
+    /// 清理触发输入本身也是已执行步骤，即使第一块尚未粘贴也必须报告中断。
+    fn input_change(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 pub fn execute(
@@ -95,10 +101,12 @@ pub fn execute(
                 stage = 4;
                 driver.pause(100, cancel)?;
             }
-            for block in &segment.blocks {
-                if matches!(block,Block::Text{text} if text.is_empty()) {
-                    continue;
-                }
+            let mut blocks = segment
+                .blocks
+                .iter()
+                .filter(|block| !matches!(block, Block::Text { text } if text.is_empty()))
+                .peekable();
+            while let Some(block) = blocks.next() {
                 if cancel.load(Ordering::Acquire) {
                     return Err("操作已停止。".into());
                 }
@@ -108,7 +116,11 @@ pub fn execute(
                 driver.paste(block)?;
                 report.completed_blocks += 1;
                 stage = 4;
-                driver.pause(120, cancel)?;
+                if mode == Mode::Send || blocks.peek().is_some() || si + 1 < segments.len() {
+                    driver.pause(120, cancel)?;
+                } else {
+                    driver.settle(120);
+                }
             }
             if mode == Mode::Send {
                 stage = 2;
@@ -125,13 +137,16 @@ pub fn execute(
         Ok(())
     })();
     if let Err(error) = work {
-        report.status = if report.completed_blocks > 0 {
+        report.status = if report.completed_blocks > 0 || driver.input_change().is_some() {
             "interrupted"
         } else {
             "failed"
         }
         .into();
-        report.error = Some(error);
+        report.error = Some(match driver.input_change() {
+            Some(step) => format!("{error}；{step}，不会自动重试或回填。"),
+            None => error,
+        });
     }
     if let Err(error) = driver.finish() {
         stage = 6;
@@ -157,6 +172,7 @@ mod tests {
     struct Fake {
         calls: Vec<String>,
         fail_after: usize,
+        cancel_after_paste: Option<Arc<AtomicBool>>,
     }
     impl DeliveryDriver for Fake {
         fn prepare(&mut self) -> Result<()> {
@@ -175,6 +191,9 @@ mod tests {
                 Block::Image { .. } => "图片".into(),
                 Block::File { .. } => "文件".into(),
             });
+            if let Some(cancel) = &self.cancel_after_paste {
+                cancel.store(true, Ordering::Release);
+            }
             Ok(())
         }
         fn send_key(&mut self, ctrl: bool) -> Result<()> {
@@ -189,6 +208,7 @@ mod tests {
                 Ok(())
             }
         }
+        fn settle(&mut self, _: u64) {}
         fn finish(&mut self) -> Result<()> {
             Ok(())
         }
@@ -222,6 +242,7 @@ mod tests {
         let mut d = Fake {
             calls: vec![],
             fail_after: usize::MAX,
+            cancel_after_paste: None,
         };
         let s = Settings {
             enter: "ctrl-enter".into(),
@@ -239,6 +260,7 @@ mod tests {
         let mut d = Fake {
             calls: vec![],
             fail_after: 2,
+            cancel_after_paste: None,
         };
         let r = execute(
             &segments(),
@@ -250,6 +272,79 @@ mod tests {
         assert_eq!(r.status, "interrupted");
         assert_eq!(r.completed_segments, 0);
         assert_eq!(d.calls, vec!["文字", "图片"]);
+    }
+    #[test]
+    fn completed_insert_is_not_interrupted_by_following_user_input() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let mut driver = Fake {
+            calls: vec![],
+            fail_after: usize::MAX,
+            cancel_after_paste: Some(cancel.clone()),
+        };
+        let content = [Segment {
+            blocks: vec![
+                Block::Text {
+                    text: "谢谢".into(),
+                },
+                Block::Text { text: "".into() },
+            ],
+        }];
+        let report = execute(
+            &content,
+            Mode::Insert,
+            &Settings::default(),
+            &mut driver,
+            &cancel,
+        );
+        assert!(cancel.load(Ordering::Acquire));
+        assert_eq!(report.status, "submitted");
+        assert_eq!(report.completed_blocks, 1);
+        assert_eq!(report.completed_segments, 1);
+        assert!(report.error.is_none());
+        assert_eq!(driver.calls, vec!["谢谢"]);
+    }
+    #[test]
+    fn input_after_paste_stops_remaining_blocks_segments_and_send() {
+        let text = || Block::Text {
+            text: "谢谢".into(),
+        };
+        for (mode, content) in [
+            (
+                Mode::Send,
+                vec![Segment {
+                    blocks: vec![text()],
+                }],
+            ),
+            (
+                Mode::Insert,
+                vec![Segment {
+                    blocks: vec![text(), text()],
+                }],
+            ),
+            (
+                Mode::Insert,
+                vec![
+                    Segment {
+                        blocks: vec![text()],
+                    },
+                    Segment {
+                        blocks: vec![text()],
+                    },
+                ],
+            ),
+        ] {
+            let cancel = Arc::new(AtomicBool::new(false));
+            let mut driver = Fake {
+                calls: vec![],
+                fail_after: usize::MAX,
+                cancel_after_paste: Some(cancel.clone()),
+            };
+            let report = execute(&content, mode, &Settings::default(), &mut driver, &cancel);
+            assert_eq!(report.status, "interrupted");
+            assert_eq!(report.completed_blocks, 1);
+            assert_eq!(report.completed_segments, 0);
+            assert_eq!(driver.calls, vec!["谢谢"]);
+        }
     }
     #[test]
     fn backend_lock_rejects_duplicate_and_releases_on_drop() {

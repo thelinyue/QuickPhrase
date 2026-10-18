@@ -8,7 +8,7 @@ using System.Windows.Forms;
 
 // 这是通用剪贴板验收宿主，不含产品窗口选择器或任何聊天软件的发送适配。
 public static class ShanyuTestHost {
-    [STAThread] public static void Main(string[] args) { Run(args[0],args[1],args.Length>2?args[2]:"WeWorkWindow",args.Length>3 && args[3]=="ime"); }
+    [STAThread] public static void Main(string[] args) { var mode=args.Length>3?args[3]:"";customInput=mode.Contains("keyboard");Run(args[0],args[1],args.Length>2?args[2]:"WeWorkWindow",mode.Contains("ime")); }
     [DllImport("user32.dll")] static extern bool OpenClipboard(IntPtr window);
     [DllImport("user32.dll")] static extern bool CloseClipboard();
     [DllImport("user32.dll")] static extern uint GetClipboardSequenceNumber();
@@ -19,8 +19,11 @@ public static class ShanyuTestHost {
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern uint RegisterClipboardFormat(string name);
     [DllImport("user32.dll")] static extern bool IsClipboardFormatAvailable(uint format);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
     [DllImport("user32.dll")] static extern bool DestroyCaret();
     [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
+    [DllImport("user32.dll")] static extern bool GetKeyboardState(byte[] state);
+    [DllImport("user32.dll")] static extern bool SetKeyboardState(byte[] state);
     [DllImport("imm32.dll")] static extern IntPtr ImmGetContext(IntPtr window);
     [DllImport("imm32.dll")] static extern bool ImmReleaseContext(IntPtr window,IntPtr context);
     [DllImport("imm32.dll")] static extern bool ImmGetOpenStatus(IntPtr context);
@@ -34,6 +37,7 @@ public static class ShanyuTestHost {
         void ActivateProfile(uint type,ushort language,ref Guid clsid,ref Guid profile,IntPtr layout,uint flags);
     }
     static bool imeEnabled;
+    static bool customInput;
     static object ImeState() {
         var context=ImmGetContext(input.Handle);uint conversion=0,sentence=0;
         try {
@@ -47,11 +51,16 @@ public static class ShanyuTestHost {
             var clsid=new Guid("81d4e9c9-1d3b-41bc-9e6c-4b40bf79e35e");var profile=new Guid("fa550b04-5ad7-411f-a5ac-ca038ec515d7");
             ((InputProfiles)instance).ActivateProfile(1,0x0804,ref clsid,ref profile,IntPtr.Zero,0x10000004);
             input.ImeMode=ImeMode.On;
-            var context=ImmGetContext(input.Handle);
-            try {uint conversion,sentence;ImmGetConversionStatus(context,out conversion,out sentence);ImmSetConversionStatus(context,conversion|1,sentence);ImmSetOpenStatus(context,true);}
-            finally {ImmReleaseContext(input.Handle,context);}
+            NativeImeMode();
+            // TSF 激活可异步修改中英文状态，模式设置由测试命令在激活后再次核验。
+            var keyboard=new byte[256];GetKeyboardState(keyboard);keyboard[20]=0;SetKeyboardState(keyboard);
             Record("ime-enabled",ImeState());
         } finally {Marshal.ReleaseComObject(instance);}
+    }
+    static void NativeImeMode(bool fullWidth=false) {
+        var context=ImmGetContext(input.Handle);
+        try {uint conversion,sentence;ImmGetConversionStatus(context,out conversion,out sentence);ImmSetConversionStatus(context,conversion|1|(fullWidth?8u:0u),sentence);ImmSetOpenStatus(context,true);}
+        finally {ImmReleaseContext(input.Handle,context);}
     }
     static string eventsPath,controlPath,lastControl;
     static readonly List<Dictionary<string,object>> events = new List<Dictionary<string,object>>();
@@ -64,9 +73,13 @@ public static class ShanyuTestHost {
     static DataObject original;
     static uint ownClipboard;
     static string lastTextChangedAt;
+    static string copyOnClear;
+    static string copyOnBackspace;
+    static bool ignoreClear;
+    static bool enterOnPaste;
     static void Record(string kind,object value) {events.Add(new Dictionary<string,object>{{"kind",kind},{"value",value}});Flush();}
     static void Flush() {
-        var data=new Dictionary<string,object>{{"hwnd",form.Handle.ToInt64()},{"focus",input.Handle.ToInt64()},{"alternateFocus",alternate.Handle.ToInt64()},{"alternateDraft",alternate.Text},{"pid",System.Diagnostics.Process.GetCurrentProcess().Id},{"events",events},{"draft",input.Text},{"lastTextChangedAt",lastTextChangedAt},{"clipboardSequence",GetClipboardSequenceNumber()}};
+        var data=new Dictionary<string,object>{{"hwnd",form.Handle.ToInt64()},{"focus",input.Handle.ToInt64()},{"alternateFocus",alternate.Handle.ToInt64()},{"alternateDraft",alternate.Text},{"pid",System.Diagnostics.Process.GetCurrentProcess().Id},{"events",events},{"draft",input.Text},{"selectionStart",input.SelectionStart},{"selectionLength",input.SelectionLength},{"lastTextChangedAt",lastTextChangedAt},{"clipboardSequence",GetClipboardSequenceNumber()}};
         File.WriteAllText(eventsPath,json.Serialize(data),new System.Text.UTF8Encoding(false));
     }
     static void ProtectOriginalClipboard() {
@@ -100,10 +113,17 @@ public static class ShanyuTestHost {
             if(text==lastControl)return;lastControl=text;
             try{
                 var command=json.Deserialize<Dictionary<string,object>>(text);var action=(string)command["command"];
-                if(action=="reset") {events.Clear();input.Text=command.ContainsKey("draft")?(string)command["draft"]:"";ctrlEnter=command.ContainsKey("ctrlEnter")&&(bool)command["ctrlEnter"];input.SelectionStart=input.TextLength;Flush();}
+                if(action=="reset") {events.Clear();copyOnClear=null;copyOnBackspace=null;ignoreClear=false;enterOnPaste=false;input.Text=command.ContainsKey("draft")?(string)command["draft"]:"";ctrlEnter=command.ContainsKey("ctrlEnter")&&(bool)command["ctrlEnter"];input.SelectionStart=input.TextLength;Flush();}
+                if(action=="select") {input.Select(Convert.ToInt32(command["start"]),command.ContainsKey("length")?Convert.ToInt32(command["length"]):0);Record("selection-changed",true);}
+                if(action=="copy-on-clear") {copyOnClear=(string)command["text"];}
+                if(action=="copy-on-backspace") {copyOnBackspace=(string)command["text"];}
+                if(action=="ignore-clear") {ignoreClear=true;}
+                if(action=="enter-on-paste") {enterOnPaste=true;}
                 if(action=="focus") {form.WindowState=FormWindowState.Normal;form.Activate();SetForegroundWindow(form.Handle);input.Focus();input.SelectionStart=input.TextLength;Flush();}
                 if(action=="blur") {alternate.Focus();Record("focus-changed",true);}
                 if(action=="ime-on" && imeEnabled) {EnableMicrosoftPinyin();}
+                if(action=="ime-native" && imeEnabled) {NativeImeMode();}
+                if(action=="ime-fullwidth" && imeEnabled) {NativeImeMode(true);}
                 if(action=="ime-status" && imeEnabled) {Record("ime-status",ImeState());}
                 // 在拥有光标的线程制造“应用不提供系统光标”及整窗容器，验证候选回退而非伪造产品坐标。
                 if(action=="no-caret") {DestroyCaret();Record("caret-removed",true);}
@@ -149,8 +169,43 @@ public static class ShanyuTestHost {
         }
     }
     sealed class InputBox:TextBox {
+        // 自定义类名仍使用系统 Edit 的窗口过程。产品不能依赖其内部状态，必须走企业微信退格路径；
+        // 测试进程保留正文和选区，仅用于核对固定测试内容是否被误删。
+        [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct WindowClass {
+            public uint size,style;public IntPtr procedure;public int classExtra,windowExtra;
+            public IntPtr instance,icon,cursor,background,menu,name,smallIcon;
+        }
+        [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern bool GetClassInfoEx(IntPtr instance,string name,ref WindowClass value);
+        [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern ushort RegisterClassEx(ref WindowClass value);
+        static bool registered;
+        protected override CreateParams CreateParams {
+            get {
+                var value=base.CreateParams;
+                if(customInput) {
+                    if(!registered) {
+                        var cls=new WindowClass{size=(uint)Marshal.SizeOf(typeof(WindowClass))};
+                        if(!GetClassInfoEx(IntPtr.Zero,"EDIT",ref cls))throw new InvalidOperationException("无法读取测试输入框类型。");
+                        cls.name=Marshal.StringToHGlobalUni("ShanyuKeyboardInput");cls.style|=0x4000;
+                        try {if(RegisterClassEx(ref cls)==0)throw new InvalidOperationException("无法注册测试输入框类型。");}
+                        finally {Marshal.FreeHGlobal(cls.name);}
+                        registered=true;
+                    }
+                    value.ClassName="ShanyuKeyboardInput";
+                }
+                return value;
+            }
+        }
         protected override void WndProc(ref Message msg) {
+            if(msg.Msg==0x303 && ignoreClear) {Record("trigger-clear-ignored",true);return;}
             base.WndProc(ref msg);
+            if(msg.Msg==0x303) {
+                Record("trigger-clear",true);
+                if(copyOnClear!=null) {Clipboard.SetText(copyOnClear);copyOnClear=null;ownClipboard=GetClipboardSequenceNumber();Record("new-copy",true);}
+            }
+            if(msg.Msg==0x102 && msg.WParam.ToInt64()==8) {
+                Record("trigger-backspace",true);
+                if(copyOnBackspace!=null) {Clipboard.SetText(copyOnBackspace);copyOnBackspace=null;ownClipboard=GetClipboardSequenceNumber();Record("new-copy",true);}
+            }
             if(imeEnabled && input!=null && alternate!=null && (msg.Msg==0x10D||msg.Msg==0x10E||msg.Msg==0x10F||msg.Msg==0x282||msg.Msg==0x100||msg.Msg==0x101)) {
                 // 只记消息种类、键态和组字长度；不读取或记录输入法组字正文。
                 Record("ime-message",new {message=msg.Msg,code=msg.Msg==0x100||msg.Msg==0x101?msg.WParam.ToInt64():0,state=ImeState()});
@@ -162,6 +217,14 @@ public static class ShanyuTestHost {
                 else if(Clipboard.ContainsImage()) {using(var image=Clipboard.GetImage()){Record("paste-image",new int[]{image.Width,image.Height});}}
                 else if(Clipboard.ContainsText()) {var text=Clipboard.GetText();SelectedText=text;Record("paste-text",text);}
                 else Record("unsupported-format",Clipboard.GetDataObject().GetFormats());
+                if(enterOnPaste) {
+                    enterOnPaste=false;
+                    // 在真实粘贴后40ms模拟用户回车，稳定复现产品原有120ms等待内的误报。
+                    var enterTimer=new Timer{Interval=40};enterTimer.Tick+=(sender,args)=>{
+                        enterTimer.Stop();enterTimer.Dispose();var marker=new UIntPtr(0x53595141);
+                        keybd_event(13,0x1C,0,marker);keybd_event(13,0x1C,2,marker);
+                    };enterTimer.Start();
+                }
                 return true;
             }
             if(key==Keys.Enter||key==(Keys.Control|Keys.Enter)) {

@@ -2,7 +2,7 @@ use super::platform::{hwnd, pid, wide};
 use crate::{
     delivery::DeliveryDriver,
     model::{Block, Result},
-    native::TargetContext,
+    native::{TargetContext, TriggerInput},
 };
 use std::{
     mem::size_of,
@@ -112,6 +112,8 @@ pub struct WindowsDriver {
     cancelled: Arc<AtomicBool>,
     initial_seq: u32,
     owned_seq: Option<u32>,
+    trigger_input: Option<TriggerInput>,
+    trigger_progress: Option<&'static str>,
 }
 impl WindowsDriver {
     pub fn new(owner: i64, target: TargetContext, cancelled: Arc<AtomicBool>) -> Self {
@@ -121,7 +123,12 @@ impl WindowsDriver {
             cancelled,
             initial_seq: 0,
             owned_seq: None,
+            trigger_input: None,
+            trigger_progress: None,
         }
+    }
+    pub(crate) fn set_trigger_input(&mut self, input: Option<TriggerInput>) {
+        self.trigger_input = input;
     }
     fn valid(&self) -> Result<()> {
         unsafe {
@@ -234,7 +241,15 @@ impl DeliveryDriver for WindowsDriver {
         self.valid()?;
         unsafe {
             // 只记录变化标识，不读取原格式；即使原载荷无法读取也能开始投递。
-            self.initial_seq = GetClipboardSequenceNumber();
+            self.initial_seq = self
+                .trigger_input
+                .as_ref()
+                .and_then(|input| input.clipboard_sequence)
+                .unwrap_or_else(|| GetClipboardSequenceNumber());
+            // 替换候选不能先恢复一个已经变化的焦点，再删除那个输入区的文字。
+            if self.trigger_input.is_some() {
+                return self.ensure_target();
+            }
             let window = hwnd(self.target.hwnd);
             if IsIconic(window).as_bool() {
                 let _ = ShowWindow(window, SW_RESTORE);
@@ -284,7 +299,26 @@ impl DeliveryDriver for WindowsDriver {
     }
     fn paste(&mut self, block: &Block) -> Result<()> {
         self.write_block(block)?;
-        keys(VK_V, true, || self.ensure_target())
+        let mut ime: Option<super::trigger_input::ImeSession> = None;
+        let pasted = keys(VK_V, true, || {
+            self.ensure_target()?;
+            if let Some(input) = self.trigger_input.take() {
+                let mut progress = None;
+                let result = input.remove(&mut progress, &mut ime, || self.ensure_target());
+                self.trigger_progress = progress;
+                result?;
+            }
+            self.ensure_target()
+        });
+        if pasted.is_ok() && self.trigger_progress.is_some() {
+            self.trigger_progress = Some("本次快捷键清理与首块粘贴已提交");
+        }
+        let restored = ime.map_or(Ok(()), |session| session.restore(|| self.ensure_target()));
+        match (pasted, restored) {
+            (Err(error), Err(restore)) => Err(format!("{error}；{restore}")),
+            (result, Ok(())) => result,
+            (Ok(()), Err(error)) => Err(error),
+        }
     }
     fn send_key(&mut self, ctrl: bool) -> Result<()> {
         keys(VK_RETURN, ctrl, || self.ensure_target())
@@ -302,12 +336,27 @@ impl DeliveryDriver for WindowsDriver {
         }
         Ok(())
     }
+    fn settle(&mut self, millis: u64) {
+        // 不再提交输入或改写剪贴板，只延后释放发送锁，防止下一次投递过早覆盖载荷。
+        std::thread::sleep(Duration::from_millis(millis));
+    }
     fn finish(&mut self) -> Result<()> {
         // 产品不恢复旧内容，也不清空最后写入或用户后来复制的内容。
         Ok(())
     }
+    fn input_change(&self) -> Option<&'static str> {
+        self.trigger_progress
+    }
 }
 fn keys(key: VIRTUAL_KEY, ctrl: bool, mut check: impl FnMut() -> Result<()>) -> Result<()> {
+    repeated_keys(key, ctrl, 1, &mut check)
+}
+pub(super) fn repeated_keys(
+    key: VIRTUAL_KEY,
+    ctrl: bool,
+    count: usize,
+    mut check: impl FnMut() -> Result<()>,
+) -> Result<()> {
     unsafe {
         let until = Instant::now() + Duration::from_millis(1500);
         while [VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN]
@@ -340,8 +389,10 @@ fn keys(key: VIRTUAL_KEY, ctrl: bool, mut check: impl FnMut() -> Result<()>) -> 
         if ctrl {
             inputs.push(input(VK_CONTROL, false));
         }
-        inputs.push(input(key, false));
-        inputs.push(input(key, true));
+        for _ in 0..count {
+            inputs.push(input(key, false));
+            inputs.push(input(key, true));
+        }
         if ctrl {
             inputs.push(input(VK_CONTROL, true));
         }

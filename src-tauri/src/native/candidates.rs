@@ -1,7 +1,7 @@
 use crate::{
     delivery::Mode,
     model::Phrase,
-    native::{shortcuts::KeyEvent, TargetContext},
+    native::{shortcuts::KeyEvent, trigger_input::TriggerInput, TargetContext},
 };
 use serde::Serialize;
 use std::collections::HashSet;
@@ -20,6 +20,9 @@ pub struct CandidatePayload {
     pub target: TargetContext,
     /// 成员候选必须沿用触发时的账号，防止切号后相同来源引用被旧候选投递。
     pub member_epoch: Option<u64>,
+    /// 触发输入与有效状态不经 IPC 交给前端，也不写入设置或数据存储。
+    #[serde(skip)]
+    pub replacement: Option<TriggerInput>,
 }
 
 #[derive(Default)]
@@ -27,6 +30,7 @@ pub struct CandidateAction {
     pub swallowed: bool,
     pub changed: bool,
     pub submit: Option<(usize, Mode)>,
+    pub passed_trigger: bool,
 }
 
 /// 原生层拥有选择状态。消费键保持到松开，候选关闭或发送开始后长按也不会重复提交。
@@ -64,10 +68,23 @@ impl CandidateState {
         self.measured_size = None;
         self.context = None;
         self.submitting = false;
-        self.payload.take().is_some()
+        if let Some(payload) = self.payload.take() {
+            if let Some(input) = payload.replacement {
+                input.invalidate();
+            }
+            true
+        } else {
+            false
+        }
     }
     pub fn valid(&self, context: Option<(i64, i64)>) -> bool {
-        self.payload.is_some() && self.context == context
+        self.payload.as_ref().is_some_and(|payload| {
+            self.context == context
+                && payload
+                    .replacement
+                    .as_ref()
+                    .is_none_or(|input| input.valid_context(context))
+        })
     }
     pub fn select(&mut self, index: usize) -> crate::model::Result<()> {
         let payload = self.payload.as_mut().ok_or("快捷键候选已关闭。")?;
@@ -77,13 +94,18 @@ impl CandidateState {
         payload.selected_index = index;
         Ok(())
     }
-    pub fn take(&mut self, index: usize) -> crate::model::Result<(String, TargetContext)> {
+    pub fn take(&mut self, index: usize) -> crate::model::Result<(String, CandidatePayload)> {
         self.select(index)?;
-        let payload = self.payload.take().unwrap();
+        let mut payload = self.payload.take().unwrap();
+        #[cfg(windows)]
+        if let Some(input) = &mut payload.replacement {
+            input.clipboard_sequence =
+                Some(unsafe { windows::Win32::System::DataExchange::GetClipboardSequenceNumber() });
+        }
         self.measured_size = None;
         self.context = None;
         self.submitting = false;
-        Ok((payload.phrases[index].id.clone(), payload.target))
+        Ok((payload.phrases[index].id.clone(), payload))
     }
     pub fn event(
         &mut self,
@@ -100,7 +122,15 @@ impl CandidateState {
             if !event.down {
                 self.passthrough_triggers.remove(&event.key);
             }
+            let passed_trigger = self.valid(context) && event.down;
+            if self.valid(context) {
+                if let Some(input) = self.payload.as_mut().and_then(|p| p.replacement.as_mut()) {
+                    input.events.push(event);
+                    input.matched_at = std::time::Instant::now();
+                }
+            }
             return CandidateAction {
+                passed_trigger,
                 changed: self.payload.is_some() && !self.valid(context) && self.cancel(),
                 ..Default::default()
             };
@@ -123,12 +153,24 @@ impl CandidateState {
                 ..Default::default()
             };
         }
-        if !event.down
-            || [
-                0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5,
-            ]
-            .contains(&event.key)
+        if !event.down {
+            return CandidateAction::default();
+        }
+        if [
+            0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5,
+        ]
+        .contains(&event.key)
         {
+            if self
+                .payload
+                .as_ref()
+                .is_some_and(|p| p.replacement.is_some())
+            {
+                return CandidateAction {
+                    changed: self.cancel(),
+                    ..Default::default()
+                };
+            }
             return CandidateAction::default();
         }
         if modifiers != 0 {
@@ -421,6 +463,7 @@ mod window {
             }
         }
         pub fn cancel_candidates(&self) {
+            self.invalidate_trigger_input();
             if self.candidates.lock().unwrap().cancel() {
                 crate::diagnostics::record(crate::diagnostics::Event::Candidate {
                     action: 2,
@@ -431,6 +474,9 @@ mod window {
         }
         pub fn check_candidates(&self) {
             let mut state = self.candidates.lock().unwrap();
+            if let Some(input) = state.payload.as_ref().and_then(|p| p.replacement.as_ref()) {
+                input.observe_caret();
+            }
             let context = unsafe { input_context() };
             if state.payload.is_some()
                 && (!state.valid(context)
@@ -497,7 +543,7 @@ mod window {
         pub fn take_candidate(
             &self,
             index: usize,
-        ) -> crate::model::Result<(String, TargetContext)> {
+        ) -> crate::model::Result<(String, CandidatePayload)> {
             self.check_candidates();
             let result = self.candidates.lock().unwrap().take(index);
             self.publish_candidates();
@@ -507,6 +553,7 @@ mod window {
             &self,
             shortcut: &str,
             snapshot: &crate::native::ShortcutBindings,
+            replacement: Option<TriggerInput>,
         ) {
             let Some(context) = input_context() else {
                 return;
@@ -577,6 +624,7 @@ mod window {
                 max_width,
                 max_height,
                 member_epoch,
+                replacement,
                 shortcut: shortcut.into(),
                 phrases,
                 selected_index: 0,
@@ -800,6 +848,9 @@ mod window {
     }
 }
 
+#[cfg(windows)]
+pub(crate) use window::input_context;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -823,6 +874,7 @@ mod tests {
                 max_width: 360.0,
                 max_height: 420.0,
                 member_epoch: None,
+                replacement: None,
                 shortcut: "Q+W".into(),
                 phrases: (0..12)
                     .map(|i| Phrase {

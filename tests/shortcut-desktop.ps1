@@ -1,4 +1,4 @@
-﻿param([ValidatePattern('^[\p{L}\p{N} _／]+$')][string]$Filter, [ValidateSet('shortcuts','member','ime')][string]$Suite = 'shortcuts')
+﻿param([ValidatePattern('^[\p{L}\p{N} _／]+$')][string]$Filter, [ValidateSet('shortcuts','member','ime')][string]$Suite = 'shortcuts', [switch]$Keyboard)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $node = (Get-Command node.exe).Source
@@ -62,6 +62,7 @@ public static class ShanyuShortcutDesktop {
 }
 '@
 $filterArg = if ($Filter) { ' "--filter=' + $Filter + '"' } else { '' }
+if ($Keyboard) { $filterArg += ' --keyboard' }
 $command = '"' + $env:ComSpec + '" /d /s /c ""' + $node + '" "' + (Join-Path $repo "scripts\verify-$Suite.mjs") + '"' + $filterArg + ' > "' + $log + '" 2>&1"'
 $result = [ShanyuShortcutDesktop]::Run($command, $repo)
 Get-Content -LiteralPath $log -Encoding UTF8
