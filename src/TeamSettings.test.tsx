@@ -125,12 +125,28 @@ it('修改连接失败保留表单供重试，提交期间禁止重复，成功�
 it('正常连接隐藏重连按钮，离线才显示且只刷新当前连接', async () => {
   const view = render(<TeamSettings />);
   expect(screen.queryByRole('button', { name: '刷新连接' })).toBeNull();
-  expect(screen.queryByRole('button', { name: '重新连接' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '重连' })).toBeNull();
   status = { ...status, offline: true }; view.rerender(<TeamSettings />);
-  fireEvent.click(screen.getByRole('button', { name: '重新连接' }));
+  expect(screen.getByText('已断开连接')).toBeTruthy();
+  expect(screen.queryByLabelText('密码')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '重连' }));
   await waitFor(() => expect(call).toHaveBeenCalledWith('team_refresh'));
   expect(call).not.toHaveBeenCalledWith('team_login', expect.anything());
   status = { ...status, offline: false }; view.rerender(<TeamSettings />);
-  expect(screen.queryByRole('button', { name: '重新连接' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '重连' })).toBeNull();
   expect(screen.getByRole('button', { name: '修改连接' })).toBeTruthy();
+});
+
+it('重连失败仍保留账号与重连入口，不弹出登录表单', async () => {
+  status = { ...status, offline: true };
+  const base = vi.mocked(call).getMockImplementation()!;
+  vi.mocked(call).mockImplementation((command, args) => command === 'team_refresh' ? Promise.reject('Hub 暂时无法连接') : base(command, args));
+  render(<TeamSettings />);
+  fireEvent.click(screen.getByRole('button', { name: '重连' }));
+  await screen.findByText('Hub 暂时无法连接');
+  expect(screen.getByText('已断开连接')).toBeTruthy();
+  expect(screen.getByText(status.server)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '登录' })).toBeNull();
+  expect(screen.queryByLabelText('密码')).toBeNull();
+  expect(screen.getByRole('button', { name: '重连' }).hasAttribute('disabled')).toBe(false);
 });

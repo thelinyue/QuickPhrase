@@ -967,6 +967,8 @@ button[role="menuitem"]:focus { filter: none; }
 .sync-row { display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .sync-row > strong { font-weight: 500; white-space: nowrap; }
 .sync-row .setting-buttons { margin: 0; gap: 6px; flex-wrap: wrap; }
+.sync-interval { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; color: var(--theme-muted); font-size: 12px; }
+.sync-interval select { width: auto; min-height: 32px; padding: 4px 6px; }
 .sync-summary { min-width: 0; overflow-wrap: anywhere; }
 .sync-summary small { display: inline-block; margin-left: 6px; color: var(--theme-muted); }
 .member-user-count { display: inline-flex; min-height: 0; white-space: nowrap; padding: 0; }

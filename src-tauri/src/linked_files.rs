@@ -45,19 +45,20 @@ pub async fn view(state: &AppState) -> Result<Vec<LinkedFile>> {
         .teams
         .company_view(status.session_epoch, false, String::new())
         .await;
-    let current = state.teams.status();
+    let mut current = state.teams.status();
     if current.session_epoch != status.session_epoch {
         return Err("账号已变化，旧文件列表已丢弃。".into());
     }
+    current.offline |= catalog.as_ref().is_ok_and(|view| view.offline);
     decorate(
         &mut files,
-        &status,
+        &current,
         catalog
             .as_ref()
             .ok()
             .map(|catalog| catalog.files.as_slice()),
     );
-    retain_cached_files(state, &mut files, &status);
+    retain_cached_files(state, &mut files, &current);
     Ok(files)
 }
 
@@ -83,7 +84,11 @@ fn retain_cached_files(state: &AppState, files: &mut [LinkedFile], status: &crat
                 .is_some()
             {
                 file.missing = false;
-                file.status = "仅本机缓存".into();
+                file.status = if status.offline {
+                    "Hub已断开 · 本机可用".into()
+                } else {
+                    "仅本机缓存".into()
+                };
             }
         }
     }
@@ -99,7 +104,7 @@ fn decorate(
             file.path.clear();
             file.missing = true;
             file.status = if status.offline {
-                "离线"
+                "Hub已断开 · 未缓存"
             } else {
                 "不可用"
             }
@@ -110,8 +115,13 @@ fn decorate(
                     if !file.custom_name {
                         file.name = entry.file.name.clone();
                     }
-                    // 离线保留最近一次目录名称，使用动作仍须重新核验授权。
+                    // 目录快照只提供名称，是否可用由本机完整缓存决定，不借此开放云端操作。
                     if status.offline {
+                        file.missing = !entry.cached;
+                        file.can_rename = false;
+                        if entry.cached {
+                            file.status = "Hub已断开 · 本机可用".into();
+                        }
                         continue;
                     }
                     file.missing = false;
@@ -273,4 +283,62 @@ pub async fn rename_company_file(
         .teams
         .rename_company(&app, session_epoch, &id, &expected_name, &name)
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn offline_linked_rows_keep_names_and_only_complete_cache_is_usable() {
+        let user: shanyu_team_model::User = serde_json::from_value(serde_json::json!({
+            "id":"user", "username":"employee", "admin":false, "disabled":false,
+            "mustChangePassword":false
+        }))
+        .unwrap();
+        let status = crate::team::Status {
+            session_epoch: 1,
+            server: "server".into(),
+            username: "employee".into(),
+            user: Some(user),
+            teams: vec![],
+            team_sync_times: Default::default(),
+            offline: true,
+            private_sync: false,
+            member_phrase_sync: false,
+            company_files: true,
+            company_file_permissions: false,
+        };
+        let file: LinkedFile = serde_json::from_value(serde_json::json!({
+            "id":"linked", "categoryId":"category", "path":"", "name":"我的显示名.pdf", "position":0,
+            "customName":true, "cloud":{"server":"server","userId":"user","assetId":"asset"}
+        })).unwrap();
+        let metadata: shanyu_team_model::CompanyFile = serde_json::from_value(serde_json::json!({
+            "assetId":"asset", "name":"云端名称.pdf", "size":4, "uploadedBy":"user",
+            "uploaderName":"employee", "createdAt":1, "deletedAt":null
+        }))
+        .unwrap();
+        for cached in [true, false] {
+            let mut files = vec![file.clone()];
+            decorate(
+                &mut files,
+                &status,
+                Some(&[crate::team::CompanyEntry {
+                    file: metadata.clone(),
+                    cached,
+                }]),
+            );
+            assert_eq!(files[0].missing, !cached);
+            assert_eq!(files[0].name, "我的显示名.pdf");
+            assert_eq!(files[0].source_name, "云端名称.pdf");
+            assert!(!files[0].can_rename);
+            assert!(files[0]
+                .status
+                .contains(if cached { "本机可用" } else { "未缓存" }));
+            assert!(visible(&files[0], &status));
+        }
+        let mut other = status;
+        other.server = "other".into();
+        assert!(!visible(&file, &other));
+    }
 }

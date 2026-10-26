@@ -313,7 +313,7 @@ try {
     await view.screenshot({ path: path.join(evidence, 'narrow-sharing.png') });
     await cdp.send('Emulation.clearDeviceMetricsOverride'); await cdp.detach();
 
-    assert.equal(await view.getByRole('button', { name: '重新连接', exact: true }).count(), 0);
+    assert.equal(await view.getByRole('button', { name: '重连', exact: true }).count(), 0);
     assert.equal(await view.locator('.sync-sharing-settings').count(), 1);
     assert.equal(await view.locator('.sync-sharing-settings .sync-row').count(), 3);
     assert.ok(await view.locator('.shared-library-settings .sync-row').evaluate(el => { const label = el.querySelector('strong').getBoundingClientRect(), button = el.querySelector('button').getBoundingClientRect(); return Math.abs(label.top + label.height / 2 - button.top - button.height / 2) < 3 && el.scrollWidth <= el.clientWidth; }));
@@ -339,11 +339,11 @@ try {
     await dialog.getByText('离线数据', { exact: true }).waitFor();
     await view.screenshot({ path: path.join(evidence, 'offline-users.png') });
     await click(dialog.getByRole('button', { name: '关闭', exact: true }));
-    await view.getByRole('button', { name: '重新连接', exact: true }).waitFor();
+    await view.getByRole('button', { name: '重连', exact: true }).waitFor();
     service = startServer(); await until(async () => (await fetch(base + '/health')).ok);
     // 后台可能已自动重连并撤下按钮；在同一浏览器任务内查找和点击，避免等待已消失的入口。
-    await view.evaluate(() => Array.from(document.querySelectorAll('button')).find(button => button.textContent === '重新连接')?.click());
-    await view.getByRole('button', { name: '重新连接', exact: true }).waitFor({ state: 'hidden' });
+    await view.evaluate(() => Array.from(document.querySelectorAll('button')).find(button => button.textContent === '重连')?.click());
+    await view.getByRole('button', { name: '重连', exact: true }).waitFor({ state: 'hidden' });
     for (const username of extra) await api(username, 'PUT', 'me/phrase-subscription', { grantId: null, expectedVersion: 1 });
     await until(async () => (await api('source', 'GET', 'me/phrase-grants')).users.length, n => n === 1);
     await closeView(view); await startClient('recipient-a'); await memberView(v => v.phrases[0]?.ready);

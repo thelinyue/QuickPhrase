@@ -8,7 +8,7 @@ vi.mock('./api', () => ({ call: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn(async () => true), save: vi.fn(async () => null) }));
 const account = { user: { id: 'user', mustChangePassword: false }, offline: false, privateSync: true } as TeamStatus;
-const status = { libraryId: 'library', username: '', enabled: false, state: '已同步', pending: 0, conflicts: 0, settingsPending: 0, message: '', sameAccount: false };
+const status = { libraryId: 'library', username: '', enabled: false, state: '已同步', pending: 0, conflicts: 0, settingsPending: 0, message: '', sameAccount: false, syncIntervalMinutes: 1 };
 beforeEach(() => {
   vi.mocked(call).mockImplementation(async command => command === 'get_private_status' ? status : undefined);
   HTMLDialogElement.prototype.showModal = vi.fn(function(this: HTMLDialogElement) { this.open = true; });
@@ -78,4 +78,33 @@ it('新账号独立内容首次开启，不显示恢复同步', async () => {
   await screen.findByText('所属账号：new-user');
   expect((screen.getByRole('button', { name: '开启同步' }) as HTMLButtonElement).disabled).toBe(false);
   expect(screen.queryByRole('button', { name: '恢复同步' })).toBeNull();
+});
+
+it('检查间隔仅提供1、3、5分钟，离线也可修改本机偏好', async () => {
+  let current = { ...status };
+  vi.mocked(call).mockImplementation(async (command, args) => {
+    if (command === 'get_private_status') return current;
+    if (command === 'set_private_sync_interval') current = { ...current, syncIntervalMinutes: Number(args?.minutes) };
+  });
+  render(<PrivateSyncSettings account={{ ...account, offline: true }} />);
+  const select = await screen.findByRole('combobox', { name: '同步检查间隔' }) as HTMLSelectElement;
+  await waitFor(() => expect(select.disabled).toBe(false));
+  expect(select.closest('label')?.textContent).toMatch(/^间隔/);
+  expect(select.closest('label')?.title).toBe('本机定时检查间隔，内容变更仍即时同步');
+  expect([...select.options].map(option => option.value)).toEqual(['1', '3', '5']);
+  expect(select.value).toBe('1');
+  fireEvent.change(select, { target: { value: '3' } });
+  await waitFor(() => expect(select.value).toBe('3'));
+  expect(call).toHaveBeenCalledWith('set_private_sync_interval', { minutes: 3 });
+  expect(vi.mocked(call).mock.calls.some(([command]) => ['confirm_private_sync', 'team_refresh', 'save_settings'].includes(command))).toBe(false);
+});
+
+it('间隔保存失败保留原值并显示错误，未触发同步', async () => {
+  vi.mocked(call).mockImplementation(async command => command === 'get_private_status' ? { ...status, syncIntervalMinutes: 5 } : Promise.reject('设置保存失败'));
+  render(<PrivateSyncSettings account={account} />);
+  const select = await screen.findByRole('combobox', { name: '同步检查间隔' }) as HTMLSelectElement;
+  await waitFor(() => expect(select.value).toBe('5'));
+  fireEvent.change(select, { target: { value: '1' } });
+  await screen.findByText('设置保存失败');
+  expect(select.value).toBe('5');
 });

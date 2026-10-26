@@ -80,6 +80,7 @@ pub struct CompanyView {
     pub version: u64,
     pub files: Vec<CompanyEntry>,
     pub uploads: Vec<CompanyUpload>,
+    pub offline: bool,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -225,10 +226,10 @@ impl TeamClient {
         if !active.authorization.capabilities.company_files {
             return Err("服务端尚不支持云文件，请升级 Hub。".into());
         }
-        if active.authorization.user.must_change_password
-            || active.authorization.user.disabled
-            || active.offline
-        {
+        if active.offline {
+            return Err("Hub 已断开，请重连后操作。".into());
+        }
+        if active.authorization.user.must_change_password || active.authorization.user.disabled {
             return Err("请联网并完成初始改密后使用云文件。".into());
         }
         let permissions = if active.authorization.capabilities.company_file_permissions {
@@ -247,6 +248,36 @@ impl TeamClient {
             cancel: active.cancel,
         })
     }
+    /// 本机缓存读取沿用账号、改密、停用和授权边界，但不要求 Hub 当前在线。
+    pub(crate) fn company_cached_context(&self, epoch: u64) -> Result<AccountContext> {
+        let active = self.active()?;
+        if active.epoch != epoch
+            || !active.authorization.capabilities.company_files
+            || active.authorization.user.must_change_password
+            || active.authorization.user.disabled
+            || active.cancel.is_cancelled()
+        {
+            return Err("云文件账号已变化或不可用。".into());
+        }
+        let permissions = if active.authorization.capabilities.company_file_permissions {
+            active.authorization.user.company_file_permissions.clone()
+        } else {
+            wire::CompanyFilePermissions::default()
+        };
+        if !permissions.allows(
+            active.authorization.user.admin,
+            wire::CompanyOperation::Read,
+        ) {
+            return Err("没有云文件读取权限，请联系服务管理员授权。".into());
+        }
+        Ok(AccountContext {
+            server: active.connection.server,
+            user_id: active.authorization.user.id,
+            username: active.authorization.user.username,
+            epoch: active.epoch,
+            cancel: active.cancel,
+        })
+    }
     pub(super) fn company_cache_path(&self, active: &Active, id: &str, name: &str) -> PathBuf {
         self.dir
             .join(&active.connection.partition)
@@ -254,6 +285,32 @@ impl TeamClient {
             .join(&active.authorization.user.id)
             .join(id)
             .join(safe_filename(name))
+    }
+    fn company_catalog_path(&self, active: &Active) -> PathBuf {
+        self.dir
+            .join(&active.connection.partition)
+            .join("company")
+            .join(&active.authorization.user.id)
+            .join("catalog.json")
+    }
+    pub(super) fn restore_company_catalog(&self) {
+        let Ok(active) = self.active() else { return };
+        if !active.authorization.capabilities.company_files {
+            return;
+        }
+        if let Some(catalog) = load_json::<wire::CompanyFiles>(&self.company_catalog_path(&active))
+        {
+            *self.company_names.lock().unwrap() = CompanyNames {
+                epoch: active.epoch,
+                version: catalog.version,
+                names: catalog
+                    .files
+                    .iter()
+                    .map(|file| (file.asset_id.clone(), file.name.clone()))
+                    .collect(),
+                catalog: Some(catalog),
+            };
+        }
     }
     pub(super) fn current_company_name(&self, epoch: u64, id: &str, fallback: &str) -> String {
         let names = self.company_names.lock().unwrap();
@@ -295,7 +352,7 @@ impl TeamClient {
         id: &str,
         name: &str,
     ) -> Result<Option<PathBuf>> {
-        let ctx = self.company_context(epoch, wire::CompanyOperation::Read)?;
+        let ctx = self.company_cached_context(epoch)?;
         let active = self.active()?;
         self.with_account(&ctx, || Ok(self.existing_company_cache(&active, id, name)))
     }
@@ -317,8 +374,9 @@ impl TeamClient {
                 .iter()
                 .cloned()
                 .map(|file| {
-                    let cached =
-                        ready_path(&self.company_cache_path(&active, &file.asset_id, &file.name));
+                    let cached = self
+                        .existing_company_cache(&active, &file.asset_id, &file.name)
+                        .is_some();
                     CompanyEntry { file, cached }
                 })
                 .collect(),
@@ -557,6 +615,16 @@ impl TeamClient {
         recycled: bool,
         query: String,
     ) -> Result<CompanyView> {
+        let active = self.active()?;
+        if active.epoch != epoch {
+            return Err("账号已变化，请重新打开云文件。".into());
+        }
+        if active.offline {
+            if recycled {
+                return Err("Hub 已断开，回收站暂不可用。".into());
+            }
+            return self.offline_company_view(epoch, &query);
+        }
         let ctx = self.company_context(
             epoch,
             if recycled {
@@ -565,12 +633,11 @@ impl TeamClient {
                 wire::CompanyOperation::Read
             },
         )?;
-        let active = self.active()?;
         self.with_account(&ctx, || Ok(()))?;
         let complete = !recycled && query.is_empty();
         let url = Url::parse_with_params(
             &format!("{}/api/company/files", ctx.server),
-            &[("recycled", recycled.to_string()), ("q", query)],
+            &[("recycled", recycled.to_string()), ("q", query.clone())],
         )
         .map_err(|_| "云文件查询无效。")?;
         let request = self
@@ -580,14 +647,20 @@ impl TeamClient {
             .timeout(Duration::from_secs(30));
         let response = tokio::select! {
             _ = ctx.cancel.cancelled() => return Err("账号已变化，目录查询已取消。".into()),
-            response = request.send() => response.map_err(|_| "云文件目录加载失败，请检查网络。")?,
+            response = request.send() => match response {
+                Ok(response) => response,
+                Err(_) if !recycled => return self.offline_company_view(epoch, &query),
+                Err(_) => return Err("云文件目录加载失败，请检查网络。".into()),
+            },
         };
-        let catalog: wire::CompanyFiles = self
-            .check(response)
-            .await?
-            .json()
-            .await
-            .map_err(|_| "云文件目录无法读取。")?;
+        if response.status().is_server_error() && !recycled {
+            return self.offline_company_view(epoch, &query);
+        }
+        let catalog: wire::CompanyFiles = match self.check(response).await?.json().await {
+            Ok(catalog) => catalog,
+            Err(_) if !recycled => return self.offline_company_view(epoch, &query),
+            Err(_) => return Err("云文件目录无法读取。".into()),
+        };
         self.with_account(&ctx, || {
             {
                 let mut names = self.company_names.lock().unwrap();
@@ -610,6 +683,7 @@ impl TeamClient {
                         .is_none_or(|old| catalog.version >= old.version)
                 {
                     names.catalog = Some(catalog.clone());
+                    save_json(&self.company_catalog_path(&active), &catalog)?;
                 }
             }
             let files = catalog
@@ -627,6 +701,41 @@ impl TeamClient {
                 version: catalog.version,
                 files,
                 uploads,
+                offline: false,
+            })
+        })
+    }
+    /// 离线快照只用于展示，不能借此新增引用；每次读取重新检查完整缓存字节。
+    fn offline_company_view(&self, epoch: u64, query: &str) -> Result<CompanyView> {
+        let ctx = self.company_cached_context(epoch)?;
+        let active = self.active()?;
+        self.with_account(&ctx, || {
+            let catalog = {
+                let names = self.company_names.lock().unwrap();
+                (names.epoch == epoch)
+                    .then(|| names.catalog.clone())
+                    .flatten()
+            }
+            .ok_or("Hub 已断开，尚无可用的云文件目录快照。")?;
+            let query = query.to_lowercase();
+            let files = catalog
+                .files
+                .into_iter()
+                .filter(|file| {
+                    file.deleted_at.is_none() && file.name.to_lowercase().contains(&query)
+                })
+                .map(|file| {
+                    let cached = self
+                        .existing_company_cache(&active, &file.asset_id, &file.name)
+                        .is_some();
+                    CompanyEntry { file, cached }
+                })
+                .collect();
+            Ok(CompanyView {
+                version: catalog.version,
+                files,
+                uploads: vec![],
+                offline: true,
             })
         })
     }
@@ -1321,6 +1430,229 @@ mod tests {
     use super::super::tests::setup;
     use super::*;
     use std::path::Path;
+
+    fn cached_catalog(client: &TeamClient) -> (Active, wire::CompanyFiles, PathBuf) {
+        let active = {
+            let mut inner = client.inner.lock().unwrap();
+            let active = inner.active.as_mut().unwrap();
+            active.authorization.capabilities.company_files = true;
+            active.clone()
+        };
+        let file: wire::CompanyFile = serde_json::from_value(serde_json::json!({
+            "assetId":local::id(), "name":"缓存资料.pdf", "size":4,
+            "uploadedBy":active.authorization.user.id, "uploaderName":"上传者", "createdAt":1, "deletedAt":null
+        }))
+        .unwrap();
+        let path = client.company_cache_path(&active, &file.asset_id, &file.name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"data").unwrap();
+        save_json(&path.with_extension("ready.json"), &4_u64).unwrap();
+        let catalog = wire::CompanyFiles {
+            version: 3,
+            files: vec![file],
+        };
+        save_json(&client.company_catalog_path(&active), &catalog).unwrap();
+        client.restore_company_catalog();
+        (active, catalog, path)
+    }
+
+    fn catalog_response(client: &TeamClient, status: u16, body: String) -> Result<CompanyView> {
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        {
+            let mut inner = client.inner.lock().unwrap();
+            let active = inner.active.as_mut().unwrap();
+            active.connection.server = format!("http://{}", listener.local_addr().unwrap());
+            active.offline = false;
+        }
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let size = stream.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /api/company/files"));
+            write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        });
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(client.company_view(1, false, String::new()));
+        server.join().unwrap();
+        result
+    }
+
+    #[test]
+    fn offline_catalog_restores_names_filters_locally_and_checks_complete_bytes() {
+        let (_dir, client, _) = setup();
+        let (_, catalog, path) = cached_catalog(&client);
+        *client.company_names.lock().unwrap() = CompanyNames::default();
+        client.restore_company_catalog();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let view = runtime
+            .block_on(client.company_view(1, false, "缓存".into()))
+            .unwrap();
+        assert!(view.offline);
+        assert_eq!(view.files.len(), 1);
+        assert!(view.files[0].cached);
+        assert_eq!(view.files[0].file.name, catalog.files[0].name);
+        assert!(runtime
+            .block_on(client.company_view(1, false, "不存在".into()))
+            .unwrap()
+            .files
+            .is_empty());
+        assert!(runtime
+            .block_on(client.company_view(2, false, String::new()))
+            .is_err());
+        assert!(runtime
+            .block_on(client.company_view(1, true, String::new()))
+            .is_err());
+        fs::write(path, b"partial").unwrap();
+        assert!(
+            !runtime
+                .block_on(client.company_view(1, false, String::new()))
+                .unwrap()
+                .files[0]
+                .cached
+        );
+    }
+
+    #[test]
+    fn offline_linked_cache_requires_the_current_usable_account() {
+        let (_dir, client, _) = setup();
+        let (_, catalog, path) = cached_catalog(&client);
+        let file = &catalog.files[0];
+        assert_eq!(
+            client
+                .linked_company_existing_cache(1, &file.asset_id, &file.name)
+                .unwrap(),
+            Some(path)
+        );
+        assert!(client
+            .company_context(1, wire::CompanyOperation::Read)
+            .is_err());
+        assert!(client
+            .linked_company_existing_cache(2, &file.asset_id, &file.name)
+            .is_err());
+        for condition in ["disabled", "password", "other-account"] {
+            let mut inner = client.inner.lock().unwrap();
+            let active = inner.active.as_mut().unwrap();
+            active.authorization.user.disabled = condition == "disabled";
+            active.authorization.user.must_change_password = condition == "password";
+            if condition == "other-account" {
+                active.authorization.user.id = local::id();
+            }
+            drop(inner);
+            let result = client.linked_company_existing_cache(1, &file.asset_id, &file.name);
+            if condition == "other-account" {
+                assert!(result.unwrap().is_none());
+            } else {
+                assert!(result.is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn offline_cache_use_and_delivery_do_not_enable_cloud_operations() {
+        let (_dir, client, _) = setup();
+        let (_, catalog, path) = cached_catalog(&client);
+        let ctx = client.company_cached_context(1).unwrap();
+        assert_eq!(
+            client
+                .with_account(&ctx, || fs::read(&path).map_err(io_error))
+                .unwrap(),
+            b"data"
+        );
+        client.begin_company_delivery(1).unwrap();
+        assert_eq!(client.inner.lock().unwrap().delivery_company, Some(1));
+        client.end_delivery();
+        assert!(client.begin_company_delivery(2).is_err());
+        assert!(client
+            .linked_company_existing_cache(1, &local::id(), "未缓存.pdf")
+            .unwrap()
+            .is_none());
+        for operation in [
+            wire::CompanyOperation::Read,
+            wire::CompanyOperation::Upload,
+            wire::CompanyOperation::Recycle,
+        ] {
+            assert!(client.company_context(1, operation).is_err());
+        }
+        for condition in ["disabled", "password", "capability", "cancelled"] {
+            let mut inner = client.inner.lock().unwrap();
+            let active = inner.active.as_mut().unwrap();
+            active.authorization.user.disabled = condition == "disabled";
+            active.authorization.user.must_change_password = condition == "password";
+            active.authorization.capabilities.company_files = condition != "capability";
+            if condition == "cancelled" {
+                active.cancel.cancel();
+            }
+            drop(inner);
+            assert!(client.begin_company_delivery(1).is_err());
+            assert!(client.company_cached_context(1).is_err());
+            assert!(client
+                .linked_company_existing_cache(
+                    1,
+                    &catalog.files[0].asset_id,
+                    &catalog.files[0].name
+                )
+                .is_err());
+        }
+        assert!(client.with_account(&ctx, || Ok(())).is_err());
+    }
+
+    #[test]
+    fn persisted_catalog_cannot_be_restored_for_another_account_or_server() {
+        let (_dir, client, _) = setup();
+        let (original, _, _) = cached_catalog(&client);
+        for other_server in [false, true] {
+            {
+                let mut inner = client.inner.lock().unwrap();
+                let active = inner.active.as_mut().unwrap();
+                *active = original.clone();
+                active.epoch = 2;
+                if other_server {
+                    active.connection.partition = local::id();
+                    active.connection.server = "https://other.example".into();
+                } else {
+                    active.authorization.user.id = local::id();
+                }
+            }
+            *client.company_names.lock().unwrap() = CompanyNames::default();
+            client.restore_company_catalog();
+            assert!(client.offline_company_view(2, "").is_err());
+            assert!(client.cached_company_files(2).is_none());
+        }
+    }
+
+    #[test]
+    fn catalog_server_errors_use_snapshot_but_authentication_errors_do_not() {
+        let (_dir, client, _) = setup();
+        cached_catalog(&client);
+        let view = catalog_response(&client, 503, "{}".into()).unwrap();
+        assert!(view.offline);
+        assert_eq!(view.files.len(), 1);
+        assert!(
+            catalog_response(&client, 200, "{\"version\":".into())
+                .unwrap()
+                .offline
+        );
+        let error = catalog_response(&client, 401, "{\"message\":\"登录已失效\"}".into())
+            .err()
+            .unwrap();
+        assert!(error.starts_with("401:"), "{error}");
+    }
+
+    #[test]
+    fn successful_complete_catalog_is_persisted_for_the_next_offline_load() {
+        let (_dir, client, _) = setup();
+        let (active, mut catalog, _) = cached_catalog(&client);
+        catalog.version += 1;
+        catalog.files[0].name = "新目录名称.pdf".into();
+        let view =
+            catalog_response(&client, 200, serde_json::to_string(&catalog).unwrap()).unwrap();
+        assert!(!view.offline);
+        let stored: wire::CompanyFiles = load_json(&client.company_catalog_path(&active)).unwrap();
+        assert_eq!(stored.version, catalog.version);
+        assert_eq!(stored.files[0].name, catalog.files[0].name);
+    }
 
     #[test]
     fn purged_company_cache_keeps_identity_and_requires_complete_local_bytes() {

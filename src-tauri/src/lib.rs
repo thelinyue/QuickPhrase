@@ -819,11 +819,7 @@ async fn copy_linked_files(
     let epoch = state.teams.status().session_epoch;
     let files = linked_files::resolve(&app, &state, &ids).await?;
     let ctx = if files.iter().any(|f| f.cloud.is_some()) {
-        Some(
-            state
-                .teams
-                .company_context(epoch, shanyu_team_model::CompanyOperation::Read)?,
-        )
+        Some(state.teams.company_cached_context(epoch)?)
     } else {
         None
     };
@@ -852,9 +848,7 @@ async fn open_linked_file(
     let epoch = state.teams.status().session_epoch;
     let files = linked_files::resolve(&app, &state, &[id]).await?;
     if files[0].cloud.is_some() {
-        let ctx = state
-            .teams
-            .company_context(epoch, shanyu_team_model::CompanyOperation::Read)?;
+        let ctx = state.teams.company_cached_context(epoch)?;
         state.teams.with_account(&ctx, || {
             native::open_file(&files[0].path, reveal.unwrap_or(false))
         })
@@ -1812,6 +1806,7 @@ pub fn run() {
                 company_commands::save_company_private_phrase,
                 company_commands::save_company_file_as,
                 private_commands::get_private_status,
+                private_commands::set_private_sync_interval,
                 private_commands::get_private_settings,
                 private_commands::preview_private_sync,
                 private_commands::confirm_private_sync,

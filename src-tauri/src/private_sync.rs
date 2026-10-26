@@ -23,6 +23,22 @@ use tokio::sync::Notify;
 type Values = HashMap<(wire::Kind, String), Option<Value>>;
 type Keys = HashSet<(wire::Kind, String)>;
 
+fn sync_interval_minutes(device: &Store) -> Result<u64> {
+    Ok(local::meta(device, "syncIntervalMinutes")?
+        .parse::<u64>()
+        .ok()
+        .filter(|minutes| [1, 3, 5].contains(minutes))
+        .unwrap_or(1))
+}
+
+pub fn set_sync_interval(device: &Store, minutes: u64) -> Result<()> {
+    if ![1, 3, 5].contains(&minutes) {
+        return Err("同步检查间隔请选择1、3或5分钟。".into());
+    }
+    // 核对频率仅属于本机，不进入个人内容同步，也不随账号切换覆盖。
+    local::set_meta(device, "syncIntervalMinutes", &minutes.to_string())
+}
+
 /// 成功时间属于账号库；待提交、冲突和恢复核对未完成时保留上一次成功记录。
 fn record_success(store: &Store, generation: &str, timestamp: u64) -> Result<()> {
     if local::meta(store, "enabled")? != "1"
@@ -216,6 +232,7 @@ fn protect_dependencies(original: &Values, values: &mut Values, conflicts: &mut 
 pub struct PrivateSync {
     pub dir: PathBuf,
     notify: Notify,
+    interval_changed: Notify,
     error: Mutex<String>,
     downloads: Mutex<HashSet<String>>,
     preview: Mutex<Option<Prepared>>,
@@ -245,6 +262,7 @@ pub struct Status {
     pub same_account: bool,
     pub last_successful_sync_at: Option<u64>,
     pub initialized: bool,
+    pub sync_interval_minutes: u64,
 }
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -479,6 +497,7 @@ impl PrivateSync {
         Arc::new(Self {
             dir: dir.into(),
             notify: Notify::new(),
+            interval_changed: Notify::new(),
             error: Mutex::new(String::new()),
             downloads: Mutex::new(HashSet::new()),
             preview: Mutex::new(None),
@@ -490,6 +509,16 @@ impl PrivateSync {
     }
     pub fn wake(&self) {
         self.notify.notify_one();
+    }
+    pub fn reschedule(&self) {
+        self.interval_changed.notify_one();
+    }
+    async fn wait_for_sync(&self, minutes: u64) -> bool {
+        tokio::select! {
+            _ = self.notify.notified() => true,
+            _ = self.interval_changed.notified() => false,
+            _ = tokio::time::sleep(Duration::from_secs(minutes * 60)) => true,
+        }
     }
     fn emit(&self, app: &tauri::AppHandle) {
         let _ = app.emit("private-sync-changed", ());
@@ -550,13 +579,20 @@ impl PrivateSync {
             same_account,
             last_successful_sync_at: local::meta(&store, "lastSuccessfulSyncAt")?.parse().ok(),
             initialized: local::meta(&store, "initialized")? == "1",
+            sync_interval_minutes: sync_interval_minutes(&state.device_store.lock().unwrap())?,
         })
     }
     pub fn start(self: &Arc<Self>, app: tauri::AppHandle) {
         let this = self.clone();
         tauri::async_runtime::spawn(async move {
             loop {
-                tokio::select! {_=this.notify.notified()=>{},_=tokio::time::sleep(Duration::from_secs(60))=>{}}
+                let minutes =
+                    sync_interval_minutes(&app.state::<AppState>().device_store.lock().unwrap())
+                        .unwrap_or(1);
+                // 只调整兜底轮询；本机修改和 SSE 仍通过 Notify 立即唤醒。
+                if !this.wait_for_sync(minutes).await {
+                    continue;
+                }
                 let library_id = local::identity(&app.state::<AppState>().store.lock().unwrap())
                     .unwrap_or_default();
                 *this.running.lock().unwrap() = Some(library_id.clone());
@@ -1697,6 +1733,42 @@ pub fn remap_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sync_interval_is_device_local_validated_and_persisted() {
+        let dir = tempfile::tempdir().unwrap();
+        let device = Store::open(dir.path()).unwrap();
+        assert_eq!(sync_interval_minutes(&device).unwrap(), 1);
+        for minutes in [1, 3, 5] {
+            set_sync_interval(&device, minutes).unwrap();
+            assert_eq!(sync_interval_minutes(&device).unwrap(), minutes);
+        }
+        for minutes in [0, 2, 6, 60] {
+            assert!(set_sync_interval(&device, minutes).is_err());
+        }
+        drop(device);
+        let device = Store::open(dir.path()).unwrap();
+        assert_eq!(sync_interval_minutes(&device).unwrap(), 5);
+        let account = Store::open(&dir.path().join("account")).unwrap();
+        assert_eq!(sync_interval_minutes(&account).unwrap(), 1);
+    }
+
+    #[test]
+    fn sync_notifications_bypass_all_intervals_and_interval_change_only_reschedules() {
+        let dir = tempfile::tempdir().unwrap();
+        let sync = PrivateSync::new(dir.path());
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            for minutes in [1, 3, 5] {
+                let mut waiting = Box::pin(sync.wait_for_sync(minutes));
+                assert!(futures_util::poll!(waiting.as_mut()).is_pending());
+                sync.wake();
+                assert!(waiting.await);
+            }
+            let mut waiting = Box::pin(sync.wait_for_sync(5));
+            assert!(futures_util::poll!(waiting.as_mut()).is_pending());
+            sync.reschedule();
+            assert!(!waiting.await);
+        });
+    }
     #[test]
     fn successful_time_requires_a_clean_enabled_generation_and_survives_reopen() {
         let dir = tempfile::tempdir().unwrap();

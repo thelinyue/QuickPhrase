@@ -65,6 +65,18 @@ pub fn library(state: &AppState) -> Result<ClientLibrary> {
 pub fn get_private_status(state: State<AppState>) -> Result<private_sync::Status> {
     state.private_sync.status(&state)
 }
+#[tauri::command]
+pub fn set_private_sync_interval(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    minutes: u64,
+) -> Result<()> {
+    private_sync::set_sync_interval(&state.device_store.lock().unwrap(), minutes)?;
+    state.private_sync.reschedule();
+    use tauri::Emitter;
+    let _ = app.emit("private-sync-changed", ());
+    Ok(())
+}
 #[derive(Serialize)]
 pub struct SettingChange {
     pub key: String,

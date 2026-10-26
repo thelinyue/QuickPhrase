@@ -5,7 +5,7 @@ import { call } from './api';
 import { syncTime, type TeamStatus } from './types';
 import { AccountModal } from './AccountControls';
 
-interface Status { libraryId: string; username: string; enabled: boolean; state: string; pending: number; conflicts: number; settingsPending: number; message: string; sameAccount: boolean; initialized: boolean; lastSuccessfulSyncAt: number | null }
+interface Status { libraryId: string; username: string; enabled: boolean; state: string; pending: number; conflicts: number; settingsPending: number; message: string; sameAccount: boolean; initialized: boolean; lastSuccessfulSyncAt: number | null; syncIntervalMinutes: number }
 interface Choice { key: string; label: string; local: string; server: string; setting: boolean }
 interface Preview { id: string; categories: number; phrases: number; commonPhrases: number; conflicts: Choice[]; resume: boolean; restore: boolean }
 interface Conflict { kind: string; id: string; label: string; local: string; server: string; serverVersion: number; localRevision: number }
@@ -16,6 +16,7 @@ const format = (value: unknown) => typeof value === 'boolean' ? value ? '开' : 
 /** 云端配置与本机生效状态分开展示；确认按钮只应用本机，不会反写未修改的云端值。 */
 export function PrivateSyncSettings({ account, onPaused }: { account: TeamStatus; onPaused?: (paused: boolean) => void }) {
   const [status, setStatus] = useState<Status | null>(null); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false);
+  const [intervalBusy, setIntervalBusy] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null); const [choices, setChoices] = useState<Record<string, string>>({}); const [conflicts, setConflicts] = useState<Conflict[] | null>(null); const [settings, setSettings] = useState<SettingChange[] | null>(null); const [page, setPage] = useState(0);
   const sequence = useRef(0); const busyRef = useRef(false); const [panelLibrary, setPanelLibrary] = useState('');
   const owner = `${account.server}:${account.user?.id || ''}:${account.sessionEpoch ?? ''}`; const ownerRef = useRef(owner); ownerRef.current = owner;
@@ -34,8 +35,17 @@ export function PrivateSyncSettings({ account, onPaused }: { account: TeamStatus
   const online = !!account.user && !account.offline && !account.user.mustChangePassword && account.privateSync === true;
   const bound = !!status?.username;
   const label = !bound ? '仅保存在本机' : !account.user ? '未登录，内容保留在本机' : !status.sameAccount ? '内容属于其他账号' : !status.initialized ? '未开启' : !status.enabled ? '已暂停' : status.state;
+  async function saveInterval(minutes: number) {
+    if (intervalBusy) return;
+    setIntervalBusy(true); setMessage('');
+    const scope = owner;
+    try { await call('set_private_sync_interval', { minutes }); if (ownerRef.current === scope) await refresh(); }
+    catch (e) { if (ownerRef.current === scope) setMessage(String(e)); }
+    finally { setIntervalBusy(false); }
+  }
   return <div className="sync-setting private-sync-settings"><div className="sync-row"><strong>多设备同步</strong><span role="status" className="sync-summary">{label}</span>
     <div className="setting-buttons">
+      {account.privateSync && <label className="sync-interval" title="本机定时检查间隔，内容变更仍即时同步">间隔<select aria-label="同步检查间隔" disabled={!status || intervalBusy} value={status?.syncIntervalMinutes || 1} onChange={e => void saveInterval(Number(e.target.value))}>{[1, 3, 5].map(minutes => <option key={minutes} value={minutes}>{minutes}分钟</option>)}</select></label>}
       {status?.enabled ? <button className="secondary-button" disabled={busy} onClick={() => void run(() => call('pause_private_sync'))}>暂停同步</button> : <button className="secondary-button" disabled={busy || !status || !online || (bound && !status.sameAccount)} onClick={() => void run(() => readPanel<Preview>('preview_private_sync', value => { setPreview(value); setChoices({}); setPage(0); }))}>{status?.initialized ? '恢复同步' : '开启同步'}</button>}
       {status?.conflicts ? <button className="secondary-button" disabled={busy} onClick={() => void run(() => readPanel<Conflict[]>('get_private_conflicts', value => { setPanelLibrary(status!.libraryId); setConflicts(value); }))}>处理冲突（{status.conflicts}）</button> : null}
       {status?.settingsPending ? <button className="secondary-button" disabled={busy} onClick={() => void run(() => readPanel<SettingChange[]>('get_private_settings', value => { setPanelLibrary(status!.libraryId); setSettings(value); }))}>设置待确认（{status.settingsPending}）</button> : null}

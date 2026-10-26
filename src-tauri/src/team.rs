@@ -45,6 +45,16 @@ struct Active {
     offline: bool,
     cancel: CancellationToken,
 }
+// 常规授权核对不应绕过私人同步的设备间隔；只有连接恢复或可同步状态变化才唤醒。
+fn private_sync_authorization_changed(
+    active: &Active,
+    authorization: &wire::Authorization,
+) -> bool {
+    active.offline
+        || active.authorization.capabilities.private_sync != authorization.capabilities.private_sync
+        || active.authorization.user.must_change_password != authorization.user.must_change_password
+        || active.authorization.user.disabled != authorization.user.disabled
+}
 #[derive(Clone)]
 struct Context {
     active: Active,
@@ -494,6 +504,7 @@ impl TeamClient {
                 }
             }
         }
+        this.restore_company_catalog();
         this.initialize_member();
         Ok(this)
     }
@@ -596,9 +607,6 @@ impl TeamClient {
             teams: status.teams.len(),
         });
         let _ = app.emit("teams-changed", status);
-        if let Some(state) = app.try_state::<AppState>() {
-            state.private_sync.wake();
-        }
     }
     async fn response(
         &self,
@@ -848,6 +856,7 @@ impl TeamClient {
         {
             return Err("服务器返回了无效的账号或共享话术ID。".into());
         }
+        let wake_private_sync = private_sync_authorization_changed(&active, &authorization);
         let (removed, cache_result) = {
             let mut inner = self.inner.lock().unwrap();
             if !inner
@@ -946,6 +955,11 @@ impl TeamClient {
             self.invalidate_delivery(app);
         }
         self.emit(app);
+        if wake_private_sync {
+            if let Some(state) = app.try_state::<AppState>() {
+                state.private_sync.wake();
+            }
+        }
         let current = self.status();
         if !current.member_phrase_sync
             || current
@@ -2184,12 +2198,17 @@ impl TeamClient {
         self.member.lock().unwrap().delivery = None;
     }
     pub fn begin_company_delivery(&self, epoch: u64) -> Result<()> {
+        let ctx = self.company_cached_context(epoch)?;
         let mut inner = self.inner.lock().unwrap();
-        if !inner
-            .active
-            .as_ref()
-            .is_some_and(|a| a.epoch == epoch && !a.cancel.is_cancelled() && !a.offline)
-        {
+        if !inner.active.as_ref().is_some_and(|a| {
+            a.epoch == ctx.epoch
+                && a.authorization.user.id == ctx.user_id
+                && a.connection.server == ctx.server
+                && !a.cancel.is_cancelled()
+                && !a.authorization.user.disabled
+                && !a.authorization.user.must_change_password
+                && a.authorization.capabilities.company_files
+        }) {
             return Err("账号已变化，请重新触发。".into());
         }
         inner.delivery_company = Some(epoch);
@@ -2655,6 +2674,24 @@ mod tests {
             lifecycle_version: ctx.lifecycle_version,
             categories: vec![],
             phrases: vec![],
+        }
+    }
+    #[test]
+    fn routine_authorization_checks_do_not_override_the_private_sync_interval() {
+        let (_dir, client, _) = setup();
+        let mut active = client.active().unwrap();
+        let authorization = active.authorization.clone();
+        assert!(private_sync_authorization_changed(&active, &authorization));
+        active.offline = false;
+        assert!(!private_sync_authorization_changed(&active, &authorization));
+        for condition in ["password", "disabled", "capability"] {
+            let mut changed = authorization.clone();
+            match condition {
+                "password" => changed.user.must_change_password = true,
+                "disabled" => changed.user.disabled = true,
+                _ => changed.capabilities.private_sync = true,
+            }
+            assert!(private_sync_authorization_changed(&active, &changed));
         }
     }
     #[test]

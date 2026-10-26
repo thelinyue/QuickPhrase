@@ -78,7 +78,7 @@ it('顶部按钮与标题栏按桌面参考排列，未下载文件显示系统�
   administrator(); const { container } = render(<CompanyFilesWindow />); await screen.findByText(file.name);
   expect(Array.from(container.querySelectorAll('.company-toolbar button')).map(b => b.textContent)).toEqual(['刷新', '下载管理', '上传管理', '上传新文件']);
   expect(screen.getByRole('button', { name: '最小化窗口' })).toBeTruthy(); fireEvent.click(screen.getByRole('button', { name: '最大化或还原窗口' })); expect(windowEvents.toggleMaximize).toHaveBeenCalled();
-  expect(screen.getByText('未下载')).toBeTruthy(); await waitFor(() => expect(container.querySelector('.company-file-name img')?.getAttribute('src')).toBe('/icons/xlsx.png'));
+  expect(screen.getByText('未缓存')).toBeTruthy(); await waitFor(() => expect(container.querySelector('.company-file-name img')?.getAttribute('src')).toBe('/icons/xlsx.png'));
   expect(Array.from(container.querySelectorAll('tbody button')).every(button => button.textContent === '' && button.getAttribute('title') && button.getAttribute('aria-label'))).toBe(true);
   expect(call).toHaveBeenCalledWith('get_file_icon', { path: file.name });
 });
@@ -308,4 +308,56 @@ it('普通成员没有清空回收站入口', async () => {
   status = { ...status, user: { ...status.user!, companyFilePermissions: { version: 1, uploadVersion: 1, canUpload: false, canRecycle: true, canRestore: true } } };
   render(<CompanyFilesWindow />); await screen.findByText(file.name);
   expect(screen.queryByRole('button', { name: '清空回收站' })).toBeNull();
+});
+
+it('离线打开仍加载最近目录，区分本机可用与未缓存并禁止云端操作', async () => {
+  administrator(); status = { ...status, offline: true };
+  const cached = { ...file, cached: true }, remote = { ...file, assetId: 'remote', name: '未缓存.pdf' };
+  vi.mocked(call).mockImplementation(async command => command === 'get_company_transfers' ? [] : command === 'get_file_icon' ? '' : { version: 1, files: [cached, remote], uploads: [], offline: true });
+  render(<CompanyFilesWindow />);
+  await screen.findByText(file.name);
+  expect(screen.getByText('Hub 已断开，显示最近目录；未缓存文件暂不可用。')).toBeTruthy();
+  expect(screen.getByText('本机可用')).toBeTruthy();
+  expect(screen.getByText('未缓存')).toBeTruthy();
+  expect(call).toHaveBeenCalledWith('get_company_files', { sessionEpoch: 1, recycled: false, query: '' });
+  expect(screen.getByRole('button', { name: '上传新文件' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getAllByRole('button', { name: '下载' }).every(button => button.hasAttribute('disabled'))).toBe(true);
+  expect(screen.getAllByRole('button', { name: '删除' }).every(button => button.hasAttribute('disabled'))).toBe(true);
+});
+
+it('目录请求异常返回离线快照时，账号尚未标记离线也显示提示并禁用写入', async () => {
+  administrator();
+  vi.mocked(call).mockImplementation(async command => command === 'get_company_transfers' ? [] : command === 'get_file_icon' ? '' : { version: 1, files: [{ ...file, cached: true }], uploads: [], offline: true });
+  render(<CompanyFilesWindow />); await screen.findByText(file.name);
+  expect(screen.getByText('本机可用')).toBeTruthy();
+  await waitFor(() => expect(screen.getByRole('button', { name: '下载' }).hasAttribute('disabled')).toBe(true));
+  const row = screen.getByText(file.name).closest('tr')!;
+  fireEvent.contextMenu(row);
+  expect((await screen.findByRole('menuitem', { name: '生成话术' })).hasAttribute('disabled')).toBe(true);
+  expect(screen.queryByRole('menuitem', { name: '重命名云文件' })).toBeNull();
+});
+
+it('目录异常后切到上传管理仍禁用云端操作，成功刷新后恢复', async () => {
+  administrator(); let offline = true;
+  vi.mocked(call).mockImplementation(async command => command === 'get_company_transfers' ? [{ sessionEpoch: 1, assetId: 'pending', name: '待核对.pdf', direction: 'upload', done: 0, total: 4, status: '待核对', revision: 1, message: '' }] : command === 'get_file_icon' ? '' : { version: 1, files: [{ ...file, cached: true }], uploads: [], offline });
+  render(<CompanyFilesWindow />); await screen.findByText('本机可用');
+  fireEvent.click(screen.getByRole('button', { name: '上传管理' }));
+  await screen.findByText('待核对.pdf');
+  expect(screen.getByRole('button', { name: '继续原任务' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: '查询结果' }).hasAttribute('disabled')).toBe(true);
+  offline = false;
+  fireEvent.click(screen.getByRole('button', { name: '返回' }));
+  await screen.findByText('已下载');
+  expect(screen.getByRole('button', { name: '下载' }).hasAttribute('disabled')).toBe(false);
+});
+
+it('离线选择器展示目录但不能新增关联，切入离线时清空旧选择', async () => {
+  const picker = render(<CompanyFilePicker limit={1} onConfirm={vi.fn()} close={vi.fn()} />);
+  await screen.findByText(file.name);
+  fireEvent.click(screen.getByLabelText(`选择 ${file.name}`));
+  expect(screen.getByRole('button', { name: '添加文件' }).hasAttribute('disabled')).toBe(false);
+  status = { ...status, offline: true }; picker.rerender(<CompanyFilePicker limit={1} onConfirm={vi.fn()} close={vi.fn()} />);
+  await screen.findByText(file.name);
+  expect(screen.getByLabelText(`选择 ${file.name}`).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: '添加文件' }).hasAttribute('disabled')).toBe(true);
 });

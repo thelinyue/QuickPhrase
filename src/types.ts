@@ -28,7 +28,7 @@ export interface MemberOverview { sharing: MemberGrant | null; users: TeamMember
 export interface MemberView { categories: Category[]; phrases: Phrase[]; subscription: MemberSubscription; ownerLabel: string; state: string; message: string; lastSuccessfulSyncAt: number | null }
 export interface CompanyFile { assetId: string; name: string; size: number; uploadedBy: string; uploaderName: string; uploaderUsername?: string; createdAt: number; deletedAt: number | null; deletedBy?: string | null; deleterUsername?: string; cached: boolean }
 export interface CompanyUpload { id: string; name: string; size: number }
-export interface CompanyView { version: number; files: CompanyFile[]; uploads: CompanyUpload[] }
+export interface CompanyView { version: number; files: CompanyFile[]; uploads: CompanyUpload[]; offline?: boolean }
 export interface CompanyTransfer { sessionEpoch: number; assetId: string; name: string; direction: 'upload' | 'download'; done: number; total: number; status: string; revision: number; message?: string }
 export interface TeamView { team: TeamInfo; categories: Category[]; phrases: Phrase[]; offline: boolean }
 export interface TeamMembership { userId: string; teamId: string; role: TeamRole }
