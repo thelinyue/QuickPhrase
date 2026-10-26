@@ -21,6 +21,9 @@ it('未登录以连接表单为主，密码显示切换不改变值，提交期�
   let complete!: () => void;
   vi.mocked(call).mockImplementation(async () => new Promise<void>(resolve => { complete = resolve; }));
   render(<TeamSettings />);
+  expect(screen.getByRole('heading', { name: '账号' })).toBeTruthy();
+  expect(screen.getByLabelText('服务地址')).toBeTruthy();
+  expect(screen.queryByText('闪云')).toBeNull();
   const password = screen.getByLabelText('密码') as HTMLInputElement;
   fireEvent.change(password, { target: { value: 'test-password' } });
   fireEvent.click(screen.getByRole('button', { name: '显示密码' })); expect(password.type).toBe('text'); expect(password.value).toBe('test-password');
@@ -94,7 +97,7 @@ it('离线也可修改连接，预填地址和用户名，取消不改连接且�
   render(<TeamSettings />);
   const trigger = screen.getByRole('button', { name: '修改连接' }); trigger.focus(); fireEvent.click(trigger);
   const dialog = screen.getByRole('dialog', { name: '修改连接' });
-  expect((within(dialog).getByLabelText('服务器地址') as HTMLInputElement).value).toBe(status.server);
+  expect((within(dialog).getByLabelText('服务地址') as HTMLInputElement).value).toBe(status.server);
   expect((within(dialog).getByLabelText('用户名') as HTMLInputElement).value).toBe(status.username);
   fireEvent.change(within(dialog).getByLabelText('密码'), { target: { value: 'temporary-password' } });
   fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
@@ -106,7 +109,7 @@ it('修改连接失败保留表单供重试，提交期间禁止重复，成功�
   const base = vi.mocked(call).getMockImplementation()!;
   vi.mocked(call).mockImplementation((cmd, args) => cmd === 'team_login' ? Promise.reject('用户名或密码错误') : base(cmd, args));
   render(<TeamSettings />); fireEvent.click(screen.getByRole('button', { name: '修改连接' }));
-  fireEvent.change(screen.getByLabelText('服务器地址'), { target: { value: ' http://new-hub:7823 ' } });
+  fireEvent.change(screen.getByLabelText('服务地址'), { target: { value: ' http://new-hub:7823 ' } });
   fireEvent.change(screen.getByLabelText('用户名'), { target: { value: ' 002 ' } });
   fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'new-password' } });
   fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
@@ -124,9 +127,20 @@ it('修改连接失败保留表单供重试，提交期间禁止重复，成功�
 
 it('正常连接隐藏重连按钮，离线才显示且只刷新当前连接', async () => {
   const view = render(<TeamSettings />);
+  const brand = screen.getByText('闪云');
+  const icon = brand.querySelector('img')!;
+  expect(icon.getAttribute('src')).toBe('/shanyun.svg');
+  expect(icon.getAttribute('alt')).toBe('');
+  expect(icon.getAttribute('aria-hidden')).toBe('true');
+  expect(icon.getAttribute('width')).toBe('16');
+  expect(screen.queryByRole('img', { name: '闪云' })).toBeNull();
+  expect(screen.getByText(status.server).title).toBe(status.server);
+  expect(screen.getByText('已连接')).toBeTruthy();
   expect(screen.queryByRole('button', { name: '刷新连接' })).toBeNull();
   expect(screen.queryByRole('button', { name: '重连' })).toBeNull();
   status = { ...status, offline: true }; view.rerender(<TeamSettings />);
+  expect(screen.getByText('闪云').querySelector('img')).toBe(icon);
+  expect(screen.getByText(status.server).title).toBe(status.server);
   expect(screen.getByText('已断开连接')).toBeTruthy();
   expect(screen.queryByLabelText('密码')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '重连' }));
@@ -137,13 +151,21 @@ it('正常连接隐藏重连按钮，离线才显示且只刷新当前连接', a
   expect(screen.getByRole('button', { name: '修改连接' })).toBeTruthy();
 });
 
+it('长服务地址保留完整悬停文本，不改变闪云品牌与连接操作', () => {
+  status = { ...status, server: `https://${'long-service.'.repeat(12)}example.com:7823` };
+  render(<TeamSettings />);
+  expect(screen.getByText(status.server).title).toBe(status.server);
+  expect(screen.getAllByText('闪云')).toHaveLength(1);
+  expect(screen.getByRole('button', { name: '修改连接' })).toBeTruthy();
+});
+
 it('重连失败仍保留账号与重连入口，不弹出登录表单', async () => {
   status = { ...status, offline: true };
   const base = vi.mocked(call).getMockImplementation()!;
-  vi.mocked(call).mockImplementation((command, args) => command === 'team_refresh' ? Promise.reject('Hub 暂时无法连接') : base(command, args));
+  vi.mocked(call).mockImplementation((command, args) => command === 'team_refresh' ? Promise.reject('无法连接闪云，请检查地址或网络。') : base(command, args));
   render(<TeamSettings />);
   fireEvent.click(screen.getByRole('button', { name: '重连' }));
-  await screen.findByText('Hub 暂时无法连接');
+  await screen.findByText('无法连接闪云，请检查地址或网络。');
   expect(screen.getByText('已断开连接')).toBeTruthy();
   expect(screen.getByText(status.server)).toBeTruthy();
   expect(screen.queryByRole('button', { name: '登录' })).toBeNull();

@@ -85,7 +85,7 @@ fn retain_cached_files(state: &AppState, files: &mut [LinkedFile], status: &crat
             {
                 file.missing = false;
                 file.status = if status.offline {
-                    "Hub已断开 · 本机可用".into()
+                    "离线可用".into()
                 } else {
                     "仅本机缓存".into()
                 };
@@ -104,7 +104,7 @@ fn decorate(
             file.path.clear();
             file.missing = true;
             file.status = if status.offline {
-                "Hub已断开 · 未缓存"
+                "未缓存"
             } else {
                 "不可用"
             }
@@ -120,7 +120,7 @@ fn decorate(
                         file.missing = !entry.cached;
                         file.can_rename = false;
                         if entry.cached {
-                            file.status = "Hub已断开 · 本机可用".into();
+                            file.status = "离线可用".into();
                         }
                         continue;
                     }
@@ -334,7 +334,7 @@ mod tests {
             assert!(!files[0].can_rename);
             assert!(files[0]
                 .status
-                .contains(if cached { "本机可用" } else { "未缓存" }));
+                .contains(if cached { "离线可用" } else { "未缓存" }));
             assert!(visible(&files[0], &status));
         }
         let mut other = status;

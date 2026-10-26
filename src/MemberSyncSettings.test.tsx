@@ -77,7 +77,7 @@ it('零人也可打开，失败可重试，离线名单有标注且禁用写入'
   fireEvent.click(within(dialog).getByRole('button',{name:'关闭'}));
   expect((screen.getByRole('button',{name:'调整范围'}) as HTMLButtonElement).disabled).toBe(true);
 });
-it('切号丢弃旧名单响应，旧 Hub 禁止开放共享',async()=>{
+it('切号丢弃旧名单响应，旧版闪云禁止开放共享',async()=>{
   overview.sharing=grant;
   const rendered=render(<MemberSyncSettings account={account}/>);
   const count=await screen.findByRole('button',{name:'0 人使用'});

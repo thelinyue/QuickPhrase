@@ -259,7 +259,7 @@ impl TeamClient {
             || !active.authorization.capabilities.member_phrase_sync
             || active.authorization.user.must_change_password
         {
-            return Err("账号已变化或 Hub 尚不支持成员话术，请修改初始密码或升级。".into());
+            return Err("账号已变化或闪云尚不支持成员话术，请修改初始密码或升级。".into());
         }
         Ok(AccountContext {
             server: active.connection.server,
@@ -301,7 +301,7 @@ impl TeamClient {
             }
             Err(error) => {
                 // 只允许连接故障退回缓存；明确拒绝和损坏响应不能被离线提示掩盖。
-                if error.starts_with("服务器连接失败") {
+                if error.starts_with("无法连接闪云") {
                     if let Some(mut cached) =
                         load_json::<Overview>(&path).filter(|c| c.user_id == ctx.user_id)
                     {
@@ -835,6 +835,46 @@ impl TeamClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn renamed_connection_error_still_restores_only_current_account_overview() {
+        let (_dir, client, _) = super::super::tests::setup();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let active = {
+            let mut inner = client.inner.lock().unwrap();
+            let active = inner.active.as_mut().unwrap();
+            active.connection.server = server;
+            active.authorization.capabilities.member_phrase_sync = true;
+            active.clone()
+        };
+        let path = client.member_dir(&active).join("overview.json");
+        let mut cached = Overview {
+            user_id: active.authorization.user.id.clone(),
+            value: serde_json::from_value(serde_json::json!({
+                "sharing":null,"users":[],"available":[],
+                "subscription":{"grantId":null,"version":0},
+                "categories":[],"sourceReady":true
+            }))
+            .unwrap(),
+            offline: false,
+        };
+        save_json(&path, &cached).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let restored = runtime
+            .block_on(client.member_overview(active.epoch))
+            .unwrap();
+        assert!(restored.offline);
+        assert_eq!(restored.user_id, active.authorization.user.id);
+        cached.user_id = local::id();
+        save_json(&path, &cached).unwrap();
+        let error = runtime
+            .block_on(client.member_overview(active.epoch))
+            .err()
+            .unwrap();
+        assert!(error.starts_with("无法连接闪云，请检查地址或网络。"));
+    }
+
     fn fixture(user: &str) -> wire::Follow {
         let grant = local::id();
         wire::Follow {

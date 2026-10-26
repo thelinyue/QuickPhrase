@@ -12,7 +12,7 @@ const repo = process.cwd(), evidence = path.join(repo, '.build', `member-${Date.
 // 微软拼音需要当前交互桌面的 TSF 服务；此选项仍只输入隔离宿主的固定测试内容。
 const verifyIme = process.argv.includes('--ime');
 const keyboard = process.argv.includes('--keyboard');
-if (!process.env.SHANYU_TEAM_SERVER_EXE) throw new Error('请通过 SHANYU_TEAM_SERVER_EXE 指定 Hub 程序。');
+if (!process.env.SHANYU_TEAM_SERVER_EXE) throw new Error('请通过 SHANYU_TEAM_SERVER_EXE 指定闪云程序。');
 await fs.mkdir(evidence, { recursive: true });
 const serverExe = path.join(evidence, 'quickphrase-hub.exe');
 await fs.copyFile(path.resolve(process.env.SHANYU_TEAM_SERVER_EXE), serverExe);
@@ -128,10 +128,10 @@ async function startClient(device) {
   page = await until(() => context.pages().find(p => !new URL(p.url()).hash)); await page.locator('.main-window').waitFor(); await hook(page);
   await page.getByRole('status').evaluateAll(nodes => nodes.forEach(node => node.click()));
 }
-async function settings(alias = '账号与共享') {
+async function settings(alias = '账号') {
   await invoke('plugin:webview|create_webview_window', { options: { label: 'settings', title: '设置 · 闪语', url: 'index.html#settings?' + new URLSearchParams({ tab: alias }), width: 594, height: 620, decorations: false } });
   const view = await until(() => context.pages().find(p => !p.isClosed() && p.url().includes('#settings')));
-  await hook(view); await view.getByRole('heading', { name: '账号与共享', exact: true }).waitFor(); return view;
+  await hook(view); await view.getByRole('heading', { name: '账号', exact: true }).waitFor(); return view;
 }
 const click = locator => locator.evaluate(el => el.click());
 // 关闭原生窗口而非仅销毁调试目标，否则管理窗口仍存在，会按设计暂停业务快捷键。
@@ -384,15 +384,15 @@ try {
     const before = await invoke('get_team_status');
     const trigger = view.getByRole('button', { name: '修改连接', exact: true }); await click(trigger);
     const dialog = view.getByRole('dialog', { name: '修改连接', exact: true }); await dialog.waitFor();
-    assert.equal(await dialog.getByLabel('服务器地址', { exact: true }).inputValue(), base);
+    assert.equal(await dialog.getByLabel('服务地址', { exact: true }).inputValue(), base);
     assert.equal(await dialog.getByLabel('用户名', { exact: true }).inputValue(), '002');
     assert.equal(await dialog.getByLabel('密码', { exact: true }).inputValue(), '');
     await view.screenshot({ path: path.join(evidence, 'modify-connection.png') });
-    await dialog.getByLabel('服务器地址', { exact: true }).fill(base + '/invalid');
+    await dialog.getByLabel('服务地址', { exact: true }).fill(base + '/invalid');
     await dialog.getByLabel('密码', { exact: true }).fill(password);
     await click(dialog.getByRole('button', { name: '连接', exact: true })); await dialog.getByRole('alert').waitFor();
     const failed = await invoke('get_team_status'); assert.equal(failed.sessionEpoch, before.sessionEpoch); assert.equal(failed.user.id, before.user.id);
-    await dialog.getByLabel('服务器地址', { exact: true }).fill(base);
+    await dialog.getByLabel('服务地址', { exact: true }).fill(base);
     await dialog.getByLabel('用户名', { exact: true }).fill('001');
     await dialog.getByLabel('密码', { exact: true }).fill('incorrect-password');
     await click(dialog.getByRole('button', { name: '连接', exact: true }));

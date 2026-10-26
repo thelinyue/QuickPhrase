@@ -402,14 +402,14 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   }
   function exportCategory(c: Category) { void openWindow('settings', '', '', '导出数据', c.id, '', teamId); }
   const managementMenu = () => [
-    { label: '账号与共享', action: () => openWindow('settings', '', '', '账号与共享') },
+    { label: '账号', action: () => openWindow('settings', '', '', '账号') },
     ...(teamStatus.companyFiles ? [{ label: '云文件', enabled: !!teamStatus.user && !teamStatus.user.mustChangePassword, action: () => openWindow('company-files') }] : []),
     ...(teamStatus.user?.admin ? [{ label: '账号管理', enabled: !teamStatus.offline && !teamStatus.user.mustChangePassword, action: () => openWindow('user-management') }] : []),
     ...(teamStatus.user ? [{ label: '共享话术管理', enabled: !teamStatus.offline && !teamStatus.user.mustChangePassword, action: () => openWindow('team-management', '', '', 'teams', '', '', teamId) }] : []),
   ];
   const readOnlyCategoryItems = (c: Category): MenuItem[] => [
     { label: `来自${c.sourceLabel} · 分类只读`, enabled: false, action: () => {} },
-    { label: '成员话术', action: () => openWindow('settings', '', '', '账号与共享') },
+    { label: '成员话术', action: () => openWindow('settings', '', '', '账号') },
     { label: '新增本人一级分类', action: () => categoryDialog(undefined, null, 'phrase') },
   ];
   function showPrimaryCategoryMenu(c: Category | undefined, e: MouseEvent) {

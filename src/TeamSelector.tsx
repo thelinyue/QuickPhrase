@@ -18,7 +18,7 @@ export function TeamSelector({ status, teamId, onChange, onError, disabled = fal
     return () => document.removeEventListener('pointerdown', outside);
   }, [open]);
   useEffect(() => { close(); }, [status.server, status.user?.id, status.sessionEpoch, disabled]);
-  const action = (create = false) => { close(); void openWindow(status.user ? 'team-management' : 'settings', '', '', status.user ? (create ? 'create' : 'teams') : '账号与共享').catch(e => onError(String(e))); };
+  const action = (create = false) => { close(); void openWindow(status.user ? 'team-management' : 'settings', '', '', status.user ? (create ? 'create' : 'teams') : '账号').catch(e => onError(String(e))); };
   return <div className="team-selector" ref={root}>
     {defaultTeamId !== undefined ? <div className={`team-split${teamId ? ' active' : ''}`}>
       <button className="scope-name" aria-label="共享话术" aria-pressed={!!teamId} disabled={disabled} title={current?.name || '共享话术'} onClick={() => {
@@ -37,7 +37,7 @@ export function TeamSelector({ status, teamId, onChange, onError, disabled = fal
       {status.teams.length > 8 && <input ref={search} aria-label="搜索共享话术" placeholder="搜索共享话术" value={query} onChange={e => setQuery(e.target.value)} />}
       <div className="team-options">{teams.map(t => <button key={t.teamId} role="menuitem" aria-current={t.teamId === teamId ? 'true' : undefined} title={`${t.name} · ${status.user?.admin ? '服务管理员' : teamRoleLabel(t.role)}`} onClick={() => { close(); onChange(t.teamId); }}><span className="team-option-check" aria-hidden="true">{t.teamId === teamId ? '✓' : ''}</span><span className="team-option-name">{t.name}{t.teamId === defaultTeamId && <small> · 默认</small>}</span><small>{status.user?.admin ? '服务管理员' : teamRoleLabel(t.role)}</small></button>)}</div>
       {!teams.length && <p>{status.teams.length ? '没有匹配的共享话术' : status.user ? '尚未加入共享话术' : '请先连接并登录'}</p>}
-      {showManagement && <div className="team-dropdown-actions">{status.user ? <><button role="menuitem" disabled={!manage} onClick={() => action()}>共享话术管理</button>{(status.user.admin || status.user.canCreateTeams) && <button role="menuitem" disabled={!manage} onClick={() => action(true)}>新建共享话术</button>}</> : <button role="menuitem" onClick={() => action()}>账号与共享</button>}</div>}
+      {showManagement && <div className="team-dropdown-actions">{status.user ? <><button role="menuitem" disabled={!manage} onClick={() => action()}>共享话术管理</button>{(status.user.admin || status.user.canCreateTeams) && <button role="menuitem" disabled={!manage} onClick={() => action(true)}>新建共享话术</button>}</> : <button role="menuitem" onClick={() => action()}>账号</button>}</div>}
     </div>}
   </div>;
 }

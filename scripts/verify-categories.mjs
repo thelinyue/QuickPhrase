@@ -438,7 +438,7 @@ try {
     await page.getByRole('button', { name: '删除保留验证', exact: true }).waitFor(); await click(page.getByRole('button', { name: '删除保留验证', exact: true }));
     await page.getByRole('button', { name: '主菜单', exact: true }).click();
     for (const name of ['新增话术', '新增一级分类', '新增二级分类', '删除一级分类但保留话术', '退出闪语']) assert.equal(await page.getByRole('menuitem', { name, exact: true }).count(), 0);
-    for (const name of ['账号与共享', '导入数据', '导出数据', '常用设置', '界面设置', '回收站']) assert.equal(await page.getByRole('menuitem', { name, exact: true }).count(), 1);
+    for (const name of ['账号', '导入数据', '导出数据', '常用设置', '界面设置', '回收站']) assert.equal(await page.getByRole('menuitem', { name, exact: true }).count(), 1);
     const trigger = await page.getByRole('button', { name: '主菜单', exact: true }).boundingBox(); const menu = await page.getByRole('menu').boundingBox();
     assert.ok(Math.abs(trigger.y - menu.y - menu.height - 4) < 1); assert.equal(menu.x, Math.max(2, trigger.x));
     await page.screenshot({ path: path.join(evidence, 'main-menu.png') }); await page.keyboard.press('Escape');
@@ -447,7 +447,7 @@ try {
     const compactTrigger = await page.getByRole('button', { name: '主菜单', exact: true }).boundingBox(); const compactMenu = await page.getByRole('menu').boundingBox();
     assert.ok(Math.abs(compactTrigger.y - compactMenu.y - compactMenu.height - 4) < 1); assert.ok(compactMenu.y >= 2);
     assert.ok(compactMenu.y + compactMenu.height <= compactTrigger.y - 4);
-    await page.getByRole('menuitem', { name: '账号与共享', exact: true }).scrollIntoViewIfNeeded();
+    await page.getByRole('menuitem', { name: '账号', exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(evidence, 'main-menu-compact.png') }); await page.keyboard.press('Escape');
     // 未登录的话术菜单较短；文件菜单多两项，用它验证空间不足时确实滚动。
     await click(page.getByRole('button', { name: '文件', exact: true })); await page.getByRole('button', { name: '主菜单', exact: true }).click();

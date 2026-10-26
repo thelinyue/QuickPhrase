@@ -64,8 +64,8 @@ try {
   await startClient();
   let teamA, teamB, privateId, employeePrivateId, shared, externalAsset, employee, recipient, ownTeam, ownSnapshot, managementView, userView;
   await check('HTTP登录、环境变量管理员首次改密和字符串账号管理', async () => {
-    await click(page.getByRole('button', { name: '设置', exact: true })); const accountView = await view('settings'); await accountView.locator('.settings-sidebar').waitFor(); await hideDynamicWindows(accountView); await click(accountView.getByRole('button', { name: '账号与共享', exact: true }));
-    await accountView.getByLabel('服务器地址', { exact: true }).fill(base); await accountView.getByLabel('用户名', { exact: true }).fill('qa-admin');
+    await click(page.getByRole('button', { name: '设置', exact: true })); const accountView = await view('settings'); await accountView.locator('.settings-sidebar').waitFor(); await hideDynamicWindows(accountView); await click(accountView.getByRole('button', { name: '账号', exact: true }));
+    await accountView.getByLabel('服务地址', { exact: true }).fill(base); await accountView.getByLabel('用户名', { exact: true }).fill('qa-admin');
     await accountView.screenshot({ path: path.join(evidence, 'account-login.png') });
     await accountView.getByLabel('密码', { exact: true }).fill(initialPassword); await accountView.locator('.team-connection').evaluate(el => el.requestSubmit());
     await accountView.getByRole('dialog', { name: '修改初始密码', exact: true }).waitFor();
@@ -430,7 +430,7 @@ try {
     managementView = await view('team-management'); await managementView.locator('.management-groups').waitFor(); await hideDynamicWindows(managementView);
   });
   await check('设置保留连接与管理入口；退出清理凭据与缓存', async () => {
-    await click(page.getByRole('button', { name: '设置', exact: true })); const settings = await view('settings'); await settings.locator('.settings-sidebar').waitFor(); await hideDynamicWindows(settings); await click(settings.getByRole('button', { name: '账号与共享', exact: true }));
+    await click(page.getByRole('button', { name: '设置', exact: true })); const settings = await view('settings'); await settings.locator('.settings-sidebar').waitFor(); await hideDynamicWindows(settings); await click(settings.getByRole('button', { name: '账号', exact: true }));
     await settings.locator('.team-settings').waitFor(); await settings.screenshot({ path: path.join(evidence, 'team-settings.png') });
     const identityLayout = await settings.locator('.account-user').evaluate(el => { const name = el.querySelector('.account-user-name').getBoundingClientRect(), role = el.querySelector('small').getBoundingClientRect(); return { delta: Math.abs(name.top - role.top), overlap: name.right > role.left, title: el.querySelector('.account-user-name').title }; });
     assert.ok(identityLayout.delta < 4); assert.equal(identityLayout.overlap, false); assert.ok(identityLayout.title);

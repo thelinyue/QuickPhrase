@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 // 实际 Tauri、HTTP 和 SQLite 使用隔离数据；窗口保持隐藏，不操作聊天、剪贴板和实体键鼠。
 const repo = process.cwd(), evidence = path.join(repo, '.build', 'recycle-' + Date.now());
 const source = process.env.SHANYU_TEAM_SERVER_EXE;
-if (!source) throw new Error('请通过 SHANYU_TEAM_SERVER_EXE 指定 Hub 程序。');
+if (!source) throw new Error('请通过 SHANYU_TEAM_SERVER_EXE 指定闪云程序。');
 await fs.mkdir(evidence, { recursive: true });
 const serverExecutable = path.join(evidence, 'hub.exe'); await fs.copyFile(source, serverExecutable);
 const port = async () => { const s = net.createServer(); await new Promise(resolve => s.listen(0, '127.0.0.1', resolve)); const result = s.address().port; await new Promise(resolve => s.close(resolve)); return result; };

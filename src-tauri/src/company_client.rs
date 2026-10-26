@@ -224,10 +224,10 @@ impl TeamClient {
             return Err("账号已变化，请重新打开云文件。".into());
         }
         if !active.authorization.capabilities.company_files {
-            return Err("服务端尚不支持云文件，请升级 Hub。".into());
+            return Err("当前闪云版本不支持云文件，请升级服务端。".into());
         }
         if active.offline {
-            return Err("Hub 已断开，请重连后操作。".into());
+            return Err("请重连后操作。".into());
         }
         if active.authorization.user.must_change_password || active.authorization.user.disabled {
             return Err("请联网并完成初始改密后使用云文件。".into());
@@ -248,7 +248,7 @@ impl TeamClient {
             cancel: active.cancel,
         })
     }
-    /// 本机缓存读取沿用账号、改密、停用和授权边界，但不要求 Hub 当前在线。
+    /// 本机缓存读取沿用账号、改密、停用和授权边界，但不要求服务端当前在线。
     pub(crate) fn company_cached_context(&self, epoch: u64) -> Result<AccountContext> {
         let active = self.active()?;
         if active.epoch != epoch
@@ -483,9 +483,9 @@ impl TeamClient {
         )
         .await
         .map_err(|error| {
-            // response 已统一转换非成功状态，需在这里识别旧 Hub 不支持的 PATCH。
+            // response 已统一转换非成功状态，需在这里识别旧版闪云不支持的 PATCH。
             if error.starts_with("405:") {
-                "当前 Hub 不支持重命名，请升级服务端。".to_owned()
+                "当前闪云版本不支持重命名，请升级服务端。".to_owned()
             } else {
                 error
             }
@@ -621,7 +621,7 @@ impl TeamClient {
         }
         if active.offline {
             if recycled {
-                return Err("Hub 已断开，回收站暂不可用。".into());
+                return Err("连接已断开，回收站暂不可用。".into());
             }
             return self.offline_company_view(epoch, &query);
         }
@@ -716,7 +716,7 @@ impl TeamClient {
                     .then(|| names.catalog.clone())
                     .flatten()
             }
-            .ok_or("Hub 已断开，尚无可用的云文件目录快照。")?;
+            .ok_or("连接已断开，尚无可用的最近目录。")?;
             let query = query.to_lowercase();
             let files = catalog
                 .files
@@ -1925,7 +1925,7 @@ mod tests {
                 .company_file_permissions
                 .can_upload = true;
         }
-        // 旧 Hub 不能因为缺省字段或库管理员身份被误判为已委派上传。
+        // 旧版闪云不能因为缺省字段或库管理员身份被误判为已委派上传。
         assert!(client
             .company_context(1, wire::CompanyOperation::Read)
             .is_ok());

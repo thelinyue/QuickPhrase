@@ -146,7 +146,7 @@ it.each(['右键分类', '分类菜单'])('%s只保留分类操作，全局管�
   if (source === '右键分类') fireEvent.contextMenu(screen.getByRole('button', { name: /^常用$/ }));
   else fireEvent.click(screen.getByRole('button', { name: '一级分类菜单' }));
   for (const name of ['新增话术', '从云文件新建话术', '新增二级分类', '重命名', '删除', '导出该一级分类的话术', '设置一级分类背景色']) expect(screen.getByRole('menuitem', { name })).toBeTruthy();
-  const management = ['账号与共享', '云文件', '账号管理', '共享话术管理'];
+  const management = ['账号', '云文件', '账号管理', '共享话术管理'];
   for (const name of management) expect(screen.queryByRole('menuitem', { name: new RegExp(`^${name}$`) })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '主菜单' }));
   for (const name of management) expect(screen.getByRole('menuitem', { name: new RegExp(`^${name}$`) })).toBeTruthy();

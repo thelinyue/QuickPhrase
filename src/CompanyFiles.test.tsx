@@ -32,8 +32,8 @@ it('无共享话术用户可查看下载云文件，不能管理文件', async (
   render(<CompanyFilesWindow />); await screen.findByText(file.name); expect(screen.queryByRole('button', { name: '上传新文件' })).toBeNull(); expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '下载' })); await waitFor(() => expect(call).toHaveBeenCalledWith('download_company_file', { sessionEpoch: 1, id: 'cloud' }));
 });
-it('旧Hub关闭目录能力，忽略旧会话的传输通知', async () => {
-  status = { ...status, companyFiles: false }; render(<CompanyFilesWindow />); await screen.findByText('当前 Hub 尚不支持云文件，请升级服务端。'); expect(call).not.toHaveBeenCalled();
+it('旧版闪云关闭目录能力，忽略旧会话的传输通知', async () => {
+  status = { ...status, companyFiles: false }; render(<CompanyFilesWindow />); await screen.findByText('当前闪云版本不支持云文件，请升级服务端。'); expect(call).not.toHaveBeenCalled();
   await act(async () => callbacks.get('company-transfer')?.({ payload: { sessionEpoch: 0, assetId: 'old', direction: 'download', done: 1, total: 2, status: '传输中' } })); expect(screen.queryByText(/传输中/)).toBeNull();
 });
 it('云文件选择保持ID和会话，不将ID冒充本地路径', async () => {
@@ -104,10 +104,10 @@ it('独立授权显示上传和删除入口，共享话术角色不授予服务�
   await waitFor(() => expect(screen.queryByRole('button', { name: '云文件回收站' })).toBeNull()); expect(screen.queryByRole('button', { name: '恢复' })).toBeNull();
 });
 
-it('旧Hub保持管理员固定授权，并提示升级后配置用户名授权', async () => {
+it('旧版闪云保持管理员固定授权，并提示升级后配置用户名授权', async () => {
   status = { ...status, user: { ...status.user!, admin: true } }; render(<CompanyFilesWindow />); await screen.findByText(file.name);
   expect(screen.getByRole('button', { name: '上传新文件' })).toBeTruthy(); fireEvent.click(screen.getByRole('button', { name: '云文件权限管理' }));
-  expect(await screen.findByText('当前 Hub 使用固定管理员权限，升级后可按用户名授权。')).toBeTruthy(); expect(call).not.toHaveBeenCalledWith('team_admin', expect.anything());
+  expect(await screen.findByText('当前闪云版本使用固定管理员权限，升级后可按用户名授权。')).toBeTruthy(); expect(call).not.toHaveBeenCalledWith('team_admin', expect.anything());
 });
 
 it('授权逐行保存只提交三项权限和预期版本，离开草稿页需确认', async () => {
@@ -310,14 +310,14 @@ it('普通成员没有清空回收站入口', async () => {
   expect(screen.queryByRole('button', { name: '清空回收站' })).toBeNull();
 });
 
-it('离线打开仍加载最近目录，区分本机可用与未缓存并禁止云端操作', async () => {
+it('离线打开仍加载最近目录，区分离线可用与未缓存并禁止云端操作', async () => {
   administrator(); status = { ...status, offline: true };
   const cached = { ...file, cached: true }, remote = { ...file, assetId: 'remote', name: '未缓存.pdf' };
   vi.mocked(call).mockImplementation(async command => command === 'get_company_transfers' ? [] : command === 'get_file_icon' ? '' : { version: 1, files: [cached, remote], uploads: [], offline: true });
   render(<CompanyFilesWindow />);
   await screen.findByText(file.name);
-  expect(screen.getByText('Hub 已断开，显示最近目录；未缓存文件暂不可用。')).toBeTruthy();
-  expect(screen.getByText('本机可用')).toBeTruthy();
+  expect(screen.getByText('连接已断开，显示最近目录；已缓存文件仍可使用。')).toBeTruthy();
+  expect(screen.getByText('离线可用')).toBeTruthy();
   expect(screen.getByText('未缓存')).toBeTruthy();
   expect(call).toHaveBeenCalledWith('get_company_files', { sessionEpoch: 1, recycled: false, query: '' });
   expect(screen.getByRole('button', { name: '上传新文件' }).hasAttribute('disabled')).toBe(true);
@@ -329,7 +329,7 @@ it('目录请求异常返回离线快照时，账号尚未标记离线也显示�
   administrator();
   vi.mocked(call).mockImplementation(async command => command === 'get_company_transfers' ? [] : command === 'get_file_icon' ? '' : { version: 1, files: [{ ...file, cached: true }], uploads: [], offline: true });
   render(<CompanyFilesWindow />); await screen.findByText(file.name);
-  expect(screen.getByText('本机可用')).toBeTruthy();
+  expect(screen.getByText('离线可用')).toBeTruthy();
   await waitFor(() => expect(screen.getByRole('button', { name: '下载' }).hasAttribute('disabled')).toBe(true));
   const row = screen.getByText(file.name).closest('tr')!;
   fireEvent.contextMenu(row);
@@ -340,7 +340,7 @@ it('目录请求异常返回离线快照时，账号尚未标记离线也显示�
 it('目录异常后切到上传管理仍禁用云端操作，成功刷新后恢复', async () => {
   administrator(); let offline = true;
   vi.mocked(call).mockImplementation(async command => command === 'get_company_transfers' ? [{ sessionEpoch: 1, assetId: 'pending', name: '待核对.pdf', direction: 'upload', done: 0, total: 4, status: '待核对', revision: 1, message: '' }] : command === 'get_file_icon' ? '' : { version: 1, files: [{ ...file, cached: true }], uploads: [], offline });
-  render(<CompanyFilesWindow />); await screen.findByText('本机可用');
+  render(<CompanyFilesWindow />); await screen.findByText('离线可用');
   fireEvent.click(screen.getByRole('button', { name: '上传管理' }));
   await screen.findByText('待核对.pdf');
   expect(screen.getByRole('button', { name: '继续原任务' }).hasAttribute('disabled')).toBe(true);

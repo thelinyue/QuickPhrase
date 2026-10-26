@@ -1,6 +1,6 @@
 [package]
 name = "quickphrase"
-version = "0.2.10"
+version = "0.2.11"
 edition = "2021"
 description = "闪语 QuickPhrase Windows 本地话术工具"
 

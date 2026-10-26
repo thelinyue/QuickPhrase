@@ -164,7 +164,7 @@ try {
     team = await invoke('team_admin', { action: 'create-team', request: { name: '导入导出组' } }); member = await invoke('team_admin', { action: 'create-user', request: { username: '0002', password: memberInitial } }); await members('editor');
     const view = await settings('导入数据'); assert.equal(await view.getByLabel('目标库').inputValue(), 'private'); assert.equal(await view.getByLabel('合并同级唯一同名分类').isChecked(), false); assert.equal(await view.getByLabel('恢复个人设置').isChecked(), false);
     await checkFormAlignment(view); await view.screenshot({ path: path.join(evidence, 'private-import.png') });
-    await view.getByRole('button', { name: '账号与共享', exact: true }).click(); assert.equal(await view.getByRole('button', { name: '个人备份', exact: true }).count(), 0);
+    await view.getByRole('button', { name: '账号', exact: true }).click(); assert.equal(await view.getByRole('button', { name: '个人备份', exact: true }).count(), 0);
     await view.getByRole('button', { name: '导出数据', exact: true }).click(); await checkFormAlignment(view); await view.screenshot({ path: path.join(evidence, 'private-export.png') }); await view.getByRole('button', { name: '关闭窗口', exact: true }).click();
   });
   await check('旧完整备份分类导入，个人包恢复设置不阻塞正文', async () => {

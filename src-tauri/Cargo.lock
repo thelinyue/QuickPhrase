@@ -3108,7 +3108,7 @@ dependencies = [
 
 [[package]]
 name = "quickphrase"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "axum",
  "calamine",

@@ -222,6 +222,8 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .account-section { padding: 16px 0; border-bottom: 1px solid var(--theme-line, #e3e9ee); }
 .account-line { display: flex; align-items: center; gap: 12px; min-width: 0; margin-bottom: 8px; }
 .account-line > strong { width: 60px; flex-shrink: 0; }
+.account-service-brand { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.account-service-brand img { width: 16px; height: 16px; flex: none; }
 .account-user { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; }
 .account-user-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-user small { flex-shrink: 0; white-space: nowrap; color: var(--theme-muted, #72808d); }

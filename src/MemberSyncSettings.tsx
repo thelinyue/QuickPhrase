@@ -65,7 +65,7 @@ export function MemberSyncSettings({ account, syncPaused = false }: { account: T
           if (await confirm('停止使用并清除本机成员缓存？此设置会同步到同账号的其他设备。', { title: '停止使用' })) await call('set_member_subscription', { sessionEpoch: epoch, request: { grantId: null, expectedVersion: overview!.subscription.version } });
         })}>停止使用</button>}</div></div>
       {view?.message && <p role="status" className="validation-error">{view.message}</p>}
-      {!supported && <p className="account-warning">Hub 需升级后才能使用成员话术。</p>}
+      {!supported && <p className="account-warning">闪云需升级后才能使用成员话术。</p>}
     </div>
     <div className="sync-setting member-share-settings"><div className="sync-row"><strong>开放共享</strong><span className="sync-summary">{sharing?.enabled ? <><span>{sharing.mode === 'all' ? '全部分类' : `已选 ${sharing.roots.length} 个分类`}</span><span aria-hidden="true"> · </span><button className="text-button member-user-count" onClick={() => { setUsersOpen(true); void refresh(); }}>{users.length} 人使用</button>{offline && <small>离线数据</small>}</> : overview ? '未开启' : loading ? '加载中…' : '暂不可用'}</span>
       <div className="setting-buttons"><button className="secondary-button" disabled={busy || !online || !overview?.sourceReady} onClick={() => { setShare({ mode: sharing?.mode || 'all', roots: sharing?.rootIds || [], version: sharing?.version || 0 }); setMessage(''); }}>{sharing?.enabled ? '调整范围' : '开启共享'}</button>
@@ -91,7 +91,7 @@ export function MemberSyncSettings({ account, syncPaused = false }: { account: T
     {share && <AccountModal title={sharing?.enabled ? '调整范围' : '开启共享'} busy={busy} close={() => { setShare(null); setMessage(''); }} footer={<><button className="secondary-button" disabled={busy} onClick={() => setShare(null)}>取消</button><button className="primary-button" disabled={busy || !online || (share.mode === 'selected' && !selectedRoots.length)} onClick={() => void run(async current => {
       await call('save_member_share', { sessionEpoch: epoch, request: { enabled: true, mode: share.mode, rootIds: share.mode === 'all' ? [] : selectedRoots, expectedVersion: share.version } }); if (current()) setShare(null);
     })}>确认共享</button></>}>
-      <p className="account-hint">开放后，同一 Hub 的成员可直接使用，无需逐人授权。</p>
+      <p className="account-hint">开放后，同一闪云服务的成员可直接使用，无需逐人授权。</p>
       <div className="member-root-choices"><label><input type="radio" name="share-mode" checked={share.mode === 'all'} onChange={() => setShare(s => s && { ...s, mode: 'all' })} />全部分类（包含今后新增分类）</label><label><input type="radio" name="share-mode" checked={share.mode === 'selected'} onChange={() => setShare(s => s && { ...s, mode: 'selected' })} />指定分类</label></div>
       {share.mode === 'selected' && <div className="member-root-choices">{overview?.categories.map(category => <label key={category.id}><input type="checkbox" checked={selectedRoots.includes(category.id)} onChange={e => setShare(s => s && { ...s, roots: e.target.checked ? [...selectedRoots, category.id] : selectedRoots.filter(id => id !== category.id) })} />{categoryLabel(category, overview.categories)}</label>)}{!overview?.categories.length && <p>暂无可选分类</p>}</div>}
       <p className="account-hint">所选分类内新增内容自动共享；包含话术、图片和附件。</p>

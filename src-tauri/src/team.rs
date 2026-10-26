@@ -161,7 +161,7 @@ pub struct TeamClient {
 }
 pub fn normalize_server(value: &str) -> Result<String> {
     let url = Url::parse(value.trim())
-        .map_err(|_| "请输入完整的 http:// 或 https:// 服务器地址。".to_owned())?;
+        .map_err(|_| "请输入完整的 http:// 或 https:// 服务地址。".to_owned())?;
     if !["http", "https"].contains(&url.scheme())
         || url.host_str().is_none()
         || !url.username().is_empty()
@@ -169,7 +169,7 @@ pub fn normalize_server(value: &str) -> Result<String> {
         || url.query().is_some()
         || url.fragment().is_some()
     {
-        return Err("服务器地址需使用 HTTP 或 HTTPS，不能包含密码、查询或片段。".into());
+        return Err("服务地址需使用 HTTP 或 HTTPS，不能包含密码、查询或片段。".into());
     }
     Ok(url.as_str().trim_end_matches('/').to_owned())
 }
@@ -638,7 +638,7 @@ impl TeamClient {
         if let Some(body) = body {
             request = request.json(&body);
         }
-        let response = tokio::select! { _=active.cancel.cancelled()=>return Err("账号已退出，旧请求已取消。".into()),response=request.send()=>response.map_err(|error| { diagnostic.transport_error(&error); "服务器连接失败或请求超时。写入不会自动重试，请刷新确认结果。".to_owned() })? };
+        let response = tokio::select! { _=active.cancel.cancelled()=>return Err("账号已退出，旧请求已取消。".into()),response=request.send()=>response.map_err(|error| { diagnostic.transport_error(&error); "无法连接闪云，请检查地址或网络。写入不会自动重试，请刷新确认结果。".to_owned() })? };
         diagnostic.response(response.status().as_u16());
         let response = self.check(response).await?;
         diagnostic.complete();
@@ -692,7 +692,8 @@ impl TeamClient {
             .await
             .map_err(|error| {
                 diagnostic.transport_error(&error);
-                "登录连接失败，请检查地址、证书和网络。HTTPS 错误不会降级为 HTTP。".to_owned()
+                "无法连接闪云，请检查地址或网络。请检查证书是否有效；HTTPS 错误不会降级为 HTTP。"
+                    .to_owned()
             })?;
         diagnostic.response(response.status().as_u16());
         let session = self
@@ -2353,7 +2354,7 @@ impl TeamClient {
         .await?;
         Ok(())
     }
-    /// 批量清空一次提交，不逐条重试；旧 Hub 的缺失接口单独提示升级。
+    /// 批量清空一次提交，不逐条重试；旧版闪云的缺失接口单独提示升级。
     pub async fn empty_recycle(
         &self,
         team: &str,
@@ -2369,9 +2370,9 @@ impl TeamClient {
         )
         .await
         .map_err(|e| {
-            // 旧 Hub 会将 clear 匹配为还原记录 ID，并因缺少还原参数返回 422。
+            // 旧版闪云会将 clear 匹配为还原记录 ID，并因缺少还原参数返回 422。
             if e.starts_with("404:") || e.starts_with("405:") || e.starts_with("422:") {
-                "服务端尚不支持清空共享话术的回收站，请升级 Hub；仍可逐条永久删除。".into()
+                "服务端尚不支持清空共享话术的回收站，请升级闪云；仍可逐条永久删除。".into()
             } else {
                 e
             }
@@ -2756,7 +2757,7 @@ mod tests {
                 ))
                 .unwrap_err();
             server.join().unwrap();
-            assert!(error.contains("请升级 Hub"), "{error}");
+            assert!(error.contains("请升级闪云"), "{error}");
             assert!(error.contains("逐条永久删除"));
         }
     }

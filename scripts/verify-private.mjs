@@ -36,7 +36,7 @@ async function hideWindows(view) {
 async function accountSettings() {
   await page.getByRole('button', { name: '设置', exact: true }).click();
   const view = await until(() => context.pages().find(p => !p.isClosed() && p.url().includes('#settings'))); await view.locator('.settings-sidebar').waitFor(); await hideWindows(view);
-  await view.getByRole('button', { name: '账号与共享', exact: true }).click(); return view;
+  await view.getByRole('button', { name: '账号', exact: true }).click(); return view;
 }
 async function stopClient() {
   if (page && !page.isClosed()) await invoke('window_action', { action: 'exit' }).catch(() => {});
