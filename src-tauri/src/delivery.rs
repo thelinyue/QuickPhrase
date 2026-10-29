@@ -1,8 +1,8 @@
 use crate::model::{Block, Result, Segment, Settings};
 use serde::{Deserialize, Serialize};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, Mutex,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -19,6 +19,7 @@ pub struct DeliveryReport {
     pub completed_segments: usize,
     pub completed_blocks: usize,
     pub error: Option<String>,
+    pub notice_stored: bool,
 }
 
 /// 进程内所有发送入口共用这把锁。前端禁用按钮只是反馈，真正的防重入在 Rust。
@@ -26,11 +27,19 @@ pub struct DeliveryReport {
 pub struct DeliveryState {
     pub busy: Arc<AtomicBool>,
     pub cancelled: Arc<AtomicBool>,
+    operation: AtomicU64,
+    cancel_lock: Mutex<()>,
 }
 pub struct DeliveryGuard(
     Arc<AtomicBool>,
     #[allow(dead_code)] crate::update_activity::Activity,
+    u64,
 );
+impl DeliveryGuard {
+    pub fn operation(&self) -> u64 {
+        self.2
+    }
+}
 impl Drop for DeliveryGuard {
     fn drop(&mut self) {
         self.0.store(false, Ordering::Release);
@@ -39,11 +48,22 @@ impl Drop for DeliveryGuard {
 impl DeliveryState {
     pub fn acquire(&self) -> Result<DeliveryGuard> {
         let activity = crate::update_activity::Activity::enter()?;
+        let _lock = self.cancel_lock.lock().unwrap();
         self.busy
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .map_err(|_| "正在处理上一次操作，请等待完成。".to_string())?;
         self.cancelled.store(false, Ordering::Release);
-        Ok(DeliveryGuard(self.busy.clone(), activity))
+        let operation = self.operation.fetch_add(1, Ordering::AcqRel) + 1;
+        Ok(DeliveryGuard(self.busy.clone(), activity, operation))
+    }
+    /// 等待提示上的停止按钮绑定原操作，迟到点击不能取消随后开始的投递。
+    pub fn cancel(&self, operation: Option<u64>) {
+        let _lock = self.cancel_lock.lock().unwrap();
+        if operation.is_none_or(|id| {
+            self.busy.load(Ordering::Acquire) && self.operation.load(Ordering::Acquire) == id
+        }) {
+            self.cancelled.store(true, Ordering::Release);
+        }
     }
 }
 
@@ -84,6 +104,7 @@ pub fn execute(
         completed_segments: 0,
         completed_blocks: 0,
         error: None,
+        notice_stored: false,
     };
     let work = (|| -> Result<()> {
         driver.prepare()?;
@@ -143,9 +164,22 @@ pub fn execute(
             "failed"
         }
         .into();
-        report.error = Some(match driver.input_change() {
+        let error = match driver.input_change() {
             Some(step) => format!("{error}；{step}，不会自动重试或回填。"),
             None => error,
+        };
+        report.error = Some(if report.completed_blocks > 0 {
+            let target = if mode == Mode::Insert {
+                "目标输入区"
+            } else {
+                "目标输入区和已发送内容"
+            };
+            format!(
+                "{error}；已提交{}块内容，请先检查{target}，已执行内容不会自动重发。",
+                report.completed_blocks,
+            )
+        } else {
+            error
         });
     }
     if let Err(error) = driver.finish() {
@@ -272,6 +306,7 @@ mod tests {
         assert_eq!(r.status, "interrupted");
         assert_eq!(r.completed_segments, 0);
         assert_eq!(d.calls, vec!["文字", "图片"]);
+        assert!(r.error.unwrap().contains("已提交2块内容，请先检查"));
     }
     #[test]
     fn completed_insert_is_not_interrupted_by_following_user_input() {
@@ -302,6 +337,19 @@ mod tests {
         assert_eq!(report.completed_segments, 1);
         assert!(report.error.is_none());
         assert_eq!(driver.calls, vec!["谢谢"]);
+    }
+
+    #[test]
+    fn late_stop_from_an_older_wait_cannot_cancel_the_next_operation() {
+        let state = DeliveryState::default();
+        let first = state.acquire().unwrap();
+        let first_id = first.operation();
+        drop(first);
+        let second = state.acquire().unwrap();
+        state.cancel(Some(first_id));
+        assert!(!state.cancelled.load(Ordering::Acquire));
+        state.cancel(Some(second.operation()));
+        assert!(state.cancelled.load(Ordering::Acquire));
     }
     #[test]
     fn input_after_paste_stops_remaining_blocks_segments_and_send() {

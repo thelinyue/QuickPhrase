@@ -16,6 +16,10 @@ public static class ShanyuTestHost {
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
     [DllImport("user32.dll")] static extern bool EmptyClipboard();
     [DllImport("user32.dll")] static extern IntPtr SetClipboardData(uint format,IntPtr data);
+    [DllImport("kernel32.dll")] static extern IntPtr GlobalAlloc(uint flags,UIntPtr bytes);
+    [DllImport("kernel32.dll")] static extern IntPtr GlobalLock(IntPtr memory);
+    [DllImport("kernel32.dll")] static extern bool GlobalUnlock(IntPtr memory);
+    [DllImport("kernel32.dll")] static extern IntPtr GlobalFree(IntPtr memory);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern uint RegisterClipboardFormat(string name);
     [DllImport("user32.dll")] static extern bool IsClipboardFormatAvailable(uint format);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
@@ -148,7 +152,20 @@ public static class ShanyuTestHost {
                         finally {CloseClipboard();}
                     }
                 }
-                if(action=="hold") {if(OpenClipboard(form.Handle)){releaseClipboard=DateTime.Now.AddMilliseconds(1200);Record("clipboard-held",true);}}
+                if(action=="hold") {
+                    if(releaseClipboard!=DateTime.MinValue || !OpenClipboard(form.Handle))throw new InvalidOperationException("无法占用测试剪贴板。");
+                    releaseClipboard=DateTime.Now.AddMilliseconds(command.ContainsKey("milliseconds")?Convert.ToInt32(command["milliseconds"]):1200);Record("clipboard-held",true);
+                }
+                // 持锁程序更新内容模拟等待期间的新复制，不依赖释放锁后的竞争时序。
+                if(action=="copy-held") {
+                    if(releaseClipboard==DateTime.MinValue)throw new InvalidOperationException("测试剪贴板尚未占用。");
+                    var bytes=System.Text.Encoding.Unicode.GetBytes((string)command["text"]+"\0");
+                    var memory=GlobalAlloc(2,(UIntPtr)bytes.Length);if(memory==IntPtr.Zero)throw new InvalidOperationException("无法分配测试剪贴板内存。");
+                    var ptr=GlobalLock(memory);if(ptr==IntPtr.Zero){GlobalFree(memory);throw new InvalidOperationException("无法锁定测试剪贴板内存。");}
+                    Marshal.Copy(bytes,0,ptr,bytes.Length);GlobalUnlock(memory);
+                    if(!EmptyClipboard() || SetClipboardData(13,memory)==IntPtr.Zero){GlobalFree(memory);throw new InvalidOperationException("无法更新测试剪贴板。");}
+                    ownClipboard=GetClipboardSequenceNumber();Record("new-copy-held",true);
+                }
                 if(action=="minimize") {form.WindowState=FormWindowState.Minimized;Record("minimized",true);}
                 if(action=="close") {form.Close();}
             }catch(Exception e){Record("host-error",e.Message);}

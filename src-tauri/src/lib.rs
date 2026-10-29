@@ -3,6 +3,7 @@ mod common_menu;
 mod company_commands;
 mod data_directory;
 mod delivery;
+mod delivery_notice;
 mod diagnostics;
 mod file_library;
 mod linked_files;
@@ -38,7 +39,10 @@ use std::{
     fs,
     io::Write,
     path::Path,
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
 };
 use store::Store;
 use tauri::{Emitter, Manager, State};
@@ -54,6 +58,7 @@ struct AppState {
     private_sync: Arc<private_sync::PrivateSync>,
     transfer: transfer::TransferState,
     delivery: Arc<delivery::DeliveryState>,
+    delivery_notices: delivery_notice::DeliveryNotices,
     native: Arc<NativeState>,
     teams: Arc<team::TeamClient>,
     sequence_generation: Mutex<u64>,
@@ -373,7 +378,12 @@ async fn submit_shortcut_candidate(
         "phrase".into(),
         mode,
         payload.target,
-        (None, payload.member_epoch, payload.replacement),
+        (
+            None,
+            payload.member_epoch,
+            payload.replacement,
+            "shortcut".into(),
+        ),
     )
     .await
 }
@@ -391,14 +401,14 @@ pub(crate) fn queue_shortcut_delivery(
     target: TargetContext,
 ) {
     tauri::async_runtime::spawn(async move {
-        let result = deliver_content(
+        let result = deliver_content_checked(
             app.clone(),
             app.state::<AppState>(),
             id,
             "phrase".into(),
             mode,
             target,
-            None,
+            (None, None, None, "shortcut".into()),
         )
         .await;
         shortcut_delivery_result(&app, result);
@@ -963,7 +973,7 @@ fn native_status(state: State<AppState>) -> Option<String> {
 
 #[tauri::command]
 async fn deliver_content(
-    app: tauri::AppHandle,
+    window: tauri::Window,
     state: State<'_, AppState>,
     id: String,
     kind: String,
@@ -972,13 +982,13 @@ async fn deliver_content(
     trigger_key: Option<u32>,
 ) -> Result<DeliveryReport> {
     deliver_content_checked(
-        app,
+        window.app_handle().clone(),
         state,
         id,
         kind,
         mode,
         target,
-        (trigger_key, None, None),
+        (trigger_key, None, None, window.label().into()),
     )
     .await
 }
@@ -990,10 +1000,17 @@ async fn deliver_content_checked(
     kind: String,
     mode: Mode,
     target: TargetContext,
-    trigger: (Option<u32>, Option<u64>, Option<native::TriggerInput>),
+    trigger: (
+        Option<u32>,
+        Option<u64>,
+        Option<native::TriggerInput>,
+        String,
+    ),
 ) -> Result<DeliveryReport> {
-    let (trigger_key, member_epoch, replacement) = trigger;
+    let (trigger_key, member_epoch, replacement, origin) = trigger;
     let guard = state.delivery.acquire()?;
+    let notice_library = private_local::identity(&state.store.lock().unwrap()).ok();
+    let notice_epoch = state.teams.status().session_epoch;
     native::consume_delivery_key(trigger_key);
     if state.native.target.lock().unwrap().as_ref() != Some(&target) {
         return Err("目标上下文已变化，请重新聚焦输入区后返回闪语。".into());
@@ -1074,18 +1091,51 @@ async fn deliver_content_checked(
         state.teams.begin_company_delivery(linked_epoch)?;
     }
     let cancelled = state.delivery.cancelled.clone();
+    let operation = guard.operation();
+    let progress_origin = origin.clone();
+    let progress_sequence = Arc::new(AtomicU64::new(0));
+    let progress_app = app.clone();
     let _ = app.emit("delivery-busy", true);
     let event_app = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    let mut result = tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
         let mut driver = native::WindowsDriver::new(owner, target, cancelled.clone());
         driver.set_trigger_input(replacement);
+        driver.set_wait_feedback(Arc::new(move |waiting| {
+            let recipient = delivery_feedback_window(&progress_app, &progress_origin);
+            let _ = progress_app.emit(
+                "delivery-progress",
+                DeliveryProgress {
+                    operation,
+                    sequence: progress_sequence.fetch_add(1, Ordering::AcqRel) + 1,
+                    recipient,
+                    waiting,
+                },
+            );
+        }));
         delivery::execute(&segments, mode, &settings, &mut driver, &cancelled)
     })
     .await
     .map_err(|e| format!("发送任务无法完成：{e}"));
     let _ = event_app.emit("delivery-busy", false);
     state.teams.end_delivery();
+    if let (Ok(report), Some(library_id)) = (&mut result, notice_library) {
+        if report.status != "submitted" {
+            state.delivery_notices.push(delivery_notice::Pending {
+                id: operation,
+                library_id,
+                session_epoch: notice_epoch,
+                origin,
+                status: report.status.clone(),
+                message: report
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "操作已停止。".into()),
+            });
+            report.notice_stored = true;
+            let _ = event_app.emit("delivery-notices-changed", ());
+        }
+    }
     if let Ok(report) = &result {
         if let Some(e) = &report.error {
             log::error!("发送中断：{e}");
@@ -1093,9 +1143,89 @@ async fn deliver_content_checked(
     }
     result
 }
+
+#[derive(Clone, serde::Serialize)]
+struct DeliveryProgress {
+    operation: u64,
+    sequence: u64,
+    recipient: &'static str,
+    waiting: bool,
+}
+
+/// 只在当前可见的来源窗口提示；均隐藏时保留主窗口为回退入口，不主动唤醒窗口。
+fn delivery_feedback_window(app: &tauri::AppHandle, origin: &str) -> &'static str {
+    let visible = |label| {
+        app.get_webview_window(label).is_some_and(|window| {
+            window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(true)
+        })
+    };
+    delivery_recipient(origin, visible("main"), visible("common-dock"))
+}
+fn delivery_recipient(origin: &str, main_visible: bool, dock_visible: bool) -> &'static str {
+    if origin == "common-dock" && dock_visible {
+        "common-dock"
+    } else if main_visible {
+        "main"
+    } else if dock_visible {
+        "common-dock"
+    } else {
+        "main"
+    }
+}
+
+#[cfg(test)]
+mod delivery_feedback_tests {
+    use super::delivery_recipient;
+
+    #[test]
+    fn source_window_is_preferred_with_visible_fallback_and_no_forced_show() {
+        assert_eq!(delivery_recipient("common-dock", true, true), "common-dock");
+        assert_eq!(delivery_recipient("main", true, true), "main");
+        assert_eq!(delivery_recipient("shortcut", false, true), "common-dock");
+        assert_eq!(delivery_recipient("common-dock", true, false), "main");
+        assert_eq!(delivery_recipient("shortcut", false, false), "main");
+    }
+}
+
+#[derive(serde::Serialize)]
+struct VisibleDeliveryNotice {
+    id: u64,
+    recipient: &'static str,
+    status: String,
+    message: String,
+}
+
 #[tauri::command]
-fn cancel_delivery(state: State<AppState>) {
-    state.delivery.cancelled.store(true, Ordering::Release);
+fn pending_delivery_notices(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<Vec<VisibleDeliveryNotice>> {
+    let library = private_local::identity(&state.store.lock().unwrap())?;
+    let epoch = state.teams.status().session_epoch;
+    Ok(state
+        .delivery_notices
+        .list(&library, epoch)
+        .into_iter()
+        .map(|item| VisibleDeliveryNotice {
+            id: item.id,
+            recipient: delivery_feedback_window(&app, &item.origin),
+            status: item.status,
+            message: item.message,
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn dismiss_delivery_notice(app: tauri::AppHandle, state: State<AppState>, id: u64) -> Result<()> {
+    let library = private_local::identity(&state.store.lock().unwrap())?;
+    let epoch = state.teams.status().session_epoch;
+    state.delivery_notices.dismiss(id, &library, epoch);
+    let _ = app.emit("delivery-notices-changed", ());
+    Ok(())
+}
+#[tauri::command]
+fn cancel_delivery(state: State<AppState>, operation_id: Option<u64>) {
+    state.delivery.cancel(operation_id);
 }
 #[tauri::command]
 fn copy_phrase_text(app: tauri::AppHandle, state: State<AppState>, id: String) -> Result<()> {
@@ -1467,6 +1597,7 @@ pub fn run() {
                 private_sync: private_sync.clone(),
                 transfer: transfer::TransferState::default(),
                 delivery,
+                delivery_notices: delivery_notice::DeliveryNotices::default(),
                 native: native.clone(),
                 teams,
                 sequence_generation: Mutex::new(0),
@@ -1898,6 +2029,8 @@ pub fn run() {
                 get_target,
                 native_status,
                 deliver_content,
+                pending_delivery_notices,
+                dismiss_delivery_notice,
                 cancel_delivery,
                 copy_phrase_text,
                 save_settings,

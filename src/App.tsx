@@ -26,6 +26,9 @@ import { SettingsWindow } from './Settings';
 import { UpdateBadge } from './Updater';
 import { CategorySort, CommonDockWindow, CommonPhraseBar, CommonPhraseEditor, CommonPhraseSort, FileSort } from './CommonPhrases';
 import { DeletionWindow, RecycleWindow } from './RecycleBin';
+import { useNotices } from './notices';
+import { useDeliveryProgress } from './useDeliveryProgress';
+import { usePendingDeliveryNotices } from './usePendingDeliveryNotices';
 import { categoryLabel, contentKey, searchHitKey, searchDeliveryKey, labelOf, type CompanyView, type Category, type DeliveryReport, type Library, type LinkedFile, type Phrase, type SearchHit, type TargetContext, type TeamView } from './types';
 
 type MenuItem = { label: string; action: () => unknown; enabled?: boolean } | null;
@@ -133,7 +136,18 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   const composing = useRef(false); const [compositionVersion, endComposition] = useState(0); const searchRef = useRef<HTMLInputElement>(null); const libraryRef = useRef(library); libraryRef.current = library;
   const searchPending = searching || composing.current || searchSource?.query !== query || searchSource.scope !== searchScope || searchSource.source !== searchStamp || !searchSource.valid;
   const searchGuard = useRef({ query, scope: searchScope, source: searchStamp, pending: searchPending }); searchGuard.current = { query, scope: searchScope, source: searchStamp, pending: searchPending };
-  const [menu, setMenu] = useState<Menu | null>(null); const [dialog, setDialog] = useState<DialogSpec | null>(null); const [message, setMessage] = useState('');
+  const [menu, setMenu] = useState<Menu | null>(null); const [dialog, setDialog] = useState<DialogSpec | null>(null);
+  const notices = useNotices(); const setMessage = notices.error;
+  const deliveryProgress = useDeliveryProgress('main');
+  const noticeScope = JSON.stringify([privateLibrary.libraryId, teamStatus.server, teamStatus.user?.id, teamStatus.sessionEpoch]);
+  const noticeScopeRef = useRef(noticeScope); const previousNoticeScope = useRef(noticeScope); noticeScopeRef.current = noticeScope;
+  useEffect(() => { if (previousNoticeScope.current !== noticeScope) { previousNoticeScope.current = noticeScope; notices.clear(); } }, [noticeScope]);
+  const pendingDeliveries = usePendingDeliveryNotices(noticeScope, 'main');
+  const pendingDelivery = pendingDeliveries.items[0];
+  const showPending = !!pendingDelivery && (pendingDelivery.status === 'interrupted' || (!pendingDeliveries.problem && notices.current?.kind !== 'warning'));
+  const showDeliveryProblem = !showPending && !!pendingDeliveries.problem && notices.current?.kind !== 'warning';
+  const showProgress = !showPending && !showDeliveryProblem && !!deliveryProgress.waiting && (!notices.current || notices.current.kind === 'success' || notices.current.kind === 'progress');
+  const activeNotice = showPending ? { message: pendingDelivery.message, kind: pendingDelivery.status === 'interrupted' ? 'warning' as const : 'error' as const, title: pendingDelivery.status === 'interrupted' ? '操作已中断，请先检查目标' : undefined } : showDeliveryProblem ? { message: pendingDeliveries.problem, kind: 'warning' as const, title: '请先检查目标，投递结果暂不可用' } : showProgress ? undefined : notices.current;
   // 选择云文件时固定账号、库和分类，后续切换不能把附件保存到另一个目标。
   const [cloudTarget, setCloudTarget] = useState<{ epoch: number; server: string; userId: string; libraryId?: string; teamId: string; lifecycle?: number; categoryId: string; groupId: string } | null>(null);
   const cloudAvailable = !!teamStatus.companyFiles && !!teamStatus.user && !teamStatus.offline && !teamStatus.user.mustChangePassword && scopeCanEdit && (!teamId || teamStatus.teams.some(t => t.teamId === teamId && t.editable));
@@ -206,21 +220,24 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   const deliver = useCallback(async (id: string, kind: string, mode: 'insert' | 'send', triggerKey?: number, usage?: SearchUsage) => {
     if (usage && (searchGuard.current.pending || searchGuard.current.query !== usage.query || searchGuard.current.scope !== searchScope || searchGuard.current.source !== searchStamp)) return;
     if (busyRef.current) return;
-    busyRef.current = true; setBusy(true);
+    busyRef.current = true; setBusy(true); const scope = noticeScopeRef.current;
     const visibleKey = kind === 'phrase' && !id.startsWith('team:') && !id.startsWith('private:') && !id.startsWith('member:') ? results.find(hit => hit.id === id)?.privateKey || (libraryRef.current.phrases.find(p => p.id === id) ? contentKey(libraryRef.current.phrases.find(p => p.id === id)!) : id) : id;
     try {
       const target = await call<TargetContext | null>('get_target');
       if (!target) throw new Error('请先聚焦目标输入区，再返回闪语使用话术。');
       const report = await call<DeliveryReport>('deliver_content', { id: visibleKey, kind, mode, target, ...(triggerKey ? { triggerKey } : {}) });
-      if (report.status === 'submitted') { setMessage(mode === 'send' ? `已向目标提交 ${report.completedSegments} 段话术` : '已向目标提交插入操作'); if (settings.exitSearch) clearSearch(); if (usage) await history.record(usage); }
-      else setMessage(`${report.error || '操作已停止'}${report.completedSegments ? `（已执行${report.completedSegments}段）` : ''}`);
-    } catch (e) { setMessage(String(e)); } finally { busyRef.current = false; setBusy(false); }
+      if (scope !== noticeScopeRef.current) return;
+      if (report.noticeStored) void pendingDeliveries.refresh();
+      if (report.status === 'submitted') { notices.success(mode === 'send' ? `已向目标提交 ${report.completedSegments} 段话术` : '已向目标提交插入操作'); if (settings.exitSearch) clearSearch(); if (usage) await history.record(usage); }
+      else if (!report.noticeStored && report.status === 'interrupted') notices.show(report.error || '请先检查目标输入区和已发送内容，已执行的内容不会自动重发。', 'warning', '操作已中断，请先检查目标');
+      else if (!report.noticeStored) setMessage(report.error || '操作已停止');
+    } catch (e) { if (scope === noticeScopeRef.current) setMessage(String(e)); } finally { busyRef.current = false; setBusy(false); }
   }, [settings.exitSearch, results, history.record, searchScope, searchStamp]);
   useEffect(() => {
     let disposed = false; const unlisteners: (() => void)[] = [];
     const on = <T,>(name: string, fn: (payload: T) => void) => { void listen<T>(name, e => fn(e.payload)).then(un => disposed ? un() : unlisteners.push(un)); };
     on<string>('ui-action', action => { if (action === 'search') { setFocusSearch(true); if (!libraryRef.current.settings.showSearch) void changeSettings('showSearch', true); } if (action === 'show') { clearSearch(); setHistoryActive(false); listRef.current?.focus(); } if (action === 'common') { setHistoryActive(false); setKind('phrase'); setFocusCommon(true); if (!libraryRef.current.settings.showCommon) void changeSettings('showCommon', true); } if (action === 'settings') run(() => openWindow('settings')); });
-    on<DeliveryReport>('shortcut-delivery', report => { if (report.status === 'submitted') { if (libraryRef.current.settings.exitSearch) clearSearch(); } else setMessage(report.error || '快捷键操作已停止'); });
+    on<DeliveryReport>('shortcut-delivery', report => { if (report.noticeStored) void pendingDeliveries.refresh(); if (report.status === 'submitted') { if (libraryRef.current.settings.exitSearch) clearSearch(); } else if (!report.noticeStored && report.status === 'interrupted') notices.show(report.error || '请先检查目标输入区和已发送内容，已执行的内容不会自动重发。', 'warning', '快捷键操作已中断，请先检查目标'); else if (!report.noticeStored) setMessage(report.error || '快捷键操作已停止'); });
     void listen<string>('search-history-focus', e => { if (e.payload === libraryRef.current.libraryId) { setQuery(''); setFocusSearch(true); } }).then(un => disposed ? un() : unlisteners.push(un));
     // Windows 切换前台窗口时 WebView 可能仍报告 DOM 有焦点，以原生窗口失焦补齐收起。
     void listen('tauri://blur', () => setHistoryActive(false), { target: { kind: 'Window', label: 'main' } }).then(un => disposed ? un() : unlisteners.push(un));
@@ -301,7 +318,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   }
   function transferCategory(c: Category, copy: boolean) {
     const targets = roots.filter(v => !v.readOnly && v.id !== (c.parentId || c.id));
-    setDialog({ title: copy ? '复制到' : '移动到', fields: <><p>将「{c.name}」的话术和二级分组{copy ? '复制' : '移动'}到目标一级分类，同名二级分组合并到列表中第一组。{copy ? '复制的话术不保留快捷键。' : '完成后移除来源分类，保留话术快捷键。'}</p><label>目标一级分类<select name="target" required>{targets.map(v => <option key={v.id} value={v.id}>{categoryLabel(v, library.categories)}</option>)}</select></label></>, onSubmit: async f => { const targetId = String(f.get('target')); const count = await call<number>('move_copy_category', { id: c.id, targetId, copy }); if (!copy) setRoot(targetId); await refresh(); setMessage(`已${copy ? '复制' : '移动'}${count}条话术`); } });
+    setDialog({ title: copy ? '复制到' : '移动到', fields: <><p>将「{c.name}」的话术和二级分组{copy ? '复制' : '移动'}到目标一级分类，同名二级分组合并到列表中第一组。{copy ? '复制的话术不保留快捷键。' : '完成后移除来源分类，保留话术快捷键。'}</p><label>目标一级分类<select name="target" required>{targets.map(v => <option key={v.id} value={v.id}>{categoryLabel(v, library.categories)}</option>)}</select></label></>, onSubmit: async f => { const targetId = String(f.get('target')); const count = await call<number>('move_copy_category', { id: c.id, targetId, copy }); if (!copy) setRoot(targetId); await refresh(); notices.success(`已${copy ? '复制' : '移动'}${count}条话术`); } });
   }
   const categorySort = (parentId: string | null, categoryKind: 'phrase' | 'file' = 'phrase') => openWindow('category-sort', '', '', categoryKind, parentId || '');
   function categoryMenu(c: Category, e: MouseEvent) {
@@ -353,7 +370,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       { label: '编辑', enabled: canEdit, action: () => openWindow('editor', p.id, '', '', '', '', sourceTeam) },
       { label: '移入回收站', enabled: canEdit, action: async () => { if (sourceView?.phrases.find(item => item.contentRef?.id === p.contentRef?.id)?.contentRef?.revision !== p.contentRef?.revision) throw new Error('话术已更新，请重新搜索后操作。'); if (await confirm(`将「${labelOf(p)}」移入「${sourceView?.team.name}」的回收站？`, { title: '删除话术', kind: 'warning' })) await call('delete_team_content', { teamId: sourceTeam, request: { expectedVersion: sourceView!.team.version, expectedLifecycleVersion: sourceView!.team.lifecycleVersion, kind: 'phrase', id: p.contentRef!.id } }); } },
     ] : [
-    ...(p.ready === false ? [{ label: '下载素材', enabled: !!teamStatus.user && !teamStatus.offline, action: async () => { await call('download_private_materials', { ids: [p.id], attachments: true }); setMessage('下载中，完成后重新投递'); } }] : []),
+    ...(p.ready === false ? [{ label: '下载素材', enabled: !!teamStatus.user && !teamStatus.offline, action: async () => { await call('download_private_materials', { ids: [p.id], attachments: true }); notices.success('下载中，完成后重新投递'); } }] : []),
     { label: '复制到共享话术', enabled: teamStatus.teams.some(t => t.editable), action: () => publishToTeam(p.id, 'phrase') },
     { label: '新增话术', action: () => openWindow('editor', '', '', '', p.rootId, p.groupId || '', '') }, ...(isSearch ? [] : cloudItems(p.rootId, p.groupId || '')), { label: '插入一条话术', action: () => openWindow('editor', '', p.id) }, { label: '编辑', action: () => openWindow('editor', p.id) },
     { label: '标题背景色', action: () => setDialog({ title: '标题背景色', fields: <><label>选择颜色<input name="color" type="color" defaultValue={p.background || '#fff2bc'} /></label><label><span><input name="reset" type="checkbox" />恢复默认背景</span></label></>, onSubmit: async f => { await call('save_phrase', { phrase: { ...p, background: f.has('reset') ? '' : String(f.get('color')) }, afterId: null }); } }) },
@@ -365,7 +382,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   ], e.clientX, e.clientY, false, undefined, isSearch); }
   function publishToTeam(id: string, contentKind: 'phrase' | 'category') {
     const phrases = privateLibrary.phrases.filter(p => contentKind === 'phrase' ? p.id === id : p.rootId === id);
-    setDialog({ title: '复制到共享话术', submit: '确认复制', fields: <><p>将{contentKind === 'phrase' ? `「${labelOf(phrases[0])}」` : `该一级分类的 ${phrases.length} 条话术`}连同图片、附件复制到目标共享话术，新建独立分类。成员将可以看到这些内容。</p><label>目标共享话术<select name="team" required>{teamStatus.teams.filter(t => t.editable).map(t => <option key={t.teamId} value={t.teamId}>{t.name}</option>)}</select></label><div className="publish-preview">{phrases.slice(0, 20).map(p => <p key={p.id}>{labelOf(p)} · 图片 {p.segments.flatMap(s => s.blocks).filter(b => b.kind === 'image').length} · 文件 {p.segments.flatMap(s => s.blocks).filter(b => b.kind === 'file').length}</p>)}</div></>, onSubmit: async f => { await call('publish_private_to_team', { teamId: String(f.get('team')), id, kind: contentKind }); setMessage('已复制到共享话术，私人原件独立保留'); } });
+    setDialog({ title: '复制到共享话术', submit: '确认复制', fields: <><p>将{contentKind === 'phrase' ? `「${labelOf(phrases[0])}」` : `该一级分类的 ${phrases.length} 条话术`}连同图片、附件复制到目标共享话术，新建独立分类。成员将可以看到这些内容。</p><label>目标共享话术<select name="team" required>{teamStatus.teams.filter(t => t.editable).map(t => <option key={t.teamId} value={t.teamId}>{t.name}</option>)}</select></label><div className="publish-preview">{phrases.slice(0, 20).map(p => <p key={p.id}>{labelOf(p)} · 图片 {p.segments.flatMap(s => s.blocks).filter(b => b.kind === 'image').length} · 文件 {p.segments.flatMap(s => s.blocks).filter(b => b.kind === 'file').length}</p>)}</div></>, onSubmit: async f => { await call('publish_private_to_team', { teamId: String(f.get('team')), id, kind: contentKind }); notices.success('已复制到共享话术，私人原件独立保留'); } });
   }
   /** 文件右键绑定点击时的主键集合；多选复制、移动与移除均由 Rust 事务处理。 */
   function fileMenu(f: LinkedFile, e: MouseEvent, isSearch = false) {
@@ -375,7 +392,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
     popup([
       { label: '发到输入区（双击）', enabled: single && !busy && !f.missing, action: () => deliver(f.id, 'file', 'insert', undefined, usage) },
       { label: '直接发送', enabled: single && !busy && !f.missing, action: () => deliver(f.id, 'file', 'send', undefined, usage) },
-      { label: '复制文件', enabled: !busy, action: async () => { await call('copy_linked_files', { ids }); setMessage(`已复制${ids.length}个文件，可在目标程序粘贴`); } }, null,
+      { label: '复制文件', enabled: !busy, action: async () => { await call('copy_linked_files', { ids }); notices.success(`已复制${ids.length}个文件，可在目标程序粘贴`); } }, null,
       { label: '新增', action: () => openWindow('file-editor', '', '', '', f.categoryId) },
       { label: '修改显示名', enabled: single, action: () => setDialog({ title: '修改显示名', fields: <><label>显示名<input type="text" name="name" defaultValue={f.name} maxLength={200} required autoFocus /></label><p>只修改列表显示名，源文件名称保持不变；云端名称也不会修改。</p></>, onSubmit: async form => { await call('rename_linked_file', { id: f.id, name: String(form.get('name')) }); } }) },
       ...(f.cloud && f.canRename ? [{ label: '重命名云文件', enabled: single, action: async () => {
@@ -516,6 +533,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
       const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : e.key === 'ArrowDown' ? (index + 1) % buttons.length : index < 0 ? buttons.length - 1 : (index - 1 + buttons.length) % buttons.length;
       buttons[next]?.focus();
     }}>{menu.items.map((item, i) => item ? <button key={i} role="menuitem" disabled={item.enabled === false} onClick={() => { setMenu(null); run(item.action); }}>{item.label}</button> : <div className="menu-separator" key={i} />)}</div>}
-    {cloudTarget && <CompanyFilePicker limit={1} confirmLabel="下一步" close={() => { setCloudTarget(null); menuTrigger.current?.focus(); }} onConfirm={(files, epoch) => { const target = cloudTarget; setCloudTarget(null); run(async () => { if (epoch !== target.epoch || !validCloudTarget(target)) throw new Error('账号、分类或编辑权限已变化，请重新选择云文件。'); await openWindow('editor', '', '', `cloud:${epoch}:${files[0].assetId}`, target.categoryId, target.groupId, target.teamId); }); }} />}{dialog && <FormDialog key={dialog.title} spec={dialog} close={() => setDialog(null)} />}{shortcutPhrase && <ShortcutDialog id={shortcutPhrase.id} value={shortcutPhrase.shortcut} onConfirm={async shortcut => { const latest = [...privateLibrary.phrases, ...(members?.phrases || [])].find(p => p.id === shortcutPhrase.id); if (!latest) throw new Error('话术已被删除，无法设置快捷键。'); if (shortcutPhrase.id.startsWith('member:')) await call('save_member_shortcut', { id: shortcutPhrase.id, shortcut, sessionEpoch: shortcutPhrase.shortcutEpoch }); else await call('save_phrase', { phrase: { ...latest, shortcut }, afterId: null }); }} close={() => setShortcutPhrase(null)} />}<Feedback message={message} clear={() => setMessage('')} />
+    {cloudTarget && <CompanyFilePicker limit={1} confirmLabel="下一步" close={() => { setCloudTarget(null); menuTrigger.current?.focus(); }} onConfirm={(files, epoch) => { const target = cloudTarget; setCloudTarget(null); run(async () => { if (epoch !== target.epoch || !validCloudTarget(target)) throw new Error('账号、分类或编辑权限已变化，请重新选择云文件。'); await openWindow('editor', '', '', `cloud:${epoch}:${files[0].assetId}`, target.categoryId, target.groupId, target.teamId); }); }} />}{dialog && <FormDialog key={dialog.title} spec={dialog} close={() => setDialog(null)} />}{shortcutPhrase && <ShortcutDialog id={shortcutPhrase.id} value={shortcutPhrase.shortcut} onConfirm={async shortcut => { const latest = [...privateLibrary.phrases, ...(members?.phrases || [])].find(p => p.id === shortcutPhrase.id); if (!latest) throw new Error('话术已被删除，无法设置快捷键。'); if (shortcutPhrase.id.startsWith('member:')) await call('save_member_shortcut', { id: shortcutPhrase.id, shortcut, sessionEpoch: shortcutPhrase.shortcutEpoch }); else await call('save_phrase', { phrase: { ...latest, shortcut }, afterId: null }); }} close={() => setShortcutPhrase(null)} />}
+    <Feedback message={activeNotice?.message || (deliveryProgress.waiting ? '正在等待剪贴板释放…' : '')} kind={activeNotice?.kind || 'progress'} title={activeNotice?.title} count={pendingDeliveries.items.length + notices.count + (pendingDeliveries.problem ? 1 : 0)} clear={() => showPending ? void pendingDeliveries.dismiss(pendingDelivery!.id).catch(e => setMessage(String(e))) : showDeliveryProblem ? pendingDeliveries.dismissProblem() : showProgress ? deliveryProgress.dismissWaiting() : notices.current ? notices.dismiss(notices.current.id) : deliveryProgress.dismissWaiting()} stop={!activeNotice && deliveryProgress.waiting ? () => run(() => call('cancel_delivery', { operationId: deliveryProgress.waiting!.operation })) : undefined} />
   </section>;
 }

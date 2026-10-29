@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type FormEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type FormEvent } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { call, closeWindow } from './api';
 import { categoryLabel, type Category } from './types';
+import type { NoticeKind } from './notices';
 
 /** 发送会移走焦点，WebView 可能残留 repeat 标记；用实际松键和失焦控制一次按住只提交一次。 */
 export function useEnterSubmit() {
@@ -82,9 +83,38 @@ export function CategoryColorPicker({ label, value, defaultColor = '#ffac00', di
   </div>;
 }
 export function Titlebar({ title, minimize = false, maximize = false }: { title: string; minimize?: boolean; maximize?: boolean }) { return <header className="standard-titlebar"><img className="app-symbol" src="/shanyu.png" alt="" draggable={false} /><span data-tauri-drag-region>{title}</span><span className="titlebar-spacer" data-tauri-drag-region />{minimize && <button aria-label="最小化窗口" onClick={() => void getCurrentWindow().minimize()}><Icon name="minus" /></button>}{maximize && <button aria-label="最大化或还原窗口" onClick={() => void getCurrentWindow().toggleMaximize()}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5h10v10H5z" /></svg></button>}<button aria-label="关闭窗口" onClick={() => void closeWindow()}><Icon name="close" /></button></header>; }
-export function Feedback({ message, clear }: { message: string; clear: () => void }) {
-  useEffect(() => { if (message) { const id = window.setTimeout(clear, 6000); return () => clearTimeout(id); } }, [message]);
-  return message ? <div className="review-toast" role="status" onClick={clear}>{message}</div> : null;
+export function Feedback({ message, clear, kind = 'error', title, count = 1, stop }: { message: string; clear: () => void; kind?: NoticeKind; title?: string; count?: number; stop?: () => void }) {
+  const clearRef = useRef(clear); clearRef.current = clear;
+  const [hovered, setHovered] = useState(false); const [focused, setFocused] = useState(false);
+  const [expanded, setExpanded] = useState(false); const [truncated, setTruncated] = useState(false);
+  const messageRef = useRef<HTMLSpanElement>(null); const messageId = useId();
+  useLayoutEffect(() => { setExpanded(false); }, [message, title, kind]);
+  useLayoutEffect(() => { if (expanded && messageRef.current) messageRef.current.scrollTop = 0; }, [expanded, message]);
+  useLayoutEffect(() => {
+    const element = messageRef.current;
+    if (!message || !element) { setTruncated(false); return; }
+    if (expanded) return;
+    // 由实际排版判断是否截断，窗口变窄或字体缩放时仍能展开完整信息。
+    const measure = () => setTruncated(element.scrollHeight > element.clientHeight + 1 || element.scrollWidth > element.clientWidth + 1);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(element); window.addEventListener('resize', measure);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+  }, [message, title, kind, count, expanded, !!stop]);
+  useEffect(() => {
+    if (!message || kind !== 'success' || hovered || focused || expanded) return;
+    const id = window.setTimeout(() => clearRef.current(), 3500);
+    return () => clearTimeout(id);
+  }, [message, kind, hovered, focused, expanded]);
+  return message ? <div className={`feedback feedback-${kind}${title ? ' feedback-with-title' : ''}${expanded ? ' feedback-expanded' : ''}`} role={kind === 'error' || kind === 'warning' ? 'alert' : 'status'} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocusCapture={() => setFocused(true)} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}>
+    <span className="feedback-mark" aria-hidden="true">{kind === 'success' ? '✓' : kind === 'progress' ? '·' : '!'}</span>
+    <div className="feedback-content">{title && <strong>{title}</strong>}<span className="feedback-message" id={messageId} ref={messageRef} tabIndex={expanded ? 0 : undefined}>{message}</span>{count > 1 && <small>还有 {count - 1} 条提示</small>}</div>
+    <div className="feedback-actions">
+      {(truncated || expanded) && <button type="button" className="feedback-more" aria-label={expanded ? '收起详情' : '查看详情'} aria-expanded={expanded} aria-controls={messageId} onClick={() => setExpanded(value => !value)}>{expanded ? '收起' : '详情'}</button>}
+      {stop && <button type="button" className="feedback-stop" onClick={stop}>停止</button>}
+      <button type="button" className="feedback-close" aria-label="关闭提示" title="关闭提示" onClick={() => { setExpanded(false); clear(); }}>×</button>
+    </div>
+  </div> : null;
 }
 export function Highlight({ text, query = '' }: { text: string; query?: string }) {
   const terms = query.trim().split(/\s+/).filter(Boolean).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));

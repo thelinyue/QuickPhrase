@@ -292,8 +292,8 @@ it('管理员清空回收站覆盖全部分页和搜索，其他失败保留并�
   expect(vi.mocked(call).mock.calls.filter(([name]) => name === 'manage_company_file')).toHaveLength(0);
   fireEvent.submit(dialog.querySelector('form')!);
   await waitFor(() => expect(vi.mocked(call).mock.calls.filter(([name]) => name === 'manage_company_file')).toHaveLength(12));
-  expect((await screen.findByRole('status')).textContent).toContain('失败 1 个');
-  expect(screen.getByRole('status').textContent).toContain('网络中断');
+  expect((await screen.findByRole('alert')).textContent).toContain('失败 1 个');
+  expect(screen.getByRole('alert').textContent).toContain('网络中断');
   fireEvent.change(screen.getByRole('textbox', { name: '搜索云文件' }), { target: { value: '' } });
   const failedRow = (await screen.findByText('回收1.txt')).closest('tr')!;
   fireEvent.click(within(failedRow).getByRole('button', { name: '永久删除' }));

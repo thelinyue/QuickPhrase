@@ -1432,6 +1432,7 @@ mod platform {
                     dock.floating.update(&state, hwnd(windows.0));
                 }
                 dock.update_common(&state, foreground);
+                dock.notify_delivery_visibility(&state);
                 std::thread::sleep(Duration::from_millis(30));
             }
             if let Some(hook) = hook {
@@ -1457,6 +1458,7 @@ mod platform {
         foreground: i64,
         /// 底栏独立记录前台切换，在目标所在层内维持目标、侧栏、底栏的顺序。
         common_foreground: i64,
+        delivery_visibility: Option<(bool, bool)>,
         /// 只为本次进程首次独立显示定位；随后唤起保留用户移动的位置。
         standalone_positioned: Arc<AtomicBool>,
         /// 首次定位与显示在同一个界面线程动作中完成；完成前轮询不得提前显示旧位置。
@@ -1469,6 +1471,22 @@ mod platform {
         floating: super::minimized_float::FloatingWindow,
     }
     impl Dock {
+        /// 无激活显示不保证触发 WebView 的可见性事件，按实际窗口状态刷新回执去向。
+        unsafe fn notify_delivery_visibility(&mut self, state: &NativeState) {
+            let Some(windows) = state.windows.get() else {
+                return;
+            };
+            let visible = |handle| {
+                let window = hwnd(handle);
+                IsWindowVisible(window).as_bool() && !IsIconic(window).as_bool()
+            };
+            let current = (visible(windows.0), visible(windows.1));
+            if self.delivery_visibility.replace(current) != Some(current) {
+                if let Some(app) = state.app.get() {
+                    let _ = app.emit("delivery-notices-changed", ());
+                }
+            }
+        }
         /// 两处面板共用进程及窗口类型结论；同进程图片／视频窗口不能借用后台聊天关系。
         unsafe fn refresh_target(&mut self, foreground: HWND) {
             let extend = self.target_context

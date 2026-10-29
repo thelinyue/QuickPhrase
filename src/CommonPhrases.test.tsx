@@ -88,8 +88,35 @@ describe('底部短语整栏隐藏', () => {
     fireEvent.click(hide); fireEvent.click(hide);
     expect(vi.mocked(call).mock.calls.filter(([name]) => name === 'patch_settings')).toHaveLength(1);
     rejectSave(new Error('设置保存失败'));
-    expect((await screen.findByRole('status')).textContent).toContain('设置保存失败');
+    expect((await screen.findByRole('alert')).textContent).toContain('设置保存失败');
     expect(screen.getByRole('option', { name: '谢谢' })).toBeTruthy();
     expect((hide as HTMLButtonElement).disabled).toBe(false);
   });
+});
+
+it('底栏投递失败时显示占用程序，并保留完整悬停提示', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  const message = 'example.exe（PID 1234）在检测时可能占用剪贴板，请检查后重试。';
+  vi.mocked(call).mockImplementation(async name => name === 'get_target' ? { hwnd: 1, focus: 2, pid: 3 } : name === 'deliver_content' ? { status: 'failed', completedSegments: 0, completedBlocks: 0, error: message } : undefined);
+  const library = { commonPhrases: [{ id: 'B', text: '谢谢', position: 0 }], settings: { commonSingleClick: 'select', dockCommon: true, dockSearch: false, commonHeight: 144, dockCommonRows: 0 } } as Library;
+  render(<CommonDockWindow library={library} />);
+  await userEvent.click(screen.getByRole('option', { name: '谢谢' }));
+  const status = await screen.findByRole('alert');
+  expect(status.textContent).toContain(message);
+  expect(status.getAttribute('title')).toBe(message);
+  expect(screen.getByRole('option', { name: '谢谢' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '查看' }));
+  expect(document.querySelector('.dock-notice-detail')?.textContent).toBe(message);
+  expect(document.querySelector('.dock-notice-summary')?.textContent).toBe('提示详情');
+});
+
+it('底栏部分执行时，摘要优先提醒检查目标', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.mocked(call).mockImplementation(async name => name === 'get_target' ? { hwnd: 1, focus: 2, pid: 3 } : name === 'deliver_content' ? { status: 'interrupted', completedSegments: 1, completedBlocks: 1, error: '已执行部分内容，请先检查目标。' } : undefined);
+  const library = { commonPhrases: [{ id: 'B', text: '谢谢', position: 0 }], settings: { commonSingleClick: 'select', dockCommon: true, dockSearch: false, commonHeight: 144, dockCommonRows: 0 } } as Library;
+  render(<CommonDockWindow library={library} />);
+  await userEvent.click(screen.getByRole('option', { name: '谢谢' }));
+  expect((await screen.findByRole('alert')).querySelector('.dock-notice-summary')?.textContent).toBe('请先检查目标，操作已中断');
+  fireEvent.click(screen.getByRole('button', { name: '查看' }));
+  expect(document.querySelector('.dock-notice-detail')?.textContent).toContain('已执行部分内容');
 });

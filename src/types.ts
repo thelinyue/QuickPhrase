@@ -40,7 +40,7 @@ export interface TeamAssetCleanup { teamId: string; name: string; pendingAssets:
 export interface TeamRecycle { id: string; teamId: string; label: string; deletedAt: number; categories: Category[]; phrases: { title: string; segments: { blocks: ({ kind: 'text'; text: string } | { kind: 'image' | 'file'; assetId: string; name: string })[] }[] }[] }
 export interface TargetContext { hwnd: number; focus: number; pid: number }
 export interface ShortcutCandidates { sessionId: string; layoutKey: string; maxWidth: number; maxHeight: number; shortcut: string; phrases: Phrase[]; selectedIndex: number; target: TargetContext }
-export interface DeliveryReport { status: 'submitted' | 'interrupted' | 'failed'; completedSegments: number; completedBlocks: number; error: string | null }
+export interface DeliveryReport { status: 'submitted' | 'interrupted' | 'failed'; completedSegments: number; completedBlocks: number; error: string | null; noticeStored?: boolean }
 export interface ImportPreview { id: string; kind: 'excel' | 'backup'; filename: string; categories: number; phrases: number; commonPhrases: number; files: number; images: number; recycled: number; rows: { category: string; title: string; text: string }[]; notes: string[] }
 export const textOf = (phrase: Phrase) => phrase.segments.map(s => s.blocks.filter((b): b is Extract<Block, { kind: 'text' }> => b.kind === 'text').map(b => b.text).join('')).join('\n');
 export const labelOf = (phrase: Phrase) => phrase.title || textOf(phrase).trim().slice(0, 35) || phrase.segments.flatMap(s => s.blocks).filter(b => b.kind !== 'text').map(b => `${b.kind === 'image' ? '图片' : '文件'}：${b.name}`).join(' · ') || '附件话术';

@@ -32,8 +32,9 @@ export function AccountModal({ title, children, footer, busy, close }: { title: 
 }
 
 /** 成功提示短暂显示；失败保留供核对，不能把成功文案渲染成红色错误。 */
-export function AccountNotice({ message, error, clear }: { message: string; error: boolean; clear: () => void }) {
+export function AccountNotice({ message, error, clear, count = 1 }: { message: string; error: boolean; clear: () => void; count?: number }) {
   const clearRef = useRef(clear); clearRef.current = clear;
-  useEffect(() => { if (!message || error) return; const timer = window.setTimeout(() => clearRef.current(), 3500); return () => window.clearTimeout(timer); }, [message, error]);
-  return message ? <div className={`account-notice${error ? ' error' : ''}`} role={error ? 'alert' : 'status'}><span>{message}</span><button type="button" aria-label="关闭提示" onClick={clear}>×</button></div> : null;
+  const [hovered, setHovered] = useState(false); const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!message || error || hovered || focused) return; const timer = window.setTimeout(() => clearRef.current(), 3500); return () => window.clearTimeout(timer); }, [message, error, hovered, focused]);
+  return message ? <div className={`account-notice${error ? ' error' : ''}`} role={error ? 'alert' : 'status'} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocusCapture={() => setFocused(true)} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}><span>{message}{count > 1 && <small>　还有 {count - 1} 条提示</small>}</span><button type="button" aria-label="关闭提示" title="关闭提示" onClick={clear}>×</button></div> : null;
 }

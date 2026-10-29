@@ -12,6 +12,7 @@ import { DataTransfer } from './DataTransfer';
 import { UpdateSettings } from './Updater';
 import { Diagnostics } from './Diagnostics';
 import { useSettingsSave } from './useSettingsSave';
+import { useNotices } from './notices';
 
 /** 序号只录入一次组合键。草稿显示到保存回执，失败后回到原绑定，不遗留看似已保存的值。 */
 function SequenceBinding({ index, value, disabled, save, error }: { index: number; value: string; disabled: boolean; save: (value: string) => Promise<boolean>; error: (message: string) => void }) {
@@ -59,7 +60,8 @@ function DockIllustration({ settings }: { settings: Settings }) {
 /** 设置只展示本地可用功能；保存完成后通知各窗口，原生窗口行为也使用同一份设置。
  * 点击行为的新字段使用旧规则作为默认值，升级或恢复旧备份不会自动启用直接发送。 */
 export function SettingsWindow({ library, initialTab, initialCategoryId = '', initialTeamId = '' }: { library: Library; initialTab: string; initialCategoryId?: string; initialTeamId?: string }) {
-  const [tab, setTab] = useState(tabs.includes(accountTab(initialTab)) ? accountTab(initialTab) : tabs[0]); const [message, setMessage] = useState(''); const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState(tabs.includes(accountTab(initialTab)) ? accountTab(initialTab) : tabs[0]); const [saving, setSaving] = useState(false);
+  const notices = useNotices(); const setMessage = notices.error;
   const { settings, change, errors, busy, pending, isSaving, flush } = useSettingsSave(library.settings, library.libraryId, library.settingsRevision);
   const saveOnClose = useRef({ isSaving, flush }); saveOnClose.current = { isSaving, flush };
   const closing = useRef(false);
@@ -70,7 +72,7 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '', in
       if (!saveOnClose.current.isSaving()) return;
       event.preventDefault();
       if (closing.current) return;
-      closing.current = true; setMessage('正在保存设置，完成后关闭…');
+      closing.current = true; notices.progress('正在保存设置，完成后关闭…');
       try {
         if (await saveOnClose.current.flush()) await getCurrentWindow().close();
         else if (!disposed) setMessage('部分设置未保存，请检查提示后重试。');
@@ -100,7 +102,7 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '', in
       if (typeof path !== 'string') return;
       setDialog({ title: '更换数据目录', submit: '迁移并重启', fields: <><p>当前目录</p><p className="data-path">{dataDirectory.path}</p><p>新目录</p><p className="data-path">{path}</p><p>迁移全部本地数据并重启。</p><p className="settings-hint">请选择空文件夹，并预留足够空间。</p><p className="settings-hint">请先保存并关闭编辑窗口，完成发送和传输。</p><p className="settings-hint">成功后清理原数据，保留外部源文件。</p></>, onSubmit: async () => {
         await call('change_data_directory', { path });
-        setMessage('正在重启并迁移…');
+        notices.progress('正在重启并迁移…');
       } });
     } catch (error) { setMessage(String(error)); }
     finally { choosingDirectoryRef.current = false; setChoosingDirectory(false); }
@@ -136,13 +138,13 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '', in
   const checkbox = (key: keyof Settings, text: string, label = text) => <label><input type="checkbox" aria-label={label} data-setting={key} checked={Boolean(settings[key])} disabled={busy(key)} onChange={e => void change({ [key]: e.target.checked })} />{text}</label>;
   const radio = (key: keyof Settings, value: string | number | boolean, text: ReactNode, disabled = false) => <label><input type="radio" name={key} value={String(value)} data-setting={key} checked={settings[key] === value} disabled={busy(key) || disabled} onChange={() => void change({ [key]: value })} />{text}</label>;
   const number = (key: keyof Settings, label: string, min: number, max: number) => <SettingInput data-setting={key} label={label} type="number" min={min} max={max} value={String(settings[key])} disabled={busy(key)} save={async text => { const value = Number(text); if (!text || !Number.isInteger(value) || value < min || value > max) { setMessage(`${label}应为${min}—${max}的整数。`); return false; } return change({ [key]: value }); }} />;
-  async function clear(kind: string) { try { await call('clear_cache', { kind }); setCache(await call<number>('cache_info')); setMessage('缓存已清理'); } catch (e) { setMessage(String(e)); } }
+  async function clear(kind: string) { try { await call('clear_cache', { kind }); setCache(await call<number>('cache_info')); notices.success('缓存已清理'); } catch (e) { setMessage(String(e)); } }
   /** 确认窗口固定本次内容主键；其他窗口新增或删除后由后端拒绝旧列表，避免误删未确认内容。 */
   function deleteLocal(kind: 'phrase' | 'common') {
     const ids = (kind === 'phrase' ? library.phrases : library.commonPhrases).map(item => item.id); const label = kind === 'phrase' ? '个人话术' : '常用短语';
     setDialog({ title: `删除全部${label}`, submit: '确认删除', fields: <div className="cache-delete-confirm"><p>将删除全部 {ids.length} 条{label}，请谨慎操作。</p>
       {kind === 'phrase' ? <><label><input type="checkbox" name="recycle" defaultChecked />删除的话术移入回收站（可以还原）</label><p className="settings-hint">取消勾选将永久删除，无法恢复。</p><p className="settings-hint">分类、常用短语、文件关联、图片素材和源文件会保留。</p></> : <><p className="validation-error">常用短语不进入回收站，删除后无法恢复。建议先导出完整备份。</p><p className="settings-hint">个人话术、分类、图片素材和文件关联会保留。</p></>}
-    </div>, onSubmit: async data => { const count = await call<number>('delete_local_content', { kind, ids, recycle: kind === 'phrase' && data.has('recycle') }); setMessage(`已删除 ${count} 条${label}`); } });
+    </div>, onSubmit: async data => { const count = await call<number>('delete_local_content', { kind, ids, recycle: kind === 'phrase' && data.has('recycle') }); notices.success(`已删除 ${count} 条${label}`); } });
   }
   const folder = (kind: string) => void call('open_directory', { kind }).catch(e => setMessage(String(e)));
   let content: ReactNode;
@@ -194,5 +196,5 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '', in
   if (tab === '账号') content = <TeamSettings />;
   if (tab === 'AI 连接') content = <McpSettings library={library} />;
   if (tab === '问题诊断') content = <Diagnostics />;
-  return <FieldErrors.Provider value={errors}><section className="client-window settings-window"><Titlebar title="设置" minimize /><div className="settings-layout"><aside className="settings-sidebar"><nav>{tabs.map(t => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav><div className="settings-brand"><span>闪语</span><small>本地话术工具{appVersion && ` · ${appVersion}`}</small></div></aside><div className="settings-content">{content}{[...new Set(Object.entries(errors).filter(([key]) => ['searchHotkey', 'windowHotkey', 'commonHotkey', 'sequenceBindings', 'sequenceDirectSend', 'sequenceHotkeys', 'customHotkeys', 'globalPhraseHotkeys', 'dock', 'dockSide'].includes(key)).map(([, error]) => error))].map(error => <p key={error} role="alert" className="validation-error">{error}</p>)}</div></div>{dialog && <FormDialog spec={dialog} close={() => setDialog(null)} />}<Feedback message={message} clear={() => setMessage('')} /></section></FieldErrors.Provider>;
+  return <FieldErrors.Provider value={errors}><section className="client-window settings-window"><Titlebar title="设置" minimize /><div className="settings-layout"><aside className="settings-sidebar"><nav>{tabs.map(t => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav><div className="settings-brand"><span>闪语</span><small>本地话术工具{appVersion && ` · ${appVersion}`}</small></div></aside><div className="settings-content">{content}{[...new Set(Object.entries(errors).filter(([key]) => ['searchHotkey', 'windowHotkey', 'commonHotkey', 'sequenceBindings', 'sequenceDirectSend', 'sequenceHotkeys', 'customHotkeys', 'globalPhraseHotkeys', 'dock', 'dockSide'].includes(key)).map(([, error]) => error))].map(error => <p key={error} role="alert" className="validation-error">{error}</p>)}</div></div>{dialog && <FormDialog spec={dialog} close={() => setDialog(null)} />}<Feedback message={notices.current?.message || ''} kind={notices.current?.kind} title={notices.current?.title} count={notices.count} clear={() => notices.current && notices.dismiss(notices.current.id)} /></section></FieldErrors.Provider>;
 }

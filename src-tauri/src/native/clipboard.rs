@@ -13,11 +13,14 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use windows::Win32::{
-    Foundation::*,
-    Graphics::Gdi::*,
-    System::{DataExchange::*, Memory::*, Threading::*},
-    UI::{Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
+use windows::{
+    core::PWSTR,
+    Win32::{
+        Foundation::*,
+        Graphics::Gdi::*,
+        System::{DataExchange::*, Memory::*, Threading::*},
+        UI::{Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
+    },
 };
 
 fn error(e: impl std::fmt::Display) -> String {
@@ -34,6 +37,38 @@ impl ClipboardLock {
         }
         Err("剪贴板正在被其他程序占用，请稍后重试。".into())
     }
+
+    fn open_for_delivery(
+        owner: HWND,
+        mut check: impl FnMut() -> Result<()>,
+        mut on_wait: impl FnMut(),
+    ) -> Result<Self> {
+        let started = Instant::now();
+        let deadline = started + Duration::from_secs(3);
+        let mut announced = false;
+        loop {
+            check()?;
+            match unsafe { OpenClipboard(Some(owner)) } {
+                Ok(()) => {
+                    let lock = Self;
+                    // 等待时用户可能接管了输入，取得锁后、清空剪贴板前再核对一次。
+                    check()?;
+                    return Ok(lock);
+                }
+                Err(e) if Instant::now() >= deadline => return Err(clipboard_open_error(e)),
+                Err(_) => {
+                    if !announced && started.elapsed() >= Duration::from_millis(500) {
+                        announced = true;
+                        on_wait();
+                    }
+                    std::thread::sleep(
+                        Duration::from_millis(25)
+                            .min(deadline.saturating_duration_since(Instant::now())),
+                    );
+                }
+            }
+        }
+    }
 }
 impl Drop for ClipboardLock {
     fn drop(&mut self) {
@@ -41,6 +76,63 @@ impl Drop for ClipboardLock {
             let _ = CloseClipboard();
         }
     }
+}
+
+fn clipboard_open_error(error: windows::core::Error) -> String {
+    // 内容所有者不一定是当前打开剪贴板的程序；只报告检测时仍匹配的窗口和进程。
+    let occupant = identify_clipboard_opener(
+        || unsafe {
+            let window = GetOpenClipboardWindow().ok()?;
+            Some((window, pid(window)))
+        },
+        |process_id| unsafe {
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id)
+                .ok()
+                .and_then(|process| {
+                    let mut path = [0u16; 4096];
+                    let mut length = path.len() as u32;
+                    let result = QueryFullProcessImageNameW(
+                        process,
+                        PROCESS_NAME_WIN32,
+                        PWSTR(path.as_mut_ptr()),
+                        &mut length,
+                    );
+                    let _ = CloseHandle(process);
+                    result.ok()?;
+                    let path = String::from_utf16_lossy(&path[..length as usize]);
+                    Some(Path::new(&path).file_name()?.to_string_lossy().into_owned())
+                })
+        },
+    );
+    format_clipboard_open_error(error, occupant)
+}
+
+fn identify_clipboard_opener(
+    mut current: impl FnMut() -> Option<(HWND, u32)>,
+    process_name: impl FnOnce(u32) -> Option<String>,
+) -> Option<(u32, Option<String>)> {
+    let (window, process_id) = current()?;
+    if process_id == 0 {
+        return None;
+    }
+    let name = process_name(process_id);
+    (current() == Some((window, process_id))).then_some((process_id, name))
+}
+
+fn format_clipboard_open_error(
+    error: windows::core::Error,
+    occupant: Option<(u32, Option<String>)>,
+) -> String {
+    let message = match occupant {
+        Some((process_id, Some(name))) => {
+            format!("{name}（PID {process_id}）在检测时可能占用剪贴板，请检查该程序。")
+        }
+        Some((process_id, None)) => {
+            format!("进程 PID {process_id} 在检测时可能占用剪贴板，但无法读取程序名。")
+        }
+        None => "无法打开剪贴板，可能被其他程序占用，但无法识别占用程序。".into(),
+    };
+    format!("{message}（系统错误码：0x{:08X}）", error.code().0 as u32)
 }
 
 fn put(format: u32, bytes: &[u8]) -> Result<()> {
@@ -114,6 +206,7 @@ pub struct WindowsDriver {
     owned_seq: Option<u32>,
     trigger_input: Option<TriggerInput>,
     trigger_progress: Option<&'static str>,
+    wait_feedback: Option<Arc<dyn Fn(bool) + Send + Sync>>,
 }
 impl WindowsDriver {
     pub fn new(owner: i64, target: TargetContext, cancelled: Arc<AtomicBool>) -> Self {
@@ -125,7 +218,11 @@ impl WindowsDriver {
             owned_seq: None,
             trigger_input: None,
             trigger_progress: None,
+            wait_feedback: None,
         }
+    }
+    pub(crate) fn set_wait_feedback(&mut self, feedback: Arc<dyn Fn(bool) + Send + Sync>) {
+        self.wait_feedback = Some(feedback);
     }
     pub(crate) fn set_trigger_input(&mut self, input: Option<TriggerInput>) {
         self.trigger_input = input;
@@ -212,8 +309,13 @@ impl WindowsDriver {
                 vec![(17, v5), (8, dib)]
             }
         };
-        let lock = ClipboardLock::open(self.owner)?;
-        self.check_clipboard()?;
+        // 反馈对象先于剪贴板锁创建，提前返回时也先释放锁，再通知界面等待结束。
+        let mut waiting = WaitFeedback::new(self.wait_feedback.clone());
+        let lock = ClipboardLock::open_for_delivery(
+            self.owner,
+            || self.ensure_target(),
+            || waiting.begin(),
+        )?;
         unsafe {
             EmptyClipboard().map_err(error)?;
         }
@@ -234,6 +336,34 @@ impl WindowsDriver {
         }
         self.owned_seq = Some(sequence);
         result
+    }
+}
+
+struct WaitFeedback {
+    callback: Option<Arc<dyn Fn(bool) + Send + Sync>>,
+    started: bool,
+}
+impl WaitFeedback {
+    fn new(callback: Option<Arc<dyn Fn(bool) + Send + Sync>>) -> Self {
+        Self {
+            callback,
+            started: false,
+        }
+    }
+    fn begin(&mut self) {
+        if let Some(callback) = &self.callback {
+            self.started = true;
+            callback(true);
+        }
+    }
+}
+impl Drop for WaitFeedback {
+    fn drop(&mut self) {
+        if self.started {
+            if let Some(callback) = &self.callback {
+                callback(false);
+            }
+        }
     }
 }
 impl DeliveryDriver for WindowsDriver {
@@ -411,6 +541,63 @@ pub(super) fn repeated_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clipboard_error_reports_available_process_or_unknown_without_claiming_certainty() {
+        let error = || windows::core::Error::from(windows::core::HRESULT(0x80070005u32 as i32));
+        let known = format_clipboard_open_error(error(), Some((1234, Some("example.exe".into()))));
+        assert!(known.contains("example.exe（PID 1234）在检测时可能占用"));
+        assert!(known.contains("0x80070005"));
+        let unnamed = format_clipboard_open_error(error(), Some((1234, None)));
+        assert!(unnamed.contains("PID 1234"));
+        assert!(unnamed.contains("无法读取程序名"));
+        let unknown = format_clipboard_open_error(error(), None);
+        assert!(unknown.contains("无法识别占用程序"));
+        assert!(!unknown.contains("PID"));
+        for message in [known, unnamed, unknown] {
+            assert!(!message.contains("重试"), "部分执行时不能暗示立即重试");
+        }
+    }
+
+    #[test]
+    fn clipboard_opener_change_during_detection_is_reported_as_unknown() {
+        let mut first_handle = 0u8;
+        let mut other_handle = 0u8;
+        let first = HWND((&mut first_handle as *mut u8).cast());
+        let other = HWND((&mut other_handle as *mut u8).cast());
+        assert!(
+            identify_clipboard_opener(|| None, |_| panic!("没有占用窗口时不应查询进程")).is_none()
+        );
+        assert!(identify_clipboard_opener(
+            || Some((first, 0)),
+            |_| panic!("没有进程ID时不应查询进程")
+        )
+        .is_none());
+        for next in [None, Some((other, 1234)), Some((first, 5678))] {
+            let mut observations = [Some((first, 1234)), next].into_iter();
+            let occupant = identify_clipboard_opener(
+                || observations.next().unwrap(),
+                |_| Some("example.exe".into()),
+            );
+            assert!(occupant.is_none());
+            let message = format_clipboard_open_error(
+                windows::core::Error::from(windows::core::HRESULT(0x80070005u32 as i32)),
+                occupant,
+            );
+            assert!(message.contains("无法识别占用程序"));
+            assert!(!message.contains("example.exe"));
+        }
+        let mut stable = [Some((first, 1234)), Some((first, 1234))].into_iter();
+        assert_eq!(
+            identify_clipboard_opener(|| stable.next().unwrap(), |_| Some("example.exe".into())),
+            Some((1234, Some("example.exe".into())))
+        );
+        let mut stable = [Some((first, 1234)), Some((first, 1234))].into_iter();
+        assert_eq!(
+            identify_clipboard_opener(|| stable.next().unwrap(), |_| None),
+            Some((1234, None))
+        );
+    }
 
     /// 仅验证内存中的 CF_HDROP 编码，不读写系统剪贴板或发送按键。
     #[test]

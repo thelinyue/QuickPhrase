@@ -4,6 +4,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { call, closeWindow, useTeams } from './api';
 import { Feedback, Icon, Titlebar } from './ui';
 import { TeamSelector } from './TeamSelector';
+import { useNotices } from './notices';
 import { textOf, type Library, type RecycleItem, type RecycleRecord, type TeamRecycle, type TeamInfo, type TeamStatus, type TeamView } from './types';
 
 export const recycleLabel = (kind: RecycleItem['kind']) => kind === 'phrase' ? '话术' : kind === 'primary-category' ? '话术一级分类' : '话术二级分类';
@@ -66,7 +67,8 @@ type RecycleRow = RecycleItem & { teamRecord?: TeamRecycle };
  * 清空的 ID 清单在确认前读取，提交后新增记录不属于本次删除范围。 */
 function RecycleContent({ library, team, status, version, onBusy }: { library: Library; team?: TeamInfo; status: TeamStatus; version: number; onBusy: (value: boolean) => void }) {
   const [items, setItems] = useState<RecycleRow[]>([]); const [selected, setSelected] = useState(''); const [detail, setDetail] = useState<RecycleRecord | null>(null);
-  const [input, setInput] = useState(''); const [query, setQuery] = useState(''); const [page, setPage] = useState(0); const [loading, setLoading] = useState(true); const [message, setMessage] = useState(''); const [readError, setReadError] = useState(''); const [revision, setRevision] = useState(0);
+  const [input, setInput] = useState(''); const [query, setQuery] = useState(''); const [page, setPage] = useState(0); const [loading, setLoading] = useState(true); const [readError, setReadError] = useState(''); const [revision, setRevision] = useState(0);
+  const notices = useNotices(); const setMessage = notices.error;
   const [action, setAction] = useState<'restore' | 'remove' | 'empty' | null>(null); const [actionItem, setActionItem] = useState<RecycleRow | null>(null); const [clearIds, setClearIds] = useState<string[]>([]);
   const [withoutShortcuts, setWithoutShortcuts] = useState(false); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const busyRef = useRef(false); const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -114,7 +116,7 @@ function RecycleContent({ library, team, status, version, onBusy }: { library: L
         else if (action === 'remove') await call('remove_recycled', { ...binding, ids: [actionItem!.id] });
         else count = await call<number>('empty_recycle', { ...binding, ids: clearIds });
       }
-      if (alive.current) { setAction(null); setRevision(v => v + 1); setMessage(action === 'restore' ? `已还原到${source}` : action === 'remove' ? '已永久删除所选记录' : `已删除 ${count} 条回收记录`); }
+      if (alive.current) { setAction(null); setRevision(v => v + 1); notices.success(action === 'restore' ? `已还原到${source}` : action === 'remove' ? '已永久删除所选记录' : `已删除 ${count} 条回收记录`); }
     } catch (e) { if (alive.current) setError(String(e)); }
     finally { if (alive.current) { busyRef.current = false; setBusy(false); onBusy(false); } }
   }
@@ -136,7 +138,7 @@ function RecycleContent({ library, team, status, version, onBusy }: { library: L
       {(detail || item?.teamRecord) && <button className="recycle-permanent" disabled={!available} onClick={() => void begin('remove')}>永久删除该记录</button>}
     </main></div>
     {action && <RecycleAction title={action === 'restore' ? `还原${actionItem ? label(actionItem) : '话术'}` : action === 'remove' ? '永久删除' : '清空当前回收站'} danger={action !== 'restore'} busy={busy} error={error} close={() => { if (!busyRef.current) setAction(null); }} submit={submit}><p>来源：{source}</p>{action === 'restore' ? <><p>还原「{actionItem?.label}」到原分类。</p><p>原分类：{restoreLocation || '无分类信息'}</p><p className="recycle-action-hint">{team ? '原分类归属冲突、版本变化或素材缺失时不执行还原，请刷新后重试。' : '原分类不存在或二级分类已移动时重建原位置，保留已有分类的当前设置。'}</p>{!team && <label><input type="checkbox" checked={withoutShortcuts} disabled={busy} onChange={e => setWithoutShortcuts(e.target.checked)} />恢复时不恢复快捷键</label>}</> : <p>{action === 'empty' ? `确定删除此来源的 ${clearIds.length} 条回收记录？包含搜索结果之外的记录，确认后新增的记录保留。` : `确定永久删除「${actionItem?.label || ''}」？`}删除后无法恢复，外部附件源文件保留。</p>}</RecycleAction>}
-    <Feedback message={message} clear={() => setMessage('')} />
+    <Feedback message={notices.current?.message || ''} kind={notices.current?.kind} title={notices.current?.title} count={notices.count} clear={() => notices.current && notices.dismiss(notices.current.id)} />
   </>;
 }
 

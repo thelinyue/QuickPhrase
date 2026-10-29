@@ -21,6 +21,7 @@ const eventsPath = path.join(root, 'events.json');
 const controlPath = path.join(root, 'control.json');
 const clipboardMarker = '闪语本机验收剪贴板';
 const dockOnly = process.argv.includes('--dock-only');
+const noticesOnly = process.argv.includes('--notices-only');
 const read = async filename => {
   for (let i = 0; i < 1000; i++) {
     try { return JSON.parse(await fs.readFile(filename, 'utf8')); }
@@ -77,9 +78,10 @@ const prepare = async (draft = '', ctrlEnter = false) => {
 };
 const test = async (name, fn) => {
   if (dockOnly && !name.startsWith('吸附代表宿主') && !name.startsWith('底部短语')) return;
+  if (noticesOnly && !['提示', '剪贴板短暂占用', '剪贴板持续占用', '等待剪贴板期间', '多段投递部分完成'].some(prefix => name.startsWith(prefix))) return;
   try { await fn(); results.push({ name, passed: true }); console.log(`通过：${name}`); }
   catch (error) {
-    const messages = page && !page.isClosed() ? await page.locator('[role="status"]').allTextContents().catch(() => []) : [];
+    const messages = page && !page.isClosed() ? await page.locator('[role="status"],[role="alert"]').allTextContents().catch(() => []) : [];
     if (page && !page.isClosed()) await page.screenshot({ path: path.join(root, 'failure.png') }).catch(() => {});
     results.push({ name, passed: false, error: String(error), messages }); throw error;
   }
@@ -297,11 +299,218 @@ try {
     const report = await task; assert.equal(report.status, 'interrupted'); assert.equal(report.completedSegments, 1); assert.equal((await sent()).length, 1);
     assert.equal((await native(['-ClipboardExpected', '闪语验收新复制内容'])).clipboardMatches, true);
   });
-  await test('输入焦点变化中断，剪贴板占用失败，取消与后端防重入', async () => {
+  await test('提示：真实等待释放后自动收起，停止后不粘贴', async () => {
+    for (const cancel of [false, true]) {
+      const target = await prepare('等待提示草稿：');
+      await control('hold', { milliseconds: cancel ? 2500 : 1600 });
+      const task = deliver(b, 'insert', target);
+      await page.locator('.feedback-progress').getByText('正在等待剪贴板释放…').waitFor();
+      if (cancel) await page.locator('.feedback-progress').getByRole('button', { name: '停止' }).evaluate(button => button.click());
+      const report = await task;
+      await page.locator('.feedback-progress').waitFor({ state: 'detached' });
+      assert.equal(report.status, cancel ? 'failed' : 'submitted', JSON.stringify(report));
+      assert.equal((await receipt()).events.filter(e => e.kind === 'paste-text').length, cancel ? 0 : 1);
+      assert.equal((await sent()).length, 0);
+      if (cancel) {
+        assert.match(report.error, /取消/);
+        assert.equal((await receipt()).draft, '等待提示草稿：');
+        for (const notice of await invoke('pending_delivery_notices')) await invoke('dismiss_delivery_notice', { id: notice.id });
+        await poll(async () => (await invoke('pending_delivery_notices')).length === 0, '确认停止回执');
+        await poll(async () => (await receipt()).events.some(e => e.kind === 'clipboard-released'), '释放剪贴板');
+      }
+    }
+  });
+  await test('剪贴板短暂占用后自动继续，插入与发送各只提交一次', async () => {
+    for (const mode of ['insert', 'send']) {
+      const target = await prepare('已有草稿：');
+      await control('hold');
+      const report = await deliver(b, mode, target);
+      assert.equal(report.status, 'submitted', JSON.stringify(report));
+      assert.equal(report.completedBlocks, 1);
+      const events = (await receipt()).events;
+      assert.equal(events.filter(e => e.kind === 'clipboard-released').length, 1);
+      assert.equal(events.filter(e => e.kind === 'paste-text').length, 1);
+      assert.ok(events.findIndex(e => e.kind === 'clipboard-released') < events.findIndex(e => e.kind === 'paste-text'), '剪贴板释放后才可粘贴');
+      assert.equal(events.filter(e => e.kind === 'send').length, mode === 'send' ? 1 : 0);
+      if (mode === 'insert') assert.equal((await receipt()).draft, '已有草稿：这是 B');
+      else assert.equal((await sent())[0].value.text, '已有草稿：这是 B');
+    }
+  });
+  await test('剪贴板持续占用显示打开程序，而非内容所有者', async () => {
+    const target = await prepare('原草稿');
+    // 先由客户端成为内容所有者，再由宿主打开剪贴板；不能把所有者误报为占用者。
+    await invoke('copy_phrase_text', { id: b });
+    assert.equal((await native([])).clipboardOwnerPid, app.pid);
+    await control('hold', { milliseconds: 4500 });
+    const start = Date.now();
+    const report = await deliver(b, 'insert', target);
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed >= 2800 && elapsed < 4200, `应等待约3秒再报告占用，实际 ${elapsed} 毫秒`);
+    assert.equal(report.status, 'failed');
+    assert.match(report.error, /powershell\.exe/i);
+    assert.match(report.error, new RegExp(`PID ${hostInfo.pid}\\b`));
+    assert.match(report.error, /系统错误码：0x[0-9A-F]{8}/);
+    assert.equal((await receipt()).events.filter(e => e.kind === 'paste-text' || e.kind === 'send').length, 0);
+    assert.equal((await receipt()).draft, '原草稿');
+    await assert.rejects(invoke('copy_phrase_text', { id: b }), /剪贴板正在被其他程序占用，请稍后重试/);
+    await poll(async () => (await receipt()).events.some(e => e.kind === 'clipboard-released'), '释放剪贴板', 150);
+  });
+  await test('等待剪贴板期间取消、输入、焦点变化和新复制均停止投递', async () => {
+    for (const change of ['cancel', 'input', 'blur', 'copy-held']) {
+      const target = await prepare('原草稿');
+      await control('hold', { milliseconds: change === 'input' ? 2500 : 1500 });
+      const task = deliver(b, 'insert', target);
+      await delay(200);
+      if (change === 'cancel') await invoke('cancel_delivery');
+      if (change === 'input') await native(['-Action', 'key', '-Handle', String(hostInfo.hwnd), '-Key', '88']);
+      if (change === 'blur') await control('blur');
+      if (change === 'copy-held') await control('copy-held', { text: '等待期间的新复制' });
+      const report = await task;
+      assert.equal(report.status, 'failed', JSON.stringify(report));
+      assert.match(report.error, change === 'blur' ? /焦点/ : change === 'copy-held' ? /新.*复制/ : /取消/);
+      assert.equal((await receipt()).events.filter(e => e.kind === 'paste-text' || e.kind === 'send').length, 0);
+      if (change === 'input') assert.match((await receipt()).draft, /^原草稿[xX]$/);
+      else assert.equal((await receipt()).draft, '原草稿');
+      await poll(async () => (await receipt()).events.some(e => e.kind === 'clipboard-released'), '释放剪贴板');
+      if (change === 'copy-held') assert.equal((await native(['-ClipboardExpected', '等待期间的新复制'])).clipboardMatches, true);
+    }
+  });
+  await test('多段投递部分完成后遇到持续占用，不重发且提示检查', async () => {
+    await invoke('save_settings', { settings: { ...settings, interval: 3000 } });
+    try {
+      const target = await prepare();
+      const task = deliver(multi, 'send', target);
+      await poll(async () => (await sent()).length === 1, '第一段发送');
+      await control('hold', { milliseconds: 7000 });
+      const report = await task;
+      assert.equal(report.status, 'interrupted', JSON.stringify(report));
+      assert.equal(report.completedSegments, 1);
+      assert.equal(report.completedBlocks, 1);
+      assert.match(report.error, /已提交1块内容，请先检查/);
+      assert.equal((await sent()).length, 1);
+      assert.equal((await receipt()).events.filter(e => e.kind === 'paste-text').length, 1);
+      await poll(async () => (await receipt()).events.some(e => e.kind === 'clipboard-released'), '释放剪贴板', 200);
+    } finally {
+      await invoke('save_settings', { settings });
+    }
+  });
+  await test('提示：底栏等待、展开及无激活显示时路由回执', async () => {
+    for (const notice of await invoke('pending_delivery_notices')) await invoke('dismiss_delivery_notice', { id: notice.id });
+    const dockExe = path.join(root, 'ShanyuDockHost.exe');
+    const dockEvents = path.join(root, 'dock-events.json'); const dockControls = path.join(root, 'dock-control.json');
+    await powershell(['-File', path.join(repo, 'tests', 'build-dock-host.ps1'), '-OutputPath', dockExe]);
+    dockHost = spawn(dockExe, [dockEvents, dockControls], { windowsHide: true, stdio: 'ignore' });
+    await poll(async () => (await read(dockEvents)).pid === dockHost.pid, '提示验收宿主');
+    const info = await read(dockEvents);
+    const commonHandle = String((await native(['-ProcessId', String(app.pid), '-Title', '常用短语 · 闪语'])).handle);
+    const dockSettings = { ...settings, dock: false, dockCommon: false, dockSearch: true };
+    await invoke('save_settings', { settings: dockSettings });
+    await control('reset', { draft: '底栏提示草稿：' }, dockControls);
+    await control('copy', { text: clipboardMarker }, dockControls);
+    await native(['-Action', 'focus', '-Handle', String(info.hwnd)]); await control('focus', {}, dockControls);
+    await poll(async () => (await native(['-Handle', commonHandle])).visible, '提示底栏显示');
+    await poll(async () => (await invoke('get_target', {}, commonDock))?.hwnd === info.hwnd, '提示底栏目标');
+    const input = commonDock.getByRole('textbox', { name: '底部搜索话术、文件' });
+    const screenY = async () => {
+      const state = await native(['-Handle', commonHandle]); const box = await input.boundingBox();
+      return { y: state.rect.top + box.y * await commonDock.evaluate(() => window.devicePixelRatio), state };
+    };
+    const before = await screenY();
+    assert.equal(before.state.foreground, info.hwnd);
+    const target = await invoke('get_target', {}, commonDock);
+    await control('hold', { milliseconds: 6500 });
+    const task = invoke('deliver_content', { id: b, kind: 'phrase', mode: 'insert', target }, commonDock);
+    const progress = commonDock.locator('.dock-notice-progress');
+    await progress.getByText('正在等待剪贴板释放…').waitFor({ timeout: 2500 });
+    const during = await screenY();
+    await progress.getByRole('button', { name: '停止' }).evaluate(button => button.click());
+    const report = await task;
+    assert.equal(report.status, 'failed', JSON.stringify(report)); assert.match(report.error, /取消/);
+    assert.equal((await read(dockEvents)).events.filter(e => e.kind === 'paste-text' || e.kind === 'send').length, 0);
+    assert.ok(Math.abs(before.y - during.y) <= 2, `等待提示不应移动搜索输入框：${before.y} -> ${during.y}`);
+    assert.equal(during.state.foreground, info.hwnd, '等待提示不抢目标焦点');
+    const notice = commonDock.locator('.dock-notice:not(.dock-notice-progress)');
+    await notice.getByRole('button', { name: '查看' }).waitFor();
+    await notice.getByRole('button', { name: '查看' }).evaluate(button => button.click());
+    await notice.locator('.dock-notice-detail').waitFor();
+    await delay(250); const expanded = await screenY();
+    assert.ok(Math.abs(before.y - expanded.y) <= 2, `展开提示不应移动搜索输入框：${before.y} -> ${expanded.y}`);
+    assert.equal(expanded.state.foreground, info.hwnd, '展开提示不抢目标焦点');
+    await commonDock.screenshot({ path: path.join(root, 'delivery-dock-notice.png') });
+    await invoke('save_settings', { settings: { ...dockSettings, dockSearch: false } });
+    await poll(async () => !(await native(['-Handle', commonHandle])).visible, '隐藏来源底栏');
+    await page.locator('.feedback-error').getByText(/取消/).waitFor();
+    const mainRect = (await native(['-Handle', mainHandle])).rect;
+    await native(['-Action', 'move', '-Handle', mainHandle, '-X', String(mainRect.left), '-Y', String(mainRect.top), '-Width', '300', '-Height', '400']);
+    await delay(250);
+    const text = page.locator('.feedback-message'); const originalText = await text.textContent();
+    await text.evaluate(element => { element.textContent = '需要检查目标输入区后再试。'.repeat(3); window.dispatchEvent(new Event('resize')); });
+    await page.getByRole('button', { name: '查看详情' }).waitFor();
+    await native(['-Action', 'move', '-Handle', mainHandle, '-X', String(mainRect.left), '-Y', String(mainRect.top), '-Width', '600', '-Height', '400']);
+    await poll(async () => await page.evaluate(() => innerWidth) > 500, '扩大提示窗口');
+    await page.getByRole('button', { name: '查看详情' }).waitFor({ state: 'detached' });
+    const wideNotice = await page.locator('.feedback').boundingBox();
+    assert.ok(wideNotice.width <= 381, '宽窗口中的提示不应铺满整行');
+    await native(['-Action', 'move', '-Handle', mainHandle, '-X', String(mainRect.left), '-Y', String(mainRect.top), '-Width', '300', '-Height', '400']);
+    await poll(async () => await page.evaluate(() => innerWidth) < 350, '缩小提示窗口');
+    await page.getByRole('button', { name: '查看详情' }).waitFor();
+    await text.evaluate(element => { element.textContent = '测试长提示：' + '需要检查目标输入区。'.repeat(60); window.dispatchEvent(new Event('resize')); });
+    await page.getByRole('button', { name: '查看详情' }).waitFor();
+    for (const theme of ['default', 'green', 'blue', 'black', 'pink', 'lavender', 'orange']) {
+      await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+      const dimensions = await page.locator('.feedback').evaluate(element => {
+        const rect = element.getBoundingClientRect(); const button = element.querySelector('.feedback-close').getBoundingClientRect();
+        const message = element.querySelector('.feedback-message');
+        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, noticeWidth: rect.width, noticeHeight: rect.height, width: innerWidth, height: innerHeight, buttonTop: button.top, buttonBottom: button.bottom, truncated: message.scrollHeight > message.clientHeight };
+      });
+      assert.ok(dimensions.left >= 0 && dimensions.top >= 0 && dimensions.right <= dimensions.width + 1 && dimensions.bottom <= dimensions.height + 1, `${theme} 提示应在最小窗口内`);
+      assert.ok(dimensions.noticeWidth <= Math.min(380, dimensions.width * 0.9) + 1 && dimensions.noticeHeight <= 75 && dimensions.truncated, `${theme} 长提示默认应保持紧凑并显示摘要`);
+      assert.ok(dimensions.buttonTop >= dimensions.top && dimensions.buttonBottom <= dimensions.bottom, `${theme} 关闭按钮应可见`);
+    }
+    await page.screenshot({ path: path.join(root, 'delivery-main-compact-notice.png') });
+    await page.getByRole('button', { name: '查看详情' }).evaluate(button => button.click());
+    const expandedNotice = await page.locator('.feedback').evaluate(element => {
+      const rect = element.getBoundingClientRect(); const button = element.querySelector('.feedback-close').getBoundingClientRect();
+      const message = element.querySelector('.feedback-message');
+      message.scrollTop = message.scrollHeight;
+      return { height: rect.height, limit: Math.min(innerHeight * 0.4, 220), scroll: message.scrollHeight > message.clientHeight, focusable: message.tabIndex === 0, buttonTop: button.top, buttonBottom: button.bottom, top: rect.top, bottom: rect.bottom };
+    });
+    assert.ok(expandedNotice.height <= expandedNotice.limit + 1 && expandedNotice.scroll && expandedNotice.focusable && expandedNotice.buttonTop >= expandedNotice.top && expandedNotice.buttonBottom <= expandedNotice.bottom, '展开长提示应可用键盘聚焦、滚动且关闭按钮保持可见');
+    await page.screenshot({ path: path.join(root, 'delivery-main-expanded-notice.png') });
+    await page.getByRole('button', { name: '收起详情' }).evaluate(button => button.click());
+    await page.getByRole('button', { name: '查看详情' }).evaluate(button => button.click());
+    assert.equal(await text.evaluate(element => element.scrollTop), 0, '重新展开应从提示开头阅读');
+    await page.getByRole('button', { name: '收起详情' }).evaluate(button => button.click());
+    await text.evaluate((element, value) => { element.textContent = value; window.dispatchEvent(new Event('resize')); }, originalText);
+    await page.evaluate(() => { document.documentElement.dataset.theme = 'default'; });
+    for (const containerClass of ['company-content', 'cloud-selection']) {
+      const layout = await page.evaluate(containerClass => {
+        const container = document.createElement('div'); container.className = containerClass;
+        Object.assign(container.style, { position: 'fixed', left: '0', top: '0', width: '300px', height: '400px', zIndex: '100' });
+        const notice = document.createElement('div'); notice.className = 'account-notice error';
+        const message = document.createElement('span'); message.textContent = '文件处理失败。'.repeat(100);
+        const close = document.createElement('button'); close.textContent = '×';
+        const action = document.createElement('button'); action.textContent = '操作区';
+        notice.append(message, close); container.append(notice, action); document.body.append(container);
+        const box = notice.getBoundingClientRect(), button = close.getBoundingClientRect(), actionBox = action.getBoundingClientRect();
+        const result = { height: box.height, scroll: notice.scrollHeight > notice.clientHeight, buttonTop: button.top, buttonBottom: button.bottom, noticeTop: box.top, noticeBottom: box.bottom, actionBottom: actionBox.bottom };
+        container.remove(); return result;
+      }, containerClass);
+      assert.ok(layout.height <= 100 && layout.scroll && layout.buttonTop >= layout.noticeTop && layout.buttonBottom <= layout.noticeBottom && layout.actionBottom <= 400, `${containerClass} 长提示不得挤掉操作区或关闭按钮`);
+    }
+    await invoke('save_settings', { settings: dockSettings });
+    await poll(async () => (await native(['-Handle', commonHandle])).visible, '无激活重新显示底栏');
+    await commonDock.locator('.dock-notice-row').getByText(/取消/).waitFor();
+    await poll(async () => await page.locator('.feedback-error').count() === 0, '回执返回底栏');
+    assert.equal((await native(['-Handle', commonHandle])).foreground, info.hwnd, '重新显示底栏不抢焦点');
+    await commonDock.getByRole('button', { name: '关闭提示' }).evaluate(button => button.click());
+    await poll(async () => (await invoke('pending_delivery_notices')).length === 0, '逐条确认回执');
+    await poll(async () => (await receipt()).events.some(e => e.kind === 'clipboard-released'), '释放剪贴板', 200);
+    await control('close', {}, dockControls); await invoke('save_settings', { settings });
+  });
+  await test('输入焦点变化中断，取消与后端防重入', async () => {
     let target = await prepare(); let task = deliver(multi, 'send', target); await poll(async () => (await sent()).length === 1, '第一段'); await control('blur');
     let report = await task; assert.equal(report.completedSegments, 1); assert.match(report.error, /焦点/);
-    target = await prepare(); await control('hold'); report = await deliver(b, 'send', target); assert.equal(report.status, 'failed'); assert.match(report.error, /占用/);
-    await poll(async () => (await receipt()).events.some(e => e.kind === 'clipboard-released'), '释放剪贴板');
     target = await prepare(); task = deliver(multi, 'send', target); await assert.rejects(deliver(multi, 'send', target), /正在处理/);
     await poll(async () => (await sent()).length === 1, '第一段'); await invoke('cancel_delivery'); report = await task;
     assert.equal(report.status, 'interrupted'); assert.equal(report.completedSegments, 1);
@@ -448,6 +657,6 @@ try {
   if (app && app.exitCode === null) app.kill();
   if (host && host.exitCode === null) host.kill();
   if (dockHost && dockHost.exitCode === null) dockHost.kill();
-  await fs.writeFile(path.join(root, 'report.json'), JSON.stringify({ date: new Date().toISOString(), scope: dockOnly ? 'dock-only' : 'full', results, limits: ['真实企业微信吸附待实机确认；同名验收进程只验证模块行为', 'Windows 10、多显示器与实际 150%/200% DPI、中文输入法仍需系统验收', '第三方软件粘贴支持与实际网络送达不由本宿主证明'] }, null, 2));
+  await fs.writeFile(path.join(root, 'report.json'), JSON.stringify({ date: new Date().toISOString(), scope: noticesOnly ? 'notices-only' : dockOnly ? 'dock-only' : 'full', results, limits: ['真实企业微信吸附待实机确认；同名验收进程只验证模块行为', 'Windows 10、多显示器与实际 150%/200% DPI、中文输入法仍需系统验收', '第三方软件粘贴支持与实际网络送达不由本宿主证明'] }, null, 2));
   console.log(`原生验收记录：${path.join(root, 'report.json')}`);
 }

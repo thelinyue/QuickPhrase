@@ -224,7 +224,7 @@ describe.each([false, true])('搜索记录入口，底部=%s', dock => {
     const base = vi.mocked(call).getMockImplementation()!;
     vi.mocked(call).mockImplementation(async (name, args) => name === 'deliver_content' ? { status, completedSegments: 0, completedBlocks: 0, error: '操作已停止' } : base(name, args));
     view(dock); await search(dock, '未完成'); fireEvent.keyDown(input(dock), { key: 'Enter' });
-    expect((await screen.findByRole('status')).textContent).toContain('操作已停止'); expect(recorded()).toHaveLength(0);
+    expect((await screen.findByRole('alert')).textContent).toContain('操作已停止'); expect(recorded()).toHaveLength(0);
   });
 
   it('清空记录不清空搜索，清空搜索不删除记录，隐藏搜索不占记录空间', async () => {
@@ -255,7 +255,7 @@ describe.each([false, true])('搜索记录入口，底部=%s', dock => {
     fireEvent.change(input(dock), { target: { value: '后来输入' } });
     await act(async () => finish({ status: 'submitted', completedSegments: 1, completedBlocks: 1, error: null }));
     expect(recorded()[0][1]).toEqual({ libraryId: 'A', query: '原搜索词' });
-    expect((await screen.findByRole('status')).textContent).toContain('已提交操作，但搜索记录保存失败');
+    expect((await screen.findByRole('alert')).textContent).toContain('已提交操作，但搜索记录保存失败');
     expect(deliveries()).toHaveLength(1);
   });
 });

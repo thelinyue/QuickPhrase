@@ -9,6 +9,9 @@ import { Icon, Titlebar, useEnterSubmit } from './ui';
 import { PhraseRow } from './PhraseRow';
 import { SearchHistoryBar, useSearchHistory, type SearchUsage } from './SearchHistory';
 import { useMembers } from './useMembers';
+import { useNotices } from './notices';
+import { useDeliveryProgress } from './useDeliveryProgress';
+import { usePendingDeliveryNotices } from './usePendingDeliveryNotices';
 import { searchHitKey, searchDeliveryKey, categoryLabel, type CommonPhrase, type DeliveryReport, type Library, type SearchHit, type TargetContext } from './types';
 
 /** 换行短语按真实布局导航：上下先找相邻行，再选择横向中心最近的项。 */
@@ -91,7 +94,19 @@ export function CommonDockWindow({ library }: { library: Library }) {
   const { status: teamStatus } = useTeams();
   const members = useMembers(teamStatus);
   const enterSubmit = useEnterSubmit();
-  const [busy, setBusy] = useState(false); const busyRef = useRef(false); const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false); const busyRef = useRef(false);
+  const notices = useNotices(); const setMessage = notices.error;
+  const deliveryProgress = useDeliveryProgress('common-dock');
+  const noticeScope = JSON.stringify([library.libraryId, teamStatus.server, teamStatus.user?.id, teamStatus.sessionEpoch]);
+  const noticeScopeRef = useRef(noticeScope); const previousNoticeScope = useRef(noticeScope); noticeScopeRef.current = noticeScope;
+  useEffect(() => { if (previousNoticeScope.current !== noticeScope) { previousNoticeScope.current = noticeScope; notices.clear(); } }, [noticeScope]);
+  const pendingDeliveries = usePendingDeliveryNotices(noticeScope, 'common-dock');
+  const pendingDelivery = pendingDeliveries.items[0];
+  const showPending = !!pendingDelivery && (pendingDelivery.status === 'interrupted' || (!pendingDeliveries.problem && notices.current?.kind !== 'warning'));
+  const showDeliveryProblem = !showPending && !!pendingDeliveries.problem && notices.current?.kind !== 'warning';
+  const showProgress = !showPending && !showDeliveryProblem && !!deliveryProgress.waiting && (!notices.current || notices.current.kind === 'success' || notices.current.kind === 'progress');
+  const activeNotice = showPending ? { message: pendingDelivery.message, kind: pendingDelivery.status === 'interrupted' ? 'warning' : 'error', title: pendingDelivery.status === 'interrupted' ? '请先检查目标，操作已中断' : undefined } : showDeliveryProblem ? { message: pendingDeliveries.problem, kind: 'warning', title: '请先检查目标，投递结果暂不可用' } : showProgress ? undefined : notices.current;
+  const [noticeExpanded, setNoticeExpanded] = useState(false); const noticeRef = useRef<HTMLDivElement>(null);
   const history = useSearchHistory(library.libraryId, setMessage);
   const [searchVersion, repeatSearch] = useState(0); const searchRef = useRef<HTMLInputElement>(null);
   const searchUsage = (): SearchUsage | undefined => library.libraryId ? { query, libraryId: library.libraryId } : undefined;
@@ -147,7 +162,8 @@ export function CommonDockWindow({ library }: { library: Library }) {
     // 两层占同一个网格：只把浮层超出短语的部分报告为向上展开量，搜索输入的屏幕坐标不变。
     const measure = () => {
       const height = Math.max(28, Math.min(420, Math.ceil(element.getBoundingClientRect().height)));
-      const aboveHeight = Math.max(0, Math.min(height - 28, Math.ceil((upperRef.current?.getBoundingClientRect().height || 0) - (commonRef.current?.getBoundingClientRect().height || 0))));
+      const overlayHeight = Math.max(0, (upperRef.current?.getBoundingClientRect().height || 0) - (commonRef.current?.getBoundingClientRect().height || 0));
+      const aboveHeight = Math.max(0, Math.min(height - 28, Math.ceil(overlayHeight + (noticeRef.current?.getBoundingClientRect().height || 0))));
       void call('set_common_dock_height', { height, aboveHeight }).catch(e => setMessage(String(e)));
     };
     const observer = new ResizeObserver(measure);
@@ -164,18 +180,21 @@ export function CommonDockWindow({ library }: { library: Library }) {
     void listen<string>('ui-action', e => { if (e.payload === 'common') { setSearchActive(false); (content.current?.querySelector<HTMLElement>('[data-common][aria-selected="true"]') || content.current?.querySelector<HTMLElement>('[data-common],.add-common'))?.focus(); } }).then(un => { if (disposed) un(); else off = un; });
     return () => { disposed = true; off?.(); };
   }, []);
-  useEffect(() => { if (message) { const timer = setTimeout(() => setMessage(''), 6000); return () => clearTimeout(timer); } }, [message]);
+  useEffect(() => { setNoticeExpanded(false); }, [pendingDelivery?.id, pendingDeliveries.problem, notices.current?.id]);
   async function deliver(id: string, mode: 'insert' | 'send', kind = 'common', triggerKey?: number, usage?: SearchUsage) {
     if (kind !== 'common' && (searchGuard.current.pending || searchGuard.current.query !== query || searchGuard.current.scope !== searchScope || searchGuard.current.source !== searchStamp)) return;
-    if (busyRef.current) return; busyRef.current = true; setBusy(true);
+    if (busyRef.current) return; busyRef.current = true; setBusy(true); const scope = noticeScopeRef.current;
     try {
       const target = await call<TargetContext | null>('get_target');
       if (!target) throw new Error('请先聚焦目标输入区，再使用话术。');
       const report = await call<DeliveryReport>('deliver_content', { id, kind, mode, target, ...(triggerKey ? { triggerKey } : {}) });
+      if (scope !== noticeScopeRef.current) return;
+      if (report.noticeStored) void pendingDeliveries.refresh();
       if (report.status === 'submitted' && library.settings.exitSearch) clearSearch();
-      setMessage(report.status === 'submitted' ? '' : report.error || '操作已停止');
+      if (!report.noticeStored && report.status === 'interrupted') notices.show(report.error || '请先检查目标输入区和已发送内容，已执行的内容不会自动重发。', 'warning', '请先检查目标，操作已中断');
+      else if (!report.noticeStored && report.status !== 'submitted') setMessage(report.error || '操作已停止');
       if (report.status === 'submitted' && usage) await history.record(usage);
-    } catch (e) { setMessage(String(e)); } finally { busyRef.current = false; setBusy(false); }
+    } catch (e) { if (scope === noticeScopeRef.current) setMessage(String(e)); } finally { busyRef.current = false; setBusy(false); }
   }
   async function resultMenu(e: MouseEvent, hit: SearchHit) {
     e.preventDefault(); e.stopPropagation();
@@ -211,6 +230,11 @@ export function CommonDockWindow({ library }: { library: Library }) {
     if (!target.closest('.dock-search-upper,.dock-search-bar')) setSearchActive(false);
     else { setSearchActive(!collapsed); if (!target.closest('button,input,[tabindex]')) e.preventDefault(); }
   }}><div className="common-dock-content">
+    {activeNotice && <div className={`dock-notice dock-notice-${activeNotice.kind}`} ref={noticeRef}>
+      <div className="dock-notice-row" role="alert" title={activeNotice.message}><span className="dock-notice-mark" aria-hidden="true">!</span><span className="dock-notice-summary">{activeNotice.title || (noticeExpanded ? '提示详情' : activeNotice.message)}</span>{activeNotice.title && <span className="visually-hidden">{activeNotice.message}</span>}{pendingDeliveries.items.length + notices.count + (pendingDeliveries.problem ? 1 : 0) > 1 && <small>{pendingDeliveries.items.length + notices.count + (pendingDeliveries.problem ? 1 : 0)} 条</small>}<button type="button" aria-expanded={noticeExpanded} onClick={() => setNoticeExpanded(value => !value)}>{noticeExpanded ? '收起' : '查看'}</button><button type="button" aria-label="关闭提示" title="关闭提示" onClick={() => showPending ? void pendingDeliveries.dismiss(pendingDelivery!.id).catch(e => setMessage(String(e))) : showDeliveryProblem ? pendingDeliveries.dismissProblem() : notices.current && notices.dismiss(notices.current.id)}>×</button></div>
+      {noticeExpanded && <div className="dock-notice-detail">{activeNotice.message}</div>}
+    </div>}
+    {!activeNotice && deliveryProgress.waiting && <div className="dock-notice dock-notice-progress" ref={noticeRef}><div className="dock-notice-row" role="status"><span className="dock-notice-summary">正在等待剪贴板释放…</span><button type="button" onClick={() => void call('cancel_delivery', { operationId: deliveryProgress.waiting!.operation }).catch(e => setMessage(String(e)))}>停止</button></div></div>}
     <div className="dock-common-slot" ref={commonRef}>
       {library.settings.dockCommon && <CommonPhraseBar library={library} compact busy={busy || hiding} onDeliver={(id, mode, triggerKey) => { setSearchActive(false); void deliver(id, mode, 'common', triggerKey); }} onError={setMessage} onHide={() => void hideCommon()} />}
     </div>
@@ -228,7 +252,6 @@ export function CommonDockWindow({ library }: { library: Library }) {
       if (e.key === 'Escape') { e.preventDefault(); clearSearch(); setSearchActive(false); }
     }} />{query && <button className="dock-search-clear" aria-label="清空底部搜索" onClick={() => { clearSearch(); searchRef.current?.focus(); }}>×</button>}</>}</div>}
     </div>
-    {message && <span className="dock-status" role="status" title={message} onClick={() => setMessage('')}>{message}</span>}
   </section>;
 }
 

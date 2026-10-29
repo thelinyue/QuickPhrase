@@ -38,6 +38,66 @@ const teamFixture = () => {
   return status;
 };
 
+it('主窗口显示插入及快捷键投递的占用程序提示', async () => {
+  const message = 'example.exe（PID 1234）在检测时可能占用剪贴板，请检查后重试。';
+  vi.mocked(call).mockImplementation(async name => name === 'get_target' ? { hwnd: 1, focus: 2, pid: 3 } : name === 'deliver_content' ? { status: 'failed', completedSegments: 0, completedBlocks: 0, error: message } : name === 'search_scoped_content' ? [] : null);
+  view();
+  fireEvent.doubleClick(document.querySelector('[data-row="A"]')!);
+  expect((await screen.findByRole('alert')).textContent).toContain(message);
+  await waitFor(() => expect(callbacks.has('shortcut-delivery')).toBe(true));
+  act(() => callbacks.get('shortcut-delivery')!({ payload: { status: 'failed', error: `${message} 快捷键` } }));
+  expect(screen.getByRole('alert').textContent).toContain(message);
+  expect(screen.getByRole('alert').textContent).toContain('还有 1 条提示');
+  fireEvent.click(screen.getByRole('button', { name: '关闭提示' }));
+  expect(screen.getByRole('alert').textContent).toContain(`${message} 快捷键`);
+});
+
+it('未执行的回执不能借用另一条部分执行警告的标题', async () => {
+  let rows: unknown[] = [];
+  vi.mocked(call).mockImplementation(async name => name === 'pending_delivery_notices' ? rows : name === 'search_scoped_content' ? [] : null);
+  view();
+  await waitFor(() => expect(callbacks.has('shortcut-delivery') && callbacks.has('delivery-notices-changed')).toBe(true));
+  act(() => callbacks.get('shortcut-delivery')!({ payload: { status: 'interrupted', error: '本地部分执行' } }));
+  expect(screen.getByRole('alert').textContent).toContain('快捷键操作已中断');
+  rows = [{ id: 12, recipient: 'main', status: 'failed', message: '尚未开始' }];
+  act(() => callbacks.get('delivery-notices-changed')!({ payload: null }));
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('还有 1 条提示'));
+  fireEvent.click(screen.getByRole('button', { name: '关闭提示' }));
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('尚未开始'));
+  expect(screen.getByRole('alert').textContent).not.toContain('快捷键操作已中断');
+});
+
+it('回执已保存但变更事件丢失时，来源窗口仍主动读取结果', async () => {
+  let rows: unknown[] = [];
+  vi.mocked(call).mockImplementation(async name => {
+    if (name === 'get_target') return { hwnd: 1, focus: 2, pid: 3 };
+    if (name === 'deliver_content') { rows = [{ id: 23, recipient: 'main', status: 'failed', message: '剪贴板占用' }]; return { status: 'failed', noticeStored: true }; }
+    if (name === 'pending_delivery_notices') return rows;
+    return name === 'search_scoped_content' ? [] : null;
+  });
+  view();
+  await waitFor(() => expect(callbacks.has('delivery-notices-changed')).toBe(true));
+  fireEvent.doubleClick(document.querySelector('[data-row="A"]')!);
+  expect((await screen.findByRole('alert')).textContent).toContain('剪贴板占用');
+});
+
+it('无法读取投递结果时，收起摘要也直接提醒检查目标', async () => {
+  vi.mocked(call).mockImplementation(async name => { if (name === 'pending_delivery_notices') throw new Error('读取失败'); return name === 'search_scoped_content' ? [] : null; });
+  view();
+  expect((await screen.findByRole('alert')).querySelector('strong')?.textContent).toBe('请先检查目标，投递结果暂不可用');
+});
+
+it('等待进度和停止按钮不被上一次的短暂成功提示遮住', async () => {
+  view();
+  await waitFor(() => expect(callbacks.has('delivery-progress')).toBe(true));
+  fireEvent.doubleClick(document.querySelector('[data-row="A"]')!);
+  expect((await screen.findByRole('status')).textContent).toContain('已向目标提交插入操作');
+  act(() => callbacks.get('delivery-progress')!({ payload: { operation: 9, sequence: 1, recipient: 'main', waiting: true } }));
+  expect(screen.getByRole('status').textContent).toContain('正在等待剪贴板释放');
+  fireEvent.click(screen.getByRole('button', { name: '停止' }));
+  await waitFor(() => expect(call).toHaveBeenCalledWith('cancel_delivery', { operationId: 9 }));
+});
+
 describe('文件关联右键入口', () => {
   it.each([false, true])('列表空白及空分类提示打开当前分类，已有文件：%s', populated => {
     render(<MainWindow library={{ ...library, files: populated ? library.files : [] }} refresh={vi.fn(async () => {})} />);
@@ -390,7 +450,7 @@ describe('主窗口四个设置开关独立保存', () => {
     await waitFor(() => expect(writes()).toHaveLength(1)); await act(async () => state.release());
     await waitFor(() => expect(button('置顶').getAttribute('aria-pressed')).toBe('true'));
     expect(button('吸附').disabled).toBe(false); expect(button('吸附').getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByRole('status').textContent).toContain('设置保存失败');
+    expect(screen.getByRole('alert').textContent).toContain('设置保存失败');
   });
 
   it('切库取消尚未执行的旧库操作，新库按钮不沿用等待状态', async () => {

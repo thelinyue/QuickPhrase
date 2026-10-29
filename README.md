@@ -2,9 +2,9 @@
 
 “设置 → 问题诊断”可按问题临时记录，复现后导出 ZIP 反馈；使用方法与收集边界见[诊断说明](docs/diagnostics.md)。
 
-Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.11。
+Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.12。
 
-正式下载：[v0.2.11 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.11) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.11/QuickPhrase-Setup-0.2.11-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.11/QuickPhrase-0.2.11-win-x64.zip)。安装器和程序未代码签名；[闪云公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
+正式下载：[v0.2.12 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.12) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.12/QuickPhrase-Setup-0.2.12-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.12/QuickPhrase-0.2.12-win-x64.zip)。安装器和程序未代码签名；[闪云公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
 
 0.2.1统一英文名称 QuickPhrase；0.2.3新增在线更新、数据目录迁移、搜索历史、使用指引与云文件批量上传。0.2.4完善主题、账号管理、底部搜索，并新增贴边隐藏及最小化悬浮窗。0.2.5优化悬浮窗双击与隐藏菜单、贴边隐藏及搜索刷新。0.2.6完善常用短语菜单与底部布局，主搜索改为覆盖浮层，并支持拼音匹配与清空记录确认。0.2.7修复贴边误弹出与收回、解除吸附跨屏跳转和升级尺寸变化，完善自适应预览、成员个人快捷键及底栏升级角标。0.2.8新增本机MCP、统一文件关联和云文件改名，优化设置局部保存、全局混合搜索及紧凑快捷键候选。0.2.11改进快捷键目标同步与成员绑定恢复，并新增问题诊断。普通用户使用安装器安装和升级；ZIP供免安装启动，需预装WebView2，用户数据仍保存于用户目录。0.2.0的历史下载文件保留原名。
 
@@ -91,7 +91,9 @@ Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、Reac
 
 序号与自定义话术各有独立开启开关，共用“全局生效”：默认只在闪语或记录的目标窗口生效，开启后可用于其他前台窗口。编辑、录入、模态交互和设置窗口存在期间暂停业务快捷键；搜索允许已配置的序号组合键。普通字母／数字双键即时进入输入框或输入法，匹配后显示话术候选，选择后在标准 Windows 编辑框或已识别的企业微信输入区替换本次触发文字，保留原草稿与光标后内容；取消保留输入。微软拼音下先临时关闭组字，清理实际透传的触发输入并粘贴，再恢复输入法模式；此前未确认的拼音会先上屏，内容保留。中文数字可能用于选择此前拼音，自绘输入区无法核对时停止替换，可改用字母双键或 Ctrl／Alt 组合键。未知自绘输入区不执行自动清理；Ctrl／Alt／Win 组合及 F 键开头的序列仍拦截，未完成时仅在原输入区回放。候选显示时数字、空格和 Enter 操作话术候选；继续普通输入、切换窗口／输入控件或点击外部区域即取消。普通拼音仍可能命中简码，此行为不保证完全避免误触。单键与双键前缀冲突，以及序号之间、序号与导航或自定义话术的冲突会显示中文原因并保留原配置。
 
-发送统一使用 Windows 剪贴板和按键。插入和发送会替换原剪贴板，结束后保留最后写入的内容块，不备份或恢复旧内容；期间发生新的复制会立即停止并保留新内容。目标输入区需要支持对应的文字、图片或文件格式；发送键应与目标软件一致。程序记录的是系统操作提交情况。企业微信识别用于窗口吸附与快捷键目标同步，投递仍使用通用输入链路。
+发送统一使用 Windows 剪贴板和按键。插入和发送会替换原剪贴板，结束后保留最后写入的内容块，不备份或恢复旧内容；期间发生新的复制会立即停止并保留新内容。剪贴板被占用时，每个内容块最多等待约3秒，释放后自动继续；持续无法打开时尽量提示检测到的占用程序，但 Windows 不保证能识别。目标输入区需要支持对应的文字、图片或文件格式；发送键应与目标软件一致。程序记录的是系统操作提交情况。企业微信识别用于窗口吸附与快捷键目标同步，投递仍使用通用输入链路。
+
+窗口级提示区分成功、进度、错误及需要核对的中断：成功提示短暂显示，悬停或键盘焦点停留时暂停消失；错误与中断保留至关闭，同一窗口相同的普通错误去重，部分执行的警告优先显示。主窗口、设置及回收站使用紧凑悬浮提示，文字被截断时可展开并滚动查看完整内容；部分执行或结果不可用时直接提醒先检查目标。表单校验、确认和任务状态仍在原位置显示。剪贴板实际等待超过约0.5秒时显示等待状态及“停止”；底栏可展开或悬停查看完整提示。已产生的失败或中断投递回执逐条保存在本次运行内，按个人库和账号会话隔离，在可见的来源窗口、主窗口或底栏显示；两个窗口都隐藏时不主动唤醒，重新显示后可查看。无法读取结果时应先检查目标，避免重复操作；退出程序即清除回执，切换会话后不显示旧会话的回执。
 
 ## 闪云部署
 
@@ -126,7 +128,7 @@ services:
 
 共享数据备份包含账号、共享话术、云文件、回收记录及实际素材，排除个人内容和会话；个人内容使用个人完整备份。完整运维备份在停服后保存整个 `data`。全目录恢复须使用同一份备份还原到新目录，并执行恢复准备以清除旧会话、更换个人同步世代；维护流程见下文。
 
-可复制的配置及备份细节见[共享话术与部署](docs/team-sharing.md)，客户端本版变化见[0.2.11 发布说明](docs/releases/v0.2.11.md)。
+可复制的配置及备份细节见[共享话术与部署](docs/team-sharing.md)，客户端本版变化见[0.2.12 发布说明](docs/releases/v0.2.12.md)。
 
 ## 数据与备份
 
@@ -159,11 +161,11 @@ npm run tauri -- dev
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -InnoCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
-脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.11，产物为 `artifacts/QuickPhrase-Setup-0.2.11-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
+脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.12，产物为 `artifacts/QuickPhrase-Setup-0.2.12-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
 
-默认仍只生成安装器。候选构建可加 `-Version 0.2.11-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.11`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.11` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
+默认仍只生成安装器。候选构建可加 `-Version 0.2.12-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.12`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.12` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
 
-GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.11-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
+GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.12-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
 
 检测到已验证的新版本后，右下角“闪语”显示“新”角标；悬停提示当前版本和最新版本，点击进入关于页查看并手动升级。不在顶部增加提醒栏，下载中或选择稍后安装时仍可从此进入。
 
@@ -203,6 +205,7 @@ node scripts/verify-ime.mjs
 node scripts/verify-member.mjs --ime
 npm run test:native
 npm run test:native -- --dock-only
+npm run test:native -- --notices-only
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/shortcut-desktop.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/shortcut-desktop.ps1 -Keyboard -Filter 企业微信键盘撤回
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/shortcut-desktop.ps1 -Suite member -Keyboard
@@ -215,7 +218,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installer
 
 最小化悬浮窗专项 `node scripts/verify-minimized-float.mjs` 覆盖托盘／悬浮开关四种组合、真实拖动和双击、原生右键菜单、临时／永久隐藏、设置写入失败回滚、焦点、辅助窗口与自动隐藏排除、快捷键／重复启动还原、连续操作、贴边兼容、跨重启记位及屏幕越界恢复。仅使用隔离数据库和宿主，运行时暂停键鼠操作。
 
-原生验收使用独立数据目录、Debug 单实例标识和本机输入宿主，可以保留正式客户端运行。`--dock-only` 只运行主窗口吸附和底部短语横条两组检查。吸附测试使用专用 ShanyuDockHost.exe，仅隔离 Debug 客户端识别。后台跟随专项覆盖普通／开机／重复启动、独立唤起、隐藏恢复、任务栏样式和多窗口遮挡，悬停专项覆盖预览与稳定宽度；这两项不使用系统剪贴板或聊天发送。原生脚本需顺序运行，执行时暂停键鼠操作；发送验收会短暂使用剪贴板，结束时仅恢复仍属于本次验收的内容，保留后来的用户复制。安装验收仅运行安装器，使用独立 AppId、编译时菜单组、启动项和安装目录，验证已发布0.2.0旧安装器夹具的改名升级；需保留其 shanyu.exe 构建产物，完成后清理自己的测试安装。报告和截图位于 `.build` 下对应的专项目录。
+原生验收使用独立数据目录、Debug 单实例标识和本机输入宿主，可以保留正式客户端运行。`--dock-only` 只运行主窗口吸附和底部短语横条两组检查；`--notices-only` 只运行剪贴板等待及提示专项，不代表完整原生验收。吸附测试使用专用 ShanyuDockHost.exe，仅隔离 Debug 客户端识别。后台跟随专项覆盖普通／开机／重复启动、独立唤起、隐藏恢复、任务栏样式和多窗口遮挡，悬停专项覆盖预览与稳定宽度；这两项不使用系统剪贴板或聊天发送。原生脚本需顺序运行，执行时暂停键鼠操作；发送验收会短暂使用剪贴板，结束时仅恢复仍属于本次验收的内容，保留后来的用户复制。安装验收仅运行安装器，使用独立 AppId、编译时菜单组、启动项和安装目录，验证已发布0.2.0旧安装器夹具的改名升级；需保留其 shanyu.exe 构建产物，完成后清理自己的测试安装。报告和截图位于 `.build` 下对应的专项目录。
 
 鼠标延迟专项运行前退出普通客户端，避免旧实例的全局钩子干扰测量。每组120次左右1像素往返移动，不点击、不按键、不访问剪贴板；比较未启动、关闭吸附、正在吸附、连续移动缩放及退出后的钩子链延迟。检测到其他鼠标移动时不恢复旧光标位置，避免覆盖用户后来移动的位置。
 

@@ -212,7 +212,7 @@ describe('应用版本', () => {
   it('读取失败不显示硬编码版本', async () => {
     vi.mocked(getVersion).mockRejectedValue(new Error('版本服务不可用'));
     render(<SettingsWindow library={library} initialTab="关于" />);
-    expect((await screen.findByRole('status')).textContent).toContain('无法读取应用版本');
+    expect((await screen.findByRole('alert')).textContent).toContain('无法读取应用版本');
     expect(screen.queryByText(/v0\.1\.1| · 0\.1\.1/)).toBeNull();
   });
 });
@@ -240,7 +240,7 @@ describe('十项序号与快捷键设置', () => {
     expect(savedSettings.globalPhraseHotkeys).toBe(true);
     expect(savedSettings.sequenceHotkeys).toBe(!fail);
     expect(closingWindow.close).toHaveBeenCalledTimes(fail ? 0 : 1);
-    if (fail) expect(screen.getByRole('status').textContent).toContain('部分设置未保存');
+    if (fail) expect(screen.getAllByRole('alert').some(item => item.textContent?.includes('部分设置未保存'))).toBe(true);
   });
   it('默认关闭，十项单组合键录入、单项关闭和重新录入恢复', async () => {
     render(<SettingsWindow library={shortcuts()} initialTab="快捷键" />);
@@ -266,7 +266,7 @@ describe('十项序号与快捷键设置', () => {
   it('拒绝裸键，生效范围保留全局开关且不提供视频入口', async () => {
     render(<SettingsWindow library={shortcuts()} initialTab="快捷键" />);
     fireEvent.keyDown(screen.getByLabelText('发送序号1'),{key:'a',code:'KeyA'});
-    expect(screen.getByRole('status').textContent).toContain('单个组合键');
+    expect(screen.getByRole('alert').textContent).toContain('单个组合键');
     expect(vi.mocked(call).mock.calls.filter(([name])=>name==='patch_settings')).toHaveLength(0);
     expect(screen.queryByRole('button',{name:'使用教程'})).toBeNull();
     expect(screen.getByText('生效范围')).toBeTruthy();
