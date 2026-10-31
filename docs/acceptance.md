@@ -1,5 +1,19 @@
 # 闪语验收记录
 
+## 0.2.13 正式发布核验（2026-10-31）
+
+正式标签 `v0.2.13` 指向 `3733e78ec2cfcd7c6ac2f20ee3afeb44562c1468`。[主分支CI](https://github.com/thelinyue/QuickPhrase/actions/runs/41193707006)、[标签CI](https://github.com/thelinyue/QuickPhrase/actions/runs/41193706732)及[正式发布工作流](https://github.com/thelinyue/QuickPhrase/actions/runs/41194109810)全部成功。[公开Release](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.13)为正式、非草稿、非预发布且是latest，五项资产均上传完成；没有移动旧标签或替换旧版本资产。
+
+五项公开资产逐一匿名下载，字节数和SHA256均与GitHub资产记录一致。使用本次源码构建的 `update-probe local` 及产品内置公钥独立验证Minisign清单签名、manifest与安装器；ZIP、安装器及manifest均匹配已签名SHA256清单。manifest的版本、稳定通道、win-x64及源码提交一致，latest manifest与固定版本字节相同。ZIP只含程序及既有四份政策文件，程序为x64，安装器沿用x86引导及64位安装策略，PE版本均为0.2.13／0.2.13.0，两者Authenticode仍为NotSigned。未执行下载的程序或安装器。
+
+真实Rust更新探针的直连和默认代理均下载0.2.13安装器并匹配官方校验，未执行安装器。备用 `ghfast.top` 本轮未通过：产品探针连接失败，独立curl也在TLS握手阶段失败（HTTP 000），不将其计为可用或全部线路通过；未修改全局代理或降低证书校验。匿名GitHub REST API的60次额度已用尽，发布状态改由已登录CLI读取，五项资产下载及产品更新探针不使用该API凭据，产品更新不依赖REST API。
+
+配套闪云0.2.5已先行完成[正式镜像与匿名9组容器验收](https://github.com/thelinyue/QuickPhrase-Hub/actions/runs/41193584999)，[latest推广与独立匿名摘要核对](https://github.com/thelinyue/QuickPhrase-Hub/actions/runs/41194029198)成功。本机另以空Docker凭据拉取正式镜像并再通过9组容器检查；固定版与latest均为 `sha256:1e5f009eb40210e6d2bd2fb851b08063d751128c133ddf1857f4d2cd2a43b8ef`，原有容器未替换。
+
+本轮独立证据保存在 `.build/release-0.2.13/client-public-verification.json`、`hub-public-verification.json`、`update-routes-verification.json` 及对应日志。下节的隔离Debug联调与测试结果不等于正式程序已在用户数据目录运行；真实剪贴板成功写入、Windows 10、多屏DPI、旧新版二进制双向组合、用户安装升级、生产网络及企业微信的缺口仍保留。
+
+发布后本地清理未完成：删除命令在进程创建前被运行策略拦截，没有执行删除，也未换用其他方法绕过。已核实的客户端 `src-tauri/target`、协议库 `crates/team-model/target`、`dist` 和闪云 `target` 共约30.123 GiB继续保留，本次公开下载副本亦保留，清理释放空间为0；详见 `.build/release-0.2.13/cleanup-report.json`。`node_modules`、预先存在的 `.vitest`、验收及网络排障证据、历史安装包、数据库、备份和用户数据均保留。清理被拒后再次确认原有容器身份、镜像、启动时间、重启次数不变，健康检查成功；正式发布结果与本地清理结果分别记录。
+
 ## 0.2.13 发布准备（2026-10-31）
 
 本版与闪云0.2.5配套，发布“闪云中心”及独立授权的云命令库。客户端源码、锁文件和手动发布入口统一为0.2.13；公开Compose示例统一使用闪云0.2.5。以下专项中的“未发布”“未提交”记录各阶段当时状态，正式来源以固定版本标签和发布工作流为准；发布不自动升级本机安装或任何已有闪云部署。
