@@ -2626,6 +2626,8 @@ mod tests {
                     contact: String::new(),
                     can_create_teams: false,
                     company_file_permissions: wire::CompanyFilePermissions::default(),
+                    cloud_command_permissions:
+                        wire::cloud_commands::CloudCommandPermissions::default(),
                 },
                 teams: vec![wire::Team {
                     team_id: team.clone(),
