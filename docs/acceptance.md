@@ -12,7 +12,9 @@
 
 本轮独立证据保存在 `.build/release-0.2.13/client-public-verification.json`、`hub-public-verification.json`、`update-routes-verification.json` 及对应日志。下节的隔离Debug联调与测试结果不等于正式程序已在用户数据目录运行；真实剪贴板成功写入、Windows 10、多屏DPI、旧新版二进制双向组合、用户安装升级、生产网络及企业微信的缺口仍保留。
 
-发布后本地清理未完成：删除命令在进程创建前被运行策略拦截，没有执行删除，也未换用其他方法绕过。已核实的客户端 `src-tauri/target`、协议库 `crates/team-model/target`、`dist` 和闪云 `target` 共约30.123 GiB继续保留，本次公开下载副本亦保留，清理释放空间为0；详见 `.build/release-0.2.13/cleanup-report.json`。`node_modules`、预先存在的 `.vitest`、验收及网络排障证据、历史安装包、数据库、备份和用户数据均保留。清理被拒后再次确认原有容器身份、镜像、启动时间、重启次数不变，健康检查成功；正式发布结果与本地清理结果分别记录。
+发布后本地清理未完成：执行工具在创建进程前以 `blocked by policy` 拒绝了复合删除请求，没有提供具体原因，不能归因为Windows PowerShell执行策略或文件权限。复核本机全访问、无需审批配置及可见的命令规则，官方 `codex execpolicy check` 对原请求未找到匹配规则；工具侧具体拒绝条件仍未定位。没有执行删除，也未换用其他方法绕过。
+
+已核实的客户端 `src-tauri/target`、协议库 `crates/team-model/target`、`dist` 和闪云 `target` 共约30.123 GiB继续保留，本次公开下载副本亦保留，清理释放空间为0；详见 `.build/release-0.2.13/cleanup-report.json`。`node_modules`、预先存在的 `.vitest`、验收及网络排障证据、历史安装包、数据库、备份和用户数据均保留。清理被拒后再次确认原有容器身份、镜像、启动时间、重启次数不变，健康检查成功；正式发布结果与本地清理结果分别记录。
 
 ## 0.2.13 发布准备（2026-10-31）
 
