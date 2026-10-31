@@ -7,7 +7,7 @@ on:
       version:
         description: Candidate SemVer
         required: true
-        default: 0.2.12-rc.1
+        default: 0.2.13-rc.1
 
 permissions:
   contents: read

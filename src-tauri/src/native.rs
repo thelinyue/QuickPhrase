@@ -557,7 +557,7 @@ impl NativeState {
 #[path = "native/clipboard.rs"]
 mod clipboard;
 #[cfg(windows)]
-pub use clipboard::{copy_files, copy_text, WindowsDriver};
+pub use clipboard::{copy_files, copy_text, copy_text_exact, WindowsDriver};
 #[cfg(windows)]
 pub use platform::{consume_delivery_key, file_icon, install_webview_shortcuts, open_file};
 #[cfg(windows)]

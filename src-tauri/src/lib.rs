@@ -1,4 +1,5 @@
 mod backup;
+mod cloud_commands;
 mod common_menu;
 mod company_commands;
 mod data_directory;
@@ -1922,6 +1923,11 @@ pub fn run() {
                 search_history::clear_search_history,
                 startup::get_usage_guide_state,
                 startup::mark_usage_guide_shown,
+                cloud_commands::get_cloud_commands,
+                cloud_commands::get_cloud_command,
+                cloud_commands::save_cloud_command,
+                cloud_commands::manage_cloud_command,
+                cloud_commands::copy_cloud_command,
                 company_commands::get_company_files,
                 linked_files::add_cloud_files,
                 linked_files::rename_company_file,

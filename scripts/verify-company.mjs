@@ -87,6 +87,11 @@ async function pickerWindow() {
   await picker.locator('.company-table tbody tr').first().waitFor();
   return picker;
 }
+async function closeCloud() {
+  // 无关闭确认的窗口可能先销毁WebView，再返回IPC回执；随后仍通过主窗口重开验证宿主存活。
+  await invoke('plugin:window|close', {}, cloud).catch(error => { assert.ok(cloud.isClosed(), String(error)); });
+  await until(() => cloud.isClosed());
+}
 async function verifyProgressLayout() {
   // 按实际文字矩形核对百分比未换行、未挤出单元格，防止 100／% 的布局回归。
   const layout = await cloud.locator('.company-progress').evaluateAll(elements => elements.map(el => {
@@ -132,7 +137,7 @@ try {
   });
   await check('云文件管理真实窗口显示目录、权限和中文名称', async () => {
     cloud = await window('company-files', 'company-files'); await cloud.getByText('价格表.xlsx', { exact: true }).waitFor();
-    assert.deepEqual(await cloud.locator('.company-toolbar button').allTextContents(), ['刷新', '下载管理', '上传管理', '上传新文件']);
+    assert.deepEqual(await cloud.locator('#cloud-files-panel .company-toolbar > button').allTextContents(), ['刷新', '下载管理', '上传管理', '上传新文件']);
     await cloud.locator('.company-file-name img').waitFor(); assert.ok(await cloud.locator('.company-file-name img').evaluate(img => img.complete && img.naturalWidth > 0));
     assert.equal(await cloud.getByRole('combobox', { name: '每页条数' }).inputValue(), '10'); await cloud.getByRole('button', { name: '最小化窗口' }).waitFor(); await cloud.getByRole('button', { name: '最大化或还原窗口' }).waitFor();
     assert.ok(await cloud.locator('tbody button').evaluateAll(buttons => buttons.every(b => !b.textContent && b.title && b.getAttribute('aria-label'))));
@@ -204,7 +209,7 @@ try {
     const uploads = uploadCount, resumed = invoke('upload_company_file', { sessionEpoch: epoch, id: staged.id }).then(value => ({ value }), error => ({ error }));
     await until(async () => (await transferSnapshot()).some(task => task.assetId === staged.id && task.status === '等待上传')); assert.equal(uploadCount, uploads);
     await invoke('cancel_company_transfer', { sessionEpoch: epoch, id: queued[1].assetId }); await until(async () => (await transferSnapshot()).some(task => task.assetId === queued[1].assetId && task.status === '已停止'));
-    await invoke('plugin:window|close', {}, cloud); await until(() => cloud.isClosed()); cloud = await window('company-files', 'company-files'); await cloud.getByRole('button', { name: '上传管理', exact: true }).click();
+    await closeCloud(); cloud = await window('company-files', 'company-files'); await cloud.getByRole('button', { name: '上传管理', exact: true }).click();
     await cloud.getByText('等待上传', { exact: true }).first().waitFor(); assert.equal(batchHeld.size, 2); await cloud.screenshot({ path: path.join(evidence, 'company-batch-queue.png') });
     const tasks = await finishBatch(records); const result = await resumed; assert.ok(result.value, String(result.error)); assert.equal(tasks.filter(task => task.status === '已完成').length, 3); assert.equal(tasks.filter(task => task.status === '已停止').length, 1);
     await discardUploaded([...tasks.filter(task => task.status === '已完成'), { assetId: staged.id, name: staged.name }]); await cloud.getByRole('button', { name: '返回', exact: true }).click();
@@ -235,11 +240,16 @@ try {
     await cloud.getByRole('textbox', { name: '搜索云文件' }).fill('价格表'); await until(async () => await cloud.locator('tbody tr').count() === 1); await cloud.getByRole('textbox', { name: '搜索云文件' }).fill('');
     await cloud.getByRole('button', { name: '上传时间正序' }).click(); await cloud.getByText('共3页 23条').waitFor();
     await cloud.locator('.company-list').evaluate(el => { el.scrollTop = 0; });
-    assert.ok(await cloud.locator('.company-list').evaluate(el => { const bottom = el.getBoundingClientRect().bottom - 1; return [...el.querySelectorAll('tbody tr')].length === 10 && [...el.querySelectorAll('tbody tr')].every(row => row.getBoundingClientRect().bottom <= bottom); }), '默认窗口应完整显示十条记录及分页');
+    const listLayout = await cloud.locator('.company-list').evaluate(el => {
+      const rect = el.getBoundingClientRect(), rows = [...el.querySelectorAll('tbody tr')];
+      return { count: rows.length, top: rect.top, bottom: rect.bottom, lastBottom: rows.at(-1)?.getBoundingClientRect().bottom, heights: [...el.parentElement.children].map(child => [child.className, child.getBoundingClientRect().height]) };
+    });
+    assert.ok(listLayout.count === 10 && listLayout.lastBottom <= listLayout.bottom - 1, `默认窗口应完整显示十条记录及分页：${JSON.stringify(listLayout)}`);
     await cloud.screenshot({ path: path.join(evidence, 'company-manager.png') });
     await resizeCloud(760, 480);
-    assert.ok(await cloud.locator('.company-pagination').evaluate(el => { const b = el.getBoundingClientRect(); return b.bottom <= innerHeight && b.right <= innerWidth; }));
-    assert.equal(await cloud.locator('.company-sidebar').evaluate(el => el.getBoundingClientRect().width), 190);
+    assert.ok(await cloud.locator('#cloud-files-panel .company-pagination').evaluate(el => { const b = el.getBoundingClientRect(); return b.bottom <= innerHeight && b.right <= innerWidth; }));
+    assert.equal(await cloud.locator('.company-sidebar').count(), 0);
+    assert.ok(await cloud.getByRole('tablist', { name: '闪云中心模块' }).evaluate(el => { const b = el.getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth; }));
     await cloud.getByRole('checkbox', { name: '选择当前页全部文件' }).check(); const batchButton = cloud.getByRole('button', { name: '批量操作', exact: true }), beforeScroll = await batchButton.boundingBox();
     assert.ok(await batchButton.evaluate(el => { const b = el.getBoundingClientRect(), list = document.querySelector('.company-list').getBoundingClientRect(); return !el.closest('table') && b.left >= list.left && b.right <= innerWidth && b.bottom <= list.top; }));
     await cloud.locator('.company-list').evaluate(el => { el.scrollLeft = el.scrollWidth; }); assert.deepEqual(await batchButton.boundingBox(), beforeScroll);
@@ -251,18 +261,18 @@ try {
     await cloud.getByRole('button', { name: '刷新', exact: true }).click(); await cloud.getByText('共1页 1条').waitFor();
   });
   await check('权限页逐行保存、草稿冲突与固定管理员权限通过真实IPC和SSE', async () => {
-    await cloud.getByRole('button', { name: '云文件权限管理', exact: true }).click(); await cloud.getByRole('checkbox', { name: 'qa-worker的上传权限' }).waitFor();
+    await cloud.getByRole('button', { name: '权限管理', exact: true }).click(); await cloud.getByRole('checkbox', { name: 'qa-worker的上传权限' }).waitFor();
     assert.ok(await cloud.getByRole('checkbox', { name: 'qa-admin的上传权限' }).isDisabled()); await cloud.getByRole('checkbox', { name: 'qa-worker的上传权限' }).check();
-    await cloud.getByRole('button', { name: '保存', exact: true }).click(); await cloud.getByText('qa-worker 的云文件权限已保存。').waitFor();
+    await cloud.getByRole('button', { name: '保存qa-worker权限', exact: true }).click(); await cloud.getByText('qa-worker 的云文件权限已保存。').waitFor();
     let user = (await api('GET', 'users')).find(u => u.id === worker); assert.equal(user.companyFilePermissions.canUpload, true);
     await cloud.getByRole('checkbox', { name: 'qa-worker的删除权限' }).check();
     await api('PUT', `users/${worker}`, { companyFilePermissions: { canUpload: true, canRecycle: false, canRestore: true, expectedVersion: user.companyFilePermissions.version } });
-    await cloud.getByText('权限已变更，草稿已保留').waitFor(); assert.ok(await cloud.getByRole('checkbox', { name: 'qa-worker的删除权限' }).isChecked()); assert.ok(await cloud.getByRole('button', { name: '保存', exact: true }).isDisabled());
-    assert.ok(await cloud.locator('tbody tr').evaluateAll(rows => rows.every(row => !row.lastElementChild.textContent.trim())));
+    await cloud.getByText('权限已变更，草稿已保留').waitFor(); assert.ok(await cloud.getByRole('checkbox', { name: 'qa-worker的删除权限' }).isChecked()); assert.ok(await cloud.getByRole('button', { name: '保存qa-worker权限', exact: true }).isDisabled());
+    assert.ok(await cloud.getByRole('dialog', { name: '权限管理' }).locator('tbody tr').evaluateAll(rows => rows.every(row => !row.lastElementChild.textContent.trim())));
     await cloud.getByRole('img', { name: '固定全部权限', exact: true }).waitFor();
     await cloud.screenshot({ path: path.join(evidence, 'company-permissions.png') }); await cloud.getByRole('button', { name: '采用最新', exact: true }).click();
     user = (await api('GET', 'users')).find(u => u.id === worker); await api('PUT', `users/${worker}`, { companyFilePermissions: { canUpload: false, canRecycle: false, canRestore: false, expectedVersion: user.companyFilePermissions.version } });
-    await until(async () => !await cloud.getByRole('checkbox', { name: 'qa-worker的上传权限' }).isChecked()); await cloud.getByRole('button', { name: '云文件管理', exact: true }).click();
+    await until(async () => !await cloud.getByRole('checkbox', { name: 'qa-worker的上传权限' }).isChecked()); await cloud.getByRole('button', { name: '关闭权限管理', exact: true }).click();
   });
   let first, second, adminCopy;
   await check('个人话术生成独立附件，同一本机个人库复用副本', async () => {
@@ -413,13 +423,13 @@ try {
     for (const teamId of teams) { const view = await invoke('get_team_view', { teamId }); const response = await fetch(`${base}/api/teams/${teamId}/assets/${asset.assetId}`, { headers: { Authorization: `Bearer ${token}`, 'x-team-lifecycle': '1' } }); assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes); assert.ok(view.phrases[0].ready); }
   });
   await check('真实回收站保留系统图标、两种用户名和时间，批量恢复及逐文件永久删除', async () => {
-    await cloud.getByRole('button', { name: '云文件回收站', exact: true }).click(); const row = cloud.locator('tbody tr').filter({ hasText: asset.name }); await row.waitFor();
+    await cloud.getByLabel('云文件更多操作').click(); await cloud.getByRole('button', { name: '云文件回收站', exact: true }).click(); const row = cloud.locator('tbody tr').filter({ hasText: asset.name }); await row.waitFor();
     assert.equal(await row.getByText('qa-admin', { exact: true }).count(), 2); await row.locator('img').waitFor();
     assert.ok(await row.locator('.company-file-name').evaluate(el=>{const icon=el.querySelector('img,svg').getBoundingClientRect(),text=el.querySelector('.company-file-details').getBoundingClientRect();return Math.abs(icon.top+icon.height/2-text.top-text.height/2)<1;}), '文件图标应与名称和状态整体垂直居中');
     assert.ok(await cloud.locator('.company-recycle-table').evaluate(el => el.getBoundingClientRect().right <= el.parentElement.getBoundingClientRect().right));
     await cloud.screenshot({ path: path.join(evidence, 'company-recycle.png') });
     await row.getByRole('button', { name: '恢复', exact: true }).click(); await cloud.getByRole('dialog', { name: '恢复云文件' }).getByRole('button', { name: '确定', exact: true }).click(); await until(async () => !await row.count());
-    await cloud.getByRole('button', { name: '云文件管理', exact: true }).click();
+    await cloud.getByRole('button', { name: '返回', exact: true }).click();
     const unreferenced = [];
     for (const name of ['批量资料.pdf', '批量资料.docx']) {
       const id = randomUUID(); unreferenced.push({ id, name }); const response = await fetch(`${base}/api/company/files/${id}/content?${new URLSearchParams({ name, size: '3' })}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: 'abc' }); assert.ok(response.ok);
@@ -429,14 +439,14 @@ try {
     await cloud.getByRole('button', { name: '批量操作' }).click(); await cloud.getByRole('menuitem', { name: '批量删除' }).click();
     const confirmation = cloud.getByRole('dialog', { name: '批量删除云文件' }); for (const file of unreferenced) await confirmation.getByText(file.name, { exact: true }).waitFor();
     await confirmation.getByRole('button', { name: '确定', exact: true }).click(); await cloud.getByText(/成功 2 个，失败 0 个/).waitFor();
-    await cloud.getByRole('button', { name: '云文件回收站', exact: true }).click(); await cloud.getByRole('checkbox', { name: '选择当前页全部文件' }).check(); await cloud.getByRole('button', { name: '批量操作' }).click(); await cloud.getByRole('menuitem', { name: '批量恢复' }).click();
+    await cloud.getByLabel('云文件更多操作').click(); await cloud.getByRole('button', { name: '云文件回收站', exact: true }).click(); await cloud.getByRole('checkbox', { name: '选择当前页全部文件' }).check(); await cloud.getByRole('button', { name: '批量操作' }).click(); await cloud.getByRole('menuitem', { name: '批量恢复' }).click();
     await cloud.getByRole('dialog', { name: '批量恢复云文件' }).getByRole('button', { name: '确定', exact: true }).click(); await cloud.getByText('回收站为空').waitFor();
     for (const file of unreferenced) {
       await api('POST', `company/files/${file.id}/recycle`); await cloud.getByRole('button', { name: '刷新', exact: true }).click();
       const item = cloud.locator('tbody tr').filter({ hasText: file.name }); await item.getByRole('button', { name: '永久删除', exact: true }).click();
       const dialog = cloud.getByRole('dialog', { name: '永久删除云文件' }); assert.equal(await dialog.getByRole('textbox').count(), 0); await dialog.getByRole('button', { name: '确定', exact: true }).click(); await until(async () => !await item.count());
     }
-    await cloud.getByRole('button', { name: '云文件管理', exact: true }).click();
+    await cloud.getByRole('button', { name: '返回', exact: true }).click();
   });
   await check('管理员清空含引用文件的回收站，旧话术缓存可用、未缓存设备不能下载', async () => {
     const id = randomUUID(), name = '清理缓存验证.pdf';
@@ -455,7 +465,7 @@ try {
       await api('POST',`company/files/${id}/recycle`);
     }
     await api('POST',`company/files/${id}/recycle`);
-    await cloud.getByRole('button',{name:'云文件回收站',exact:true}).click();
+    await cloud.getByLabel('云文件更多操作').click(); await cloud.getByRole('button',{name:'云文件回收站',exact:true}).click();
     await cloud.getByRole('textbox',{name:'搜索云文件'}).fill('清空验证0');
     await cloud.getByRole('button',{name:'清空回收站',exact:true}).click();
     const dialog=cloud.getByRole('dialog',{name:'清空云文件回收站'});
@@ -473,7 +483,7 @@ try {
     await assert.rejects(invoke('manage_company_file',{sessionEpoch:epoch,id,operation:'restore',confirmName:''}));
     await cloud.screenshot({path:path.join(evidence,'company-recycle-cleared.png')});
     await cloud.getByRole('textbox',{name:'搜索云文件'}).fill('');
-    await cloud.getByRole('button',{name:'云文件管理',exact:true}).click();
+    await cloud.getByRole('button',{name:'返回',exact:true}).click();
   });
   await check('无共享话术用户可用云文件目录，管理权限由服务端拒绝', async () => {
     await invoke('team_logout');
@@ -506,7 +516,7 @@ try {
     const user = (await api('GET', 'users')).find(u => u.id === worker), oldVersion = user.companyFilePermissions.uploadVersion;
     await api('PUT', `users/${worker}`, { companyFilePermissions: { canUpload: true, canRecycle: false, canRestore: true, expectedVersion: user.companyFilePermissions.version } });
     await until(async () => (await invoke('get_team_status')).user?.companyFilePermissions.canRestore); assert.equal((await invoke('get_team_status')).user.companyFilePermissions.uploadVersion, oldVersion);
-    await invoke('plugin:window|close', {}, cloud); await until(() => cloud.isClosed()); cloud = await window('company-files', 'company-files'); await cloud.getByRole('button', { name: '上传管理', exact: true }).click();
+    await closeCloud(); cloud = await window('company-files', 'company-files'); await cloud.getByRole('button', { name: '上传管理', exact: true }).click();
     await cloud.getByRole('button', { name: '停止', exact: true }).waitFor(); await cloud.getByText('待核对', { exact: true }).waitFor();
     await cloud.getByRole('button', { name: '清空', exact: true }).click(); await cloud.getByRole('button', { name: '停止', exact: true }).waitFor();
     await verifyProgressLayout(); await cloud.screenshot({ path: path.join(evidence, 'company-upload.png') });

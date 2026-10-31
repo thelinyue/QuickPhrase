@@ -95,7 +95,7 @@ export async function openWindow(route: 'editor' | 'file-editor' | 'settings' | 
     // 在 WebView2 层关闭所有动态窗口的“保存的信息”建议，autocomplete="off" 不能可靠禁止它。
     generalAutofillEnabled: false,
     ...(route === 'file-editor' ? { width: Math.min(900, available.width), height: Math.min(600, available.height), minWidth: Math.min(760, available.width), minHeight: Math.min(480, available.height) } : {}),
-    ...(route === 'company-files' ? { title: '云文件管理中心 · 闪语', width: 1000, height: 650, minWidth: 760, minHeight: 480 } : {}),
+    ...(route === 'company-files' ? { title: '闪云中心 · 闪语', width: 1000, height: 650, minWidth: 760, minHeight: 480 } : {}),
     ...(route === 'usage-guide' ? { title: '使用指引 · 闪语', width: 760, height: 620, minWidth: 620, minHeight: 440 } : {}),
   });
   await new Promise<void>((resolve, reject) => {

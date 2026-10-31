@@ -34,7 +34,7 @@
 ```yaml
 services:
   quickphrase-hub:
-    image: ghcr.io/thelinyue/quickphrase-hub:0.2.3
+    image: ghcr.io/thelinyue/quickphrase-hub:0.2.5
     user: "0:0"
     restart: unless-stopped
     ports:
@@ -54,20 +54,24 @@ services:
 
 升级时先在图形界面停止容器并完整备份原 `data`，再替换镜像版本；核对实际项目目录及挂载，保留旧目录和卷。已有 UID10001 数据可由 root 接入，服务不递归改写原素材属主。root 新建文件可能归 root；回退到非 root 镜像前须停服核对读写权限。不要删除数据卷或覆盖运行中的数据库。
 
-共享数据备份包含账号、共享话术、云文件、回收记录及实际素材，排除个人内容和会话；个人内容使用个人完整备份。完整运维备份在停服后保存整个 `data`。全目录恢复须使用同一份备份还原到新目录，并执行恢复准备以清除旧会话、更换个人同步世代；维护流程见下文。
+共享数据备份包含账号、共享话术、云文件、云命令及独立授权、回收记录和实际素材，排除个人内容和会话；个人内容使用个人完整备份。完整运维备份在停服后保存整个 `data`。全目录恢复须使用同一份备份还原到新目录，并执行恢复准备以清除旧会话、更换个人同步世代；维护流程见下文。
 
 完整运维恢复时，在恢复目录使用下面的一次性 Compose 配置，确认日志“恢复准备完成”后移除临时项目、保留 `data`，再启动上面的常驻服务。原服务必须已停止，恢复到新目录，不覆盖运行中的数据。
 
 ```yaml
 services:
   prepare-restore:
-    image: ghcr.io/thelinyue/quickphrase-hub:0.2.3
+    image: ghcr.io/thelinyue/quickphrase-hub:0.2.5
     user: "0:0"
     restart: "no"
     command: ["--prepare-restore"]
     volumes:
       - "./data:/data"
 ```
+
+## 闪云中心与云命令
+
+闪语0.2.13的“闪云中心”在云文件旁新增云命令页，需配套闪云0.2.5。普通账号默认不开通命令权限，管理员在“权限管理”中独立授予使用或维护权限；命令仅在线查看、原样复制，不执行或投递，也不进入MCP。云文件的离线缓存和传输保持原有规则。升级前先停服备份实际挂载的完整 `data`，先升级闪云，再升级客户端。使用方法及接口边界见[云命令](cloud-commands.md)。
 
 ## 同步、离线和投递
 

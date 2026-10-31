@@ -166,6 +166,22 @@ pub fn copy_text(owner: i64, text: &str) -> Result<()> {
     put(13, &text_bytes(text))
 }
 
+fn exact_text_bytes(text: &str) -> Result<Vec<u8>> {
+    if text.contains('\0') {
+        return Err("命令正文包含空字符，不能原样复制，请联系维护者修正。".into());
+    }
+    Ok(wide(text).into_iter().flat_map(u16::to_le_bytes).collect())
+}
+/// 命令不沿用话术投递的 CRLF 规范化，保留原始换行和末尾空白，不追加回车。
+pub fn copy_text_exact(owner: i64, text: &str) -> Result<()> {
+    let bytes = exact_text_bytes(text)?;
+    let _lock = ClipboardLock::open(hwnd(owner))?;
+    unsafe {
+        EmptyClipboard().map_err(error)?;
+    }
+    put(13, &bytes)
+}
+
 /// 显式“复制文件”写入标准 CF_HDROP，可在资源管理器或支持文件粘贴的应用使用。
 /// 先验证整批路径并构造双零结尾的 Unicode 文件列表，失效记录不会清空剪贴板。
 fn file_bytes(paths: &[String]) -> Result<Vec<u8>> {
@@ -541,6 +557,22 @@ pub(super) fn repeated_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_command_copy_keeps_mixed_newlines_quotes_and_trailing_whitespace() {
+        let text = "  curl 'https://example.test/a' | sh \\\n\"$HOME\"\r\nlast  ";
+        let bytes = exact_text_bytes(text).unwrap();
+        let wide: Vec<_> = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| u16::from_le_bytes(*b))
+            .collect();
+        assert_eq!(wide.last(), Some(&0));
+        assert_eq!(String::from_utf16(&wide[..wide.len() - 1]).unwrap(), text);
+        assert_ne!(bytes, text_bytes(text));
+        assert!(exact_text_bytes("echo safe\0echo lost").is_err());
+    }
 
     #[test]
     fn clipboard_error_reports_available_process_or_unknown_without_claiming_certainty() {

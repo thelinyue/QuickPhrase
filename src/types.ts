@@ -19,9 +19,14 @@ export interface SearchHit { id: string; kind: 'phrase' | 'file'; phrase: Phrase
 export type TeamRole = 'member' | 'editor' | 'manager';
 export const teamRoleLabel = (role: TeamRole) => role === 'manager' ? '库管理员' : role === 'editor' ? '编辑者' : '查看者';
 export interface CompanyFilePermissions { canUpload: boolean; canRecycle: boolean; canRestore: boolean; version: number; uploadVersion: number }
-export interface TeamUser { id: string; username: string; admin: boolean; disabled: boolean; mustChangePassword: boolean; displayName: string; contact: string; canCreateTeams: boolean; companyFilePermissions?: CompanyFilePermissions; memberships?: { teamId: string; name: string; role: TeamRole }[] }
+export interface CloudCommandPermissions { canUse: boolean; canManage: boolean; version: number }
+export interface CloudCommandSummary { id: string; name: string; category: string; description: string; revision: number; updatedAt: number; maintainedBy: string; maintainerName: string; deletedAt: number | null }
+export interface CloudCommand extends CloudCommandSummary { body: string }
+export interface CloudCommandsView { commands: CloudCommandSummary[]; total: number; categories: string[] }
+export interface CloudCommandDraft { name: string; category: string; description: string; body: string; expectedRevision: number | null }
+export interface TeamUser { id: string; username: string; admin: boolean; disabled: boolean; mustChangePassword: boolean; displayName: string; contact: string; canCreateTeams: boolean; companyFilePermissions?: CompanyFilePermissions; cloudCommandPermissions?: CloudCommandPermissions; memberships?: { teamId: string; name: string; role: TeamRole }[] }
 export interface TeamInfo { teamId: string; name: string; version: number; editable: boolean; role: TeamRole; membershipVersion: number; lifecycleVersion: number; memberCount?: number }
-export interface TeamStatus { sessionEpoch?: number; server: string; username: string; user: TeamUser | null; teams: TeamInfo[]; teamSyncTimes?: Record<string, number>; offline: boolean; privateSync?: boolean; memberPhraseSync?: boolean; companyFiles?: boolean; companyFilePermissions?: boolean }
+export interface TeamStatus { sessionEpoch?: number; server: string; username: string; user: TeamUser | null; teams: TeamInfo[]; teamSyncTimes?: Record<string, number>; offline: boolean; privateSync?: boolean; memberPhraseSync?: boolean; companyFiles?: boolean; companyFilePermissions?: boolean; cloudCommands?: boolean }
 export interface MemberSubscription { grantId: string | null; version: number }
 export interface MemberGrant { id: string; owner: TeamMemberIdentity; enabled: boolean; mode: 'all' | 'selected'; rootIds: string[]; roots: Category[]; version: number }
 export interface MemberOverview { sharing: MemberGrant | null; users: TeamMemberIdentity[]; offline?: boolean; available: MemberGrant[]; subscription: MemberSubscription; categories: Category[]; sourceReady: boolean }

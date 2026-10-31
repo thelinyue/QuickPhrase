@@ -2,9 +2,9 @@
 
 “设置 → 问题诊断”可按问题临时记录，复现后导出 ZIP 反馈；使用方法与收集边界见[诊断说明](docs/diagnostics.md)。
 
-Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.12。
+Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.13。
 
-正式下载：[v0.2.12 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.12) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.12/QuickPhrase-Setup-0.2.12-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.12/QuickPhrase-0.2.12-win-x64.zip)。安装器和程序未代码签名；[闪云公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
+正式下载：[v0.2.13 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.13) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.13/QuickPhrase-Setup-0.2.13-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.13/QuickPhrase-0.2.13-win-x64.zip)。安装器和程序未代码签名；[闪云公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
 
 0.2.1统一英文名称 QuickPhrase；0.2.3新增在线更新、数据目录迁移、搜索历史、使用指引与云文件批量上传。0.2.4完善主题、账号管理、底部搜索，并新增贴边隐藏及最小化悬浮窗。0.2.5优化悬浮窗双击与隐藏菜单、贴边隐藏及搜索刷新。0.2.6完善常用短语菜单与底部布局，主搜索改为覆盖浮层，并支持拼音匹配与清空记录确认。0.2.7修复贴边误弹出与收回、解除吸附跨屏跳转和升级尺寸变化，完善自适应预览、成员个人快捷键及底栏升级角标。0.2.8新增本机MCP、统一文件关联和云文件改名，优化设置局部保存、全局混合搜索及紧凑快捷键候选。0.2.11改进快捷键目标同步与成员绑定恢复，并新增问题诊断。普通用户使用安装器安装和升级；ZIP供免安装启动，需预装WebView2，用户数据仍保存于用户目录。0.2.0的历史下载文件保留原名。
 
@@ -25,7 +25,9 @@ Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、Reac
 
 “设置 → 关于 → 更换目录”可将全部本地库、设备设置、素材和缓存迁移到新的空文件夹。先保存并关闭编辑窗口，完成发送及主动文件传输，再确认“迁移并重启”；迁移期间需容纳一份完整副本。验证成功后启用新目录并自动清理原应用数据，外部关联源文件、未知文件及 WebView 数据保留。失败继续使用原目录；已启用的新目录不可访问时会明确报错，不会创建空库。默认应用目录中的 `data-directory.json` 用于定位新目录，请保留。
 
-每个人使用普通账号登录，管理“个人话术”，需要共享时通过“共享话术 ▾”加入已授权的库。服务管理员维护账号与公共资源；库内角色为查看者、编辑者、库管理员，创建共享话术默认需授权。账号昵称及联系方式可选，已有用户名、名称和内容保持原样。主菜单提供“账号、共享话术管理、云文件”，服务管理员另有“账号管理”。
+每个人使用普通账号登录，管理“个人话术”，需要共享时通过“共享话术 ▾”加入已授权的库。服务管理员维护账号与公共资源；库内角色为查看者、编辑者、库管理员，创建共享话术默认需授权。账号昵称及联系方式可选，已有用户名、名称和内容保持原样。主菜单提供“账号、共享话术管理、闪云中心”，服务管理员另有“账号管理”。
+
+0.2.13将“云文件管理中心”升级为“闪云中心”，顶部切换云文件和云命令。云命令用于共享常用Linux下载／安装命令，只保存、查看和原样复制文本，不执行脚本。新旧普通账号默认关闭，管理员在独立“权限管理”中授予使用或维护权限；维护者可编辑、回收和恢复，永久删除仅管理员可执行。云命令仅在线可用，复制前核对权限与所见修订；云文件离线缓存及传输不受模块切换影响。需要配套闪云0.2.5，先备份并升级服务端，再升级客户端，详见[云命令与安全边界](docs/cloud-commands.md)。
 
 云文件是当前闪云服务的公共文件库，完成初始改密的用户无需加入共享话术即可查看、下载和使用。上传、删除、恢复分别按账号授权；删除会移入回收站，配置权限和永久删除仅服务管理员执行。保留纯图标操作、文件系统图标、分页、传输管理和回收站；共享话术直接引用云文件，个人话术保存独立副本，下载完成不自动投递。
 
@@ -97,7 +99,7 @@ Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、Reac
 
 ## 闪云部署
 
-闪云是闪语的自托管同步与共享服务，原称 Hub；本次仅更新用户可见名称，程序、镜像、配置及数据标识不变。专属图标及使用规范见[闪云品牌](docs/shanyun-brand.md)。
+闪云是闪语的自托管同步与共享服务，原称 Hub；程序、镜像、配置及数据标识保持兼容。专属图标及使用规范见[闪云品牌](docs/shanyun-brand.md)。
 
 服务端项目：[QuickPhrase-Hub](https://github.com/thelinyue/QuickPhrase-Hub)（源码私有）。镜像公开，部署者无需访问源码或登录 GHCR。公开镜像支持 Linux x64（`linux/amd64`），客户端支持 Windows x64。
 
@@ -106,7 +108,7 @@ Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、Reac
 ```yaml
 services:
   quickphrase-hub:
-    image: ghcr.io/thelinyue/quickphrase-hub:0.2.3
+    image: ghcr.io/thelinyue/quickphrase-hub:0.2.5
     user: "0:0"
     restart: unless-stopped
     ports:
@@ -126,9 +128,9 @@ services:
 
 升级时先在图形界面停止容器并完整备份原 `data`，再替换镜像版本；核对实际项目目录及挂载，保留旧目录和卷。已有 UID10001 数据可由 root 接入，服务不递归改写原素材属主。root 新建文件可能归 root；回退到非 root 镜像前须停服核对读写权限。不要删除数据卷或覆盖运行中的数据库。
 
-共享数据备份包含账号、共享话术、云文件、回收记录及实际素材，排除个人内容和会话；个人内容使用个人完整备份。完整运维备份在停服后保存整个 `data`。全目录恢复须使用同一份备份还原到新目录，并执行恢复准备以清除旧会话、更换个人同步世代；维护流程见下文。
+共享数据备份包含账号、共享话术、云文件、云命令及独立授权、回收记录和实际素材，排除个人内容和会话；个人内容使用个人完整备份。完整运维备份在停服后保存整个 `data`。全目录恢复须使用同一份备份还原到新目录，并执行恢复准备以清除旧会话、更换个人同步世代；维护流程见下文。
 
-可复制的配置及备份细节见[共享话术与部署](docs/team-sharing.md)，客户端本版变化见[0.2.12 发布说明](docs/releases/v0.2.12.md)。
+可复制的配置及备份细节见[共享话术与部署](docs/team-sharing.md)，客户端本版变化见[0.2.13 发布说明](docs/releases/v0.2.13.md)。
 
 ## 数据与备份
 
@@ -161,11 +163,11 @@ npm run tauri -- dev
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -InnoCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
-脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.12，产物为 `artifacts/QuickPhrase-Setup-0.2.12-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
+脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.13，产物为 `artifacts/QuickPhrase-Setup-0.2.13-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
 
-默认仍只生成安装器。候选构建可加 `-Version 0.2.12-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.12`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.12` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
+默认仍只生成安装器。候选构建可加 `-Version 0.2.13-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.13`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.13` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
 
-GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.12-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
+GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.13-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
 
 检测到已验证的新版本后，右下角“闪语”显示“新”角标；悬停提示当前版本和最新版本，点击进入关于页查看并手动升级。不在顶部增加提醒栏，下载中或选择稍后安装时仍可从此进入。
 
@@ -200,6 +202,7 @@ node scripts/verify-data-directory.mjs
 $env:SHANYU_TEAM_SERVER_EXE = 'D:\code\QuickPhrase-hub\target\debug\quickphrase-hub.exe'
 node scripts/verify-transfer.mjs
 node scripts/verify-company.mjs
+node scripts/verify-cloud-commands.mjs
 node scripts/verify-member.mjs
 node scripts/verify-ime.mjs
 node scripts/verify-member.mjs --ime

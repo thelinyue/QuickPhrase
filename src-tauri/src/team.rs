@@ -21,6 +21,8 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 const LIMIT: u64 = 128 * 1024 * 1024;
+#[path = "cloud_commands_client.rs"]
+mod cloud_commands;
 #[path = "company_client.rs"]
 mod company;
 #[path = "mcp_team.rs"]
@@ -100,6 +102,7 @@ pub struct Status {
     pub member_phrase_sync: bool,
     pub company_files: bool,
     pub company_file_permissions: bool,
+    pub cloud_commands: bool,
 }
 /// 私人任务持有会话世代而非裸令牌；所有落盘都在当前世代锁内再次核验。
 #[derive(Clone)]
@@ -576,6 +579,7 @@ impl TeamClient {
                 offline: active.offline,
                 private_sync: active.authorization.capabilities.private_sync,
                 member_phrase_sync: active.authorization.capabilities.member_phrase_sync,
+                cloud_commands: active.authorization.capabilities.cloud_commands,
                 company_files: active.authorization.capabilities.company_files,
                 company_file_permissions: active
                     .authorization
@@ -594,6 +598,7 @@ impl TeamClient {
                 offline: false,
                 private_sync: false,
                 member_phrase_sync: false,
+                cloud_commands: false,
                 company_files: false,
                 company_file_permissions: false,
             }
@@ -1193,6 +1198,14 @@ impl TeamClient {
                                             if let Some(state) = app.try_state::<AppState>() {
                                                 state.private_sync.wake();
                                             }
+                                        } else if event
+                                            .lines()
+                                            .any(|l| l == "event: cloud-commands-changed")
+                                        {
+                                            let _ = app.emit(
+                                                "cloud-commands-changed",
+                                                this.status().session_epoch,
+                                            );
                                         } else if event
                                             .lines()
                                             .any(|l| l == "event: company-files-version")

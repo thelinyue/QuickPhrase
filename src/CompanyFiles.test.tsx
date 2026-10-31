@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { call, openWindow, useTeams } from './api';
-import { CompanyFilesWindow, CloudFileTable } from './CompanyFiles';
+import { CloudFileTable } from './CompanyFiles';
+import { CloudCenter as CompanyFilesWindow } from './CloudCenter';
 import { confirm, open } from '@tauri-apps/plugin-dialog';
 import type { CompanyFile, CompanyTransfer, TeamStatus, TeamUser } from './types';
 // 表格交互在当前宿主验证；独立窗口消息在 CompanyPicker 测试和 WebView2 脚本验证。
@@ -76,7 +77,7 @@ function permissionApi(records: () => TeamUser[], save: () => Promise<unknown> =
 
 it('顶部按钮与标题栏按桌面参考排列，未下载文件显示系统图标', async () => {
   administrator(); const { container } = render(<CompanyFilesWindow />); await screen.findByText(file.name);
-  expect(Array.from(container.querySelectorAll('.company-toolbar button')).map(b => b.textContent)).toEqual(['刷新', '下载管理', '上传管理', '上传新文件']);
+  expect(Array.from(container.querySelectorAll('.company-toolbar > button')).map(b => b.textContent)).toEqual(['刷新', '下载管理', '上传管理', '上传新文件']);
   expect(screen.getByRole('button', { name: '最小化窗口' })).toBeTruthy(); fireEvent.click(screen.getByRole('button', { name: '最大化或还原窗口' })); expect(windowEvents.toggleMaximize).toHaveBeenCalled();
   expect(screen.getByText('未缓存')).toBeTruthy(); await waitFor(() => expect(container.querySelector('.company-file-name img')?.getAttribute('src')).toBe('/icons/xlsx.png'));
   expect(Array.from(container.querySelectorAll('tbody button')).every(button => button.textContent === '' && button.getAttribute('title') && button.getAttribute('aria-label'))).toBe(true);
@@ -98,37 +99,37 @@ it('分页全选只选当前页，翻页与搜索清空勾选，支持页码跳�
 it('独立授权显示上传和删除入口，共享话术角色不授予服务管理权限', async () => {
   status = { ...status, companyFilePermissions: true, user: { ...status.user!, companyFilePermissions: { ...permissions, canUpload: true, canRestore: true } } };
   const { rerender } = render(<CompanyFilesWindow />); await screen.findByText(file.name);
-  expect(screen.getByRole('button', { name: '上传新文件' })).toBeTruthy(); expect(screen.queryByRole('button', { name: '删除' })).toBeNull(); expect(screen.queryByRole('button', { name: '云文件权限管理' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '云文件回收站' })); await screen.findByRole('button', { name: '恢复' }); expect(screen.queryByRole('button', { name: '永久删除' })).toBeNull();
+  expect(screen.getByRole('button', { name: '上传新文件' })).toBeTruthy(); expect(screen.queryByRole('button', { name: '删除' })).toBeNull(); expect(screen.queryByRole('button', { name: '权限管理' })).toBeNull();
+  fireEvent.click(screen.getByLabelText('云文件更多操作')); fireEvent.click(screen.getByRole('button', { name: '云文件回收站' })); await screen.findByRole('button', { name: '恢复' }); expect(screen.queryByRole('button', { name: '永久删除' })).toBeNull();
   status = { ...status, user: { ...status.user!, companyFilePermissions: permissions } }; rerender(<CompanyFilesWindow />);
   await waitFor(() => expect(screen.queryByRole('button', { name: '云文件回收站' })).toBeNull()); expect(screen.queryByRole('button', { name: '恢复' })).toBeNull();
 });
 
 it('旧版闪云保持管理员固定授权，并提示升级后配置用户名授权', async () => {
   status = { ...status, user: { ...status.user!, admin: true } }; render(<CompanyFilesWindow />); await screen.findByText(file.name);
-  expect(screen.getByRole('button', { name: '上传新文件' })).toBeTruthy(); fireEvent.click(screen.getByRole('button', { name: '云文件权限管理' }));
-  expect(await screen.findByText('当前闪云版本使用固定管理员权限，升级后可按用户名授权。')).toBeTruthy(); expect(call).not.toHaveBeenCalledWith('team_admin', expect.anything());
+  expect(screen.getByRole('button', { name: '上传新文件' })).toBeTruthy(); fireEvent.click(screen.getByRole('button', { name: '权限管理' }));
+  expect(await screen.findByText('当前闪云版本不支持此项授权，请升级服务端。')).toBeTruthy(); expect(call).not.toHaveBeenCalledWith('team_admin', expect.anything());
 });
 
 it('授权逐行保存只提交三项权限和预期版本，离开草稿页需确认', async () => {
   administrator(); permissionApi(() => [status.user!, employee]); render(<CompanyFilesWindow />); await screen.findByText(file.name);
-  fireEvent.click(screen.getByRole('button', { name: '云文件权限管理' })); fireEvent.click(await screen.findByRole('checkbox', { name: '1002的上传权限' }));
-  vi.mocked(confirm).mockResolvedValueOnce(false); fireEvent.click(screen.getByRole('button', { name: '云文件管理' })); await waitFor(() => expect(confirm).toHaveBeenCalled()); expect(screen.getByRole('checkbox', { name: '1002的上传权限' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '保存' })); await waitFor(() => expect(call).toHaveBeenCalledWith('team_admin', { action: 'update-user', id: employee.id, sessionEpoch: 1, request: { companyFilePermissions: { canUpload: true, canRecycle: false, canRestore: false, expectedVersion: 0 } } }));
+  fireEvent.click(screen.getByRole('button', { name: '权限管理' })); fireEvent.click(await screen.findByRole('checkbox', { name: '1002的上传权限' }));
+  vi.mocked(confirm).mockResolvedValueOnce(false); fireEvent.click(screen.getByRole('button', { name: '关闭权限管理' })); await waitFor(() => expect(confirm).toHaveBeenCalled()); expect(screen.getByRole('checkbox', { name: '1002的上传权限' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '保存1002权限' })); await waitFor(() => expect(call).toHaveBeenCalledWith('team_admin', { action: 'update-user', id: employee.id, sessionEpoch: 1, request: { companyFilePermissions: { canUpload: true, canRecycle: false, canRestore: false, expectedVersion: 0 } } }));
   expect(await screen.findByText('1002 的云文件权限已保存。')).toBeTruthy();
 });
 
 it('保存冲突读取最新授权，保留原草稿并提供采用最新', async () => {
   administrator(); let saved = false;
   permissionApi(() => [{ ...employee, companyFilePermissions: saved ? { ...permissions, canRestore: true, version: 1, loaded: true } : permissions }], async () => { saved = true; throw new Error('409:权限已变更'); });
-  render(<CompanyFilesWindow />); await screen.findByText(file.name); fireEvent.click(screen.getByRole('button', { name: '云文件权限管理' })); fireEvent.click(await screen.findByRole('checkbox', { name: '1002的上传权限' })); fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  render(<CompanyFilesWindow />); await screen.findByText(file.name); fireEvent.click(screen.getByRole('button', { name: '权限管理' })); fireEvent.click(await screen.findByRole('checkbox', { name: '1002的上传权限' })); fireEvent.click(screen.getByRole('button', { name: '保存1002权限' }));
   expect(await screen.findByText('权限已变更，草稿已保留')).toBeTruthy(); expect((screen.getByRole('checkbox', { name: '1002的上传权限' }) as HTMLInputElement).checked).toBe(true);
-  expect(screen.getByRole('button', { name: '保存' }).hasAttribute('disabled')).toBe(true); fireEvent.click(screen.getByRole('button', { name: '采用最新' })); expect((screen.getByRole('checkbox', { name: '1002的恢复权限' }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByRole('button', { name: '保存1002权限' }).hasAttribute('disabled')).toBe(true); fireEvent.click(screen.getByRole('button', { name: '采用最新' })); expect((screen.getByRole('checkbox', { name: '1002的恢复权限' }) as HTMLInputElement).checked).toBe(true);
 });
 
 it('窗口关闭先确认未保存授权，取消关闭保留草稿', async () => {
   administrator(); permissionApi(() => [employee]); render(<CompanyFilesWindow />); await screen.findByText(file.name);
-  fireEvent.click(screen.getByRole('button', { name: '云文件权限管理' })); fireEvent.click(await screen.findByRole('checkbox', { name: '1002的上传权限' }));
+  fireEvent.click(screen.getByRole('button', { name: '权限管理' })); fireEvent.click(await screen.findByRole('checkbox', { name: '1002的上传权限' }));
   const event = { preventDefault: vi.fn() }, handler = windowEvents.onCloseRequested.mock.calls[0][0]; vi.mocked(confirm).mockResolvedValueOnce(false);
   await act(async () => handler(event)); expect(event.preventDefault).toHaveBeenCalled(); expect(windowEvents.close).not.toHaveBeenCalled(); expect((screen.getByRole('checkbox', { name: '1002的上传权限' }) as HTMLInputElement).checked).toBe(true);
   vi.mocked(confirm).mockResolvedValueOnce(true); await act(async () => handler(event)); expect(windowEvents.close).toHaveBeenCalled();
@@ -155,7 +156,7 @@ it('批量下载在后台运行，仍能进入下载管理停止任务', async (
 
 it('永久删除无需输入名称，回收站显示上传者和删除者', async () => {
   administrator(); vi.mocked(call).mockImplementation(async command => command === 'get_company_transfers' ? [] : command === 'get_file_icon' ? '' : { version: 1, files: [{ ...file, uploaderUsername: '1001', deleterUsername: '1003', deletedAt: 2 }], uploads: [] });
-  render(<CompanyFilesWindow />); await screen.findByText(file.name); fireEvent.click(screen.getByRole('button', { name: '云文件回收站' })); await screen.findByRole('button', { name: '永久删除' }); expect(screen.getByText('1001')).toBeTruthy(); expect(screen.getByText('1003')).toBeTruthy();
+  render(<CompanyFilesWindow />); await screen.findByText(file.name); fireEvent.click(screen.getByLabelText('云文件更多操作')); fireEvent.click(screen.getByRole('button', { name: '云文件回收站' })); await screen.findByRole('button', { name: '永久删除' }); expect(screen.getByText('1001')).toBeTruthy(); expect(screen.getByText('1003')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '永久删除' })); const dialog = screen.getByRole('dialog', { name: '永久删除云文件' }); expect(within(dialog).queryByRole('textbox')).toBeNull(); fireEvent.submit(dialog.querySelector('form')!);
   await waitFor(() => expect(call).toHaveBeenCalledWith('manage_company_file', { sessionEpoch: 1, id: file.assetId, operation: 'purge', confirmName: file.name }));
 });
@@ -246,7 +247,7 @@ it('右键删除与回收站恢复保留确认，永久删除只需明确确认'
   administrator(); render(<CompanyFilesWindow />); await screen.findByText(file.name);
   fireEvent.contextMenu(screen.getByText(file.name).closest('tr')!); fireEvent.click(screen.getByRole('menuitem', { name: '删除' }));
   expect(screen.getByText('将所选文件移入回收站？已有话术继续可用，不能再新增引用。')).toBeTruthy(); expect(call).not.toHaveBeenCalledWith('manage_company_file', expect.anything());
-  fireEvent.click(screen.getByRole('button', { name: '取消' })); fireEvent.click(screen.getByRole('button', { name: '云文件回收站' }));
+  fireEvent.click(screen.getByRole('button', { name: '取消' })); fireEvent.click(screen.getByLabelText('云文件更多操作')); fireEvent.click(screen.getByRole('button', { name: '云文件回收站' }));
   await screen.findByRole('button', { name: '恢复' }); fireEvent.contextMenu(screen.getByText(file.name).closest('tr')!);
   expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['恢复', '永久删除']);
   fireEvent.click(screen.getByRole('menuitem', { name: '永久删除' })); expect(screen.queryByLabelText('输入完整文件名')).toBeNull(); expect(screen.getByRole('dialog', { name: '永久删除云文件' })).toBeTruthy();
@@ -283,7 +284,7 @@ it('管理员清空回收站覆盖全部分页和搜索，其他失败保留并�
     return { version: 1, files: args?.query ? [all[0]] : all, uploads: [] };
   });
   render(<CompanyFilesWindow />); await screen.findByText('回收0.txt');
-  fireEvent.click(screen.getByRole('button', { name: '云文件回收站' }));
+  fireEvent.click(screen.getByLabelText('云文件更多操作')); fireEvent.click(screen.getByRole('button', { name: '云文件回收站' }));
   await screen.findByRole('button', { name: '清空回收站' });
   fireEvent.change(screen.getByRole('textbox', { name: '搜索云文件' }), { target: { value: '回收0' } });
   fireEvent.click(screen.getByRole('button', { name: '清空回收站' }));

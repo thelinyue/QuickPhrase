@@ -17,7 +17,8 @@ import { ShortcutDialog } from './ShortcutDialog';
 import { ShortcutCandidatesWindow } from './ShortcutCandidates';
 import { Editor, FileEditor, TeamEditor } from './Editor';
 import { TeamManagementWindow } from './TeamManagement';
-import { CompanyFilePicker, CompanyFilesWindow } from './CompanyFiles';
+import { CompanyFilePicker } from './CompanyFiles';
+import { CloudCenter } from './CloudCenter';
 import { UsageGuideWindow } from './UsageGuide';
 import { useDefaultTeam } from './useDefaultTeam';
 import { TeamSelector } from './TeamSelector';
@@ -94,7 +95,7 @@ export function App() {
   if (route === 'settings') return <SettingsWindow library={library} initialTab={params.get('tab') || ''} initialCategoryId={params.get('categoryId') || ''} initialTeamId={params.get('teamId') || ''} />;
   if (route === 'team-management') return <TeamManagementWindow mode="teams" tab={params.get('tab') || ''} teamId={params.get('teamId') || ''} />;
   if (route === 'user-management') return <TeamManagementWindow mode="users" />;
-  if (route === 'company-files') return <CompanyFilesWindow />;
+  if (route === 'company-files') return <CloudCenter />;
   if (route === 'common-editor') return <CommonPhraseEditor library={library} id={params.get('id') || ''} />;
   if (route === 'common-dock') return <CommonDockWindow library={library} />;
   if (route === 'common-sort') return <CommonPhraseSort library={library} />;
@@ -420,7 +421,7 @@ export function MainWindow({ library: privateLibrary, refresh }: { library: Libr
   function exportCategory(c: Category) { void openWindow('settings', '', '', '导出数据', c.id, '', teamId); }
   const managementMenu = () => [
     { label: '账号', action: () => openWindow('settings', '', '', '账号') },
-    ...(teamStatus.companyFiles ? [{ label: '云文件', enabled: !!teamStatus.user && !teamStatus.user.mustChangePassword, action: () => openWindow('company-files') }] : []),
+    ...((teamStatus.companyFiles || teamStatus.cloudCommands) ? [{ label: '闪云中心', enabled: !!teamStatus.user && !teamStatus.user.mustChangePassword, action: () => openWindow('company-files') }] : []),
     ...(teamStatus.user?.admin ? [{ label: '账号管理', enabled: !teamStatus.offline && !teamStatus.user.mustChangePassword, action: () => openWindow('user-management') }] : []),
     ...(teamStatus.user ? [{ label: '共享话术管理', enabled: !teamStatus.offline && !teamStatus.user.mustChangePassword, action: () => openWindow('team-management', '', '', 'teams', '', '', teamId) }] : []),
   ];

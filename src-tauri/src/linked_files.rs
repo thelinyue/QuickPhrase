@@ -306,6 +306,7 @@ mod tests {
             offline: true,
             private_sync: false,
             member_phrase_sync: false,
+            cloud_commands: false,
             company_files: true,
             company_file_permissions: false,
         };
