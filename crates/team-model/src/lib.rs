@@ -1,6 +1,7 @@
 //! 小组协议只传素材 ID，不传服务端路径、私人设置或个人快捷键。
 //! groupId 始终指二级分类；teamId 才是权限和缓存的隔离边界。
 use serde::{Deserialize, Serialize};
+pub mod cloud_commands;
 pub mod member;
 pub mod private;
 
@@ -22,6 +23,9 @@ pub struct User {
     /// 公司文件管理授权属于工号，与小组角色无关；旧 Hub 和旧缓存默认为未授权。
     #[serde(default)]
     pub company_file_permissions: CompanyFilePermissions,
+    /// 公共命令库独立授权；旧服务端和旧账号默认关闭。
+    #[serde(default)]
+    pub cloud_command_permissions: cloud_commands::CloudCommandPermissions,
 }
 
 /// 配置版本防止管理员互相覆盖；上传版本只在上传授权变化时递增，
@@ -241,6 +245,8 @@ pub struct Capabilities {
     /// 目录能力与可配置授权分别协商；旧公司文件 Hub 仍沿用固定管理员权限。
     #[serde(default)]
     pub company_file_permissions: bool,
+    #[serde(default)]
+    pub cloud_commands: bool,
 }
 
 /// 公司资料独立于小组素材；ID 对应不可变本体，回收不改变已有话术引用。
@@ -432,6 +438,7 @@ pub struct UserWrite {
     pub contact: Option<String>,
     pub can_create_teams: Option<bool>,
     pub company_file_permissions: Option<CompanyFilePermissionsWrite>,
+    pub cloud_command_permissions: Option<cloud_commands::CloudCommandPermissionsWrite>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
