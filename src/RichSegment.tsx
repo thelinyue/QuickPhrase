@@ -1,6 +1,7 @@
 import { useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { Block } from './types';
+import { iconPath } from './ui';
 
 export interface SegmentHandle { capture: () => Range | null; insert: (blocks: Block[], at?: Range | null) => void; focus: () => void }
 
@@ -63,8 +64,13 @@ function renderBlocks(blocks: Block[]) {
     media.dataset.blockKind = block.kind; media.dataset.path = block.path; media.dataset.name = block.name; media.title = block.name;
     if (block.companyAssetId) { media.dataset.companyAssetId = block.companyAssetId; media.dataset.companySessionEpoch = String(block.companySessionEpoch); }
     if (block.kind === 'image') { const img = document.createElement('img'); img.src = convertFileSrc(block.path); img.alt = block.name; img.draggable = false; media.append(img); }
-    else { const name = document.createElement('span'); name.textContent = `📎 ${block.name}`; media.append(name); }
-    const remove = document.createElement('button'); remove.type = 'button'; remove.dataset.removeMedia = ''; remove.setAttribute('aria-label', `删除附件 ${block.name}`); remove.textContent = '×'; media.append(remove);
+    else {
+      // 可编辑正文不交给 React 重建；命令式节点仍使用共用 SVG 和按钮材料。
+      const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); icon.setAttribute('viewBox', '0 0 20 20'); icon.setAttribute('aria-hidden', 'true');
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', iconPath('attachment')); icon.append(path);
+      const name = document.createElement('span'); name.textContent = block.name; media.append(icon, name);
+    }
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'ui-button ui-button--ghost ui-icon-button'; remove.dataset.removeMedia = ''; remove.setAttribute('aria-label', `删除附件 ${block.name}`); remove.textContent = '×'; media.append(remove);
     fragment.append(media);
   }
   return fragment;

@@ -1,10 +1,9 @@
 import { createContext, useContext, useLayoutEffect, useEffect, useRef, useState, type ReactNode } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { call } from './api';
-import { CategoryColorPicker, Feedback, FormDialog, phraseTitleColor, Titlebar, type DialogSpec } from './ui';
+import { Button, CategoryColorPicker, Feedback, FormDialog, phraseTitleColor, Titlebar, type DialogSpec } from './ui';
 import { categoryLabel, type Library, type Settings } from './types';
 import { McpSettings } from './McpSettings';
 import { TeamSettings } from './TeamSettings';
@@ -12,6 +11,7 @@ import { DataTransfer } from './DataTransfer';
 import { UpdateSettings } from './Updater';
 import { Diagnostics } from './Diagnostics';
 import { useSettingsSave } from './useSettingsSave';
+import { useCloseGuard } from './close';
 import { useNotices } from './notices';
 
 /** 序号只录入一次组合键。草稿显示到保存回执，失败后回到原绑定，不遗留看似已保存的值。 */
@@ -26,7 +26,7 @@ function SequenceBinding({ index, value, disabled, save, error }: { index: numbe
     const mods = [[e.ctrlKey, 'Ctrl'], [e.altKey, 'Alt'], [e.shiftKey, 'Shift'], [e.metaKey, 'Win']].filter(([active]) => active).map(([, name]) => name);
     if (!mods.length || !/^[A-Z0-9]$|^F(?:[1-9]|1[0-9]|2[0-4])$/.test(key)) { error('序号快捷键请录入单个组合键，例如 Ctrl+1。'); return; }
     void record([...mods, key].join('+'));
-  }} /><button type="button" aria-label={`关闭序号${index + 1}快捷键`} disabled={disabled || !value} onClick={() => void record('')}>关闭</button></div>;
+  }} /><Button variant="ghost" type="button" aria-label={`关闭序号${index + 1}快捷键`} disabled={disabled || !value} onClick={() => void record('')}>关闭</Button></div>;
 }
 
 const tabs = ['常用设置', '界面设置', '吸附设置', '账号', 'AI 连接', '导入数据', '导出数据', '快捷键', '缓存管理', '问题诊断', '关于'];
@@ -63,24 +63,15 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '', in
   const [tab, setTab] = useState(tabs.includes(accountTab(initialTab)) ? accountTab(initialTab) : tabs[0]); const [saving, setSaving] = useState(false);
   const notices = useNotices(); const setMessage = notices.error;
   const { settings, change, errors, busy, pending, isSaving, flush } = useSettingsSave(library.settings, library.libraryId, library.settingsRevision);
-  const saveOnClose = useRef({ isSaving, flush }); saveOnClose.current = { isSaving, flush };
-  const closing = useRef(false);
-  useEffect(() => {
-    let disposed = false, stop: (() => void) | undefined;
-    // 标题栏和系统关闭共用拦截，保留WebView直到串行保存完成；失败留窗查看就近错误。
-    void getCurrentWindow().onCloseRequested(async event => {
-      if (!saveOnClose.current.isSaving()) return;
-      event.preventDefault();
-      if (closing.current) return;
-      closing.current = true; notices.progress('正在保存设置，完成后关闭…');
-      try {
-        if (await saveOnClose.current.flush()) await getCurrentWindow().close();
-        else if (!disposed) setMessage('部分设置未保存，请检查提示后重试。');
-      } catch (error) { if (!disposed) setMessage(`设置窗口关闭失败：${String(error)}`); }
-      finally { closing.current = false; }
-    }).then(unlisten => { if (disposed) unlisten(); else stop = unlisten; }).catch(error => { if (!disposed) setMessage(`无法监听设置窗口关闭：${String(error)}`); });
-    return () => { disposed = true; stop?.(); };
-  }, []);
+  // 自动保存不当作可丢弃草稿；统一关闭入口先等待现有串行保存，失败留窗。
+  useCloseGuard({ busy: () => savingRef.current || choosingDirectoryRef.current, beforeClose: async () => {
+    // Alt+F4 不一定触发字段失焦，先交给已有 onBlur 提交最后一次输入，再 flush 同一队列。
+    const focused = document.activeElement as HTMLElement | null; if (focused?.matches('input[data-setting]')) focused.blur();
+    if (!isSaving()) return true;
+    notices.progress('正在保存设置，完成后关闭…');
+    if (await flush()) return true;
+    setMessage('部分设置未保存，请检查提示后重试。'); return false;
+  } });
   const [appVersion, setAppVersion] = useState('');
   const [dataDirectory, setDataDirectory] = useState<{ path: string; message: string } | null>(null);
   const [choosingDirectory, setChoosingDirectory] = useState(false);
@@ -142,7 +133,7 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '', in
   /** 确认窗口固定本次内容主键；其他窗口新增或删除后由后端拒绝旧列表，避免误删未确认内容。 */
   function deleteLocal(kind: 'phrase' | 'common') {
     const ids = (kind === 'phrase' ? library.phrases : library.commonPhrases).map(item => item.id); const label = kind === 'phrase' ? '个人话术' : '常用短语';
-    setDialog({ title: `删除全部${label}`, submit: '确认删除', fields: <div className="cache-delete-confirm"><p>将删除全部 {ids.length} 条{label}，请谨慎操作。</p>
+    setDialog({ title: `删除全部${label}`, hasDraft: false, submit: '确认删除', danger: true, fields: <div className="cache-delete-confirm"><p>将删除全部 {ids.length} 条{label}，请谨慎操作。</p>
       {kind === 'phrase' ? <><label><input type="checkbox" name="recycle" defaultChecked />删除的话术移入回收站（可以还原）</label><p className="settings-hint">取消勾选将永久删除，无法恢复。</p><p className="settings-hint">分类、常用短语、文件关联、图片素材和源文件会保留。</p></> : <><p className="validation-error">常用短语不进入回收站，删除后无法恢复。建议先导出完整备份。</p><p className="settings-hint">个人话术、分类、图片素材和文件关联会保留。</p></>}
     </div>, onSubmit: async data => { const count = await call<number>('delete_local_content', { kind, ids, recycle: kind === 'phrase' && data.has('recycle') }); notices.success(`已删除 ${count} 条${label}`); } });
   }
@@ -189,12 +180,12 @@ export function SettingsWindow({ library, initialTab, initialCategoryId = '', in
       <p className="settings-hint">默认仅在闪语或目标窗口生效；勾选“全局生效”后可用于其他窗口。</p>
     </div>
   </div>;
-  else if (tab === '缓存管理') content = <div className="cache-settings"><div className="setting-block"><button className="secondary-button wide-button" onClick={() => folder('cache')}>打开本地缓存文件夹</button></div>
-    <div className="setting-block"><h2 className="settings-heading">一键删除（请谨慎操作）</h2><div className="setting-buttons"><button className="secondary-button" disabled={!library.phrases.length} onClick={() => deleteLocal('phrase')}>个人话术</button><button className="secondary-button" disabled={!library.commonPhrases.length} onClick={() => deleteLocal('common')}>常用短语</button></div></div>
-    <div className="setting-block"><h2 className="settings-heading">清理本地缓存</h2><div className="setting-buttons"><button className="secondary-button" onClick={() => void clear('thumbnails')}>清理缩略图</button><button className="secondary-button" onClick={() => void clear('temp')}>清理临时文件</button></div><p className="settings-hint">可重新生成的缓存：{(cache / 1024 / 1024).toFixed(2)} MB</p><p className="settings-hint">清理缓存会保留话术、图片素材和关联的原文件。</p></div></div>;
-  else content = <><div className="about-brand"><img src="/shanyu.png" width="72" height="72" alt="" draggable={false} /><div><h2 className="settings-heading">闪语 QuickPhrase</h2><p>Windows 本地话术工具{appVersion && ` · v${appVersion}`}</p></div></div><div className="setting-block"><p>快速找到话术，添加到输入区，按需直接发送。</p><p>支持本地文件、图片附件和分段话术。</p></div><UpdateSettings /><div className="setting-block"><p>本地数据目录</p><p className="data-path">{dataDirectory?.path || '正在读取…'}</p><div className="setting-buttons"><button className="secondary-button" onClick={() => folder('data')}>打开数据文件夹</button><button className="secondary-button" disabled={!dataDirectory?.path || choosingDirectory || saving || pending} onClick={() => void chooseDataDirectory()}>{choosingDirectory ? '选择中…' : '更换目录'}</button></div>{dataDirectory?.message && <p role="status">{dataDirectory.message}</p>}<p className="settings-hint">升级与卸载会保留本地数据。</p></div></>;
+  else if (tab === '缓存管理') content = <div className="cache-settings"><div className="setting-block"><Button variant="secondary" className="wide-button" onClick={() => folder('cache')}>打开本地缓存文件夹</Button></div>
+    <div className="setting-block"><h2 className="settings-heading">一键删除（请谨慎操作）</h2><div className="setting-buttons"><Button disabled={!library.phrases.length} onClick={() => deleteLocal('phrase')}>个人话术</Button><Button disabled={!library.commonPhrases.length} onClick={() => deleteLocal('common')}>常用短语</Button></div></div>
+    <div className="setting-block"><h2 className="settings-heading">清理本地缓存</h2><div className="setting-buttons"><Button onClick={() => void clear('thumbnails')}>清理缩略图</Button><Button onClick={() => void clear('temp')}>清理临时文件</Button></div><p className="settings-hint">可重新生成的缓存：{(cache / 1024 / 1024).toFixed(2)} MB</p><p className="settings-hint">清理缓存会保留话术、图片素材和关联的原文件。</p></div></div>;
+  else content = <><div className="about-brand"><img src="/shanyu.png" width="72" height="72" alt="" draggable={false} /><div><h2 className="settings-heading">闪语 QuickPhrase</h2><p>Windows 本地话术工具{appVersion && ` · v${appVersion}`}</p></div></div><div className="setting-block"><p>快速找到话术，添加到输入区，按需直接发送。</p><p>支持本地文件、图片附件和分段话术。</p></div><UpdateSettings /><div className="setting-block"><p>本地数据目录</p><p className="data-path">{dataDirectory?.path || '正在读取…'}</p><div className="setting-buttons"><Button onClick={() => folder('data')}>打开数据文件夹</Button><Button disabled={!dataDirectory?.path || choosingDirectory || saving || pending} onClick={() => void chooseDataDirectory()}>{choosingDirectory ? '选择中…' : '更换目录'}</Button></div>{dataDirectory?.message && <p role="status">{dataDirectory.message}</p>}<p className="settings-hint">升级与卸载会保留本地数据。</p></div></>;
   if (tab === '账号') content = <TeamSettings />;
   if (tab === 'AI 连接') content = <McpSettings library={library} />;
   if (tab === '问题诊断') content = <Diagnostics />;
-  return <FieldErrors.Provider value={errors}><section className="client-window settings-window"><Titlebar title="设置" minimize /><div className="settings-layout"><aside className="settings-sidebar"><nav>{tabs.map(t => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav><div className="settings-brand"><span>闪语</span><small>本地话术工具{appVersion && ` · ${appVersion}`}</small></div></aside><div className="settings-content">{content}{[...new Set(Object.entries(errors).filter(([key]) => ['searchHotkey', 'windowHotkey', 'commonHotkey', 'sequenceBindings', 'sequenceDirectSend', 'sequenceHotkeys', 'customHotkeys', 'globalPhraseHotkeys', 'dock', 'dockSide'].includes(key)).map(([, error]) => error))].map(error => <p key={error} role="alert" className="validation-error">{error}</p>)}</div></div>{dialog && <FormDialog spec={dialog} close={() => setDialog(null)} />}<Feedback message={notices.current?.message || ''} kind={notices.current?.kind} title={notices.current?.title} count={notices.count} clear={() => notices.current && notices.dismiss(notices.current.id)} /></section></FieldErrors.Provider>;
+  return <FieldErrors.Provider value={errors}><section className="client-window settings-window"><Titlebar title="设置" minimize /><div className="settings-layout"><aside className="settings-sidebar"><nav>{tabs.map(t => <Button variant="ghost" key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</Button>)}</nav><div className="settings-brand"><span>闪语</span>{appVersion && <small>{appVersion}</small>}</div></aside><div className="settings-content">{content}{[...new Set(Object.entries(errors).filter(([key]) => ['searchHotkey', 'windowHotkey', 'commonHotkey', 'sequenceBindings', 'sequenceDirectSend', 'sequenceHotkeys', 'customHotkeys', 'globalPhraseHotkeys', 'dock', 'dockSide'].includes(key)).map(([, error]) => error))].map(error => <p key={error} role="alert" className="validation-error">{error}</p>)}</div></div>{dialog && <FormDialog spec={dialog} close={() => setDialog(null)} />}<Feedback message={notices.current?.message || ''} kind={notices.current?.kind} title={notices.current?.title} count={notices.count} clear={() => notices.current && notices.dismiss(notices.current.id)} /></section></FieldErrors.Provider>;
 }

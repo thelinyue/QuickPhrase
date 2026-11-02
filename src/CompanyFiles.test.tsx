@@ -1,11 +1,13 @@
+import { WindowCloseScope } from './close';
 import { useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as testingRender, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { call, openWindow, useTeams } from './api';
 import { CloudFileTable } from './CompanyFiles';
 import { CloudCenter as CompanyFilesWindow } from './CloudCenter';
 import { confirm, open } from '@tauri-apps/plugin-dialog';
 import type { CompanyFile, CompanyTransfer, TeamStatus, TeamUser } from './types';
+const render = (element: import('react').ReactNode) => testingRender(element, { wrapper: WindowCloseScope });
 // 表格交互在当前宿主验证；独立窗口消息在 CompanyPicker 测试和 WebView2 脚本验证。
 function CompanyFilePicker({ limit, onConfirm, confirmLabel = '添加文件' }: { limit: number; onConfirm: (files: CompanyFile[], epoch: number) => void; close: () => void; confirmLabel?: string }) {
   const [selected, setSelected] = useState<CompanyFile[]>([]);

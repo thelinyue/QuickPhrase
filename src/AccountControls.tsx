@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { call } from './api';
-import { FormDialog } from './ui';
+import { IconButton, Button, DialogHeader, DialogWindowClose, FormDialog } from './ui';
+import { useModalClose } from './close';
 
 /** 密码只存在表单内；生成使用系统安全随机数，关闭弹窗即销毁输入。 */
 export function PasswordField({ label, name, current = false, autoFocus = false, generate = false }: { label: string; name: string; current?: boolean; autoFocus?: boolean; generate?: boolean }) {
@@ -11,7 +12,7 @@ export function PasswordField({ label, name, current = false, autoFocus = false,
     if (input.current) input.current.value = Array.from(crypto.getRandomValues(new Uint8Array(8)), byte => alphabet[byte & 63]).join('');
     setShown(true); input.current?.focus();
   }
-  return <div className="password-field"><div className="password-label"><label htmlFor={id}>{label}</label>{generate && <button type="button" className="text-button" onClick={generatePassword}>生成密码</button>}</div><span className="password-control"><input ref={input} id={id} name={name} type={shown ? 'text' : 'password'} required minLength={current ? undefined : 8} autoComplete={current ? 'current-password' : 'new-password'} autoFocus={autoFocus} /><button type="button" aria-label={`${shown ? '隐藏' : '显示'}${label}`} aria-pressed={shown} onClick={() => setShown(value => !value)}>{shown ? '隐藏' : '显示'}</button></span></div>;
+  return <div className="password-field"><div className="password-label"><label htmlFor={id}>{label}</label>{generate && <Button variant="text" type="button" onClick={generatePassword}>生成密码</Button>}</div><span className="password-control"><input ref={input} id={id} name={name} type={shown ? 'text' : 'password'} required minLength={current ? undefined : 8} autoComplete={current ? 'current-password' : 'new-password'} autoFocus={autoFocus} /><Button variant="ghost" type="button" aria-label={`${shown ? '隐藏' : '显示'}${label}`} aria-pressed={shown} onClick={() => setShown(value => !value)}>{shown ? '隐藏' : '显示'}</Button></span></div>;
 }
 
 export function PasswordDialog({ first = false, close, changed, windowClose = false }: { first?: boolean; close: () => void; changed: () => void; windowClose?: boolean }) {
@@ -22,13 +23,11 @@ export function PasswordDialog({ first = false, close, changed, windowClose = fa
 }
 
 /** 同步预览、冲突及设置共享滚动正文和固定操作区，不挤占账号页。 */
-export function AccountModal({ title, children, footer, busy, close }: { title: string; children: ReactNode; footer: ReactNode; busy: boolean; close: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null); const id = useId();
-  const trigger = useRef(document.activeElement as HTMLElement | null);
-  useEffect(() => { ref.current?.showModal(); return () => { if (trigger.current?.isConnected) trigger.current.focus(); }; }, []);
+export function AccountModal({ title, children, footer, busy, dirty = false, close }: { title: string; children: ReactNode; footer: (requestClose: () => void) => ReactNode; busy: boolean; dirty?: boolean; close: () => void }) {
+  const modal = useModalClose({ close, busy: () => busy, dirty: () => dirty }); const id = useId();
   // 预览到达时仍在读取状态，控件可能暂时禁用；就绪后将焦点交给首个可操作字段或按钮。
-  useEffect(() => { if (!busy && document.activeElement === ref.current) ref.current?.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),button:not(:disabled)')?.focus(); }, [busy]);
-  return <dialog ref={ref} className="small-dialog account-dialog account-panel" aria-labelledby={id} onCancel={event => { if (busy) event.preventDefault(); else close(); }}><h2 id={id}>{title}</h2><div className="account-panel-body"><fieldset className="dialog-fields" disabled={busy}>{children}</fieldset></div><div className="dialog-actions">{footer}</div></dialog>;
+  useEffect(() => { if (!busy && document.activeElement === modal.ref.current) modal.ref.current?.querySelector<HTMLElement>('.account-panel-body input:not(:disabled),.account-panel-body select:not(:disabled),.dialog-actions button:not(:disabled)')?.focus(); }, [busy]);
+  return <dialog ref={modal.ref} className="small-dialog account-dialog account-panel" aria-labelledby={id} onCancel={modal.onCancel} onKeyDown={modal.onKeyDown}>{modal.windowClose && <DialogWindowClose busy={!!busy} />}<DialogHeader title={title} id={id} busy={busy} close={() => void modal.requestClose()} /><div className="account-panel-body"><fieldset className="dialog-fields" disabled={busy}>{children}{modal.error && <p className="validation-error" role="alert">{modal.error}</p>}</fieldset></div><div className="dialog-actions">{footer(() => void modal.requestClose())}</div></dialog>;
 }
 
 /** 成功提示短暂显示；失败保留供核对，不能把成功文案渲染成红色错误。 */
@@ -36,5 +35,5 @@ export function AccountNotice({ message, error, clear, count = 1 }: { message: s
   const clearRef = useRef(clear); clearRef.current = clear;
   const [hovered, setHovered] = useState(false); const [focused, setFocused] = useState(false);
   useEffect(() => { if (!message || error || hovered || focused) return; const timer = window.setTimeout(() => clearRef.current(), 3500); return () => window.clearTimeout(timer); }, [message, error, hovered, focused]);
-  return message ? <div className={`account-notice${error ? ' error' : ''}`} role={error ? 'alert' : 'status'} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocusCapture={() => setFocused(true)} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}><span>{message}{count > 1 && <small>　还有 {count - 1} 条提示</small>}</span><button type="button" aria-label="关闭提示" title="关闭提示" onClick={clear}>×</button></div> : null;
+  return message ? <div className={`account-notice${error ? ' error' : ''}`} role={error ? 'alert' : 'status'} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocusCapture={() => setFocused(true)} onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}><span>{message}{count > 1 && <small>　还有 {count - 1} 条提示</small>}</span><IconButton size="compact" aria-label="关闭提示" title="关闭提示" onClick={clear}>×</IconButton></div> : null;
 }

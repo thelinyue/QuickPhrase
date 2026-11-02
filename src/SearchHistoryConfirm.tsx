@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { call } from './api';
-import { Icon } from './ui';
+import { IconButton, Button, Icon } from './ui';
 
 /** 窗口创建时固定库身份；真正的有效性和重复提交由 Rust 再次校验。 */
 export function SearchHistoryConfirm() {
@@ -27,8 +27,8 @@ export function SearchHistoryConfirm() {
     finally { pending.current = false; setBusy(false); }
   };
   return <section className="search-history-confirm" aria-label="清空历史搜索确认" aria-busy={busy}>
-    <header><span data-tauri-drag-region>提示</span><button aria-label="关闭" disabled={busy} onClick={() => void close()}><Icon name="close" /></button></header>
+    <header><span data-tauri-drag-region>提示</span><IconButton aria-label="关闭" disabled={busy} onClick={() => void close()}><Icon name="close" /></IconButton></header>
     <main><h2>清空提示</h2><p>是否清空历史搜索？</p>{error && <p role="alert">{error}</p>}</main>
-    <footer><button className="secondary-button" ref={cancelRef} disabled={busy} onClick={() => void close()}>取消</button><button className="primary-button" disabled={busy} onClick={() => void submit()}>确定</button></footer>
+    <footer><Button ref={cancelRef} disabled={busy} onClick={() => void close()}>取消</Button><Button variant="primary" danger busy={busy} onClick={() => void submit()}>确定</Button></footer>
   </section>;
 }

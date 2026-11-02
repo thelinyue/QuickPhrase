@@ -24,7 +24,16 @@ const hook = async view => view.evaluate(() => {
     const url = new URL(typeof input === 'string' ? input : input.url); if (url.hostname !== 'ipc.localhost') return original(input, init);
     const cmd = decodeURIComponent(url.pathname.slice(1)); let args = JSON.parse(init.body);
     const response = (value, state = 'ok') => new Response(JSON.stringify(value), { headers: { 'Tauri-Response': state, 'Content-Type': 'application/json' } });
-    // 仅给底部搜索种入带来源与未缓存状态的显示样本，不执行任何投递。
+    if (cmd === 'plugin:dialog|message' && args.message === '放弃未保存的修改？') {
+      const qa = window.__illustrationQA; (qa.confirmations ||= []).push(args.message); const cancel = qa.cancelNext; qa.cancelNext = false;
+      return response(args.buttons.OkCancelCustom[cancel ? 1 : 0]);
+    }
+    // 暂停一次隔离编辑器提交，模拟失败；关闭事件仍交给真实 Tauri／WebView2。
+    if (cmd === 'save_phrase' && window.__illustrationQA.holdPhraseSave) {
+      window.__illustrationQA.holdPhraseSave = false; await new Promise(resolve => window.__illustrationQA.releasePhraseSave = resolve);
+      return response('模拟保存失败，草稿应保留。', 'error');
+    }
+    // 仅给底部搜索种入未缓存状态的显示样本，不执行任何投递。
     if (cmd === 'resize_phrase_preview') (window.__illustrationQA.previewSizes ||= []).push(args.height);
     if (cmd === 'search_scoped_content' && window.__illustrationQA.searchFixture) return response(window.__illustrationQA.searchFixture);
     if (['plugin:window|show', 'plugin:window|set_focus', 'plugin:menu|popup', 'copy_phrase_text', 'copy_linked_files', 'open_linked_file', 'open_directory', 'native_status'].includes(cmd)) return response(null);
@@ -47,10 +56,90 @@ const screenshot = async (view, name) => {
   await view.screenshot({ path: path.join(evidence, name + '.png') });
 };
 // 分组后的长表单允许滚动；先用实际滚动到达控件，再检查其完整边界，不能只检查存在。
-const within = async locator => { await locator.scrollIntoViewIfNeeded(); assert.ok(await locator.evaluate(el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0 && b.x >= 0 && b.y >= 0 && b.right <= innerWidth + 1 && b.bottom <= innerHeight + 1; }), '元素超出窗口'); };
+const within = async locator => {
+  await locator.scrollIntoViewIfNeeded();
+  const bounds = await locator.evaluate(el => { const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height, right: b.right, bottom: b.bottom, viewportWidth: innerWidth, viewportHeight: innerHeight }; });
+  assert.ok(bounds.width > 0 && bounds.height > 0 && bounds.x >= 0 && bounds.y >= 0 && bounds.right <= bounds.viewportWidth + 1 && bounds.bottom <= bounds.viewportHeight + 1, `${locator} 超出窗口：${JSON.stringify(bounds)}`);
+};
 const dismiss = async view => { if (await view.getByRole('status').count()) await click(view.getByRole('status')); };
 const patchSettings = async patch => { const library = await invoke('get_library'); await invoke('save_settings', { settings: { ...library.settings, ...patch } }); };
 async function searchRecycle(recycle, query) { await recycle.getByRole('textbox', { name: '搜索回收站' }).fill(query); await recycle.locator('.recycle-search').evaluate(el => el.requestSubmit()); }
+// 样式样板只存在隔离 WebView 内；组件的事件、ref 与提交语义由 ui.test.tsx 验证。
+// CDP 强制伪类检查实际 CSS，不把它当成原生键盘或系统 DPI 验收。
+async function verifySharedControls() {
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
+  await page.evaluate(() => {
+    const fixture = document.createElement('section'); fixture.id = 'ui-style-qa';
+    Object.assign(fixture.style, { position: 'fixed', inset: '0', zIndex: '9999', background: 'var(--theme-surface)', overflow: 'auto', padding: '12px', display: 'grid', gap: '8px', alignContent: 'start' });
+    const button = (id, variant, extra = '') => `<button type="button" id="qa-${id}" class="ui-button ui-button--${variant} ${extra.includes('compact') ? '' : 'ui-button--regular'} ${extra}">${id}</button>`;
+    fixture.innerHTML = '<strong>共用控件与键盘反馈</strong>' + ['primary', 'secondary', 'ghost', 'text'].map(variant => button(variant, variant)).join('')
+      + button('danger', 'primary', 'ui-button--danger') + button('compact', 'secondary', 'ui-button--compact')
+      + '<button type="button" id="qa-icon" aria-label="图标操作" class="ui-button ui-button--ghost ui-icon-button ui-button--compact">×</button>'
+      + '<div class="cloud-segments">' + button('selected', 'ghost') + '</div>'
+      + '<div id="qa-row" class="content-row selected" role="option" aria-selected="true" tabindex="0">选中话术行</div>'
+      + '<div class="category-color-grid"><button type="button" id="qa-black" aria-label="纯黑色块" class="ui-button ui-button--ghost" style="background:#000"></button></div>'
+      + ['text', 'password', 'email', 'url', 'number'].map(type => `<input id="qa-field-${type}" type="${type}" aria-label="${type}" placeholder="长中文字段与失败后保留的草稿" />`).join('')
+      + '<select id="qa-field-select" aria-label="选项"><option>长中文选项</option></select><textarea id="qa-field-textarea" aria-label="多行正文">中文正文</textarea>';
+    fixture.querySelector('#qa-selected').setAttribute('aria-selected', 'true'); document.body.append(fixture);
+  });
+  const { root } = await cdp.send('DOM.getDocument');
+  async function force(id, states) {
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '#qa-' + id });
+    assert.ok(nodeId, id); await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: states });
+  }
+  const measure = id => page.locator('#qa-' + id).evaluate(el => {
+    const s = getComputedStyle(el), r = el.getBoundingClientRect();
+    return { width: r.width, height: r.height, color: s.color, background: s.backgroundColor, border: s.borderColor, radius: s.borderRadius, filter: s.filter, opacity: s.opacity, outline: s.outlineStyle, shadow: s.boxShadow };
+  });
+  try {
+    for (const theme of ['default', 'green', 'blue', 'black', 'pink', 'lavender', 'orange']) {
+      await patchSettings({ theme }); await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
+      for (const id of ['primary', 'secondary', 'ghost', 'text', 'danger']) {
+        const normal = await measure(id); assert.equal(normal.height, 32); assert.equal(normal.radius, '6px'); assert.equal(normal.outline, 'none');
+        await force(id, ['hover']); const hovered = await measure(id);
+        if (id === 'primary' || id === 'danger') assert.notEqual(hovered.background, normal.background, id + '悬停必须加深');
+        if (id === 'danger') assert.equal(hovered.color, 'rgb(255, 255, 255)');
+        await force(id, ['focus', 'focus-visible']); const focused = await measure(id);
+        assert.notEqual(focused.filter, normal.filter, id + '焦点必须可辨识'); assert.equal(focused.outline, 'none');
+        await force(id, ['active']); const active = await measure(id); assert.notEqual(active.filter, normal.filter);
+        for (const state of [hovered, focused, active]) { assert.equal(state.width, normal.width); assert.equal(state.height, normal.height); }
+        await page.locator('#qa-' + id).evaluate(el => { el.disabled = true; el.setAttribute('aria-busy', 'true'); });
+        await force(id, ['hover']); const disabled = await measure(id);
+        assert.equal(disabled.background, normal.background); assert.equal(disabled.opacity, '0.5'); assert.equal(disabled.filter, 'none');
+        await force(id, []); await page.locator('#qa-' + id).evaluate(el => { el.disabled = false; el.removeAttribute('aria-busy'); });
+      }
+      for (const id of ['compact', 'icon']) assert.equal((await measure(id)).height, 28);
+      assert.equal((await measure('icon')).width, 28);
+      const selected = await measure('selected'); await force('selected', ['focus', 'focus-visible']);
+      const selectedFocus = await measure('selected'); assert.equal(selectedFocus.background, selected.background); assert.notEqual(selectedFocus.filter, selected.filter);
+      assert.equal(selectedFocus.width, selected.width); await force('selected', []);
+      const selectedRow = await measure('row'); await force('row', ['focus', 'focus-visible']); const focusedRow = await measure('row');
+      assert.equal(focusedRow.background, selectedRow.background); assert.equal(focusedRow.shadow, selectedRow.shadow); assert.equal(focusedRow.outline, 'none');
+      assert.notEqual(focusedRow.filter, selectedRow.filter, '选中话术行聚焦后必须仍能辨识键盘位置');
+      assert.equal(focusedRow.width, selectedRow.width); assert.equal(focusedRow.height, selectedRow.height); await force('row', []);
+      await force('black', ['focus', 'focus-visible']); assert.equal((await measure('black')).opacity, '0.65'); await force('black', []);
+      for (const id of ['field-text', 'field-password', 'field-email', 'field-url', 'field-number', 'field-select', 'field-textarea']) {
+        const normal = await measure(id); if (id !== 'field-textarea') assert.equal(normal.height, 32);
+        await force(id, ['focus', 'focus-visible']); const focused = await measure(id);
+        assert.equal(focused.outline, 'none'); assert.notEqual(focused.background, normal.background); assert.notEqual(focused.border, normal.border);
+        assert.equal(focused.width, normal.width); assert.equal(focused.height, normal.height); await force(id, []);
+      }
+      const ratios = await page.evaluate(() => {
+        const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d'), root = getComputedStyle(document.documentElement);
+        const luminance = color => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1); const v = [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3).map(n => n / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4); return v[0] * .2126 + v[1] * .7152 + v[2] * .0722; };
+        const pairs = ['primary', 'danger'].map(id => { const s = getComputedStyle(document.getElementById('qa-' + id)); return [s.color, s.backgroundColor]; });
+        for (const role of ['text', 'muted', 'accent', 'danger', 'success']) pairs.push([root.getPropertyValue('--theme-' + role), root.getPropertyValue('--theme-surface')]);
+        if (document.documentElement.dataset.theme === 'default') pairs.push([root.getPropertyValue('--theme-muted'), root.getPropertyValue('--theme-selection')]);
+        return pairs.map(([fg, bg]) => { const a = luminance(fg), b = luminance(bg); return (Math.max(a, b) + .05) / (Math.min(a, b) + .05); });
+      });
+      assert.ok(ratios.every(r => r >= 4.5), theme + '共用控件对比度：' + ratios.join(','));
+      if (theme === 'default' || theme === 'pink') await screenshot(page, 'shared-controls-' + theme);
+    }
+  } finally {
+    await page.evaluate(() => document.getElementById('ui-style-qa')?.remove()); await cdp.detach(); await patchSettings({ theme: 'default' });
+  }
+}
 try {
   for (let i = 0; i < 80; i++) { try { browser = await chromium.connectOverCDP('http://127.0.0.1:' + port); break; } catch { if (app.exitCode !== null) throw new Error('隔离客户端提前退出'); await delay(150); } }
   assert.ok(browser); context = browser.contexts()[0]; context.setDefaultTimeout(8000);
@@ -64,6 +153,7 @@ try {
   // 隔离验收显式准备分类，不依赖产品自动初始化。
   const phraseRoot = await invoke('save_category', { category: { id: '', name: '常用', kind: 'phrase', parentId: null, position: 0, background: '' } });
   const fileRoot = await invoke('save_category', { category: { id: '', name: '默认', kind: 'file', parentId: null, position: 0, background: '' } });
+  await check('共用按钮与原生表单在七种主题下的尺寸、悬停、按下、焦点、选中叠加、禁用和对比度', verifySharedControls);
   await check('话术空态加载96像素插画，新增入口仍打开正确编辑窗口', async () => {
     await page.setViewportSize({ width: 330, height: 720 }); await page.locator('.empty-illustration').waitFor(); await screenshot(page, 'phrase-empty');
     assert.equal(await page.locator('.empty-illustration').evaluate(el => el.clientWidth), 96); await within(page.getByRole('button', { name: '新增话术', exact: true }));
@@ -82,6 +172,39 @@ try {
     await dialog.getByRole('button', { name: '确定', exact: true }).scrollIntoViewIfNeeded(); await within(dialog.getByRole('button', { name: '确定', exact: true })); await screenshot(editor, 'shortcut-small');
     await click(tutorial); assert.equal(await editor.locator('.shortcut-examples').count(), 0); assert.equal(await tutorial.getAttribute('aria-expanded'), 'false');
     await click(editor.locator('dialog').getByRole('button', { name: '取消', exact: true })); await click(editor.getByRole('button', { name: '取消', exact: true }));
+    assert.equal((await invoke('get_library')).phrases.length, 0);
+  });
+  await check('弹窗自身×与Esc共用草稿确认，不穿透父编辑器，关闭后恢复入口焦点', async () => {
+    if (!editor.isClosed()) await editor.waitForEvent('close');
+    const query = new URLSearchParams({ libraryId: initial.libraryId, categoryId: phraseRoot });
+    await invoke('plugin:webview|create_webview_window', { options: { label: 'editor', url: `index.html#editor?${query}`, title: '关闭规则隔离验收', width: 480, height: 480, decorations: false, visible: false, focus: false, skipTaskbar: true } });
+    const target = await view('editor', '.editor-window');
+    await target.getByLabel('话术标题（可不填）').fill('保留中的草稿');
+    const trigger = target.getByRole('button', { name: '自定义快捷键', exact: true }); await trigger.focus(); await click(trigger);
+    const modal = target.getByRole('dialog'), first = modal.getByLabel('第一个按键', { exact: true });
+    await modal.getByLabel('功能键', { exact: true }).selectOption('Ctrl'); await first.press('Y');
+    await target.evaluate(() => window.__illustrationQA.cancelNext = true); await click(modal.getByRole('button', { name: '关闭弹窗', exact: true }));
+    await target.waitForFunction(() => window.__illustrationQA.confirmations?.length === 1); assert.equal(await first.inputValue(), 'Y'); assert.equal(target.isClosed(), false);
+    await target.mouse.click(1, 470); await target.evaluate(() => window.dispatchEvent(new Event('blur'))); assert.equal(await modal.count(), 1);
+    await target.evaluate(() => window.__illustrationQA.cancelNext = true); await first.press('Escape');
+    await target.waitForFunction(() => window.__illustrationQA.confirmations?.length === 2); assert.equal(await modal.count(), 1); assert.equal(target.isClosed(), false);
+    await click(modal.getByRole('button', { name: '关闭弹窗', exact: true })); await modal.waitFor({ state: 'detached' });
+    assert.ok(await trigger.evaluate(el => document.activeElement === el)); assert.equal(target.isClosed(), false);
+    await screenshot(target, 'close-editor-retained');
+  });
+  await check('原生关窗不能绕过编辑器提交锁，失败保留输入，确认放弃才销毁窗口', async () => {
+    const target = await view('editor', '.editor-window');
+    await target.evaluate(() => { window.__illustrationQA.confirmations = []; window.__illustrationQA.holdPhraseSave = true; });
+    await target.locator('.editor-form').evaluate(form => form.requestSubmit());
+    await target.waitForFunction(() => !!window.__illustrationQA.releasePhraseSave);
+    await invoke('plugin:window|close', { label: 'editor' }, target); await delay(100); assert.equal(target.isClosed(), false);
+    assert.ok(await target.getByRole('button', { name: '取消', exact: true }).isDisabled());
+    assert.equal(await target.evaluate(() => window.__illustrationQA.confirmations.length), 0);
+    await target.evaluate(() => window.__illustrationQA.releasePhraseSave()); await target.getByText(/模拟保存失败，草稿应保留。/).waitFor();
+    assert.equal(await target.getByLabel('话术标题（可不填）').inputValue(), '保留中的草稿');
+    await target.evaluate(() => window.__illustrationQA.cancelNext = true); await invoke('plugin:window|close', { label: 'editor' }, target);
+    await target.waitForFunction(() => window.__illustrationQA.confirmations.length === 1); assert.equal(target.isClosed(), false);
+    const closed = target.waitForEvent('close'); await click(target.getByRole('button', { name: '关闭窗口', exact: true })); await closed;
     assert.equal((await invoke('get_library')).phrases.length, 0);
   });
   await check('文件空态加载96像素插画，新增关联入口保持可用', async () => {
@@ -116,9 +239,9 @@ try {
     }
     await patchSettings({ dockSearch: true, dockCommon: true }); await settings.locator('.dock-preview-common').waitFor(); await screenshot(settings, 'dock-bottom');
   });
-  await check('关于页复用64像素品牌图标，版本与数据目录入口保留', async () => {
+  await check('关于页保留72像素品牌图标，版本与数据目录入口保留', async () => {
     await click(settings.getByRole('button', { name: '关于', exact: true })); await screenshot(settings, 'about');
-    assert.equal(await settings.locator('.about-brand img').evaluate(el => el.clientWidth), 64); await within(settings.getByRole('button', { name: '打开数据文件夹', exact: true }));
+    assert.equal(await settings.locator('.about-brand img').evaluate(el => el.clientWidth), 72); await within(settings.getByRole('button', { name: '打开数据文件夹', exact: true }));
   });
   await click(page.getByRole('button', { name: '主菜单', exact: true })); await click(page.getByRole('menuitem', { name: '回收站', exact: true }));
   const recycle = await view('recycle-bin', '.recycle-window');
@@ -159,6 +282,8 @@ try {
     const id = await invoke('save_phrase', { phrase: { id: '', rootId: phraseRoot, groupId: null, title: '插画状态验证', color: '#ff5100', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '仅用于隔离界面验收' }] }] }, afterId: null });
     await page.locator('.content-row').waitFor(); assert.equal(await page.locator('.content-list .empty-illustration').count(), 0);
     await page.getByRole('textbox', { name: '搜索话术、文件', exact: true }).fill('不存在的话术'); await page.getByText('没有找到匹配的内容', { exact: true }).waitFor(); assert.equal(await page.locator('.search-panel img').count(), 0); await click(page.getByRole('button', { name: '清空搜索', exact: true }));
+    // 清空文字仍会显示搜索历史；明确退出搜索后再检查列表悬停，不能穿透遮罩。
+    await page.getByRole('textbox', { name: '搜索话术、文件', exact: true }).press('Escape'); await page.locator('.search-backdrop').waitFor({ state: 'detached' });
     const source = path.join(evidence, '文件关联验证.txt'); await fs.writeFile(source, '隔离验收文件'); await invoke('add_files', { paths: [source], categoryId: fileRoot }); await click(page.locator('.content-tabs').getByRole('button', { name: '文件', exact: true })); await page.locator('.file-row').waitFor(); assert.equal(await page.locator('.content-list .empty-illustration').count(), 0);
     await invoke('delete_item', { id, kind: 'phrase', recycle: true }); await recycle.locator('.recycle-list [role="option"]').waitFor(); assert.equal(await recycle.locator('.empty-illustration').count(), 0);
     for (const target of views) if (!target.isClosed()) assert.equal(await invoke('plugin:window|is_visible', {}, target), false);
@@ -173,7 +298,7 @@ try {
   for (const target of [preview, candidates]) { assert.ok(target); await hook(target); views.add(target); }
   const item = (await invoke('get_library')).phrases.find(p => p.id === id);
   const showPreview = (theme, titleColor, fontSize = 14) => invoke('plugin:event|emit', { event: 'phrase-preview', payload: { phrase: item, fontSize, titleColor, theme, maxHeight: 180 } });
-  await invoke('plugin:event|emit', { event: 'shortcut-candidates', payload: { shortcut: 'Ctrl+1', phrases: [item], selectedIndex: 0, target: { hwnd: 0, focus: 0, pid: 0 } } });
+  await invoke('plugin:event|emit', { event: 'shortcut-candidates', payload: { sessionId: 'illustration-display-only', layoutKey: 'style-layout', maxWidth: 370, maxHeight: 800, shortcut: 'Ctrl+1', phrases: [item], selectedIndex: 0, target: { hwnd: 0, focus: 0, pid: 0 } } });
   await candidates.locator('[data-candidate]').waitFor();
   await check('七种主题的实色上下栏、深色话术标题与快捷键跨窗同步', async () => {
     const colors = { default: ['rgb(75, 100, 121)', 'rgb(223, 232, 240)'], green: ['rgb(62, 114, 86)', 'rgb(233, 242, 236)'], blue: ['rgb(48, 105, 126)', 'rgb(232, 240, 244)'], black: ['rgb(69, 81, 91)', 'rgb(237, 240, 242)'], pink: ['rgb(150, 86, 114)', 'rgb(245, 237, 241)'], lavender: ['rgb(104, 98, 148)', 'rgb(240, 238, 246)'], orange: ['rgb(155, 95, 48)', 'rgb(247, 240, 234)'] };
@@ -250,6 +375,7 @@ try {
     for (const [width, height, fontSize] of [[330, 720, 14], [300, 400, 10], [300, 400, 18]]) {
       await page.setViewportSize({ width, height }); await patchSettings({ fontSize });
       await page.waitForFunction(fontSize => getComputedStyle(document.querySelector('.content-list')).fontSize === fontSize + 'px', fontSize);
+      assert.deepEqual(await page.locator('.main-window').evaluate(el => ({ width: el.clientWidth, height: el.clientHeight })), { width, height });
       assert.ok(await page.locator('.content-list').evaluate(el => el.scrollHeight > el.clientHeight));
       const rows = await page.locator('.content-list [data-row]').evaluateAll(elements => elements.map(el => ({ height: el.getBoundingClientRect().height, text: [...el.querySelectorAll('.row-title,.row-preview')].map(span => ({ height: span.getBoundingClientRect().height, whiteSpace: getComputedStyle(span).whiteSpace })) })));
       for (const row of rows) { assert.equal(row.height, 32); assert.ok(row.text.every(span => span.height <= 32 && span.whiteSpace === 'nowrap')); }
@@ -286,7 +412,7 @@ try {
     }
     await patchSettings({ theme: 'default' });
   });
-  await check('快捷键浮层不占文字宽度，标题模式与搜索状态来源保持可见', async () => {
+  await check('快捷键浮层不占文字宽度，标题模式与搜索未缓存状态保持可见', async () => {
     const measure = target => target.evaluate(el => {
       const bounds = selector => { const node = el.querySelector(selector); if (!node) return null; const r = node.getBoundingClientRect(); return { x: r.x, width: r.width, right: r.right, center: r.y + r.height / 2, height: r.height }; };
       return { copy: bounds('.row-copy'), title: bounds('.row-title'), preview: bounds('.row-preview'), badge: bounds('.row-shortcut'), status: bounds('.row-status'), source: bounds('.row-source') };
@@ -302,16 +428,19 @@ try {
     }
     await patchSettings({ fontSize: 14, showPreview: true, showTitle: true, dockSearch: true });
     await page.getByRole('textbox', { name: '搜索话术、文件', exact: true }).fill(title);
-    const searchRow = page.locator('#search-results [data-row]').first(); await searchRow.locator('.row-shortcut').waitFor();
+    const searchRow = page.locator('#search-results [data-row]').first(); await searchRow.locator('.row-shortcut').waitFor({ state: 'attached' }); await searchRow.hover(); await searchRow.locator('.row-shortcut').waitFor();
     const search = await measure(searchRow); assert.equal(search.copy.right - search.badge.right, 4);
     await screenshot(page, 'shortcut-overlay-search'); await click(page.getByRole('button', { name: '清空搜索', exact: true }));
+    await page.getByRole('textbox', { name: '搜索话术、文件', exact: true }).press('Escape');
     const dock = context.pages().find(p => p.url().includes('#common-dock')); assert.ok(dock); await hook(dock); views.add(dock);
     await dock.setViewportSize({ width: 330, height: 300 });
     await dock.evaluate(item => { window.__illustrationQA.searchFixture = [{ id: item.id, kind: 'phrase', file: null, sourceLabel: '共享来源', phrase: { ...item, ready: false, shortcut: 'Ctrl+Shift+Alt+1+2' } }]; }, item);
-    await dock.locator('input').first().fill(title); const dockRow = dock.locator('[data-row]').first(); await dockRow.locator('.row-shortcut').waitFor();
-    const data = await measure(dockRow); assert.equal(data.copy.right - data.badge.right, 4); assert.ok(data.badge.right <= data.status.x); assert.ok(data.badge.right <= data.source.x); assert.ok(data.badge.width <= 104);
+    await dock.locator('input').first().fill(title); const dockRow = dock.locator('[data-row]').first(); await dockRow.locator('.row-shortcut').waitFor({ state: 'attached' }); await dockRow.hover(); await dockRow.locator('.row-shortcut').waitFor();
+    const data = await measure(dockRow); assert.equal(data.copy.right - data.badge.right, 4); assert.ok(data.badge.right <= data.status.x); assert.ok(data.badge.width <= 104);
+    // 当前搜索行不展示来源标签；不能为了旧脚本假设而改变产品的信息密度。
+    assert.equal(data.source, null); assert.equal(await dockRow.locator('.row-status').textContent(), '未缓存');
     assert.equal(await dockRow.locator('.row-shortcut').getAttribute('title'), 'Ctrl+Shift+Alt+1+2');
-    await screenshot(dock, 'shortcut-overlay-status-source'); await dock.locator('input').first().fill(''); await dock.evaluate(() => { delete window.__illustrationQA.searchFixture; });
+    await screenshot(dock, 'shortcut-overlay-status'); await dock.locator('input').first().fill(''); await dock.evaluate(() => { delete window.__illustrationQA.searchFixture; });
     await patchSettings({ dockSearch: false }); await page.setViewportSize({ width: 330, height: 720 });
   });
   await check('一至三位序号跟随10、14、18号文字，标准与最小视口保持基线及图标居中', async () => {
@@ -337,13 +466,18 @@ try {
     await page.setViewportSize({ width: 330, height: 720 }); await patchSettings({ fontSize: 14 }); await row.scrollIntoViewIfNeeded();
   });
   await check('候选1、10和12条快照的32像素行、表头与底栏不裁切，超出10条独立滚动', async () => {
+    // 前一组切换过18号字；跨窗设置异步传播，先确认候选窗已恢复14号再验证32px行高。
+    await candidates.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--phrase-size').trim() === '14px');
     for (const count of [1, 10, 12]) {
       const phrases = Array.from({ length: count }, (_, i) => ({ ...item, id: item.id + '-' + i, title: i % 2 ? '这是需要省略的很长的候选话术标题' : '候选' + (i + 1), segments: [{ blocks: [{ kind: 'text', text: '您好，感谢您的咨询。\n我们会尽快核实情况并回复您，感谢您的耐心等待。' }] }] }));
-      await candidates.setViewportSize({ width: 370, height: 62 + 32 * Math.min(count, 10) });
-      await invoke('plugin:event|emit', { event: 'shortcut-candidates', payload: { shortcut: 'Ctrl+1', phrases, selectedIndex: count - 1, target: { hwnd: 0, focus: 0, pid: 0 } } });
+      // 使用当前完整快照字段；旧样本缺少 sessionId 等字段会制造与样式无关的 IPC 错误。
+      // 底栏沿用20px行高、上下8px内边距及1px分隔线，实际为29px。
+      await candidates.setViewportSize({ width: 370, height: 63 + 32 * Math.min(count, 10) });
+      await invoke('plugin:event|emit', { event: 'shortcut-candidates', payload: { sessionId: 'illustration-display-only', layoutKey: 'style-layout', maxWidth: 370, maxHeight: 800, shortcut: 'Ctrl+1', phrases, selectedIndex: count - 1, target: { hwnd: 0, focus: 0, pid: 0 } } });
       await candidates.waitForFunction(count => document.querySelectorAll('[data-candidate]').length === count, count);
+      await candidates.waitForFunction(() => [...document.querySelectorAll('.candidate-content')].every(el => el.classList.contains('candidate-crowded')));
       assert.equal(await candidates.locator('header').evaluate(el => el.getBoundingClientRect().height), 32);
-      assert.equal(await candidates.locator('footer').evaluate(el => el.getBoundingClientRect().height), 28);
+      assert.equal(await candidates.locator('footer').evaluate(el => el.getBoundingClientRect().height), 29);
       assert.equal(await candidates.locator('[data-candidate]').first().evaluate(el => el.getBoundingClientRect().height), 32);
       await within(candidates.locator('[aria-selected="true"]')); await within(candidates.locator('footer'));
       if (count > 10) assert.ok(await candidates.locator('.shortcut-candidates-list').evaluate(el => el.scrollHeight > el.clientHeight));
@@ -355,7 +489,7 @@ try {
       if (count > 1) assert.ok(geometry[0].preview > geometry[1].preview, '短标题应给正文留出更多空间');
       await screenshot(candidates, 'candidate-content-' + count);
     }
-    await invoke('plugin:event|emit', { event: 'shortcut-candidates', payload: { shortcut: 'Ctrl+1', phrases: [item], selectedIndex: 0, target: { hwnd: 0, focus: 0, pid: 0 } } });
+    await invoke('plugin:event|emit', { event: 'shortcut-candidates', payload: { sessionId: 'illustration-display-only', layoutKey: 'style-layout', maxWidth: 370, maxHeight: 800, shortcut: 'Ctrl+1', phrases: [item], selectedIndex: 0, target: { hwnd: 0, focus: 0, pid: 0 } } });
     await candidates.waitForFunction(() => document.querySelectorAll('[data-candidate]').length === 1);
   });
   await check('类目排序四个控件文字居中，窄窗口保持完整可达', async () => {
@@ -378,7 +512,8 @@ try {
   });
   await check('永久删除确认与候选读取错误使用红色，悬停仍保持危险操作配色', async () => {
     await click(recycle.locator('.recycle-list [role="option"]').first()); await recycle.getByRole('button', { name: '永久删除该记录', exact: true }).waitFor();
-    await click(recycle.getByRole('button', { name: '永久删除该记录', exact: true }));
+    // 上一组保存设置会异步刷新回收站；用可操作性等待，避免检查启用后又在刷新中调用无效的DOM click。
+    await recycle.getByRole('button', { name: '永久删除该记录', exact: true }).click();
     const danger = recycle.getByRole('dialog', { name: '永久删除', exact: true }), primary = danger.getByRole('button', { name: '确定', exact: true });
     assert.equal(await primary.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(184, 67, 67)'); assert.equal(await primary.evaluate(el => getComputedStyle(el).color), 'rgb(255, 255, 255)');
     await primary.hover(); assert.ok(await primary.evaluate(el => { const rgb = getComputedStyle(el).backgroundColor.match(/[\d.]+/g).map(Number); return rgb[0] > rgb[1] && rgb[0] > rgb[2]; }));
@@ -386,7 +521,7 @@ try {
     // 显示快照没有原生待选状态，实际只读选择命令应返回错误，不触发发送。
     assert.equal(await invoke('get_shortcut_candidates'), null); await click(candidates.locator('[data-candidate]').first()); await candidates.locator('.candidate-error').waitFor();
     assert.equal(await candidates.locator('footer').evaluate(el => getComputedStyle(el).color), 'rgb(184, 67, 67)'); await screenshot(candidates, 'theme-default-candidate-error');
-    await invoke('plugin:event|emit', { event: 'shortcut-candidates', payload: { shortcut: 'Ctrl+1', phrases: [item], selectedIndex: 0, target: { hwnd: 0, focus: 0, pid: 0 } } }); await candidates.locator('.candidate-error').waitFor({ state: 'detached' });
+    await invoke('plugin:event|emit', { event: 'shortcut-candidates', payload: { sessionId: 'illustration-display-only', layoutKey: 'style-layout', maxWidth: 370, maxHeight: 800, shortcut: 'Ctrl+1', phrases: [item], selectedIndex: 0, target: { hwnd: 0, focus: 0, pid: 0 } } }); await candidates.locator('.candidate-error').waitFor({ state: 'detached' });
   });
   await check('主题默认正文、标题、提示与七种主题实心按钮白字对比度达到4.5比1', async () => {
     const palette = await page.evaluate(() => { const probe = document.createElement('span'); document.body.append(probe); const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1; const ctx = canvas.getContext('2d'); const palette = Object.fromEntries(['surface', 'panel', 'text', 'muted', 'title', 'accent', 'selection', 'hover'].map(key => { probe.style.color = 'var(--theme-' + key + ')'; ctx.fillStyle = getComputedStyle(probe).color; ctx.fillRect(0, 0, 1, 1); return [key, '#' + [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3).map(v => v.toString(16).padStart(2, '0')).join('')]; })); probe.remove(); return palette; });
@@ -398,7 +533,7 @@ try {
     for (const target of [page, preview, candidates]) assert.ok(await target.locator('section').first().evaluate(el => el.scrollWidth <= el.clientWidth + 1));
     await dismiss(page); await screenshot(page, 'theme-default-main');
     await preview.setViewportSize({ width: 300, height: 180 }); await screenshot(preview, 'theme-default-preview');
-    await candidates.setViewportSize({ width: 370, height: 94 }); await screenshot(candidates, 'theme-default-candidates');
+    await candidates.setViewportSize({ width: 370, height: 95 }); await screenshot(candidates, 'theme-default-candidates');
     await settings.setViewportSize({ width: 594, height: 620 }); await click(settings.getByRole('button', { name: '界面设置', exact: true })); await settings.locator('.settings-content').evaluate(el => { el.scrollTop = 0; }); await screenshot(settings, 'theme-default-settings');
   });
   await check('预览短文贴合、长文可超过480像素、受剩余高度限制且标题换行重测', async () => {
@@ -426,7 +561,7 @@ try {
     await page.evaluate(() => {
       const original = window.fetch.bind(window); window.__illustrationQA.holdSave = true;
       window.fetch = async (input, init) => {
-        if (window.__illustrationQA.holdSave && new URL(typeof input === 'string' ? input : input.url).pathname.endsWith('/save_settings')) {
+        if (window.__illustrationQA.holdSave && new URL(typeof input === 'string' ? input : input.url).pathname.endsWith('/patch_settings')) {
           window.__illustrationQA.holdSave = false;
           await new Promise(resolve => window.__illustrationQA.releaseSave = resolve);
         }
@@ -456,6 +591,10 @@ try {
         target = await view(route, '.standard-titlebar');
       }
       await target.setViewportSize({ width, height }); await hook(target); views.add(target); windows.push([route, target]);
+      const geometry = await target.locator('.client-window').evaluate(el => { const r = el.getBoundingClientRect(); return { width: r.width, height: r.height, x: r.x, y: r.y, viewportWidth: innerWidth, viewportHeight: innerHeight }; });
+      assert.deepEqual([geometry.x, geometry.y, geometry.width, geometry.height], [0, 0, geometry.viewportWidth, geometry.viewportHeight], route + '必须跟随客户区，不能被旧固定尺寸覆盖');
+      const nativeButtons = await target.locator('button').evaluateAll(buttons => buttons.filter(b => !b.classList.contains('ui-button')).map(b => b.getAttribute('aria-label') || b.textContent));
+      assert.deepEqual(nativeButtons, [], route + '存在未迁移的按钮');
       await target.waitForFunction(() => document.documentElement.dataset.theme === 'pink');
       assert.equal((await styles(target, '.standard-titlebar')).background, 'rgb(150, 86, 114)');
     }
@@ -481,6 +620,26 @@ try {
     }
     await patchSettings({ theme: 'default' }); await page.waitForFunction(() => document.documentElement.dataset.theme === 'default');
     await screenshot(page, 'all-windows-default-main');
+  });
+  await check('最小化悬浮条与独立短语菜单保留专用几何，七种主题共用按钮与焦点材料', async () => {
+    const compact = [];
+    for (const [route, selector, width, height] of [['minimized-float', '.minimized-float', 80, 36], ['common-menu', '.common-menu-window', 176, 130]]) {
+      if (!context.pages().some(p => !p.isClosed() && p.url().includes('#' + route))) await invoke('plugin:webview|create_webview_window', { options: { label: route, url: 'index.html#' + route, title: route, width, height, decorations: false, visible: false, focus: false, skipTaskbar: true } });
+      const target = await view(route, selector); await target.setViewportSize({ width, height }); compact.push([route, target]);
+    }
+    for (const theme of ['default', 'green', 'blue', 'black', 'pink', 'lavender', 'orange']) {
+      await patchSettings({ theme });
+      await invoke('plugin:event|emit', { event: 'common-menu', payload: { requestId: 'style-display-only', libraryId: initial.libraryId, phraseId: 'display-only', canSort: true, theme } });
+      for (const [route, target] of compact) {
+        await target.waitForFunction(theme => document.documentElement.dataset.theme === theme, theme);
+        const buttons = await target.locator('button').evaluateAll(elements => elements.map(el => { const s = getComputedStyle(el), r = el.getBoundingClientRect(); return { shared: el.classList.contains('ui-button'), height: r.height, outline: s.outlineStyle }; }));
+        assert.ok(buttons.length && buttons.every(b => b.shared && b.outline === 'none'));
+        if (route === 'common-menu') { assert.equal((await styles(target, '.common-menu-window')).radius, '0px'); assert.ok(buttons.every(b => b.height === 32)); }
+        else assert.deepEqual(await target.locator('.minimized-float').evaluate(el => ({ width: el.clientWidth, height: el.clientHeight })), { width: 80, height: 36 });
+        if (theme === 'default' || theme === 'pink') await screenshot(target, 'compact-' + theme + '-' + route);
+      }
+    }
+    await patchSettings({ theme: 'default' });
   });
   const report = { date: new Date().toISOString(), scope: 'illustrations-and-theme', checks: results.length, results, limits: ['真实WebView2与SQLite使用隔离数据，窗口保持隐藏；较小尺寸通过CDP视口验证', '七种主题逐一检查六处界面并保存截图；预览与候选种入显示快照，未重验实体快捷键、真实发送、系统DPI、多显示器和安装流程'] };
   await fs.writeFile(path.join(evidence, 'report.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify({ evidence, checks: results.length }, null, 2));

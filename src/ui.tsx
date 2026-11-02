@@ -1,9 +1,27 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type FormEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentPropsWithRef, type ReactNode, type FormEvent } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { call, closeWindow } from './api';
 import { categoryLabel, type Category } from './types';
 import type { NoticeKind } from './notices';
+import { useModalClose } from './close';
+
+type ButtonProps = ComponentPropsWithRef<'button'> & {
+  variant?: 'primary' | 'secondary' | 'ghost' | 'text';
+  size?: 'regular' | 'compact';
+  danger?: boolean;
+  busy?: boolean;
+};
+
+/** 只统一外观和原生按钮语义；请求、重试和发送防重仍由调用方负责。
+ * React 19 的原生 ref 随其余属性透传，避免迁移后破坏菜单定位和焦点恢复。 */
+export function Button({ variant = 'secondary', size = 'regular', danger = false, busy = false, type = 'button', className = '', disabled, 'aria-busy': ariaBusy, ...props }: ButtonProps) {
+  return <button {...props} type={type} className={`ui-button ui-button--${variant} ui-button--${size}${danger ? ' ui-button--danger' : ''}${className ? ` ${className}` : ''}`} disabled={disabled || busy} aria-busy={busy || ariaBusy} />;
+}
+
+export function IconButton({ className = '', variant = 'ghost', ...props }: ButtonProps & { 'aria-label': string }) {
+  return <Button {...props} variant={variant} className={`ui-icon-button${className ? ` ${className}` : ''}`} />;
+}
 
 /** 发送会移走焦点，WebView 可能残留 repeat 标记；用实际松键和失焦控制一次按住只提交一次。 */
 export function useEnterSubmit() {
@@ -55,7 +73,8 @@ function DockOffIcon() {
   const slash = 'M2.5 17.5l15-15';
   return <svg viewBox="0 0 20 20" aria-hidden="true"><defs><mask id={maskId}><rect width="20" height="20" fill="white" stroke="none" /><path d={slash} stroke="black" strokeWidth="4" /></mask></defs><path d={paths.dock} mask={`url(#${maskId})`} /><path d={slash} /></svg>;
 }
-export function Icon({ name }: { name: string }) { return name === 'dock-off' ? <DockOffIcon /> : <svg viewBox="0 0 20 20" aria-hidden="true"><path d={paths[name] || paths.document} /></svg>; }
+export function iconPath(name: string) { return paths[name] || paths.document; }
+export function Icon({ name }: { name: string }) { return name === 'dock-off' ? <DockOffIcon /> : <svg viewBox="0 0 20 20" aria-hidden="true"><path d={iconPath(name)} /></svg>; }
 /** 空值和历史橙色均表示默认标题色，由当前主题的 CSS 接管。
  * 单条话术自定义色优先于全局自定义色；只解析显示值，不改写库中的旧记录。 */
 export function phraseTitleColor(color?: string, defaultColor?: string) {
@@ -78,11 +97,11 @@ export function CategoryColorPicker({ label, value, defaultColor = '#ffac00', di
     document.addEventListener('pointerdown', close); ref.current?.addEventListener('keydown', escape);
     return () => { document.removeEventListener('pointerdown', close); ref.current?.removeEventListener('keydown', escape); };
   }, [open]);
-  return <div className="category-color-picker" ref={ref}><button type="button" className="category-color-trigger" aria-label={`设置 ${label} ${fontColor ? '字体颜色' : '背景色'}`} aria-expanded={open} disabled={disabled} onClick={() => setOpen(v => !v)}><span style={fontColor ? { color: value || defaultColor } : undefined}>{fontColor ? '颜色效果' : label}</span>{!fontColor && <i style={{ background: value || defaultColor }} />}</button>
-    {open && <div className="category-color-popover"><div className="category-color-grid" role="group" aria-label={fontColor ? '标题字体色色板' : '分类背景色色板'}>{(fontColor ? ['#ff6600', '#0000ff', '#ff00ff', '#32ad21', '#ff0000', '#ca9663', '#00caca', '#000000'] : categoryColors).map(color => <button key={color} type="button" style={{ background: color, color: categoryTextColor(color) }} aria-label={`颜色 ${color}`} aria-pressed={value === color} disabled={disabled} onClick={() => { onChange(color); setOpen(false); ref.current?.querySelector<HTMLButtonElement>('.category-color-trigger')?.focus(); }}>{value === color && <Icon name="check" />}</button>)}</div><button type="button" className="restore-category-color" disabled={disabled} onClick={() => { onChange(''); setOpen(false); ref.current?.querySelector<HTMLButtonElement>('.category-color-trigger')?.focus(); }}>恢复默认颜色</button></div>}
+  return <div className="category-color-picker" ref={ref}><Button className="category-color-trigger" aria-label={`设置 ${label} ${fontColor ? '字体颜色' : '背景色'}`} aria-expanded={open} disabled={disabled} onClick={() => setOpen(v => !v)}><span style={fontColor ? { color: value || defaultColor } : undefined}>{fontColor ? '颜色效果' : label}</span>{!fontColor && <i style={{ background: value || defaultColor }} />}</Button>
+    {open && <div className="category-color-popover"><div className="category-color-grid" role="group" aria-label={fontColor ? '标题字体色色板' : '分类背景色色板'}>{(fontColor ? ['#ff6600', '#0000ff', '#ff00ff', '#32ad21', '#ff0000', '#ca9663', '#00caca', '#000000'] : categoryColors).map(color => <Button variant="ghost" key={color} type="button" style={{ background: color, color: categoryTextColor(color) }} aria-label={`颜色 ${color}`} aria-pressed={value === color} disabled={disabled} onClick={() => { onChange(color); setOpen(false); ref.current?.querySelector<HTMLButtonElement>('.category-color-trigger')?.focus(); }}>{value === color && <Icon name="check" />}</Button>)}</div><Button variant="text" size="compact" className="restore-category-color" disabled={disabled} onClick={() => { onChange(''); setOpen(false); ref.current?.querySelector<HTMLButtonElement>('.category-color-trigger')?.focus(); }}>恢复默认颜色</Button></div>}
   </div>;
 }
-export function Titlebar({ title, minimize = false, maximize = false }: { title: string; minimize?: boolean; maximize?: boolean }) { return <header className="standard-titlebar"><img className="app-symbol" src="/shanyu.png" alt="" draggable={false} /><span data-tauri-drag-region>{title}</span><span className="titlebar-spacer" data-tauri-drag-region />{minimize && <button aria-label="最小化窗口" onClick={() => void getCurrentWindow().minimize()}><Icon name="minus" /></button>}{maximize && <button aria-label="最大化或还原窗口" onClick={() => void getCurrentWindow().toggleMaximize()}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5h10v10H5z" /></svg></button>}<button aria-label="关闭窗口" onClick={() => void closeWindow()}><Icon name="close" /></button></header>; }
+export function Titlebar({ title, minimize = false, maximize = false }: { title: string; minimize?: boolean; maximize?: boolean }) { return <header className="standard-titlebar"><img className="app-symbol" src="/shanyu.png" alt="" draggable={false} /><span data-tauri-drag-region>{title}</span><span className="titlebar-spacer" data-tauri-drag-region />{minimize && <IconButton aria-label="最小化窗口" onClick={() => void getCurrentWindow().minimize()}><Icon name="minus" /></IconButton>}{maximize && <IconButton aria-label="最大化或还原窗口" onClick={() => void getCurrentWindow().toggleMaximize()}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5h10v10H5z" /></svg></IconButton>}<IconButton aria-label="关闭窗口" onClick={() => void closeWindow()}><Icon name="close" /></IconButton></header>; }
 export function Feedback({ message, clear, kind = 'error', title, count = 1, stop }: { message: string; clear: () => void; kind?: NoticeKind; title?: string; count?: number; stop?: () => void }) {
   const clearRef = useRef(clear); clearRef.current = clear;
   const [hovered, setHovered] = useState(false); const [focused, setFocused] = useState(false);
@@ -110,9 +129,9 @@ export function Feedback({ message, clear, kind = 'error', title, count = 1, sto
     <span className="feedback-mark" aria-hidden="true">{kind === 'success' ? '✓' : kind === 'progress' ? '·' : '!'}</span>
     <div className="feedback-content">{title && <strong>{title}</strong>}<span className="feedback-message" id={messageId} ref={messageRef} tabIndex={expanded ? 0 : undefined}>{message}</span>{count > 1 && <small>还有 {count - 1} 条提示</small>}</div>
     <div className="feedback-actions">
-      {(truncated || expanded) && <button type="button" className="feedback-more" aria-label={expanded ? '收起详情' : '查看详情'} aria-expanded={expanded} aria-controls={messageId} onClick={() => setExpanded(value => !value)}>{expanded ? '收起' : '详情'}</button>}
-      {stop && <button type="button" className="feedback-stop" onClick={stop}>停止</button>}
-      <button type="button" className="feedback-close" aria-label="关闭提示" title="关闭提示" onClick={() => { setExpanded(false); clear(); }}>×</button>
+      {(truncated || expanded) && <Button variant="ghost" type="button" className="feedback-more" aria-label={expanded ? '收起详情' : '查看详情'} aria-expanded={expanded} aria-controls={messageId} onClick={() => setExpanded(value => !value)}>{expanded ? '收起' : '详情'}</Button>}
+      {stop && <Button variant="ghost" type="button" className="feedback-stop" onClick={stop}>停止</Button>}
+      <IconButton className="feedback-close" aria-label="关闭提示" title="关闭提示" onClick={() => { setExpanded(false); clear(); }}>×</IconButton>
     </div>
   </div> : null;
 }
@@ -127,16 +146,26 @@ export function FileIcon({ path }: { path: string }) {
   useEffect(() => { let disposed = false; void call<string>('get_file_icon', { path }).then(path => { if (!disposed) setUrl(convertFileSrc(path)); }).catch(() => {}); return () => { disposed = true; }; }, [path]);
   return url ? <img className="row-system-icon" src={url} alt="" /> : <Icon name="file" />;
 }
-export interface DialogSpec { title: string; fields: ReactNode; submit?: string; className?: string; onSubmit: (data: FormData) => Promise<void> }
+export interface DialogSpec { title: string; fields: ReactNode; submit?: string; className?: string; danger?: boolean; hasDraft?: boolean; onSubmit: (data: FormData) => Promise<void> }
+export function DialogHeader({ title, id, busy, close }: { title: string; id: string; busy: boolean; close: () => void }) {
+  return <header className="dialog-header"><h2 id={id}>{title}</h2><IconButton data-dialog-close aria-label="关闭弹窗" disabled={busy} onClick={close}><Icon name="close" /></IconButton></header>;
+}
+/** 原生模态使宿主标题栏 inert；只在独立窗口内代理原位置的 ×，不能与弹窗自身 × 混用。 */
+export function DialogWindowClose({ busy, blocked = () => busy }: { busy: boolean; blocked?: () => boolean }) {
+  return <IconButton data-dialog-close className="dialog-window-close" aria-label="关闭窗口" disabled={busy} onClick={() => { if (!blocked()) void closeWindow(); }}><Icon name="close" /></IconButton>;
+}
+function formValues(dialog: HTMLDialogElement | null) {
+  return JSON.stringify([...dialog?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input,select,textarea') || []].map(input => input instanceof HTMLInputElement && ['checkbox', 'radio'].includes(input.type) ? input.checked : input instanceof HTMLSelectElement && input.multiple ? [...input.selectedOptions].map(option => option.value) : input.value));
+}
 export function FormDialog({ spec, close, windowClose = false }: { spec: DialogSpec; close: () => void; windowClose?: boolean }) {
-  const ref = useRef<HTMLDialogElement>(null); const busyRef = useRef(false); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false); const [error, setError] = useState(''); const [busy, setBusy] = useState(false), initial = useRef('');
+  const modal = useModalClose({ close, busy: () => busyRef.current, dirty: () => spec.hasDraft !== false && formValues(modal.ref.current) !== initial.current });
   const titleId = useId();
-  const trigger = useRef(document.activeElement as HTMLElement | null);
-  useEffect(() => { ref.current?.showModal(); return () => { if (trigger.current?.isConnected) trigger.current.focus(); }; }, []);
+  useEffect(() => { initial.current = formValues(modal.ref.current); }, []);
   // 同步锁覆盖同一事件批次内的重复提交；执行期间 Escape 也不能提前关闭确认窗口。
-  async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (busyRef.current) return; busyRef.current = true; setBusy(true); try { await spec.onSubmit(new FormData(e.currentTarget)); close(); } catch (e) { setError(String(e)); } finally { busyRef.current = false; setBusy(false); } }
+  async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (busyRef.current || modal.isClosing()) return; busyRef.current = true; setBusy(true); try { await spec.onSubmit(new FormData(e.currentTarget)); close(); } catch (e) { setError(String(e)); } finally { busyRef.current = false; setBusy(false); } }
   // 模态dialog会让外面的自绘标题栏失去交互；管理窗关闭按钮在顶层原位置接收点击，仍经过草稿确认。
-  return <dialog ref={ref} className={`small-dialog ${spec.className || ''}`} aria-labelledby={titleId} onCancel={e => { if (busyRef.current) e.preventDefault(); else close(); }}>{windowClose && <button type="button" className="dialog-window-close" aria-label="关闭窗口" disabled={busy} onClick={() => void closeWindow()}><Icon name="close" /></button>}<form onSubmit={submit}><h2 id={titleId}>{spec.title}</h2><fieldset className="dialog-fields" disabled={busy}>{spec.fields}{error && <p className="validation-error" role="alert">{error}</p>}</fieldset><div className="dialog-actions"><button type="button" className="secondary-button" onClick={close} disabled={busy}>取消</button><button type="submit" className="primary-button" disabled={busy}>{busy ? '提交中…' : spec.submit || '确定'}</button></div></form></dialog>;
+  return <dialog ref={modal.ref} className={`small-dialog ${spec.className || ''}`} aria-labelledby={titleId} onCancel={modal.onCancel} onKeyDown={modal.onKeyDown}>{(windowClose || modal.windowClose) && <DialogWindowClose busy={busy} blocked={() => busyRef.current || modal.isClosing()} />}<form onSubmit={submit}><DialogHeader title={spec.title} id={titleId} busy={busy} close={() => void modal.requestClose()} /><fieldset className="dialog-fields" disabled={busy}>{spec.fields}{(error || modal.error) && <p className="validation-error" role="alert">{error || modal.error}</p>}</fieldset><div className="dialog-actions"><Button onClick={() => void modal.requestClose()} disabled={busy}>取消</Button><Button type="submit" variant="primary" danger={spec.danger} busy={busy}>{busy ? '提交中…' : spec.submit || '确定'}</Button></div></form></dialog>;
 }
 export function CategoryPicker({ categories, rootId, groupId = null }: { categories: Category[]; rootId: string; groupId?: string | null }) {
   const [root, setRoot] = useState(rootId);

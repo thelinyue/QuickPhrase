@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { call } from './api';
-import { Icon } from './ui';
+import { Button, IconButton, Icon } from './ui';
 
 /** 搜索结果在用户触发操作时固定关键词和库身份，异步投递不得借用后来的搜索输入。 */
 export interface SearchUsage { query: string; libraryId: string }
@@ -55,12 +55,12 @@ export function SearchHistoryBar({ items, clearing, onSelect, onClear, label, pr
 }) {
   if (!items.length && presentation !== 'main') return null;
   if (presentation === 'main') return <section className="search-history main-search-history" aria-label="搜索记录">
-    <header><span>搜索方式，可使用拼音、关键词、拼音首字母</span><button type="button" className="clear-search-history" aria-label="清空搜索记录" title="清空搜索记录" disabled={clearing || !items.length} onClick={onClear}><Icon name="trash" /></button></header>
-    {!!items.length && <div className="search-history-items">{items.map(query => <button type="button" key={query} title={query} onClick={() => onSelect(query)}>{query}</button>)}</div>}
+    <header><span>搜索方式，可使用拼音、关键词、拼音首字母</span><IconButton type="button" className="clear-search-history" aria-label="清空搜索记录" title="清空搜索记录" disabled={clearing || !items.length} onClick={onClear}><Icon name="trash" /></IconButton></header>
+    {!!items.length && <div className="search-history-items">{items.map(query => <Button variant="ghost" type="button" key={query} title={query} onClick={() => onSelect(query)}>{query}</Button>)}</div>}
   </section>;
   return <section className="search-history" aria-label="搜索记录">
     {label && <span className="search-history-label">{label}：</span>}
-    <div className="search-history-items">{items.map(query => <button type="button" key={query} title={query} onClick={() => onSelect(query)}>{query}</button>)}</div>
-    <button type="button" className="clear-search-history" aria-label="清空搜索记录" title="清空搜索记录" disabled={clearing} onClick={onClear}><Icon name="trash" /></button>
+    <div className="search-history-items">{items.map(query => <Button variant="ghost" type="button" key={query} title={query} onClick={() => onSelect(query)}>{query}</Button>)}</div>
+    <IconButton type="button" className="clear-search-history" aria-label="清空搜索记录" title="清空搜索记录" disabled={clearing} onClick={onClear}><Icon name="trash" /></IconButton>
   </section>;
 }

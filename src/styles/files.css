@@ -1,0 +1,131 @@
+.company-content > .account-notice { align-items: flex-start; max-height: min(24vh, 140px); overflow: auto; }
+.cloud-selection > .account-notice { align-items: flex-start; max-height: min(24vh, 140px); overflow: auto; }
+.file-window { min-height: 198px; background: var(--theme-surface); overflow-y: auto; }
+.file-form { padding: 16px; overflow-y: auto; }
+.file-form > label { display: flex; flex-direction: column; gap: var(--space-1); }
+.add-files { margin-top: 16px; height: 32px; }
+.chosen-files { display: flex; flex-wrap: wrap; gap: 5px; max-height: 100px; overflow: auto; }
+.chosen-files span { background: var(--theme-hover); padding: 3px 6px; margin-top: 8px; border: 1px solid var(--theme-line); }
+.file-form-footer { display: flex; align-items: center; gap: 15px; margin-top: 7px; font-size: var(--font-caption); }
+/* 云文件管理沿用桌面参考视频的蓝色标题栏、灰色左栏和细线表格；窄窗口仅让表格横向滚动。 */
+.company-window { display: flex; flex-direction: column; width: 100vw; height: 100vh; }
+.company-window > .standard-titlebar { height: 40px; }
+.company-content { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; padding: 0 18px; background: var(--theme-surface); }
+.company-toolbar { display: flex; gap: var(--space-2); align-items: center; flex-shrink: 0; min-height: 58px; padding: 12px 0; flex-wrap: wrap; background: var(--theme-panel); }
+.company-toolbar strong { font-size: var(--font-body); font-weight: 500; }
+.company-toolbar-spacer { flex: 1; padding-left: 4px; color: var(--theme-muted); }
+.company-search { display: flex; align-items: center; position: relative; flex: 1; min-width: 145px; }
+.company-search input { width: 100%; min-width: 0; padding: 4px 30px 4px 10px; }
+.company-search svg { position: absolute; right: 8px; width: 16px; height: 16px; color: var(--theme-muted); pointer-events: none; }
+.company-list { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--theme-line); position: relative; }
+.company-list table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 710px; table-layout: fixed; font-size: var(--font-body); }
+.company-list th { padding: 5px 8px; border-bottom: 1px solid var(--theme-line); vertical-align: middle; text-align: left; overflow-wrap: anywhere; position: sticky; top: 0; z-index: 1; background: var(--theme-panel); color: var(--theme-muted); font-weight: 500; height: 36px; border-right: 0; }
+.company-list td { padding: 5px 8px; border-bottom: 1px solid var(--theme-line); vertical-align: middle; text-align: left; overflow-wrap: anywhere; }
+.company-list th:last-child { border-right: 0; }
+.company-list tr.selected td { background: var(--theme-selection); }
+.company-list tr:hover td { background: var(--theme-hover); }
+.company-list th.company-check { width: 36px; text-align: center; }
+.company-list td.company-check { width: 36px; text-align: center; }
+.company-window input[type="checkbox"] { accent-color: var(--theme-accent); width: 14px; height: 14px; vertical-align: middle; margin: 0; }
+.company-list table:has(.company-check) td { padding-top: 4px; padding-bottom: 4px; }
+/* 文件名与缓存状态仍分两行，默认650像素窗口完整容纳十条记录及分页。 */
+.company-list table:not(.company-transfer-table):not(.company-recycle-table):has(.company-check) td { padding-top: 2px; padding-bottom: 2px; }
+.company-list table:not(.company-transfer-table):not(.company-recycle-table):has(.company-check) th:nth-child(3) { width: 65px; }
+.company-list table:not(.company-transfer-table):not(.company-recycle-table):has(.company-check) th:nth-child(4) { width: 130px; }
+.company-list table:not(.company-transfer-table):not(.company-recycle-table):has(.company-check) th:nth-child(5) { width: 75px; }
+.company-list table:not(.company-transfer-table):not(.company-recycle-table):has(.company-check) th:last-child { width: 120px; }
+.company-selection-toolbar { display: flex; flex-shrink: 0; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3); margin-bottom: 8px; }
+.company-selection-toolbar > span { color: var(--theme-muted); font-size: var(--font-small); }
+.company-batch-menu .company-menu-popup { left: 0; right: auto; }
+.company-sort-button { border: 0; background: transparent; color: inherit; padding: 4px 0; display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; height: var(--control-height-compact); }
+.company-file-name { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.company-file-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.company-file-name svg { width: 20px; height: 20px; flex-shrink: 0; object-fit: contain; }
+.company-file-name .row-system-icon { width: 20px; height: 20px; flex-shrink: 0; object-fit: contain; }
+.company-picker .row-system-icon { width: 20px; height: 20px; flex-shrink: 0; object-fit: contain; }
+.company-dialog-file .row-system-icon { width: 20px; height: 20px; flex-shrink: 0; object-fit: contain; }
+.company-file-details > span { display: block; overflow: hidden; text-overflow: ellipsis; }
+.company-cache-status { display: block; margin: 2px 0 0; color: var(--theme-muted); font-size: var(--font-caption); line-height: 12px; }
+.company-date { color: var(--theme-muted); font-size: var(--font-caption); }
+.company-actions { display: flex; gap: 9px; align-items: center; }
+.company-menu { position: relative; }
+.company-menu-popup { position: absolute; z-index: 5; top: 100%; right: 0; min-width: 116px; padding: 4px 0; border: 1px solid var(--theme-line); background: var(--theme-surface); border-radius: var(--radius-popover); box-shadow: var(--shadow-popover); }
+.company-menu-popup button { display: block; width: 100%; padding: 8px 12px; border: 0; background: var(--theme-surface); color: var(--theme-text); text-align: left; white-space: nowrap; }
+.company-menu-popup button:hover:not(:disabled) { background: var(--theme-hover); }
+.company-menu-popup button:focus { background: var(--theme-hover); }
+.company-floating-menu { position: fixed; right: auto; z-index: 60; max-height: calc(100vh - 4px); overflow-y: auto; }
+.company-floating-menu button { height: 32px; padding: 0 16px; }
+.company-floating-menu button:disabled { color: var(--theme-muted); background: var(--theme-surface); }
+.company-floating-menu .menu-separator { height: 1px; margin: 3px 5px; background: var(--theme-line); }
+.company-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2); padding: 40px 18px; min-height: 180px; color: var(--theme-muted); text-align: center; }
+.company-empty > svg { width: 44px; height: 44px; color: var(--theme-muted); stroke-width: 1; }
+.company-empty p { margin: 0; }
+.company-message { margin: 0 0 10px; padding: 8px 10px; background: var(--theme-gold-soft); color: var(--theme-gold-text); line-height: 1.7; overflow-wrap: anywhere; flex-shrink: 0; max-height: 130px; overflow: auto; }
+.company-hint { margin: 0 0 10px; padding: 8px 10px; line-height: 1.7; overflow-wrap: anywhere; flex-shrink: 0; color: var(--theme-muted); background: var(--theme-panel); }
+.company-upload-hint { margin: 0 0 8px; color: var(--theme-muted); font-size: var(--font-small); }
+.company-selection-toolbar .company-upload-hint { margin: 0 0 0 auto; }
+.company-drop-overlay { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); background: var(--theme-surface); border: 2px dashed var(--blue); pointer-events: none; color: var(--theme-title); }
+.company-drop-overlay svg { width: 32px; height: 32px; }
+.company-transfer-table small.company-transfer-error { display: block; color: var(--theme-danger); line-height: 1.5; margin-top: 4px; }
+.company-pagination { display: flex; flex-shrink: 0; align-items: center; justify-content: flex-end; gap: 7px; min-height: 52px; padding: 10px 0; color: var(--theme-muted); font-size: var(--font-small); flex-wrap: wrap; }
+.company-pagination > button { font-size: var(--font-page); }
+.company-page-number { display: grid; place-items: center; min-width: 32px; height: 32px; border-radius: var(--theme-radius); color: white; background: var(--theme-accent); }
+.company-pagination form { display: flex; align-items: center; gap: 6px; }
+.company-pagination label { display: flex; align-items: center; gap: 6px; }
+.company-pagination input { width: 38px; text-align: center; }
+.company-permission-actions { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.company-permission-conflict { display: block; margin-top: 4px; color: var(--theme-gold-text); }
+.company-muted { color: var(--theme-muted); }
+.company-transfer-table th:first-child { width: 36%; }
+.company-transfer-table th:nth-child(2) { width: 27%; }
+.company-transfer-table th:nth-child(3) { width: 15%; }
+.company-progress { display: flex; align-items: center; gap: var(--space-2); margin-bottom: 4px; }
+.company-progress progress { flex: 1; min-width: 0; width: auto; height: 7px; accent-color: var(--theme-accent); }
+.company-progress > span { flex: 0 0 36px; white-space: nowrap; text-align: right; }
+.company-progress progress::-webkit-progress-bar { background: var(--theme-hover); }
+.company-transfer-table small { color: var(--theme-muted); font-size: var(--font-caption); }
+.company-success { color: var(--theme-success); }
+.company-list table.company-recycle-table { min-width: 760px; }
+.company-list table.company-recycle-table th:nth-child(3) { width: 55px; }
+.company-list table.company-recycle-table th:nth-child(4) { width: 125px; }
+.company-list table.company-recycle-table th:nth-child(6) { width: 125px; }
+.company-list table.company-recycle-table th:nth-child(5) { width: 75px; }
+.company-list table.company-recycle-table th:nth-child(7) { width: 75px; }
+.company-list table.company-recycle-table th:last-child { width: 80px; }
+.company-recycle-table td:nth-child(5) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.company-recycle-table td:nth-child(7) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.company-confirm-list { max-height: 210px; overflow: auto; padding-left: 20px; line-height: 1.9; }
+.company-dialog-file { display: flex; align-items: center; gap: var(--space-2); overflow-wrap: anywhere; }
+.company-progress progress::-webkit-progress-value { background: var(--blue); }
+.association-form { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; }
+.association-body { display: flex; min-width: 0; min-height: 0; flex: 1; }
+.cloud-selection { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; padding: 0 16px; }
+.local-selection { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; padding: 0 16px; }
+.association-category { display: flex; align-items: center; gap: var(--space-4); padding: 12px 16px; border-bottom: 1px solid var(--theme-line); }
+.association-category label { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+.association-category select { min-width: 180px; max-width: 340px; }
+.association-category > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--theme-muted); }
+.association-sources { flex: 0 0 132px; padding: 12px 6px; background: var(--theme-panel); border-right: 1px solid var(--theme-line); }
+.association-sources button { display: block; width: 100%; border: 0; background: transparent; padding: 12px 6px; text-align: left; height: auto; }
+.association-sources button.active { color: var(--theme-accent); background: var(--theme-selection); }
+.cloud-selection .company-toolbar input { flex: 1; min-width: 100px; max-width: 340px; }
+.company-table-wrap { flex: 1; min-height: 0; overflow-y: auto; }
+.local-selection-list { flex: 1; min-height: 0; overflow-y: auto; }
+.company-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: var(--font-small); }
+.company-table th { padding: 8px 6px; border-bottom: 1px solid var(--theme-line); text-align: left; overflow-wrap: anywhere; position: sticky; top: 0; z-index: 1; background: var(--theme-panel); font-weight: 500; }
+.company-table td { padding: 8px 6px; border-bottom: 1px solid var(--theme-line); text-align: left; overflow-wrap: anywhere; }
+.company-table th:first-child { width: 32px; }
+.company-table th:nth-child(3) { width: 72px; }
+.company-table th:nth-child(4) { width: 128px; }
+.company-table th:nth-child(5) { width: 90px; }
+.company-table th button { padding: 0; }
+.company-table tr.selected { background: var(--theme-selection); }
+.cloud-file-name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.cloud-file-name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cloud-file-name small { display: block; color: var(--theme-muted); font-size: var(--font-caption); overflow: hidden; text-overflow: ellipsis; }
+.cloud-file-name .row-system-icon { width: 20px; height: 20px; flex-shrink: 0; }
+.local-selection-list > div { padding: 10px 4px; border-bottom: 1px solid var(--theme-line); }
+.association-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--theme-line); background: var(--theme-panel); flex-shrink: 0; }
+.association-footer > span:first-child { color: var(--theme-muted); font-size: var(--font-small); }
+.cloud-selection .company-pagination > button { font-size: var(--font-small); }
+.company-files-panel { display: flex; flex: 1; min-height: 0; min-width: 0; }

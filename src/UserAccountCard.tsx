@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Icon } from './ui';
+import { Button, IconButton, Icon } from './ui';
 import { teamRoleLabel, type TeamUser } from './types';
 
 export type AccountEdit = { userId: string; field: 'displayName' | 'contact'; original: string; value: string };
@@ -25,23 +25,23 @@ export function UserAccountCard({ person: u, self, busy, edit, expanded, beginEd
       <input ref={input} aria-label={`${u.username}的${label}`} value={edit!.value} maxLength={key === 'displayName' ? 50 : 100} disabled={busy} onChange={e => changeEdit(e.target.value)}
         onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
         onKeyDown={e => { if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return; if (e.key === 'Enter') { e.preventDefault(); saveEdit(); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelEdit(); } }} />
-      <button type="button" className="user-inline-action" aria-label={`保存${label}`} title={`保存${label}（Enter）`} disabled={busy} onClick={saveEdit}><Icon name="check" /></button>
-      <button type="button" className="user-inline-action" aria-label={`取消修改${label}`} title="取消（Esc）" disabled={busy} onClick={cancelEdit}><Icon name="close" /></button>
-    </div> : <button type="button" className={`user-edit-value${u[key] ? '' : ' empty'}`} aria-label={`修改${u.username}的${label}`} title={u[key] || `点击填写${label}`} disabled={busy} onClick={e => beginEdit(key, e.currentTarget)}><span>{u[key] || '点击填写'}</span><Icon name="pencil" /></button>}</div>;
+      <IconButton type="button" aria-label={`保存${label}`} title={`保存${label}（Enter）`} disabled={busy} onClick={saveEdit}><Icon name="check" /></IconButton>
+      <IconButton type="button" aria-label={`取消修改${label}`} title="取消（Esc）" disabled={busy} onClick={cancelEdit}><Icon name="close" /></IconButton>
+    </div> : <Button variant="ghost" type="button" className={`user-edit-value${u[key] ? '' : ' empty'}`} aria-label={`修改${u.username}的${label}`} title={u[key] || `点击填写${label}`} disabled={busy} onClick={e => beginEdit(key, e.currentTarget)}><span>{u[key] || '点击填写'}</span><Icon name="pencil" /></Button>}</div>;
   }
   return <article className="user-card" aria-label={`账号 ${u.username}`}>
     <div className="user-card-heading">
       <div className="user-identity"><span className="user-field-label">账号：</span><strong title={u.username}>{u.username}</strong>{self && <small className="user-self">本人</small>}</div>
-      <button className="text-button" disabled={busy} onClick={profile}>修改资料</button>
-      {self || !u.admin ? <button className="text-button" disabled={busy} onClick={password}>{self ? '修改密码' : '重置密码'}</button> : <span />}
+      <Button variant="text" disabled={busy} onClick={profile}>修改资料</Button>
+      {self || !u.admin ? <Button variant="text" disabled={busy} onClick={password}>{self ? '修改密码' : '重置密码'}</Button> : <span />}
       {u.admin ? <span className="user-admin-label">服务管理员</span> : <label className="account-switch user-status-switch"><span>{u.disabled ? '已停用' : u.mustChangePassword ? '待改密' : '已启用'}</span><input type="checkbox" role="switch" aria-label={`${u.username}的启用状态`} checked={!u.disabled} disabled={busy} onChange={toggleEnabled} /><i aria-hidden="true" /></label>}
     </div>
     <div className="user-card-details">{field('displayName', '昵称')}{field('contact', '联系方式')}</div>
     <div className="user-card-groups">
       <div className="user-memberships"><span className="user-field-label">共享话术：</span>{u.admin ? <span className="user-membership-empty">全部共享话术</span> : <>
-        {first ? <button className="membership-link" aria-label={`${first.name} · ${teamRoleLabel(first.role)}`} title={`${first.name} · ${teamRoleLabel(first.role)}`} disabled={busy} onClick={() => openTeam(first.teamId)}><span>{first.name}</span><small> · {teamRoleLabel(first.role)}</small></button> : <span className="user-membership-empty">未加入</span>}
-        {memberships.length > 1 && <button ref={trigger} className="user-membership-more" aria-label={`${u.username}的其他${memberships.length - 1}组共享话术`} aria-haspopup="menu" aria-expanded={expanded} disabled={busy} onClick={() => expand(!expanded)}>+{memberships.length - 1}</button>}
-        <button className="text-button user-join" aria-label={`为${u.username}加入共享话术`} disabled={busy || u.disabled} onClick={() => openTeam()}>加入</button>
+        {first ? <Button variant="ghost" className="membership-link" aria-label={`${first.name} · ${teamRoleLabel(first.role)}`} title={`${first.name} · ${teamRoleLabel(first.role)}`} disabled={busy} onClick={() => openTeam(first.teamId)}><span>{first.name}</span><small> · {teamRoleLabel(first.role)}</small></Button> : <span className="user-membership-empty">未加入</span>}
+        {memberships.length > 1 && <Button variant="ghost" ref={trigger} className="user-membership-more" aria-label={`${u.username}的其他${memberships.length - 1}组共享话术`} aria-haspopup="menu" aria-expanded={expanded} disabled={busy} onClick={() => expand(!expanded)}>+{memberships.length - 1}</Button>}
+        <Button variant="text" className="user-join" aria-label={`为${u.username}加入共享话术`} disabled={busy || u.disabled} onClick={() => openTeam()}>加入</Button>
       </>}</div>
       <label className="account-switch user-permission-switch" title={u.admin ? '管理员始终可创建' : undefined}><span>可创建共享话术</span><input type="checkbox" role="switch" aria-label={`${u.username}的创建共享话术权限`} checked={u.admin || u.canCreateTeams} disabled={busy || u.admin} onChange={togglePermission} /><i aria-hidden="true" /></label>
     </div>
@@ -73,5 +73,5 @@ function MembershipMenu({ person, anchor, close, openTeam, busy }: { person: Tea
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement); const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
       buttons[next]?.focus();
     } else if (e.key === 'Tab') close();
-  }}>{person.memberships?.slice(1).map(m => <button key={m.teamId} role="menuitem" aria-label={`${m.name} · ${teamRoleLabel(m.role)}`} title={`${m.name} · ${teamRoleLabel(m.role)}`} disabled={busy} onClick={() => { close(); openTeam(m.teamId); }}><span>{m.name}</span><small>{teamRoleLabel(m.role)}</small></button>)}</div>, document.body);
+  }}>{person.memberships?.slice(1).map(m => <Button variant="ghost" key={m.teamId} role="menuitem" aria-label={`${m.name} · ${teamRoleLabel(m.role)}`} title={`${m.name} · ${teamRoleLabel(m.role)}`} disabled={busy} onClick={() => { close(); openTeam(m.teamId); }}><span>{m.name}</span><small>{teamRoleLabel(m.role)}</small></Button>)}</div>, document.body);
 }

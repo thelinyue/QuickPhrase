@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react';
-import { FileIcon, Highlight, Icon, phraseTitleColor, useEnterSubmit } from './ui';
+import { IconButton, FileIcon, Highlight, Icon, phraseTitleColor, useEnterSubmit } from './ui';
 import { usePhraseHover } from './PhrasePreview';
 import { labelOf, textOf, type Phrase, type LinkedFile, type Settings } from './types';
 
@@ -21,11 +21,11 @@ export function PhraseRow({ phrase, file, index, selected, busy, settings, query
     onClick={onSelect} onContextMenu={onContext}
     onDoubleClick={e => { if (!(e.target as HTMLElement).closest('.row-send') && !busy && !(file && (e.ctrlKey || e.shiftKey || e.metaKey))) onDeliver(file ? 'insert' : settings.phraseDoubleClick || 'insert'); }}
     onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && !(e.target as HTMLElement).closest('.row-send')) { e.preventDefault(); if (!busy && enterSubmit()) onDeliver('insert', 13); } }}>
-    <button type="button" className="row-send" title="直接发送" aria-label={`直接发送 ${label}`} disabled={busy}
+    <IconButton type="button" className="row-send" title="直接发送" aria-label={`直接发送 ${label}`} disabled={busy}
       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (!busy && !e.nativeEvent.isComposing && enterSubmit()) onDeliver('send', 13); } }}
       onClick={e => { e.stopPropagation(); if (!busy && e.detail < 2) onDeliver('send'); }} onDoubleClick={e => e.stopPropagation()}>
       <svg className="send-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M14 1 2 8l12 7v-4L7 8l7-3z" /></svg>
-    </button>
+    </IconButton>
     <span className="row-icon" title={file ? undefined : hasImage ? '含图片话术' : hasFile ? '含文件话术' : '文字话术'}>{file ? <FileIcon path={file.path || file.sourceName || file.name} /> : <Icon name={phraseIcon} />}</span>
     {settings.showNumbers && <span className="row-index">{index + 1}.</span>}
     <span className="row-copy">

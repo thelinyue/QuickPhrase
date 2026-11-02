@@ -1,0 +1,15 @@
+* { box-sizing: border-box; border-radius: 0; }
+html, body, #root { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+:root { font-family: var(--font-ui); font-size: var(--font-body); color: var(--theme-text); }
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; }
+:focus { outline: none; }
+a:focus-visible { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+svg { width: var(--icon-size); height: var(--icon-size); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.icon-definitions { display: none; }
+.client-window { width: 100vw; height: 100vh; background: var(--theme-surface); overflow: hidden; flex-shrink: 0; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+mark { background: var(--theme-selection); color: inherit; font-weight: 600; }
+
+/* WebView 会把可滚动正文放进 Tab 顺序；用浅底而非额外外框表示键盘位置。 */
+:focus-visible:not(button, input, select, textarea, a, [contenteditable="true"], [role="option"], [role="menu"]) { background-color: var(--theme-hover); }

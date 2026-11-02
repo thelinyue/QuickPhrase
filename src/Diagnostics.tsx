@@ -1,3 +1,4 @@
+import { Button } from './ui';
 import { useEffect, useRef, useState } from 'react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { call, closeWindow } from './api';
@@ -75,8 +76,8 @@ export function Diagnostics() {
     <p role="status" className="diagnostics-status">{!status ? '正在读取…' : status.running ? `记录中 · 剩余 ${Math.floor(status.remainingSeconds / 60)}:${String(status.remainingSeconds % 60).padStart(2, '0')}` : '未在记录'}<span className="settings-hint">5 分钟后自动停止</span></p>
     {status?.diskFailed && <p role="alert">本地记录保存失败。当前内存记录仍可尝试导出，重启可能丢失。</p>}
     <div className="setting-buttons">
-      {status?.running ? <><button className="primary-button" disabled={busy} onClick={() => void exportReport()}>停止并导出</button><button className="secondary-button" disabled={busy} onClick={() => void run(closeWindow)}>返回复现</button></>
-        : <><button className="primary-button" disabled={busy || !status || !selected.length} onClick={() => void start()}>开始记录</button><button className="secondary-button" disabled={busy || !status || (!status.records && !status.panicRecorded)} onClick={() => void exportReport()}>导出日志</button></>}
+      {status?.running ? <><Button variant="primary" disabled={busy} onClick={() => void exportReport()}>停止并导出</Button><Button disabled={busy} onClick={() => void run(closeWindow)}>返回复现</Button></>
+        : <><Button variant="primary" disabled={busy || !status || !selected.length} onClick={() => void start()}>开始记录</Button><Button disabled={busy || !status || (!status.records && !status.panicRecorded)} onClick={() => void exportReport()}>导出日志</Button></>}
     </div>
     {message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
     <details className="diagnostics-details"><summary>记录说明</summary>
@@ -85,7 +86,7 @@ export function Diagnostics() {
       <p>设置打开时快捷键暂停，请返回原窗口复现。日志不能覆盖所有问题，也不包含截图或内存转储。</p>
       {status?.panicRecorded && <p>已有异常退出线索，导出时会一并附带。</p>}
       {status && <p>已保存 {status.records} 条；覆盖 {status.overwritten} 条，丢弃 {status.dropped} 条。</p>}
-      <button className="secondary-button" disabled={busy || !status || status.running} onClick={() => void run(async () => { setStatus(await call<Status>('diagnostics_clear')); setMessage('本地记录已清除。'); })}>清除本地记录</button>
+      <Button disabled={busy || !status || status.running} onClick={() => void run(async () => { setStatus(await call<Status>('diagnostics_clear')); setMessage('本地记录已清除。'); })}>清除本地记录</Button>
     </details>
   </div>;
 }

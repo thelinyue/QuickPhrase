@@ -1,0 +1,79 @@
+:root {
+  --font-ui: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-code: Consolas, "Cascadia Mono", monospace;
+  --font-caption: 11px;
+  --font-small: 12px;
+  --font-body: 13px;
+  --font-group: 14px;
+  --font-dialog: 16px;
+  --font-page: 18px;
+  --font-detail: 20px;
+  --phrase-size: 14px;
+  --control-height: 32px;
+  --control-height-compact: 28px;
+  --titlebar-height: 40px;
+  --list-row-height: 32px;
+  --search-height: 36px;
+  --icon-size: 18px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --theme-radius: 6px;
+  --radius-popover: 8px;
+  --shadow-popover: 0 8px 24px #26313b1a;
+  --shadow-modal: 0 5px 25px #163c5929;
+  --modal-backdrop: #102b4430;
+
+  /* 保留旧变量别名；业务只使用语义颜色，不把主色当作正文或危险色。 */
+  --blue: #4b6479;
+  --blue-light: var(--theme-selection);
+  --orange: var(--theme-text);
+  --line: #e3e8eb;
+  --theme-accent: var(--blue);
+  --theme-accent-hover: color-mix(in srgb, var(--blue) 88%, black);
+  --theme-on-accent: #fff;
+  --theme-title: var(--theme-text);
+  --theme-text: #26313b;
+  --theme-muted: #606a73;
+  --theme-line: var(--line);
+  --theme-control-line: #b0bac2;
+  --theme-surface: #fff;
+  --theme-panel: color-mix(in srgb, var(--blue) 4%, white);
+  --theme-hover: #f0f3f2;
+  --theme-selection: #e8f2ed;
+  --theme-group: var(--theme-selection);
+  --theme-shortcut: var(--blue);
+  --theme-success: #3e7256;
+  --theme-success-soft: #edf6ef;
+  --theme-gold-soft: #fff0d2;
+  --theme-gold-text: #6b4a15;
+  --theme-danger: #b84343;
+  --theme-danger-hover: color-mix(in srgb, var(--theme-danger) 88%, black);
+  --theme-danger-soft: #fff4f2;
+  /* 内容暖色与窗口主题色分离；只参与显示，不能改写用户自定义颜色。 */
+  --phrase-title-color: #a6421b;
+  --category-surface: #fff0dc;
+  --category-text: #75421d;
+  --category-active: #a64d20;
+  --group-arrow-color: color-mix(in srgb, var(--blue) 88%, black);
+}
+
+/* 默认主题单独覆盖；其余六种主题保持各自已有的选中、悬停和强调色。 */
+:root:not([data-theme]), :root[data-theme="default"] {
+  --group-arrow-color: #304d63;
+  --theme-muted: #5c6670;
+  --theme-group: #edf1f5;
+  --theme-selection: #dfe8f0;
+  --theme-hover: #f0f3f6;
+  --theme-shortcut: #526d83;
+  --theme-accent-hover: color-mix(in srgb, var(--blue) 90%, black);
+}
+:root[data-theme="green"] { --blue: #3e7256; --theme-selection: #e9f2ec; }
+:root[data-theme="blue"] { --blue: #30697e; --theme-selection: #e8f0f4; }
+:root[data-theme="black"] { --blue: #45515b; --theme-selection: #edf0f2; }
+:root[data-theme="pink"] { --blue: #965672; --theme-selection: #f5edf1; }
+:root[data-theme="lavender"] { --blue: #686294; --theme-selection: #f0eef6; }
+:root[data-theme="orange"] { --blue: #9b5f30; --theme-selection: #f7f0ea; }

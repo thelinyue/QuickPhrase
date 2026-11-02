@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { call } from './api';
 import { labelOf, textOf, type ShortcutCandidates } from './types';
-import { phraseTitleColor } from './ui';
+import { IconButton, Button, phraseTitleColor } from './ui';
 
 /** 原生监听拥有候选状态与键盘操作；无激活窗口只绘制快照，保持目标输入焦点。 */
 export function ShortcutCandidatesWindow({ titleColor }: { titleColor?: string } = {}) {
@@ -58,20 +58,20 @@ export function ShortcutCandidatesWindow({ titleColor }: { titleColor?: string }
   }, [measureKey]);
   if (!payload) return <div className="shortcut-candidates-window" />;
   return <section ref={root} className="shortcut-candidates-window" aria-label="快捷键候选" onContextMenu={e => e.preventDefault()}>
-    <header><strong title={payload.shortcut}>{payload.shortcut}</strong><span>{payload.phrases.length} 条候选</span><button aria-label="取消候选" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => void call('cancel_shortcut_candidates').catch(e => setError(String(e)))}>×</button></header>
+    <header><strong title={payload.shortcut}>{payload.shortcut}</strong><span>{payload.phrases.length} 条候选</span><IconButton aria-label="取消候选" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={() => void call('cancel_shortcut_candidates').catch(e => setError(String(e)))}>×</IconButton></header>
     <div ref={list} className="shortcut-candidates-list" role="listbox" aria-label="候选话术">{payload.phrases.map((phrase, index) => {
       // 仅压缩显示用的空白；完整正文保留在提示中，不改变原生发送载荷。
       const text = textOf(phrase), title = phrase.title.replace(/\s+/g, ' ').trim();
       const summary = text.replace(/\s+/g, ' ').trim() || labelOf({ ...phrase, title: '' });
       const hasContent = !!text.trim() || phrase.segments.some(segment => segment.blocks.some(block => block.kind !== 'text'));
       const preview = hasContent && summary !== title ? summary : '';
-      return <button key={phrase.id} role="option" aria-selected={index === payload.selectedIndex} data-candidate={phrase.id} tabIndex={-1} title={[title, text || summary].filter(Boolean).join('\n')} onMouseDown={e => e.preventDefault()} onClick={() => void call('select_shortcut_candidate', { index }).catch(e => setError(String(e)))}>
+      return <Button variant="ghost" key={phrase.id} role="option" aria-selected={index === payload.selectedIndex} data-candidate={phrase.id} tabIndex={-1} title={[title, text || summary].filter(Boolean).join('\n')} onMouseDown={e => e.preventDefault()} onClick={() => void call('select_shortcut_candidate', { index }).catch(e => setError(String(e)))}>
         <span className="candidate-number">{index < 10 ? (index + 1) % 10 : ''}</span><span className="candidate-content">
           {title && <span className={`candidate-label${preview ? ' has-preview' : ''}`} style={{ color: phraseTitleColor(phrase.color, titleColor) }}>{title}</span>}
           {preview && <span className="candidate-preview">{preview}</span>}
           {!title && !preview && <span className="candidate-label">{labelOf(phrase)}</span>}
         </span>
-      </button>;
+      </Button>;
     })}</div>
     <footer className={error ? 'candidate-error' : undefined}>{error || <><span>数字 / 空格 插入</span><span>↑↓ 选择</span><span>Enter 发送</span><span>Esc 取消</span></>}</footer>
   </section>;

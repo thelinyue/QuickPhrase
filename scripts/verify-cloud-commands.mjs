@@ -68,6 +68,17 @@ try {
   await invoke('plugin:webview|create_webview_window', { options: { label: 'company-files', url: 'index.html#company-files', title: '闪云隔离验收:company-files', width: 1000, height: 650, x: -20000, y: -20000, focus: false, skipTaskbar: true, decorations: false } });
   cloud = await until(() => browser.contexts()[0].pages().find(p => p.url().includes('#company-files')));
   await cloud.getByText('闪云中心', { exact: true }).waitFor();
+  await cloud.evaluate(() => {
+    const original = window.fetch.bind(window); window.__cloudCloseQA = { confirmations: [], cancelNext: false };
+    window.fetch = async (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input.url), qa = window.__cloudCloseQA;
+      if (url.hostname === 'ipc.localhost' && decodeURIComponent(url.pathname.slice(1)) === 'plugin:dialog|message') {
+        const args = JSON.parse(init.body);
+        if (args.message === '放弃未保存的修改？') { qa.confirmations.push(args.message); const cancel = qa.cancelNext; qa.cancelNext = false; return new Response(JSON.stringify(args.buttons.OkCancelCustom[cancel ? 1 : 0]), { headers: { 'Tauri-Response': 'ok', 'Content-Type': 'application/json' } }); }
+      }
+      return original(input, init);
+    };
+  });
   await check('真实窗口默认云文件，命令表单通过Rust保存原始正文', async () => {
     assert.equal(await cloud.getByRole('tab', { name: '云文件', exact: true }).getAttribute('aria-selected'), 'true');
     await cloud.getByRole('tab', { name: '云命令', exact: true }).click(); await cloud.getByRole('button', { name: '新建命令', exact: true }).click();
@@ -76,6 +87,54 @@ try {
     await cloud.getByRole('button', { name: '保存命令', exact: true }).click(); await until(async () => await cloud.getByRole('dialog').count() === 0);
     command = (await api('GET', 'cloud/commands')).commands[0]; assert.equal((await api('GET', `cloud/commands/${command.id}`)).body, body);
     await until(async () => await cloud.locator('.command-code code').textContent() === body);
+  });
+  await check('云命令弹窗×、取消、Esc和原生关闭共用草稿保护，七主题标题关闭入口完整可见', async () => {
+    const trigger = cloud.getByRole('button', { name: '编辑', exact: true }); await trigger.focus(); await trigger.click();
+    const modal = cloud.getByRole('dialog'), name = modal.getByRole('textbox', { name: '名称', exact: true }); await name.fill('应保留的草稿');
+    for (const [index, action] of ['关闭弹窗', '取消', 'Escape', 'native'].entries()) {
+      await cloud.evaluate(() => window.__cloudCloseQA.cancelNext = true);
+      if (action === 'Escape') await name.press('Escape');
+      else if (action === 'native') await invoke('plugin:window|close', { label: 'company-files' }, cloud);
+      else await modal.getByRole('button', { name: action, exact: true }).click();
+      await cloud.waitForFunction(count => window.__cloudCloseQA.confirmations.length === count, index + 1);
+      assert.equal(cloud.isClosed(), false); assert.equal(await name.inputValue(), '应保留的草稿');
+    }
+    for (const theme of ['default','green','blue','black','pink','lavender','orange']) {
+      await cloud.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+      const bounds = await modal.boundingBox(), close = await modal.getByRole('button', { name: '关闭弹窗', exact: true }).boundingBox();
+      assert.equal(close.width, 32); assert.equal(close.height, 32); assert.ok(close.x >= bounds.x && close.x + close.width <= bounds.x + bounds.width);
+      if (theme === 'default') await cloud.screenshot({ path: path.join(evidence, 'commands-dialog-close.png') });
+    }
+    await cloud.evaluate(() => document.documentElement.dataset.theme = 'default');
+    await modal.getByRole('button', { name: '关闭弹窗', exact: true }).click(); await modal.waitFor({ state: 'detached' }); assert.ok(await trigger.evaluate(el => document.activeElement === el));
+  });
+  await check('闪云真实控件复用统一材料，七种主题焦点可见且不增加外框或改变尺寸', async () => {
+    const cdp = await browser.contexts()[0].newCDPSession(cloud);
+    await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
+    const { root } = await cdp.send('DOM.getDocument');
+    const read = selector => cloud.locator(selector).first().evaluate(el => { const s = getComputedStyle(el), r = el.getBoundingClientRect(); return { width: r.width, height: r.height, background: s.backgroundColor, filter: s.filter, outline: s.outlineStyle }; });
+    try {
+      for (const theme of ['default','green','blue','black','pink','lavender','orange']) {
+        await cloud.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+        for (const selector of ['.command-code button', '.command-list-row.selected', '.command-code pre', '.cloud-module-more summary']) {
+          const normal = await read(selector), { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+          await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['focus', 'focus-visible'] });
+          const focused = await read(selector);
+          assert.equal(focused.outline, 'none'); assert.deepEqual([focused.width, focused.height], [normal.width, normal.height]);
+          assert.ok(focused.filter !== normal.filter || focused.background !== normal.background, theme + '焦点不可辨识：' + selector);
+          await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] });
+        }
+        assert.equal((await read('.command-code button')).height, 32);
+        assert.ok((await cloud.locator('.cloud-center-navigation [role="tab"]').evaluateAll(tabs => tabs.map(tab => tab.getBoundingClientRect().height))).every(height => height === 28));
+      }
+      assert.deepEqual(await cloud.locator('button').evaluateAll(buttons => buttons.filter(b => !b.classList.contains('ui-button')).map(b => b.textContent)), []);
+    } finally { await cdp.detach(); await cloud.evaluate(() => { document.documentElement.dataset.theme = 'default'; }); }
+    await cloud.getByRole('button', { name: '编辑', exact: true }).click();
+    const form = cloud.locator('.cloud-command-editor');
+    const fields = await form.locator('input').evaluateAll(elements => elements.map(el => el.getBoundingClientRect().height));
+    assert.ok(fields.every(height => height === 32));
+    assert.equal(await form.getByRole('button', { name: '保存命令', exact: true }).getAttribute('type'), 'submit');
+    await form.getByRole('button', { name: '取消', exact: true }).click();
   });
   await check('切换云文件与云命令不停止在途上传，完成后文件目录仍正常刷新', async () => {
     const source = path.join(evidence,'模块切换上传.txt'); await fs.writeFile(source,'isolated-transfer-bytes'); holdUpload = true;
@@ -108,6 +167,10 @@ try {
     await cloud.getByRole('button',{ name: '权限管理',exact: true }).click(); const dialog = cloud.getByRole('dialog',{ name: '权限管理',exact: true });
     await dialog.getByRole('tab',{ name: '云命令',exact: true }).click(); const use = dialog.getByRole('checkbox',{ name: 'qa-worker的使用命令权限' });
     assert.equal(await use.isChecked(),false); await dialog.getByRole('checkbox',{ name: 'qa-worker的维护命令权限' }).check(); assert.ok(await use.isChecked());
+    const confirmations = await cloud.evaluate(() => { window.__cloudCloseQA.cancelNext = true; return window.__cloudCloseQA.confirmations.length; });
+    await invoke('plugin:window|close', { label: 'company-files' }, cloud);
+    await cloud.waitForFunction(count => window.__cloudCloseQA.confirmations.length === count + 1, confirmations); await delay(100);
+    assert.equal(cloud.isClosed(), false); assert.ok(await use.isChecked());
     await dialog.getByRole('button',{ name: '保存qa-worker权限' }).click(); await dialog.getByText('qa-worker 的云命令权限已保存。').waitFor();
     const user = (await api('GET','users')).find(user => user.id === worker); assert.deepEqual(user.cloudCommandPermissions,{ canUse: true,canManage: true,version: 1 });
     assert.equal(user.companyFilePermissions.canUpload,false); await dialog.getByRole('button',{ name: '关闭权限管理' }).click();

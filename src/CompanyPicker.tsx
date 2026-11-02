@@ -4,7 +4,8 @@ import { getCurrentWindow, currentMonitor } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { call, closeWindow, useTeams } from './api';
 import { CloudFileTable } from './CompanyFiles';
-import { Titlebar } from './ui';
+import { Button, Titlebar } from './ui';
+import { useCloseGuard, useEditorEscape } from './close';
 import type { CompanyFile } from './types';
 
 type Selection = { requestId: string; files: CompanyFile[]; epoch: number };
@@ -40,19 +41,22 @@ export function CompanyFilePicker({ limit, onConfirm, close, confirmLabel = '添
     })().catch(e => { if (!disposed) setError(String(e)); });
     return () => { disposed = true; stop?.(); void child?.close().catch(() => {}); };
   }, [loaded, epoch, limit, confirmLabel]);
-  return error ? <div role="alert" className="validation-error">{error}<button onClick={close}>关闭</button></div> : null;
+  return error ? <div role="alert" className="validation-error">{error}<Button variant="ghost" onClick={close}>关闭</Button></div> : null;
 }
 
 export function CompanyPickerWindow() {
   const { status } = useTeams(); const [selected, setSelected] = useState<CompanyFile[]>([]), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const pending = useRef(false), delivered = useRef(false);
+  useCloseGuard({ busy: () => pending.current, dirty: () => !delivered.current && selected.length > 0 });
+  useEditorEscape(closeWindow);
   const params = new URLSearchParams(location.hash.split('?')[1]);
   const epoch = Number(params.get('epoch')), limit = Math.min(50, Math.max(1, Number(params.get('limit')) || 1));
   const valid = status.sessionEpoch === epoch && !!status.user && !status.offline;
   async function finish() {
-    if (!valid || !selected.length || busy) return;
-    setBusy(true);
-    try { const latest = await call<{ sessionEpoch: number }>('get_team_status'); if (latest.sessionEpoch !== epoch) throw new Error('账号已变化，请重新选择。'); await emitTo(params.get('parent')!, 'company-picker-result', { requestId: params.get('requestId'), files: selected, epoch }); await closeWindow(); }
-    catch (e) { setError(String(e)); setBusy(false); }
+    if (!valid || !selected.length || pending.current) return;
+    pending.current = true; setBusy(true);
+    try { const latest = await call<{ sessionEpoch: number }>('get_team_status'); if (latest.sessionEpoch !== epoch) throw new Error('账号已变化，请重新选择。'); await emitTo(params.get('parent')!, 'company-picker-result', { requestId: params.get('requestId'), files: selected, epoch }); delivered.current = true; pending.current = false; await closeWindow(); }
+    catch (e) { setError(String(e)); } finally { pending.current = false; setBusy(false); }
   }
-  return <section className="client-window file-association-window"><Titlebar minimize maximize title="选择云文件" /><CloudFileTable status={status} limit={limit} selected={selected} onChange={setSelected} />{error && <p role="alert" className="validation-error">{error}</p>}<footer className="association-footer"><span>已选择 {selected.length}/{limit}</span><span className="toolbar-spacer" /><button className="secondary-button" onClick={() => void closeWindow()}>取消</button><button className="primary-button" disabled={!valid || busy || !selected.length} onClick={() => void finish()}>{params.get('confirmLabel') || '添加文件'}</button></footer></section>;
+  return <section className="client-window file-association-window"><Titlebar minimize maximize title="选择云文件" /><CloudFileTable status={status} limit={limit} selected={selected} onChange={files => { if (!pending.current) setSelected(files); }} />{error && <p role="alert" className="validation-error">{error}</p>}<footer className="association-footer"><span>已选择 {selected.length}/{limit}</span><span className="toolbar-spacer" /><Button disabled={busy} onClick={() => void closeWindow()}>取消</Button><Button variant="primary" disabled={!valid || busy || !selected.length} onClick={() => void finish()}>{params.get('confirmLabel') || '添加文件'}</Button></footer></section>;
 }

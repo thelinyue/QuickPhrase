@@ -1,0 +1,66 @@
+.editor-window { background: var(--theme-surface); display: flex; flex-direction: column; }
+.editor-form { flex: 1; display: flex; flex-direction: column; padding: 17px 13px 14px; min-height: 0; overflow-y: auto; }
+.phrase-kind { display: flex; gap: 10px; align-items: center; }
+.phrase-kind input:disabled { opacity: 1; }
+.field-hint { margin: 5px 0 15px; color: var(--theme-muted); font-size: var(--font-caption); }
+.editor-categories { display: grid; grid-template-columns: 1fr 1fr; gap: 17px; margin-bottom: 17px; }
+.editor-categories label { display: flex; flex-direction: column; gap: var(--space-1); }
+.title-field { margin-bottom: 5px; }
+.title-and-colors { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+#phrase-title { min-width: 0; width: 274px; }
+.color-palette { display: flex; gap: 3px; }
+.color-palette button { border: 1px solid transparent; width: 22px; height: 24px; padding: 0; display: grid; place-items: center; }
+.color-palette button[aria-pressed="true"] { border-color: var(--theme-line); box-shadow: inset 0 0 0 1px white; }
+/* 固定尺寸的矢量勾避免字体基线偏移，色块仍保持原有大小与间距。 */
+.color-palette button svg { width: 18px; height: 18px; stroke-width: 2.5; }
+.editor-toolbar { display: flex; height: 28px; align-items: center; gap: 9px; margin-bottom: 2px; }
+.editor-tool-button { padding: 0; display: flex; align-items: center; gap: var(--space-1); text-decoration: underline; text-underline-offset: 3px; height: 25px; }
+.editor-toolbar svg { width: 20px; height: 20px; color: var(--theme-muted); }
+.segment-editor { border: 1px solid var(--theme-control-line); border-radius: var(--theme-radius); background: var(--theme-surface); flex: 1; min-height: 112px; overflow: auto; }
+.segment { padding: 8px; min-height: 100%; display: flex; flex-direction: column; position: relative; }
+.segment.multiple { min-height: 112px; border-bottom: 1px dashed var(--theme-line); }
+.segment.multiple:last-child { border-bottom: 0; }
+.segment-label { display: flex; align-items: center; justify-content: space-between; color: var(--theme-muted); font-size: var(--font-caption); margin-bottom: 5px; }
+.segment-label button { padding: 0; height: var(--control-height-compact); width: var(--control-height-compact); }
+.rich-segment { background: var(--theme-surface); color: var(--theme-text); min-height: 85px; flex: 1; width: 100%; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rich-segment:empty::before { content: attr(data-placeholder); color: var(--theme-muted); pointer-events: none; }
+.segment .media-block { display: inline-flex; align-items: center; vertical-align: middle; position: relative; margin: 2px 4px; gap: var(--space-1); max-width: calc(100% - 8px); white-space: normal; }
+.media-block img { max-width: 140px; max-height: 110px; object-fit: contain; }
+.media-block.inline-file { border: 1px solid var(--theme-line); background: var(--theme-panel); padding: 2px 5px; }
+.media-block span { overflow: hidden; text-overflow: ellipsis; }
+.media-block button { border: 0; background: var(--theme-surface); color: var(--theme-muted); width: 18px; height: 18px; line-height: 16px; padding: 0; }
+.media-block.inline-image button { position: absolute; top: 0; right: 0; opacity: 0; }
+.media-block.inline-image:hover:not(:disabled) button { opacity: 1; }
+.media-block.inline-image:focus-within button { opacity: 1; }
+.editor-footer { display: flex; align-items: center; gap: 13px; padding-top: 16px; }
+.editor-footer .ui-button--text svg { color: var(--theme-muted); width: 27px; height: 21px; }
+.attachment-limit { margin-left: auto; color: var(--theme-muted); font-size: var(--font-caption); white-space: nowrap; }
+.shortcut-dialog { width: 396px; max-width: calc(100vw - 20px); max-height: calc(100vh - 20px); overflow-y: auto; padding: 0; border: 1px solid var(--blue); background: var(--theme-surface); color: var(--theme-text); border-radius: var(--radius-popover); box-shadow: var(--shadow-popover); }
+.shortcut-dialog::backdrop { background: transparent; }
+.shortcut-body { padding: 30px 15px 14px; }
+.shortcut-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) 25px; gap: var(--space-4); align-items: center; }
+.shortcut-fields select { width: 100%; min-width: 0; height: 32px; color: var(--theme-text); text-align: center; padding: 0 3px; appearance: none; cursor: pointer; }
+.shortcut-fields input { width: 100%; min-width: 0; height: 32px; color: var(--theme-text); text-align: center; padding: 0 3px; }
+.delete-shortcut { padding: 0; border: 0; background: transparent; color: var(--theme-text); display: grid; place-items: center; height: 32px; }
+.shortcut-hint { text-align: center; margin: 8px 0 7px; color: var(--theme-muted); font-size: var(--font-small); }
+.shortcut-footer { display: flex; align-items: center; gap: var(--space-4); }
+.shortcut-help-toggle { margin-right: auto; padding: 0; white-space: nowrap; font-size: var(--font-small); }
+.shortcut-help { margin-top: 12px; color: var(--theme-muted); line-height: 1.8; }
+.shortcut-help p { margin: 0 0 8px; }
+.shortcut-help p:last-child { margin-bottom: 0; }
+.shortcut-examples { display: grid; gap: 10px; margin: 10px 0; }
+.shortcut-examples figure { margin: 0; padding: 8px 10px; border: 1px solid var(--line); background: var(--theme-surface); }
+.shortcut-examples figcaption { color: var(--theme-title); margin-bottom: 7px; }
+.shortcut-sequence { display: flex; align-items: start; justify-content: center; gap: var(--space-2); }
+.shortcut-sequence > div { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); min-width: 0; }
+.shortcut-sequence kbd { min-width: 34px; height: 28px; line-height: 27px; padding: 0 8px; border: 1px solid var(--blue); box-shadow: 0 2px 0 var(--blue-light); background: var(--theme-panel); color: var(--theme-text); font: inherit; text-align: center; }
+.shortcut-sequence > span { color: var(--blue); line-height: 28px; }
+.shortcut-sequence small { font-size: var(--font-caption); text-align: center; }
+.shortcut-timing { color: var(--theme-title); }
+@media (max-width: 420px) { .shortcut-fields { gap: 10px; } .shortcut-body { padding: 20px 10px 12px; } .shortcut-footer { flex-wrap: wrap; gap: 10px; } .shortcut-help-toggle { flex-basis: 100%; text-align: left; } .shortcut-footer .ui-button--secondary { margin-left: auto; } }
+/* 纯黑色块无法靠降低亮度显示焦点，用透明度兼顾黑白色块的键盘反馈。 */
+.color-palette button:focus-visible { opacity: .65; }
+@media (max-width: 520px) { .title-and-colors { flex-wrap: wrap; gap: var(--space-2); margin-bottom: 8px; } #phrase-title { width: 100%; } .editor-footer { flex-wrap: wrap; gap: var(--space-2); padding-top: 10px; } .editor-toolbar { gap: 7px; } }
+.editor-file-tool { position: relative; display: inline-flex; }
+.editor-file-tool .editor-file-menu { position: absolute; top: 100%; right: 0; z-index: 20; min-width: 120px; }
+.editor-file-menu button { display: block; width: 100%; text-align: left; }

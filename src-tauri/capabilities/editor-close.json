@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "editor-close",
+  "description": "编辑、排序与确认窗口通过关闭保护后，由Tauri关闭监听完成销毁",
+  "windows": ["editor", "file-editor", "company-picker-*", "common-editor", "common-sort", "category-sort", "file-sort", "recycle-bin", "delete-confirm"],
+  "permissions": ["core:window:allow-destroy"]
+}

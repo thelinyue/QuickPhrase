@@ -1,0 +1,101 @@
+/* 管理窗口共享控件尺寸；只在账号相关区域生效，不改动已确认的主窗口布局。 */
+.team-management { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+.management-account { display: flex; gap: var(--space-3); padding: 10px 16px; border-bottom: 1px solid var(--theme-line); flex-shrink: 0; }
+.management-account > span:last-child { margin-left: auto; max-width: 55%; color: var(--theme-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.management-content { padding: 16px; flex: 1; min-height: 0; overflow: auto; }
+.management-toolbar { display: flex; align-items: center; gap: var(--space-2); padding: 12px 16px; border-bottom: 1px solid var(--theme-line); flex-shrink: 0; background: var(--theme-panel); }
+.management-toolbar > input { flex: 1; min-width: 80px; }
+.management-toolbar > select { max-width: 155px; }
+.management-current-team { max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-management .team-table { width: 100%; margin: 0; table-layout: fixed; border-collapse: collapse; }
+.team-management .team-table th { background: var(--theme-panel); color: var(--theme-muted); font-weight: 500; padding: 9px 8px; vertical-align: middle; border-bottom: 1px solid var(--theme-line); overflow-wrap: anywhere; text-align: left; }
+.team-management .team-table td { padding: 9px 8px; vertical-align: middle; border-bottom: 1px solid var(--theme-line); overflow-wrap: anywhere; text-align: left; }
+.team-management .team-table small { display: block; color: var(--theme-muted); font-size: var(--font-caption); line-height: 1.7; }
+.management-row-actions { display: flex; flex-wrap: wrap; gap: 0 var(--space-3); align-items: center; }
+.management-groups th:first-child { width: 30%; }
+.management-groups th:nth-child(2) { width: 12%; }
+.management-groups th:nth-child(3) { width: 24%; }
+.management-members th:nth-child(3) { width: 122px; }
+.management-members th:nth-child(4) { width: 70px; }
+.management-members th:nth-child(5) { width: 70px; }
+.management-members select { width: 100%; }
+.management-member-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: 0 0 12px; color: var(--theme-muted); }
+.management-pagination { display: flex; flex-shrink: 0; gap: var(--space-2); align-items: center; justify-content: flex-end; padding: 8px 16px; border-top: 1px solid var(--theme-line); background: var(--theme-surface); }
+.management-save { display: flex; flex-shrink: 0; gap: var(--space-2); align-items: center; justify-content: flex-end; padding: 8px 16px; border-top: 1px solid var(--theme-line); background: var(--theme-surface); }
+.management-pagination > span:first-child { margin-right: auto; color: var(--theme-muted); }
+.management-save > span { margin-right: auto; color: var(--theme-muted); }
+.management-empty { padding: 24px 0; text-align: center; color: var(--theme-muted); }
+.management-notice { background: var(--theme-gold-soft); padding: 10px 12px; margin: 0 0 14px; line-height: 1.7; }
+.management-conflict { background: var(--theme-gold-soft); padding: 10px 12px; margin: 0 0 14px; line-height: 1.7; }
+.management-conflict p { margin: 2px 0 8px; }
+.management-more { position: relative; }
+.management-more-menu { position: absolute; right: 0; top: 37px; width: 210px; background: var(--theme-surface); border: 1px solid var(--theme-line); box-shadow: 0 4px 14px #24384d20; padding: 8px; z-index: 10; }
+.management-more-menu button { width: 100%; text-align: left; justify-content: flex-start; }
+.management-more-menu button:hover:not(:disabled) { background: var(--theme-hover); }
+.management-more-menu button:focus { background: var(--theme-hover); }
+.management-more-menu p { margin: 8px 4px 2px; color: var(--theme-muted); line-height: 1.7; }
+/* 账号页按固定操作列排列，文字列可以缩小；字号和交互热区不随窄窗压缩。 */
+.user-management .management-account { padding: 7px 12px; align-items: center; min-width: 0; }
+.user-management .management-account > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-account-count { flex-shrink: 0; color: var(--theme-muted); }
+.user-management .user-toolbar { padding: 8px 12px; gap: 10px; }
+.user-search-controls { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
+.user-toolbar-actions { display: flex; align-items: center; gap: 6px; min-width: 0; flex-shrink: 0; }
+.user-pagination { display: flex; align-items: center; min-width: 0; gap: var(--space-1); }
+.user-search-controls input { flex: 1; width: 0; }
+.user-search-controls select { width: 88px; flex-shrink: 0; }
+.user-pagination > span { min-width: 32px; text-align: center; white-space: nowrap; }
+.user-management .user-pagination button { width: 32px; min-width: 32px; padding: 0; }
+.user-management .user-toolbar-more { width: 32px; min-width: 32px; padding: 0; }
+.user-pagination button { font-size: var(--font-detail); }
+.user-management .user-cards { background: var(--theme-panel); padding: 8px 12px; }
+.user-card { background: var(--theme-surface); padding: 8px 12px; margin-bottom: 8px; min-width: 0; }
+.user-card:last-child { margin-bottom: 0; }
+.user-card-heading { display: grid; grid-template-columns: minmax(0, 1fr) 64px 64px 90px; gap: var(--space-2); align-items: center; min-height: 32px; }
+.user-identity { display: flex; align-items: center; min-width: 0; gap: 2px; }
+.user-identity strong { font-size: var(--font-group); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-field-label { color: var(--theme-muted); flex-shrink: 0; white-space: nowrap; }
+.user-self { flex-shrink: 0; color: var(--theme-muted); font-size: var(--font-caption); margin-left: 4px; }
+.user-admin-label { text-align: right; color: var(--theme-muted); white-space: nowrap; }
+.user-card-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: var(--space-4); min-height: 32px; align-items: center; }
+.user-inline-field { display: flex; align-items: center; min-width: 0; }
+.user-inline-editor { display: flex; align-items: center; min-width: 0; flex: 1; }
+.user-inline-editor input { width: 0; flex: 1; padding: 4px !important; }
+/* 行内值与库名属于可省略的内容列，不能继承动作按钮的不可收缩布局。 */
+.user-edit-value { display: flex; align-items: center; gap: var(--space-1); min-width: 0; flex-shrink: 1; padding: 0 4px; text-align: left; justify-content: flex-start; border: 1px solid transparent; color: var(--theme-text); }
+.user-edit-value span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-edit-value.empty { color: var(--theme-muted); }
+.user-edit-value svg { width: 12px; height: 12px; flex-shrink: 0; opacity: 0; }
+.user-edit-value:hover { border-color: var(--theme-control-line); background: var(--theme-panel); }
+.user-edit-value:focus-visible { border-color: var(--theme-control-line); background: var(--theme-panel); }
+.user-edit-value:hover svg { opacity: 1; }
+.user-edit-value:focus-visible svg { opacity: 1; }
+.user-card-groups { display: flex; align-items: center; gap: var(--space-3); min-height: 32px; }
+.user-memberships { display: flex; align-items: center; gap: var(--space-1); flex: 1; min-width: 0; }
+.user-membership-empty { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--theme-muted); }
+.user-management .membership-link { display: flex; align-items: center; min-width: 0; max-width: 100%; flex-shrink: 1; padding: 0 5px; justify-content: flex-start; background: var(--theme-panel); }
+.membership-link > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.membership-link small { flex-shrink: 0; font-size: inherit; white-space: pre; }
+.user-membership-more { flex-shrink: 0; min-width: 32px; padding: 0 4px; }
+.user-card .user-join { flex-shrink: 0; padding: 0 4px; }
+.user-card .user-status-switch { justify-content: flex-end; gap: 6px; }
+.user-card .user-permission-switch { gap: 6px; white-space: nowrap; }
+.user-card .account-switch { min-height: 32px; }
+.user-card .account-switch i { flex-shrink: 0; }
+.user-card .account-switch:has(input:disabled) { opacity: .6; }
+.user-membership-menu { position: fixed; z-index: 1200; overflow-y: auto; padding: 4px; background: var(--theme-surface); border: 1px solid var(--theme-line); box-shadow: 0 4px 14px #24384d20; }
+.user-membership-menu button { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: 6px 8px; text-align: left; height: auto; white-space: normal; }
+.user-membership-menu button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.user-membership-menu small { flex-shrink: 0; color: var(--theme-muted); }
+.user-membership-menu button:hover:not(:disabled) { background: var(--theme-hover); }
+.user-membership-menu button:focus-visible { background: var(--theme-hover); }
+@media (max-width: 559px) {
+  .user-management .user-toolbar { flex-direction: column; align-items: stretch; gap: 6px; }
+  .user-toolbar-actions { justify-content: flex-end; }
+  .user-toolbar-actions .user-pagination { margin-right: auto; }
+  .user-card { padding: 8px; }
+  .user-card-heading { grid-template-columns: minmax(0, 1fr) 60px 60px 82px; gap: var(--space-1); }
+  .user-card-details { gap: var(--space-2); }
+  .user-card-groups { gap: 6px; }
+  .user-memberships { gap: 2px; }
+}

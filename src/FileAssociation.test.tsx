@@ -6,7 +6,7 @@ import { FileEditor } from './FileAssociation';
 import { cloudNameError } from './cloudRename';
 import type { Library } from './types';
 vi.mock('./api', () => ({ call: vi.fn(), closeWindow: vi.fn(), useTeams: () => ({ status: { sessionEpoch: 3, user: { id: 'u' }, companyFiles: true, server: 'server', offline: false } }) }));
-vi.mock('./ui', () => ({ Titlebar: ({ title }: { title: string }) => <h1>{title}</h1>, FileIcon: () => null }));
+vi.mock('./ui', async importOriginal => ({ ...await importOriginal<typeof import('./ui')>(), Titlebar: ({ title }: { title: string }) => <h1>{title}</h1>, FileIcon: () => null }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), confirm: vi.fn() }));
 const library = { categories: [{ id: 'files', kind: 'file', name: '资料', parentId: null }], files: [] } as unknown as Library;

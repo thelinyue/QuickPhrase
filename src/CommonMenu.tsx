@@ -1,3 +1,4 @@
+import { Button } from './ui';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { confirm } from '@tauri-apps/plugin-dialog';
@@ -102,5 +103,5 @@ export function CommonMenuWindow() {
       e.preventDefault(); const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
       buttons[next]?.focus();
     }
-  }}>{payload && items.map(item => <button key={item.action} role="menuitem" disabled={item.disabled} onClick={() => void choose(item.action)}>{item.text}</button>)}{error && <span className="common-menu-error" role="alert" title={error}>{error}</span>}</section>;
+  }}>{payload && items.map(item => <Button variant="ghost" key={item.action} role="menuitem" disabled={item.disabled} onClick={() => void choose(item.action)}>{item.text}</Button>)}{error && <span className="common-menu-error" role="alert" title={error}>{error}</span>}</section>;
 }

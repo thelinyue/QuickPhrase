@@ -2,9 +2,9 @@
 
 “设置 → 问题诊断”可按问题临时记录，复现后导出 ZIP 反馈；使用方法与收集边界见[诊断说明](docs/diagnostics.md)。
 
-Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.13。
+Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.14。
 
-正式下载：[v0.2.13 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.13) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.13/QuickPhrase-Setup-0.2.13-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.13/QuickPhrase-0.2.13-win-x64.zip)。安装器和程序未代码签名；[闪云公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
+正式下载：[v0.2.14 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.14) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.14/QuickPhrase-Setup-0.2.14-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.14/QuickPhrase-0.2.14-win-x64.zip)。安装器和程序未代码签名；[闪云公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
 
 0.2.1统一英文名称 QuickPhrase；0.2.3新增在线更新、数据目录迁移、搜索历史、使用指引与云文件批量上传。0.2.4完善主题、账号管理、底部搜索，并新增贴边隐藏及最小化悬浮窗。0.2.5优化悬浮窗双击与隐藏菜单、贴边隐藏及搜索刷新。0.2.6完善常用短语菜单与底部布局，主搜索改为覆盖浮层，并支持拼音匹配与清空记录确认。0.2.7修复贴边误弹出与收回、解除吸附跨屏跳转和升级尺寸变化，完善自适应预览、成员个人快捷键及底栏升级角标。0.2.8新增本机MCP、统一文件关联和云文件改名，优化设置局部保存、全局混合搜索及紧凑快捷键候选。0.2.11改进快捷键目标同步与成员绑定恢复，并新增问题诊断。普通用户使用安装器安装和升级；ZIP供免安装启动，需预装WebView2，用户数据仍保存于用户目录。0.2.0的历史下载文件保留原名。
 
@@ -65,7 +65,7 @@ Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、Reac
 
 一级分类标签可分别选择十二色色板或恢复默认颜色。菜单中的“设置一级分类背景色”打开设置页的“界面设置”，预选所点击的分类；已有设置窗口也会切换页面与分类。一级分类栏高度默认31像素，可设为31—200像素，增加高度后标签换行。界面设置提供标题和内容、仅标题、仅内容三种显示模式，以及默认展开／收起二级分类。
 
-界面设置提供七种主题、10—18像素话术字体、标题默认色、个人话术／文件分类默认背景色、话术／文件标签顺序、窗口自由调整及吸附状态记忆。源码默认主题已改为[雾蓝灰](docs/theme.md)（未发布），使用中性浅色与低饱和蓝灰；七种主题共用实色主窗口上下栏、分段导航和浅色分组条，标题与一级分类统一使用暖色，快捷键沿用各自主色并叠放于话术文字区域右侧，不占正文宽度。新安装话术字号默认为14像素，已有字号保持原值。单个分类配色优先于默认色，单条话术独立颜色优先于标题默认色；空值及旧版默认橙色使用当前默认标题色或全局自定义色，不改写原记录。话术／文件分类区域分别设置31—200像素，侧边短语区域最大高度28—300像素；底部短语可限制为一、二、三行或自适应，超出内容可以滚动。关闭吸附状态记忆后，当前会话可继续吸附，下次启动不自动吸附，手动启动仍显示独立窗口。
+界面设置提供七种主题、10—18像素话术字体、标题默认色、个人话术／文件分类默认背景色、话术／文件标签顺序、窗口自由调整及吸附状态记忆。默认主题为[雾蓝灰](docs/theme.md)，使用中性浅色与低饱和蓝灰；七种主题共用实色主窗口上下栏、分段导航和浅色分组条，标题与一级分类统一使用暖色，快捷键沿用各自主色并叠放于话术文字区域右侧，不占正文宽度。新安装话术字号默认为14像素，已有字号保持原值。单个分类配色优先于默认色，单条话术独立颜色优先于标题默认色；空值及旧版默认橙色使用当前默认标题色或全局自定义色，不改写原记录。话术／文件分类区域分别设置31—200像素，侧边短语区域最大高度28—300像素；底部短语可限制为一、二、三行或自适应，超出内容可以滚动。关闭吸附状态记忆后，当前会话可继续吸附，下次启动不自动吸附，手动启动仍显示独立窗口。
 
 常用设置的“最小化显示悬浮窗”默认开启，独立于“最小化到托盘”。主动最小化主窗口后显示88×34 DIP的白底“图标＋闪语”小条，使用6 DIP圆角、24 DIP图标，文字跟随主题；双击恢复主窗口，单击不打开，拖动调整位置并跨重启记忆。原生右键菜单提供“隐藏悬浮图标”“永久隐藏悬浮图标”“打开主界面（双击）”：临时隐藏只作用于本次最小化，重新打开主界面再最小化时恢复；永久隐藏关闭已有设置，可在常用设置重新开启。小条置顶且不占任务栏，显示和拖动不抢焦点；自动跟随隐藏、手动隐藏、贴边收起和其他窗口最小化不会显示小条。
 
@@ -130,7 +130,7 @@ services:
 
 共享数据备份包含账号、共享话术、云文件、云命令及独立授权、回收记录和实际素材，排除个人内容和会话；个人内容使用个人完整备份。完整运维备份在停服后保存整个 `data`。全目录恢复须使用同一份备份还原到新目录，并执行恢复准备以清除旧会话、更换个人同步世代；维护流程见下文。
 
-可复制的配置及备份细节见[共享话术与部署](docs/team-sharing.md)，客户端本版变化见[0.2.13 发布说明](docs/releases/v0.2.13.md)。
+可复制的配置及备份细节见[共享话术与部署](docs/team-sharing.md)，客户端本版变化见[0.2.14 发布说明](docs/releases/v0.2.14.md)。
 
 ## 数据与备份
 
@@ -163,13 +163,17 @@ npm run tauri -- dev
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -InnoCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
-脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.13，产物为 `artifacts/QuickPhrase-Setup-0.2.13-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
+脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.14，产物为 `artifacts/QuickPhrase-Setup-0.2.14-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
 
-默认仍只生成安装器。候选构建可加 `-Version 0.2.13-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.13`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.13` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
+默认仍只生成安装器。候选构建可加 `-Version 0.2.14-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.14`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.14` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
 
-GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.13-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
+GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.14-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
 
 检测到已验证的新版本后，右下角“闪语”显示“新”角标；悬停提示当前版本和最新版本，点击进入关于页查看并手动升级。不在顶部增加提醒栏，下载中或选择稍后安装时仍可从此进入。
+
+## 界面开发
+
+客户端统一使用[样式规范](docs/theme.md)、`src/styles/tokens.css` 的语义变量及 `src/ui.tsx` 的共用控件。`src/styles.css` 按变量、基础、控件、业务布局顺序加载；新增界面不要复制普通按钮／表单外观。当前改造结果与实机验收边界见[样式统一验收](docs/ui/style-unification-2026-11-02.md)。
 
 ## 验证
 

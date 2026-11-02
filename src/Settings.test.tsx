@@ -1,3 +1,4 @@
+import { WindowCloseScope } from './close';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render as testingRender, screen, waitFor } from '@testing-library/react';
@@ -14,7 +15,7 @@ const closingWindow = vi.hoisted(() => ({ close: vi.fn(async () => {}), handler:
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ close: closingWindow.close, onCloseRequested: vi.fn(async callback => { closingWindow.handler = callback; return () => { closingWindow.handler = undefined; }; }) }) }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => null) }));
 let savedSettings: Library['settings'];
-const render = (element: ReactElement<{ library: Library }>) => { savedSettings = element.props.library.settings; return testingRender(element); };
+const render = (element: ReactElement<{ library: Library }>) => { savedSettings = element.props.library.settings; return testingRender(element, { wrapper: WindowCloseScope }); };
 beforeEach(() => { vi.mocked(call).mockImplementation(async (command, args) => { if (command === 'patch_settings') { savedSettings = { ...savedSettings, ...args?.patch as object }; return { settings: savedSettings, libraryId: '', revision: 1 }; } return 0; }); vi.mocked(getVersion).mockResolvedValue('0.1.1'); HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.open = true; }); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const library: Library = { categories: [], phrases: ['P1', 'P2'].map(id => ({ id, rootId: 'root', groupId: null, title: '话术', color: '', background: '', shortcut: '', position: 0, segments: [{ blocks: [{ kind: 'text', text: '正文' }] }] })), commonPhrases: [{ id: 'C1', text: '您好', position: 0 }], files: [], dataDir: '', settings: {} as Library['settings'] };
@@ -202,23 +203,35 @@ it('排序保存失败保留原顺序和焦点', async () => {
 });
 
 describe('应用版本', () => {
-  it('关于页面与侧栏显示实际 RC 版本', async () => {
+  it('关于页面与侧栏显示实际 RC 版本，侧栏不附带工具说明', async () => {
     vi.mocked(getVersion).mockResolvedValue('0.1.1-rc.2');
-    render(<SettingsWindow library={library} initialTab="关于" />);
+    const { container } = render(<SettingsWindow library={library} initialTab="关于" />);
     expect(screen.getByRole('heading', { name: '闪语 QuickPhrase' })).toBeTruthy();
     expect(await screen.findByText('Windows 本地话术工具 · v0.1.1-rc.2')).toBeTruthy();
-    expect(screen.getByText('本地话术工具 · 0.1.1-rc.2')).toBeTruthy();
+    const brand = container.querySelector('.settings-brand')!;
+    expect(brand.textContent).toBe('闪语0.1.1-rc.2');
+    expect(brand.querySelector('small')?.textContent).toBe('0.1.1-rc.2');
   });
-  it('读取失败不显示硬编码版本', async () => {
+  it('读取失败只保留应用名，不显示硬编码版本或空版本行', async () => {
     vi.mocked(getVersion).mockRejectedValue(new Error('版本服务不可用'));
-    render(<SettingsWindow library={library} initialTab="关于" />);
+    const { container } = render(<SettingsWindow library={library} initialTab="关于" />);
     expect((await screen.findByRole('alert')).textContent).toContain('无法读取应用版本');
     expect(screen.queryByText(/v0\.1\.1| · 0\.1\.1/)).toBeNull();
+    const brand = container.querySelector('.settings-brand')!;
+    expect(brand.textContent).toBe('闪语');
+    expect(brand.querySelector('small')).toBeNull();
   });
 });
 
 describe('十项序号与快捷键设置', () => {
   const shortcuts = () => ({ ...library, settings: { ...library.settings, searchHotkey: 'Q', windowHotkey: 'W', commonHotkey: 'E', sequenceHotkeys: false, sequenceDirectSend: false, sequenceBindings: Array.from({ length: 10 }, (_, i) => `Ctrl+${(i+1)%10}`), customHotkeys: true, globalPhraseHotkeys: false } });
+  it('原生关闭先提交仍在聚焦的自动保存输入，不因 Alt+F4 跳过 blur 而丢失修改', async () => {
+    render(<SettingsWindow library={shortcuts()} initialTab="快捷键" />);
+    const input = screen.getByLabelText('定位到搜索快捷键'); input.focus(); fireEvent.change(input, { target: { value: 'R' } });
+    expect(vi.mocked(call).mock.calls.some(([command]) => command === 'patch_settings')).toBe(false);
+    await act(async () => closingWindow.handler!({ preventDefault: vi.fn() }));
+    expect(savedSettings.searchHotkey).toBe('R'); expect(closingWindow.close).toHaveBeenCalledOnce();
+  });
   it.each([false, true])('连续修改后关闭会等待全部保存，失败留窗（失败=%s）', async fail => {
     let finish!: () => void;
     const base = vi.mocked(call).getMockImplementation()!;

@@ -1,10 +1,12 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { WindowCloseScope } from './close';
+import { act, cleanup, fireEvent, render as testingRender, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { call, openWindow, useTeams } from './api';
 import { TeamManagementWindow } from './TeamManagement';
 import { TeamSelector } from './TeamSelector';
 import type { TeamMembers, TeamStatus, TeamUser } from './types';
+const render = (element: import('react').ReactNode) => testingRender(element, { wrapper: WindowCloseScope });
 
 const listeners = vi.hoisted(() => new Map<string, (event: { payload: unknown }) => void>());
 const nativeClose = vi.hoisted(() => ({ request: null as null | ((event: { preventDefault: () => void }) => Promise<void>), close: vi.fn() }));
@@ -61,6 +63,7 @@ describe('按身份管理共享话术', () => {
     submitDialog(); await screen.findByRole('alert');
     expect(input.value).toBe(generated); expect(actions('create-user')[0][1]?.request).toMatchObject({ username: 'alex.lin', displayName: '小林', contact: '', password: generated });
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(screen.getByRole('button', { name: '新建账号' }));
     expect((screen.getByLabelText('初始密码') as HTMLInputElement).value).toBe('');
   });
@@ -88,6 +91,14 @@ describe('按身份管理共享话术', () => {
     await screen.findByText(/成员已变化，草稿已保留/);
     expect((screen.getByRole('combobox', { name: '002的共享话术角色' }) as HTMLSelectElement).value).toBe('editor');
     expect(actions('set-members')[0][1]?.request).toEqual({ expectedMembershipVersion: 4, expectedLifecycleVersion: 1, members: members.members.map(m => ({ userId: m.userId, teamId: m.teamId, role: m.userId === '002' ? 'editor' : m.role })) });
+  });
+  it('成员角色改回原值不再视为未保存草稿，关闭不追加放弃确认', async () => {
+    render(<TeamManagementWindow teamId="A" />);
+    const role = await screen.findByRole('combobox', { name: '002的共享话术角色' });
+    fireEvent.change(role, { target: { value: 'editor' } }); fireEvent.change(role, { target: { value: 'member' } });
+    expect(screen.getByRole('button', { name: '保存' })).toHaveProperty('disabled', true);
+    await act(async () => nativeClose.request!({ preventDefault: vi.fn() }));
+    expect(confirm).not.toHaveBeenCalled(); expect(nativeClose.close).toHaveBeenCalledOnce();
   });
   it('移交只列在用查看者和编辑者；成功降权后管理入口撤下', async () => {
     const rendered = render(<TeamManagementWindow teamId="A" />);

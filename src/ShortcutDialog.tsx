@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { call } from './api';
-import { Icon } from './ui';
+import { Button, IconButton, DialogWindowClose, Icon } from './ui';
+import { useModalClose } from './close';
 
 const modifiers = ['', 'Ctrl', 'Shift', 'Alt'];
 /** 编辑器与列表共用快捷键录入。确认只提交当前草稿，取消（包括删除后的取消）不改变原绑定。 */
@@ -10,9 +11,11 @@ export function ShortcutDialog({ id, value, onConfirm, close }: { id: string; va
   const [first, setFirst] = useState(keys[0] || ''); const [second, setSecond] = useState(keys[1] || '');
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const busyRef = useRef(false);
   const [ready, setReady] = useState(false); const [help, setHelp] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null); const inputs = useRef<(HTMLInputElement | null)[]>([]);
+  const initial = useRef(JSON.stringify([modifier, first, second]));
+  const modal = useModalClose({ close, busy: () => busyRef.current, dirty: () => JSON.stringify([modifier, first, second]) !== initial.current });
+  const inputs = useRef<(HTMLInputElement | null)[]>([]);
   useEffect(() => {
-    dialog.current?.showModal(); let disposed = false;
+    let disposed = false;
     // 原生监听暂停后才允许录入，避免已保存的快捷键抢走正在设置的按键。
     void call('set_shortcut_input', { active: true }).then(() => { if (!disposed) { setReady(true); requestAnimationFrame(() => inputs.current[0]?.focus()); } }).catch(e => { if (!disposed) setError(String(e)); });
     return () => { disposed = true; void call('set_shortcut_input', { active: false }).catch(() => {}); };
@@ -29,20 +32,20 @@ export function ShortcutDialog({ id, value, onConfirm, close }: { id: string; va
     (index ? setSecond : setFirst)(key); setError(''); if (!index) inputs.current[1]?.focus();
   }
   async function submit(event: FormEvent) {
-    event.preventDefault(); if (busyRef.current || !ready) return;
+    event.preventDefault(); if (busyRef.current || modal.isClosing() || !ready) return;
     if ((!first && second) || (first && !second && !modifier)) { setError('请选择第一个按键；无功能键时需要两个按键。'); return; }
     const shortcut = first ? [modifier, first, second].filter(Boolean).join('+') : '';
     busyRef.current = true; setBusy(true);
     try { const canonical = await call<string>('validate_phrase_shortcut', { id, shortcut }); await onConfirm(canonical); close(); }
     catch (e) { setError(String(e)); } finally { busyRef.current = false; setBusy(false); }
   }
-  return <dialog ref={dialog} className="shortcut-dialog" aria-labelledby="shortcut-title" onCancel={e => { e.preventDefault(); if (!busyRef.current) close(); }}><form onSubmit={submit}>
-    <header className="standard-titlebar"><img className="app-symbol" src="/shanyu.png" alt="" draggable={false} /><span id="shortcut-title">设置自定义快捷键</span><span className="titlebar-spacer" /><button type="button" aria-label="关闭快捷键设置" disabled={busy} onClick={close}><Icon name="close" /></button></header>
+  return <dialog ref={modal.ref} className="shortcut-dialog" aria-labelledby="shortcut-title" onCancel={modal.onCancel} onKeyDown={modal.onKeyDown}>{modal.windowClose && <DialogWindowClose busy={busy} />}<form onSubmit={submit}>
+    <header className="standard-titlebar"><img className="app-symbol" src="/shanyu.png" alt="" draggable={false} /><span id="shortcut-title">设置自定义快捷键</span><span className="titlebar-spacer" /><IconButton type="button" data-dialog-close aria-label="关闭弹窗" disabled={busy} onClick={() => void modal.requestClose()}><Icon name="close" /></IconButton></header>
     <div className="shortcut-body"><div className="shortcut-fields"><select aria-label="功能键" value={modifier} disabled={!ready || busy} onChange={e => { setModifier(e.target.value); setError(''); }}>{modifiers.map(m => <option key={m} value={m}>{m || '功能键（无）'}</option>)}{modifier && !modifiers.includes(modifier) && <option value={modifier}>{modifier}</option>}</select>
       {[first, second].map((key, index) => <input key={index} type="text" ref={el => { inputs.current[index] = el; }} aria-label={index ? '第二个按键' : '第一个按键'} value={key} readOnly disabled={!ready || busy} onKeyDown={event => record(event, index)} />)}
-      <button type="button" className="delete-shortcut" title="删除话术快捷键" aria-label="删除话术快捷键" disabled={!ready || busy} onClick={() => { setModifier(''); setFirst(''); setSecond(''); setError(''); }}><Icon name="trash" /></button></div>
-      <p className="shortcut-hint">点击按键框，按键录入。</p>{id.startsWith('member:') && <p className="shortcut-hint">仅保存在本机当前账号，不影响来源成员的话术。</p>}{error && <p className="validation-error" role="alert">{error}</p>}
-      <div className="shortcut-footer"><button type="button" className="shortcut-help-toggle" aria-label="自定义快捷键使用说明" aria-expanded={help} onClick={() => setHelp(v => !v)}>使用说明</button><button type="button" className="secondary-button" disabled={busy} onClick={close}>取消</button><button type="submit" className="primary-button" disabled={!ready || busy}>{busy ? '保存中' : '确定'}</button></div>
+      <IconButton type="button" className="delete-shortcut" title="删除话术快捷键" aria-label="删除话术快捷键" disabled={!ready || busy} onClick={() => { setModifier(''); setFirst(''); setSecond(''); setError(''); }}><Icon name="trash" /></IconButton></div>
+      <p className="shortcut-hint">点击按键框，按键录入。</p>{id.startsWith('member:') && <p className="shortcut-hint">仅保存在本机当前账号，不影响来源成员的话术。</p>}{(error || modal.error) && <p className="validation-error" role="alert">{error || modal.error}</p>}
+      <div className="shortcut-footer"><Button variant="ghost" type="button" className="shortcut-help-toggle" aria-label="自定义快捷键使用说明" aria-expanded={help} onClick={() => setHelp(v => !v)}>使用说明</Button><Button variant="secondary" type="button" disabled={busy} onClick={() => void modal.requestClose()}>取消</Button><Button variant="primary" type="submit" disabled={!ready || busy}>{busy ? '保存中' : '确定'}</Button></div>
       {help && <div className="shortcut-help"><p><strong>设置：</strong>组合键只填第一键；无功能键时需填两键。</p>
         <p className="shortcut-timing"><strong>触发：</strong>双键依次按，两键间隔不超过 1 秒；使用功能键时保持按住。</p>
         <p>普通字母、数字双键即时输入，选择后替换为话术，取消时保留输入。微软拼音下，此前未确认的拼音会先上屏并保留内容。中文数字可能用于选字，无法核对时会停止，可改用字母双键或 Ctrl／Alt 组合键。候选显示时，数字、空格和 Enter 操作话术候选。</p>

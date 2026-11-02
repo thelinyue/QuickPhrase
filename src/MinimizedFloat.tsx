@@ -1,3 +1,4 @@
+import { Button } from './ui';
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -38,7 +39,7 @@ export function MinimizedFloat() {
     e.currentTarget.releasePointerCapture(e.pointerId);
     void getCurrentWindow().startDragging().catch(() => setError('悬浮窗暂时无法拖动，请重试。'));
   }
-  return <button className={`minimized-float${pressed ? ' pressed' : ''}`} aria-label="打开闪语" title={error || '双击打开闪语，拖动调整位置，右键显示菜单'}
+  return <Button variant="ghost" className={`minimized-float${pressed ? ' pressed' : ''}`} aria-label="打开闪语" title={error || '双击打开闪语，拖动调整位置，右键显示菜单'}
     onContextMenu={e => {
       e.preventDefault(); setPressed(false); press.current = null;
       // WebView 的原生右键消息可能重复到达；创建及展示期间只允许一个系统菜单。
@@ -62,5 +63,5 @@ export function MinimizedFloat() {
       if (press.current?.dragged) return;
       press.current = null; setPressed(false);
       void open();
-    }}><img src="/shanyu.png" width="24" height="24" alt="" draggable={false} /><span>闪语</span></button>;
+    }}><img src="/shanyu.png" width="24" height="24" alt="" draggable={false} /><span>闪语</span></Button>;
 }

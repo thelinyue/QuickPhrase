@@ -1,8 +1,10 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { WindowCloseScope } from './close';
+import { act, cleanup, fireEvent, render as testingRender, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { call, useTeams } from './api';
 import { CloudCenter } from './CloudCenter';
 import type { CloudCommand, CloudCommandsView, TeamStatus, TeamUser } from './types';
+const render = (element: import('react').ReactNode) => testingRender(element, { wrapper: WindowCloseScope });
 
 const events = vi.hoisted(() => new Map<string, (event: { payload: unknown }) => void>());
 const windows = vi.hoisted(() => ({ close: vi.fn(), onCloseRequested: vi.fn(async () => () => {}), onDragDropEvent: vi.fn(async () => () => {}) }));

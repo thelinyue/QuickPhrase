@@ -27,7 +27,8 @@ it('未登录以连接表单为主，密码显示切换不改变值，提交期�
   const password = screen.getByLabelText('密码') as HTMLInputElement;
   fireEvent.change(password, { target: { value: 'test-password' } });
   fireEvent.click(screen.getByRole('button', { name: '显示密码' })); expect(password.type).toBe('text'); expect(password.value).toBe('test-password');
-  fireEvent.submit(password.closest('form')!);
+  expect((screen.getByRole('button', { name: '登录' }) as HTMLButtonElement).type).toBe('submit');
+  fireEvent.click(screen.getByRole('button', { name: '登录' }));
   expect(call).toHaveBeenCalledWith('team_login', { server: status.server, username: 'admin', password: 'test-password' });
   expect(password.closest('fieldset')!.disabled).toBe(true);
   expect(screen.queryByRole('button', { name: '管理话术' })).toBeNull();
@@ -55,6 +56,7 @@ it('改密核对两次密码，失败保留输入，关闭清空并恢复触发�
   expect(vi.mocked(call).mock.calls.some(([cmd]) => cmd === 'team_change_password')).toBe(false);
   expect((screen.getByLabelText('新密码') as HTMLInputElement).value).toBe('new-password');
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '取消' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   expect(document.activeElement).toBe(trigger);
   fireEvent.click(trigger); expect((screen.getByLabelText('新密码') as HTMLInputElement).value).toBe('');
 });
@@ -101,6 +103,7 @@ it('离线也可修改连接，预填地址和用户名，取消不改连接且�
   expect((within(dialog).getByLabelText('用户名') as HTMLInputElement).value).toBe(status.username);
   fireEvent.change(within(dialog).getByLabelText('密码'), { target: { value: 'temporary-password' } });
   fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   expect(call).not.toHaveBeenCalledWith('team_login', expect.anything());
   expect(document.activeElement).toBe(trigger);
   fireEvent.click(trigger); expect((screen.getByLabelText('密码') as HTMLInputElement).value).toBe('');

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { call, closeWindow, openWindow } from './api';
-import { Feedback, Titlebar } from './ui';
+import { Button, Feedback, Titlebar } from './ui';
 import type { Settings } from './types';
 
 const topics = ['快速开始', '搜索与快捷键', '窗口吸附', '本地文件与云文件', '账号与共享话术', '数据管理'] as const;
@@ -31,7 +31,7 @@ export function UsageGuideWindow({ settings }: { settings?: Settings }) {
     <p><kbd>{hotkey('windowHotkey', 'W')}</kbd> 显示／隐藏侧栏，<kbd>{hotkey('commonHotkey', 'E')}</kbd> 定位到常用短语。快捷键可在“快捷键”设置页修改。</p>
     <h3>常用短语</h3><p>点击“＋”添加不超过16字的单行短语，右键修改、删除或排序。单击添加到输入区，双击不重复插入；Enter 直接发送。</p>
     <h3>话术快捷键</h3><p>可在话术右键菜单设置专用快捷键，也可在设置中开启序号快捷键。同键候选用上下键选择，空格插入，Enter 直接发送，Esc 取消。目标变化时取消候选。</p>
-    <button className="secondary-button" onClick={() => void openWindow('settings', '', '', '快捷键').catch(e => setMessage(String(e)))}>打开快捷键设置</button>
+    <Button onClick={() => void openWindow('settings', '', '', '快捷键').catch(e => setMessage(String(e)))}>打开快捷键设置</Button>
   </> : topic === '窗口吸附' ? <>
     <h2>显示、隐藏与跟随</h2><p>从桌面或开始菜单手动打开闪语会显示窗口；重复打开会唤起已有窗口。开机自启驻留后台，不主动抢焦点。</p>
     <p>右上角磁铁开关控制企业微信吸附，图钉控制置顶。吸附方向在“吸附设置”中调整；目标最小化或切换到其他程序时，跟随面板会隐藏，返回目标后恢复。</p>
@@ -42,9 +42,9 @@ export function UsageGuideWindow({ settings }: { settings?: Settings }) {
     <h3>云文件</h3><p>登录并完成初始改密后，从主菜单打开“云文件”。有上传权限时，可多选本机文件，或将文件拖到云文件列表、上传管理正文区，直接加入上传任务。</p><p>单文件需为1字节至128MB，文件夹不上传。无效文件单独提示，其他文件继续；在上传管理查看进度、停止任务或核对中断结果。关闭管理窗口后任务继续，退出客户端会停止。</p><p>下载完成后不会自动投递。服务管理员分别授予上传、删除、恢复权限；云文件删除移入回收站。</p>
   </> : topic === '账号与共享话术' ? <>
     <h2>个人内容与团队共享</h2><p>在主菜单“账号”填写闪云的服务地址并登录。首次登录需修改初始密码；本地功能无需登录即可使用。</p><p>“个人话术”保存个人内容，私人同步需要主动开启。“共享话术 ▾”切换已授权的共享话术；查看者阅读和使用，编辑者维护内容，库管理员管理成员。</p><p>个人话术和共享话术通过复制分别维护；切换账号不会把上一个账号的任务或内容交给新账号。</p>
-    <button className="secondary-button" onClick={() => void openWindow('settings', '', '', '账号').catch(e => setMessage(String(e)))}>打开账号设置</button>
+    <Button onClick={() => void openWindow('settings', '', '', '账号').catch(e => setMessage(String(e)))}>打开账号设置</Button>
   </> : <>
     <h2>导入、导出与回收</h2><p>从主菜单打开“导入数据”或“导出数据”，选择个人库、共享话术或本机文件与设置。导入先预览，确认后保存；完整图文和附件请使用 ZIP 备份，Excel 只保存文字。</p><p>删除话术和分类默认移入回收站，可从主菜单查看并还原。永久删除无法撤回；文件关联和常用短语不进入回收站。</p><p>安装、升级和卸载保留用户数据。同步不能代替独立备份，重要内容可定期导出。</p>
   </>;
-  return <section className="client-window usage-guide-window"><Titlebar title="使用指引" minimize /><div className="settings-layout"><aside className="settings-sidebar guide-sidebar"><nav aria-label="指引主题">{topics.map(value => <button key={value} aria-current={topic === value ? 'page' : undefined} className={topic === value ? 'active' : ''} onClick={() => setTopic(value)}>{value}</button>)}</nav><div className="settings-brand"><span>闪语</span><small>随时查看，边看边练</small></div></aside><main className="guide-content" key={topic}>{content}</main></div><footer className="guide-footer"><span>以后可从主菜单打开“使用指引”</span><button className="primary-button" onClick={() => void begin()}>开始使用</button></footer><Feedback message={message} clear={() => setMessage('')} /></section>;
+  return <section className="client-window usage-guide-window"><Titlebar title="使用指引" minimize /><div className="settings-layout"><aside className="settings-sidebar guide-sidebar"><nav aria-label="指引主题">{topics.map(value => <Button variant="ghost" key={value} aria-current={topic === value ? 'page' : undefined} className={topic === value ? 'active' : ''} onClick={() => setTopic(value)}>{value}</Button>)}</nav><div className="settings-brand"><span>闪语</span><small>随时查看，边看边练</small></div></aside><main className="guide-content" key={topic}>{content}</main></div><footer className="guide-footer"><span>以后可从主菜单打开“使用指引”</span><Button variant="primary" onClick={() => void begin()}>开始使用</Button></footer><Feedback message={message} clear={() => setMessage('')} /></section>;
 }

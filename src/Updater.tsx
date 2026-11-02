@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
 import { call, openWindow } from './api';
-import { FormDialog } from './ui';
+import { Button, FormDialog } from './ui';
 
 export interface UpdateConfig { automatic: boolean; route: 'default' | 'backup' | 'custom' | 'direct'; customProxy: string }
 export interface UpdateStatus {
@@ -54,14 +54,14 @@ export function UpdateSettings() {
         <option value="default">默认代理 · gh-proxy.com</option><option value="backup">备用代理 · ghfast.top</option><option value="custom">自定义代理</option><option value="direct">不使用 GitHub 代理</option>
       </select></label>
       {config.route === 'custom' && <><label>代理地址<input type="url" aria-label="代理地址" value={config.customProxy} placeholder="https://代理地址/" onChange={e => setDraft({ ...config, customProxy: e.target.value })} /></label><p className="settings-hint">使用“代理地址／完整 GitHub URL”的 HTTPS 下载代理。</p></>}
-      <div className="setting-buttons"><button className="secondary-button" onClick={() => void check()}>{status?.phase === 'checking' ? '检查中…' : draft ? '保存并检查' : '检查更新'}</button>{config.route !== 'default' && <button className="secondary-button" onClick={() => setDraft({ ...config, route: 'default' })}>恢复默认线路</button>}</div>
+      <div className="setting-buttons"><Button onClick={() => void check()}>{status?.phase === 'checking' ? '检查中…' : draft ? '保存并检查' : '检查更新'}</Button>{config.route !== 'default' && <Button onClick={() => setDraft({ ...config, route: 'default' })}>恢复默认线路</Button>}</div>
     </fieldset>}
     {!status && !error && <p>正在读取更新设置…</p>}
     {status?.release && <><p><strong>新版本 v{status.release.version}</strong></p>{status.release.notes && <div className="update-notes">{status.release.notes}</div>}</>}
-    {status?.phase === 'downloading' && <><progress aria-label="更新下载进度" value={status.total ? status.downloaded : undefined} max={status.total || undefined} /><p>{(status.downloaded / 1024 / 1024).toFixed(1)} MB{status.total ? ` / ${(status.total / 1024 / 1024).toFixed(1)} MB` : ''}</p><button className="secondary-button" disabled={pending} onClick={() => void run(async () => { await call('cancel_update'); })}>取消下载</button></>}
-    {status?.release && ['available', 'error'].includes(status.phase) && <button className="primary-button" disabled={busy || !!draft} onClick={() => void run(async () => { setLater(false); accept(await call<UpdateStatus>('download_update')); })}>{status.phase === 'error' ? '重新下载' : '下载更新'}</button>}
-    {status?.phase === 'ready' && <div className="setting-buttons"><button className="primary-button" disabled={busy} onClick={() => setConfirm(true)}>退出并安装</button><button className="secondary-button" disabled={busy} onClick={() => setLater(true)}>稍后</button></div>}
-    {status?.manualInstallAvailable && <button className="secondary-button" disabled={busy} onClick={() => void run(async () => { await call('open_update_download_directory'); })}>打开下载目录</button>}
+    {status?.phase === 'downloading' && <><progress aria-label="更新下载进度" value={status.total ? status.downloaded : undefined} max={status.total || undefined} /><p>{(status.downloaded / 1024 / 1024).toFixed(1)} MB{status.total ? ` / ${(status.total / 1024 / 1024).toFixed(1)} MB` : ''}</p><Button disabled={pending} onClick={() => void run(async () => { await call('cancel_update'); })}>取消下载</Button></>}
+    {status?.release && ['available', 'error'].includes(status.phase) && <Button variant="primary" disabled={busy || !!draft} onClick={() => void run(async () => { setLater(false); accept(await call<UpdateStatus>('download_update')); })}>{status.phase === 'error' ? '重新下载' : '下载更新'}</Button>}
+    {status?.phase === 'ready' && <div className="setting-buttons"><Button variant="primary" disabled={busy} onClick={() => setConfirm(true)}>退出并安装</Button><Button disabled={busy} onClick={() => setLater(true)}>稍后</Button></div>}
+    {status?.manualInstallAvailable && <Button disabled={busy} onClick={() => void run(async () => { await call('open_update_download_directory'); })}>打开下载目录</Button>}
     {status?.message && <p role="status">{later && status.phase === 'ready' ? '可以继续使用，稍后回到此处安装。' : status.message}</p>}
     {error && <p role="alert" className="validation-error">{error}</p>}
     <p className="settings-hint">公共代理可能暂时不可用，可更换线路或直连重试。下载后会验证发布签名；程序和安装器仍未附带 Windows 代码签名。</p>
@@ -81,5 +81,5 @@ export function UpdateBadge() {
   }, []);
   if (!status?.release) return <span className="brand-name">闪语</span>;
   const hint = `当前版本 ${current}\n最新版本 v${status.release.version}\n点击查看并升级`;
-  return <span className="brand-update" role="status"><button className="brand-name brand-update-button" title={error || hint} aria-label={error || hint} onClick={() => { setError(''); void openWindow('settings', '', '', '关于').catch(e => setError(String(e))); }}>闪语<span className="brand-update-badge" aria-hidden="true">新</span></button></span>;
+  return <span className="brand-update" role="status"><Button variant="ghost" className="brand-name brand-update-button" title={error || hint} aria-label={error || hint} onClick={() => { setError(''); void openWindow('settings', '', '', '关于').catch(e => setError(String(e))); }}>闪语<span className="brand-update-badge" aria-hidden="true">新</span></Button></span>;
 }

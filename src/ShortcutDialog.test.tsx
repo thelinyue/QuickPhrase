@@ -1,8 +1,10 @@
+import { confirm } from '@tauri-apps/plugin-dialog';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { call } from './api';
 import { ShortcutDialog } from './ShortcutDialog';
 
+vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn(async () => true) }));
 vi.mock('./api', () => ({ call: vi.fn(async (command, args) => command === 'validate_phrase_shortcut' ? args.shortcut : undefined), closeWindow: vi.fn() }));
 beforeAll(() => { HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); }; });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -52,7 +54,7 @@ describe('自定义快捷键录入', () => {
     expect((screen.getByLabelText('第二个按键') as HTMLInputElement).value).toBe('');
     fireEvent.click(screen.getByRole('button', { name: '确定' })); await waitFor(() => expect(a.onConfirm).toHaveBeenCalledExactlyOnceWith('Ctrl+Alt+1'));
     cleanup(); const b = await open('Ctrl+Y+C'); fireEvent.click(screen.getByRole('button', { name: '删除话术快捷键' }));
-    fireEvent.click(screen.getByRole('button', { name: '取消' })); expect(b.onConfirm).not.toHaveBeenCalled(); expect(b.close).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: '取消' })); expect(b.onConfirm).not.toHaveBeenCalled(); await waitFor(() => expect(b.close).toHaveBeenCalledOnce()); expect(confirm).toHaveBeenCalledWith('放弃未保存的修改？', expect.anything());
     fireEvent.click(screen.getByRole('button', { name: '确定' })); await waitFor(() => expect(b.onConfirm).toHaveBeenCalledExactlyOnceWith(''));
   });
   it('冲突或保存失败保留对话框，快速双击不会重复提交', async () => {
