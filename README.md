@@ -108,7 +108,7 @@ Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、Reac
 ```yaml
 services:
   quickphrase-hub:
-    image: ghcr.io/thelinyue/quickphrase-hub:0.2.5
+    image: ghcr.io/thelinyue/quickphrase-hub:0.2.6
     user: "0:0"
     restart: unless-stopped
     ports:

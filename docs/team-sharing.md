@@ -34,7 +34,7 @@
 ```yaml
 services:
   quickphrase-hub:
-    image: ghcr.io/thelinyue/quickphrase-hub:0.2.5
+    image: ghcr.io/thelinyue/quickphrase-hub:0.2.6
     user: "0:0"
     restart: unless-stopped
     ports:
@@ -61,7 +61,7 @@ services:
 ```yaml
 services:
   prepare-restore:
-    image: ghcr.io/thelinyue/quickphrase-hub:0.2.5
+    image: ghcr.io/thelinyue/quickphrase-hub:0.2.6
     user: "0:0"
     restart: "no"
     command: ["--prepare-restore"]
