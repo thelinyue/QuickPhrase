@@ -6,7 +6,7 @@
 .phrase-preview-window { width: 100vw; height: 100vh; display: flex; flex-direction: column; background: var(--theme-surface); border: 1px solid var(--theme-accent); overflow: hidden; border-radius: var(--radius-popover); box-shadow: var(--shadow-popover); }
 .phrase-preview-window > header { display: flex; align-items: flex-start; gap: 6px; padding: 4px 5px 0; flex-shrink: 0; background: var(--theme-panel); }
 .phrase-preview-window > header strong { flex: 1; min-width: 0; font-size: var(--phrase-size); font-weight: 500; line-height: 1.75; color: var(--phrase-title-color); overflow-wrap: anywhere; }
-.phrase-preview-window > header .row-shortcut { margin: 0; }
+.phrase-preview-window > header .row-shortcut { margin: 0 0 0 auto; }
 .phrase-preview-body { min-height: 0; flex: 1; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
 .phrase-preview-content { padding: 3px 5px 5px; font-size: var(--phrase-size); line-height: 1.75; overflow-wrap: anywhere; white-space: pre-wrap; }
 .phrase-preview-segment + .phrase-preview-segment { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }

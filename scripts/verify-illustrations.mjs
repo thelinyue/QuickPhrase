@@ -536,24 +536,53 @@ try {
     await candidates.setViewportSize({ width: 370, height: 95 }); await screenshot(candidates, 'theme-default-candidates');
     await settings.setViewportSize({ width: 594, height: 620 }); await click(settings.getByRole('button', { name: '界面设置', exact: true })); await settings.locator('.settings-content').evaluate(el => { el.scrollTop = 0; }); await screenshot(settings, 'theme-default-settings');
   });
+  const sizePreview = async (text, maxHeight, title = '自适应预览', { fontSize = 14, theme = 'default', shortcut = item.shortcut } = {}) => {
+    await preview.setViewportSize({ width: 300, height: 180 });
+    await preview.evaluate(() => window.__illustrationQA.previewSizes = []);
+    await invoke('plugin:event|emit', { event: 'phrase-preview', payload: { phrase: { ...item, title, shortcut, segments: [{ blocks: [{ kind: 'text', text }] }] }, fontSize, titleColor: '#ff5100', theme, maxHeight } });
+    await preview.waitForFunction(({ text, theme, fontSize }) => document.querySelector('.phrase-preview-content')?.textContent === text && document.documentElement.dataset.theme === theme && getComputedStyle(document.querySelector('.phrase-preview-content')).fontSize === `${fontSize}px` && window.__illustrationQA.previewSizes.length > 0, { text, theme, fontSize });
+    // 显示快照不建立原生鼠标会话，以实际测量请求调整视口并检查正文可见范围。
+    for (let i = 0; i < 3; i++) {
+      const height = await preview.evaluate(() => window.__illustrationQA.previewSizes.at(-1));
+      await preview.setViewportSize({ width: 300, height: Math.ceil(height) }); await delay(80);
+    }
+    return preview.evaluate(() => ({ height: innerHeight, scrolls: document.querySelector('.phrase-preview-body').scrollHeight > document.querySelector('.phrase-preview-body').clientHeight }));
+  };
   await check('预览短文贴合、长文可超过480像素、受剩余高度限制且标题换行重测', async () => {
-    const sizePreview = async (text, maxHeight, title = '自适应预览') => {
-      await preview.setViewportSize({ width: 300, height: 180 });
-      await preview.evaluate(() => window.__illustrationQA.previewSizes = []);
-      await invoke('plugin:event|emit', { event: 'phrase-preview', payload: { phrase: { ...item, title, segments: [{ blocks: [{ kind: 'text', text }] }] }, fontSize: 14, titleColor: '#ff5100', theme: 'default', maxHeight } });
-      await preview.waitForFunction(() => window.__illustrationQA.previewSizes.length > 0);
-      // 显示快照不建立原生鼠标会话，以实际测量请求调整视口并检查正文可见范围。
-      for (let i = 0; i < 3; i++) {
-        const height = await preview.evaluate(() => window.__illustrationQA.previewSizes.at(-1));
-        await preview.setViewportSize({ width: 300, height: Math.ceil(height) }); await delay(80);
-      }
-      return preview.evaluate(() => ({ height: innerHeight, scrolls: document.querySelector('.phrase-preview-body').scrollHeight > document.querySelector('.phrase-preview-body').clientHeight }));
-    };
     const short = await sizePreview('简短回复', 800); assert.ok(short.height < 100); assert.equal(short.scrolls, false); await screenshot(preview, 'preview-adaptive-short');
     const medium = await sizePreview(Array.from({ length: 24 }, (_, i) => `第${i + 1}行：排查步骤`).join('\n'), 800); assert.ok(medium.height > 480 && medium.height < 800); assert.equal(medium.scrolls, false); await screenshot(preview, 'preview-adaptive-tall');
     const longText = Array.from({ length: 60 }, (_, i) => `第${i + 1}行：排查步骤`).join('\n');
     const limited = await sizePreview(longText, 310); assert.equal(limited.height, 310); assert.equal(limited.scrolls, true); await screenshot(preview, 'preview-adaptive-limited');
     const wrapped = await sizePreview('简短回复', 800, '较长标题需要换行并计入预览高度'.repeat(4)); assert.ok(wrapped.height > short.height); assert.equal(wrapped.scrolls, false);
+  });
+  await check('无标题预览在七种主题与10／14／18号字下正文不重复、快捷键靠右且高度贴合', async () => {
+    const text = '预计需要15-30分钟。\n有进展我会给您留言。';
+    for (const theme of ['default', 'green', 'blue', 'black', 'pink', 'lavender', 'orange']) {
+      for (const fontSize of [10, 14, 18]) {
+        const untitled = await sizePreview(text, 800, '', { theme, fontSize, shortcut: '' });
+        assert.equal(await preview.locator('header').count(), 0);
+        assert.equal(await preview.locator('.phrase-preview-window').textContent(), text);
+        assert.equal(untitled.scrolls, false);
+        assert.ok(await preview.locator('.phrase-preview-body').evaluate(el => Math.abs(el.clientHeight - el.firstElementChild.getBoundingClientRect().height) <= 1), '无标题短文不保留空白标题高度');
+        assert.ok(await preview.locator('.phrase-preview-window').evaluate(el => el.scrollWidth <= el.clientWidth + 1));
+        if (theme === 'default' && fontSize === 14) await screenshot(preview, 'preview-untitled');
+        const tagged = await sizePreview(text, 800, ' \t\n', { theme, fontSize, shortcut: 'Y+C' });
+        assert.equal(await preview.locator('header strong').count(), 0);
+        assert.equal(await preview.locator('header .row-shortcut').textContent(), 'Y,C');
+        assert.equal(tagged.scrolls, false); assert.ok(tagged.height > untitled.height);
+        assert.ok(await preview.locator('header').evaluate(el => Math.abs(el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight) - el.querySelector('.row-shortcut').getBoundingClientRect().right) <= 1), '仅有快捷键时靠右显示');
+        if (theme === 'default' && fontSize === 14) await screenshot(preview, 'preview-untitled-shortcut');
+      }
+    }
+    const longText = Array.from({ length: 60 }, (_, i) => `第${i + 1}行：排查步骤`).join('\n');
+    const limited = await sizePreview(longText, 310, '', { shortcut: '' });
+    assert.equal(limited.height, 310); assert.equal(limited.scrolls, true);
+    await preview.locator('.phrase-preview-body').evaluate(el => { el.scrollTop = el.scrollHeight; });
+    assert.ok(await preview.locator('.phrase-preview-body').evaluate(el => el.scrollTop > 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 1));
+    await screenshot(preview, 'preview-untitled-long-end');
+    await sizePreview('简短回复', 800);
+    assert.equal(await preview.locator('header strong').textContent(), '自适应预览');
+    assert.equal(await preview.locator('.phrase-preview-body').evaluate(el => el.scrollTop), 0);
   });
   await check('四个按钮保存期间只有当前按钮变淡，其他按钮可继续操作', async () => {
     await patchSettings({ dock: false, pinned: false, showCommon: true, showSearch: true });

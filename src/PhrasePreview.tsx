@@ -3,7 +3,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { call } from './api';
 import { Icon, phraseTitleColor } from './ui';
-import { contentKey, labelOf, type Phrase } from './types';
+import { contentKey, type Phrase } from './types';
 
 interface PreviewPayload { phrase: Phrase; fontSize: number; titleColor: string; theme: string; maxHeight: number }
 type HoverState = { timer?: ReturnType<typeof setTimeout>; triggered: boolean };
@@ -70,23 +70,25 @@ export function PhrasePreviewWindow() {
     document.documentElement.dataset.theme = preview.theme;
     document.documentElement.style.setProperty('--phrase-size', `${preview.fontSize}px`);
     const element = root.current;
-    const header = element.querySelector('header')!;
+    const header = element.querySelector('header');
     element.querySelector('.phrase-preview-body')!.scrollTop = 0;
     const measure = () => {
       const content = element.querySelector<HTMLElement>('.phrase-preview-content')!;
       // 向上取整保留行高小数；标题换行和图片加载同样触发重新测量。
-      const height = Math.ceil(Math.max(content.scrollHeight, content.getBoundingClientRect().height) + header.getBoundingClientRect().height + 2);
+      const height = Math.ceil(Math.max(content.scrollHeight, content.getBoundingClientRect().height) + (header?.getBoundingClientRect().height ?? 0) + 2);
       void call('resize_phrase_preview', { id: preview.phrase.id, height: Math.min(height, preview.maxHeight) }).catch(() => {});
     };
-    const observer = new ResizeObserver(measure); observer.observe(element.querySelector('.phrase-preview-content')!); observer.observe(header); measure();
+    const observer = new ResizeObserver(measure); observer.observe(element.querySelector('.phrase-preview-content')!); if (header) observer.observe(header); measure();
     return () => observer.disconnect();
   }, [preview]);
   if (!preview) return null;
   const phrase = preview.phrase;
+  // 正文摘要只用于列表识别，预览没有真实标题时不能重复正文。
+  const title = phrase.title.trim() ? phrase.title : '';
   return <section className="phrase-preview-window" ref={root} role="region" aria-label="话术正文预览">
-    <header><strong style={{ color: phraseTitleColor(phrase.color, preview.titleColor), background: phrase.background || undefined }}>{labelOf(phrase)}</strong>
+    {(title || phrase.shortcut) && <header>{title && <strong style={{ color: phraseTitleColor(phrase.color, preview.titleColor), background: phrase.background || undefined }}>{title}</strong>}
       {phrase.shortcut && <span className="row-shortcut">{phrase.shortcut.replaceAll('+', ',')}</span>}
-    </header>
+    </header>}
     <div className="phrase-preview-body"><div className="phrase-preview-content"><PhrasePreviewContent phrase={phrase} /></div></div>
   </section>;
 }
