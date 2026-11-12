@@ -8,6 +8,7 @@ mod delivery_notice;
 mod diagnostics;
 mod file_library;
 mod linked_files;
+mod material_cache;
 mod mcp;
 mod mcp_credentials;
 mod member_commands;
@@ -57,6 +58,7 @@ struct AppState {
     store: Mutex<Store>,
     device_store: Mutex<Store>,
     private_sync: Arc<private_sync::PrivateSync>,
+    material_cache: tokio::sync::Notify,
     transfer: transfer::TransferState,
     delivery: Arc<delivery::DeliveryState>,
     delivery_notices: delivery_notice::DeliveryNotices,
@@ -122,6 +124,7 @@ fn refreshed(app: &tauri::AppHandle, state: &AppState) -> Result<()> {
     state
         .native
         .update_bindings(&library, Some(members.session_epoch))?;
+    material_cache::wake(app);
     app.emit("library-changed", ())
         .map_err(|e| format!("界面刷新通知失败：{e}"))
 }
@@ -828,7 +831,7 @@ async fn copy_linked_files(
 ) -> Result<()> {
     let _guard = state.delivery.acquire()?;
     let epoch = state.teams.status().session_epoch;
-    let files = linked_files::resolve(&app, &state, &ids).await?;
+    let files = linked_files::resolve(&app, &state, &ids, false).await?;
     let ctx = if files.iter().any(|f| f.cloud.is_some()) {
         Some(state.teams.company_cached_context(epoch)?)
     } else {
@@ -857,7 +860,7 @@ async fn open_linked_file(
     reveal: Option<bool>,
 ) -> Result<()> {
     let epoch = state.teams.status().session_epoch;
-    let files = linked_files::resolve(&app, &state, &[id]).await?;
+    let files = linked_files::resolve(&app, &state, &[id], false).await?;
     if files[0].cloud.is_some() {
         let ctx = state.teams.company_cached_context(epoch)?;
         state.teams.with_account(&ctx, || {
@@ -1016,92 +1019,99 @@ async fn deliver_content_checked(
     if state.native.target.lock().unwrap().as_ref() != Some(&target) {
         return Err("目标上下文已变化，请重新聚焦输入区后返回闪语。".into());
     }
-    let shared = if kind == "phrase" && id.starts_with("member:") {
-        Some(
-            state
-                .teams
-                .check_member_delivery(&app, &id, member_epoch)
-                .await?,
-        )
-    } else if kind == "phrase" && shanyu_team_model::ContentRef::from_key(&id).is_some() {
-        Some(state.teams.check_delivery(&app, &id).await?)
-    } else {
-        None
-    };
-    let linked_epoch = state.teams.status().session_epoch;
-    let linked = if kind == "file" {
-        Some(
-            linked_files::resolve(&app, &state, std::slice::from_ref(&id))
-                .await?
-                .remove(0),
-        )
-    } else {
-        None
-    };
-    let is_cloud = linked.as_ref().is_some_and(|f| f.cloud.is_some());
-    let (settings, segments) = {
-        let store = state.store.lock().unwrap();
-        let settings = store.settings()?;
-        let private_id = if shared.is_none() && kind == "phrase" {
-            Some(private_local::resolve_key(&store, &id, "phrase")?)
-        } else {
-            None
-        };
-        let segments = match kind.as_str() {
-            "phrase" => match shared {
-                Some(phrase) => phrase.segments,
-                None => {
-                    let phrase = store.phrase(private_id.as_deref().unwrap())?;
-                    if !private_local::materials_ready(&store, &phrase) {
-                        return Err("素材未缓存，请下载后重新触发。".into());
-                    }
-                    phrase.segments
-                }
-            },
-            "common" => {
-                let id = private_local::resolve_key(&store, &id, "common")?;
-                let phrase = store
-                    .common_phrases()?
-                    .into_iter()
-                    .find(|p| p.id == id)
-                    .ok_or("常用短语已不存在。")?;
-                vec![Segment {
-                    blocks: vec![Block::Text { text: phrase.text }],
-                }]
-            }
-            "file" => {
-                let file = linked.ok_or("文件关联已不存在。")?;
-                vec![Segment {
-                    blocks: vec![Block::File {
-                        path: file.path,
-                        name: file.name,
-                    }],
-                }]
-            }
-            _ => return Err("内容类型无效。".into()),
-        };
-        (settings, segments)
-    };
     let owner = app
         .get_webview_window("main")
         .ok_or("主窗口已关闭。")?
         .hwnd()
         .map_err(|e| e.to_string())?
         .0 as i64;
-    if is_cloud {
-        state.teams.begin_company_delivery(linked_epoch)?;
-    }
     let cancelled = state.delivery.cancelled.clone();
+    // 在网络等待前固定剪贴板序号与候选输入，不能把等待期间的新复制当成投递前的初始状态。
+    let mut driver = native::WindowsDriver::new(owner, target.clone(), cancelled.clone());
+    driver.set_trigger_input(replacement);
+    let _ = app.emit("delivery-busy", true);
+    let prepared = delivery::await_preparation(
+        async {
+            let phrase = if kind == "phrase" {
+                Some(if id.starts_with("member:") {
+                    state
+                        .teams
+                        .check_member_delivery(&app, &id, member_epoch)
+                        .await?
+                } else if shanyu_team_model::ContentRef::from_key(&id).is_some() {
+                    state.teams.check_delivery(&app, &id).await?
+                } else {
+                    state.private_sync.prepare_delivery(&app, &id).await?
+                })
+            } else {
+                None
+            };
+            let linked = if kind == "file" {
+                Some(
+                    linked_files::resolve(&app, &state, std::slice::from_ref(&id), true)
+                        .await?
+                        .remove(0),
+                )
+            } else {
+                None
+            };
+            if linked.as_ref().is_some_and(|f| f.cloud.is_some()) {
+                state.teams.begin_company_delivery(notice_epoch)?;
+            }
+            let store = state.store.lock().unwrap();
+            let settings = store.settings()?;
+            let segments = match kind.as_str() {
+                "phrase" => phrase.ok_or("话术已不存在。")?.segments,
+                "common" => {
+                    let id = private_local::resolve_key(&store, &id, "common")?;
+                    let phrase = store
+                        .common_phrases()?
+                        .into_iter()
+                        .find(|p| p.id == id)
+                        .ok_or("常用短语已不存在。")?;
+                    vec![Segment {
+                        blocks: vec![Block::Text { text: phrase.text }],
+                    }]
+                }
+                "file" => {
+                    let file = linked.ok_or("文件关联已不存在。")?;
+                    vec![Segment {
+                        blocks: vec![Block::File {
+                            path: file.path,
+                            name: file.name,
+                        }],
+                    }]
+                }
+                _ => return Err("内容类型无效。".into()),
+            };
+            Ok((settings, segments))
+        },
+        || {
+            if state.teams.status().session_epoch != notice_epoch {
+                return Err("账号已变化，本次投递已停止，请重新选择话术。".into());
+            }
+            if state.native.target.lock().unwrap().as_ref() != Some(&target) {
+                return Err("目标上下文已变化，请重新聚焦输入区后返回闪语。".into());
+            }
+            driver.check_preparation()
+        },
+    )
+    .await;
+    let (settings, segments) = match prepared {
+        Ok(content) => content,
+        Err(error) => {
+            state.teams.end_delivery();
+            let _ = app.emit("delivery-busy", false);
+            return Err(error);
+        }
+    };
     let operation = guard.operation();
     let progress_origin = origin.clone();
     let progress_sequence = Arc::new(AtomicU64::new(0));
     let progress_app = app.clone();
-    let _ = app.emit("delivery-busy", true);
     let event_app = app.clone();
     let mut result = tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
-        let mut driver = native::WindowsDriver::new(owner, target, cancelled.clone());
-        driver.set_trigger_input(replacement);
         driver.set_wait_feedback(Arc::new(move |waiting| {
             let recipient = delivery_feedback_window(&progress_app, &progress_origin);
             let _ = progress_app.emit(
@@ -1596,6 +1606,7 @@ pub fn run() {
                 store: Mutex::new(store),
                 device_store: Mutex::new(device_store),
                 private_sync: private_sync.clone(),
+                material_cache: tokio::sync::Notify::new(),
                 transfer: transfer::TransferState::default(),
                 delivery,
                 delivery_notices: delivery_notice::DeliveryNotices::default(),
@@ -1711,6 +1722,7 @@ pub fn run() {
             refreshed(app.handle(), &app.state::<AppState>()).map_err(std::io::Error::other)?;
             team_commands::start(app.handle());
             private_sync.start(app.handle().clone());
+            material_cache::start(app.handle().clone());
             for label in ["main", "common-dock"] {
                 if let Some(window) = app.get_webview_window(label) {
                     native::install_webview_shortcuts(&window, native.clone())

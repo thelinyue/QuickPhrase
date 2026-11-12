@@ -1,4 +1,4 @@
-﻿param([ValidatePattern('^[\p{L}\p{N} _／]+$')][string]$Filter, [ValidateSet('shortcuts','member','ime')][string]$Suite = 'shortcuts', [switch]$Keyboard)
+﻿param([ValidatePattern('^[\p{L}\p{N} _／]+$')][string]$Filter, [ValidateSet('shortcuts','member','ime','cache')][string]$Suite = 'shortcuts', [switch]$Keyboard)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $node = (Get-Command node.exe).Source

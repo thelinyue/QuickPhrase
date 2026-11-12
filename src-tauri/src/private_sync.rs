@@ -19,7 +19,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Emitter, Manager};
-use tokio::sync::Notify;
+use tokio::sync::{Mutex as AsyncMutex, Notify};
 type Values = HashMap<(wire::Kind, String), Option<Value>>;
 type Keys = HashSet<(wire::Kind, String)>;
 
@@ -234,7 +234,7 @@ pub struct PrivateSync {
     notify: Notify,
     interval_changed: Notify,
     error: Mutex<String>,
-    downloads: Mutex<HashSet<String>>,
+    downloads: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     preview: Mutex<Option<Prepared>>,
     running: Mutex<Option<String>>,
 }
@@ -499,7 +499,7 @@ impl PrivateSync {
             notify: Notify::new(),
             interval_changed: Notify::new(),
             error: Mutex::new(String::new()),
-            downloads: Mutex::new(HashSet::new()),
+            downloads: Mutex::new(HashMap::new()),
             preview: Mutex::new(None),
             running: Mutex::new(None),
         })
@@ -1253,7 +1253,8 @@ impl PrivateSync {
         })?;
         Ok(())
     }
-    pub fn download(
+    /// 投递等待与列表预加载共用下载锁，避免同一附件并发落盘；完成后由调用方决定是否继续投递。
+    pub async fn download(
         self: &Arc<Self>,
         app: tauri::AppHandle,
         ids: Vec<String>,
@@ -1315,49 +1316,71 @@ impl PrivateSync {
                 jobs,
             )
         };
-        let jobs: Vec<_> = jobs
-            .into_iter()
-            .filter_map(|(id, target, size, kind)| {
-                let download_key = format!("{library_id}:{generation}:{id}");
-                self.downloads
-                    .lock()
-                    .unwrap()
-                    .insert(download_key.clone())
-                    .then_some((id, target, size, kind, download_key))
-            })
-            .collect();
-        if jobs.is_empty() {
-            return Ok(());
-        }
-        let this = self.clone();
-        tauri::async_runtime::spawn(async move {
-            use futures_util::StreamExt;
-            futures_util::stream::iter(jobs).for_each_concurrent(2, |(id,target,size,kind,download_key)| {
-                let this=this.clone();let app=app.clone();let ctx=ctx.clone();let library_id=library_id.clone();let generation=generation.clone();
+        use futures_util::StreamExt;
+        let results = futures_util::stream::iter(jobs.into_iter().map(|(id,target,size,kind)| {
+                let this=self.clone();let app=app.clone();let ctx=ctx.clone();let library_id=library_id.clone();let generation=generation.clone();
                 async move {
                 let state = app.state::<AppState>();
                 let result=async{
+                let download_key=format!("{library_id}:{generation}:{id}");
+                let lock=this.downloads.lock().unwrap().entry(download_key).or_insert_with(||Arc::new(AsyncMutex::new(()))).clone();
+                let _lock=tokio::select!{_=ctx.cancel.cancelled()=>return Err("素材下载已取消。".into()),lock=lock.lock()=>lock};
+                state.teams.with_account(&ctx,||Ok(()))?;
+                if std::fs::metadata(&target).is_ok_and(|m|m.is_file()&&m.len()==size){return Ok(());}
                 let temp=state.teams.account_download(&ctx,&id,&target,size,kind=="image").await?;
                 let store=state.store.lock().unwrap();state.teams.with_account(&ctx,||{local::scope(&store,Some(&library_id))?;if local::meta(&store,"generation")?!=generation{return Err("下载所属数据已恢复。".into());}
                     let token=serde_json::to_string(&external_path(&target)).map_err(db_error)?;
                     let referenced:bool=store.conn.query_row("SELECT EXISTS(SELECT 1 FROM blocks WHERE json_extract(content,'$.path')=?1) OR EXISTS(SELECT 1 FROM recycle_bin WHERE instr(content,?2)>0)",params![external_path(&target),token],|r|r.get(0)).map_err(db_error)?;if !referenced{return Err("内容已删除，旧下载已丢弃。".into());}
                     if !std::fs::metadata(&target).is_ok_and(|m|m.len()==size){temp.persist(&target).map_err(|_|"缓存无法保存。".to_owned())?;}Ok(())})
             }.await;
-                if let Err(e) = result {
+                if let Err(e) = &result {
                     let store = state.store.lock().unwrap();
                     if local::scope(&store, Some(&library_id)).is_ok()
                         && state.teams.with_account(&ctx, || Ok(())).is_ok()
                     {
-                        *this.error.lock().unwrap() = e;
+                        *this.error.lock().unwrap() = e.clone();
                     }
                 }
-                this.downloads.lock().unwrap().remove(&download_key);
                 let _ = app.emit("library-changed", ());
                 this.emit(&app);
+                result
                 }
-            }).await;
-        });
+            })).buffer_unordered(2).collect::<Vec<_>>().await;
+        for result in results {
+            result?;
+        }
         Ok(())
+    }
+    pub async fn prepare_delivery(
+        self: &Arc<Self>,
+        app: &tauri::AppHandle,
+        key: &str,
+    ) -> Result<Phrase> {
+        let state = app.state::<AppState>();
+        let (key, id, generation) = {
+            let store = state.store.lock().unwrap();
+            let id = local::resolve_key(&store, key, "phrase")?;
+            let phrase = store.phrase(&id)?;
+            if local::materials_ready(&store, &phrase) {
+                return Ok(phrase);
+            }
+            (
+                local::content_key(&store, "phrase", &id)?,
+                id,
+                local::meta(&store, "generation")?,
+            )
+        };
+        self.download(app.clone(), vec![id], true).await?;
+        let store = state.store.lock().unwrap();
+        let id = local::resolve_key(&store, &key, "phrase")?;
+        if local::meta(&store, "generation")? != generation {
+            return Err("个人库已恢复，请重新选择话术。".into());
+        }
+        let phrase = store.phrase(&id)?;
+        if !local::materials_ready(&store, &phrase) {
+            return Err("话术素材无法缓存，请检查网络连接；本地文件失效时请重新关联。".into());
+        }
+        Ok(phrase)
     }
 }
 fn acknowledge(store: &Store, result: &wire::Commit) -> Result<()> {

@@ -83,6 +83,25 @@ pub trait DeliveryDriver {
     }
 }
 
+/// 下载等待也属于同一次用户投递；完成前持续核验，失败或中断时丢弃后续发送。
+pub async fn await_preparation<T>(
+    work: impl std::future::Future<Output = Result<T>>,
+    mut check: impl FnMut() -> Result<()>,
+) -> Result<T> {
+    tokio::pin!(work);
+    let mut tick = tokio::time::interval(std::time::Duration::from_millis(50));
+    loop {
+        tokio::select! {
+            biased;
+            _ = tick.tick() => check()?,
+            result = &mut work => {
+                check()?;
+                return result;
+            }
+        }
+    }
+}
+
 pub fn execute(
     segments: &[Segment],
     mode: Mode,
@@ -203,6 +222,83 @@ pub fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn preparation_waits_for_all_materials_before_returning_content() {
+        let mut checks = 0;
+        let content = await_preparation(
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+                Ok(segments())
+            },
+            || {
+                checks += 1;
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(content, segments());
+        assert!(checks >= 2);
+    }
+
+    #[tokio::test]
+    async fn preparation_cancellation_drops_pending_download_without_delivery() {
+        let (sender, receiver) = tokio::sync::oneshot::channel::<()>();
+        let mut checks = 0;
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            await_preparation(
+                async {
+                    receiver.await.unwrap();
+                    Ok(segments())
+                },
+                || {
+                    checks += 1;
+                    if checks > 1 {
+                        Err("目标窗口已切换。".into())
+                    } else {
+                        Ok(())
+                    }
+                },
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.unwrap_err(), "目标窗口已切换。");
+        assert!(sender.is_closed());
+    }
+
+    #[tokio::test]
+    async fn preparation_rechecks_interruption_when_download_finishes() {
+        let cancelled = AtomicBool::new(false);
+        let result = await_preparation(
+            async {
+                cancelled.store(true, Ordering::Release);
+                Ok(segments())
+            },
+            || {
+                if cancelled.load(Ordering::Acquire) {
+                    Err("检测到新的复制操作。".into())
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), "检测到新的复制操作。");
+    }
+
+    #[tokio::test]
+    async fn preparation_download_failure_never_returns_partial_content() {
+        let result = await_preparation(
+            async { Err::<Vec<Segment>, _>("附件下载不完整。".into()) },
+            || Ok(()),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), "附件下载不完整。");
+    }
+
     struct Fake {
         calls: Vec<String>,
         fail_after: usize,

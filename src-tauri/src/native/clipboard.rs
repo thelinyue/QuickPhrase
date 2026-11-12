@@ -215,7 +215,7 @@ pub fn copy_files(owner: i64, paths: &[String]) -> Result<()> {
 /// 操作开始及每次写入后记录序号，写入和按键提交前核对变化；用户新复制时立即停止。
 /// 完成或中断后保留最后写入的内容，新复制也不会被结束清理覆盖。
 pub struct WindowsDriver {
-    owner: HWND,
+    owner: i64,
     target: TargetContext,
     cancelled: Arc<AtomicBool>,
     initial_seq: u32,
@@ -227,10 +227,10 @@ pub struct WindowsDriver {
 impl WindowsDriver {
     pub fn new(owner: i64, target: TargetContext, cancelled: Arc<AtomicBool>) -> Self {
         Self {
-            owner: hwnd(owner),
+            owner,
             target,
             cancelled,
-            initial_seq: 0,
+            initial_seq: unsafe { GetClipboardSequenceNumber() },
             owned_seq: None,
             trigger_input: None,
             trigger_progress: None,
@@ -241,7 +241,27 @@ impl WindowsDriver {
         self.wait_feedback = Some(feedback);
     }
     pub(crate) fn set_trigger_input(&mut self, input: Option<TriggerInput>) {
+        if let Some(sequence) = input.as_ref().and_then(|input| input.clipboard_sequence) {
+            self.initial_seq = sequence;
+        }
         self.trigger_input = input;
+    }
+    /// 素材等待期间允许闪语保有焦点，但切到其他目标、新复制或停止后不能恢复旧窗口继续发送。
+    pub(crate) fn check_preparation(&self) -> Result<()> {
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err("操作已停止，未投递的话术不会自动发送。".into());
+        }
+        self.valid()?;
+        self.check_clipboard()?;
+        unsafe {
+            let foreground = GetForegroundWindow();
+            if pid(foreground) != std::process::id()
+                && super::platform::capture().as_ref() != Some(&self.target)
+            {
+                return Err("目标窗口或输入位置已变化，操作已停止，请重新触发。".into());
+            }
+        }
+        Ok(())
     }
     fn valid(&self) -> Result<()> {
         unsafe {
@@ -328,7 +348,7 @@ impl WindowsDriver {
         // 反馈对象先于剪贴板锁创建，提前返回时也先释放锁，再通知界面等待结束。
         let mut waiting = WaitFeedback::new(self.wait_feedback.clone());
         let lock = ClipboardLock::open_for_delivery(
-            self.owner,
+            hwnd(self.owner),
             || self.ensure_target(),
             || waiting.begin(),
         )?;
@@ -345,7 +365,7 @@ impl WindowsDriver {
         // 本窗口拥有、检查期间未变化的剪贴板；其他程序抢先复制的内容不会被认领或粘贴。
         drop(lock);
         let sequence = unsafe { GetClipboardSequenceNumber() };
-        if unsafe { GetClipboardOwner() }.ok() != Some(self.owner)
+        if unsafe { GetClipboardOwner() }.ok() != Some(hwnd(self.owner))
             || unsafe { GetClipboardSequenceNumber() } != sequence
         {
             return Err("检测到新的复制操作，已停止；新剪贴板内容已保留。".into());
@@ -384,14 +404,8 @@ impl Drop for WaitFeedback {
 }
 impl DeliveryDriver for WindowsDriver {
     fn prepare(&mut self) -> Result<()> {
-        self.valid()?;
+        self.check_preparation()?;
         unsafe {
-            // 只记录变化标识，不读取原格式；即使原载荷无法读取也能开始投递。
-            self.initial_seq = self
-                .trigger_input
-                .as_ref()
-                .and_then(|input| input.clipboard_sequence)
-                .unwrap_or_else(|| GetClipboardSequenceNumber());
             // 替换候选不能先恢复一个已经变化的焦点，再删除那个输入区的文字。
             if self.trigger_input.is_some() {
                 return self.ensure_target();

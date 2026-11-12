@@ -133,15 +133,16 @@ pub fn pause_private_sync(app: tauri::AppHandle, state: State<AppState>) -> Resu
     Ok(())
 }
 #[tauri::command]
-pub fn download_private_materials(
+pub async fn download_private_materials(
     app: tauri::AppHandle,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     ids: Vec<String>,
     attachments: Option<bool>,
 ) -> Result<()> {
     state
         .private_sync
         .download(app, ids, attachments.unwrap_or(false))
+        .await
 }
 
 #[derive(Serialize)]

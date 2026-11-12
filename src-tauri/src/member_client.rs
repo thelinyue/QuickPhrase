@@ -46,7 +46,7 @@ pub struct ClientPhrase {
     #[serde(flatten)]
     pub phrase: local::Phrase,
     content_ref: wire::ContentRef,
-    ready: bool,
+    pub ready: bool,
 }
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -252,6 +252,7 @@ impl TeamClient {
             }
         }
         let _ = app.emit("member-content-changed", ());
+        crate::material_cache::wake(app);
     }
     fn member_context(&self, epoch: u64) -> Result<AccountContext> {
         let active = self.active()?;
@@ -800,10 +801,11 @@ impl TeamClient {
         if !active.offline {
             self.refresh_member(app).await?;
         }
-        let phrase = self.member_phrase(key, false)?;
+        self.member_phrase(key, false)?;
         if self.member_phrase(key, true).is_err() {
-            return Err("素材未缓存，请先下载，完成后重新触发投递。".into());
+            self.prepare_member(app, vec![key.to_owned()], true).await?;
         }
+        let phrase = self.member_phrase(key, true)?;
         let reference = wire::ContentRef::from_key(key).ok_or("成员话术引用无效。")?;
         let ctx = self.member_context(active.epoch)?;
         self.with_account(&ctx, || {

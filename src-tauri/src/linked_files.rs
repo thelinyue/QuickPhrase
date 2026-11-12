@@ -142,11 +142,12 @@ fn decorate(
     }
 }
 
-/// 所有文件使用入口共用解析。下载只准备素材，本次动作结束，用户再次触发才使用剪贴板或发送。
+/// 文件使用共用身份与路径核验；投递请求可在下载后继续，复制和打开保持原有再次触发边界。
 pub async fn resolve(
     app: &tauri::AppHandle,
     state: &AppState,
     ids: &[String],
+    for_delivery: bool,
 ) -> Result<Vec<LinkedFile>> {
     let mut files = state.device_store.lock().unwrap().linked_files(ids)?;
     let status = state.teams.status();
@@ -205,7 +206,7 @@ pub async fn resolve(
             return Err("文件关联已变化，请重新触发。".into());
         }
     }
-    if downloaded {
+    if downloaded && !for_delivery {
         return Err("文件已下载完成，请重新触发操作；不会自动发送或复制。".into());
     }
     Ok(files)

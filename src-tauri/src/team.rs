@@ -987,6 +987,7 @@ impl TeamClient {
                 .map_err(io_error)?;
             self.schedule(app.clone(), &t.team_id, t.version);
         }
+        crate::material_cache::wake(app);
         cache_result
     }
     /// 已知撤权必须先更新内存；持久化失败时删除凭据，禁止下次离线启动沿用旧授权文件。
@@ -1032,6 +1033,7 @@ impl TeamClient {
                             return;
                         }
                         if !this.finish_refresh(&ctx) {
+                            crate::material_cache::wake(&app);
                             this.emit(&app);
                             return;
                         }
@@ -1217,6 +1219,7 @@ impl TeamClient {
                                                 "company-files-changed",
                                                 this.status().session_epoch,
                                             );
+                                            crate::material_cache::wake(&app);
                                             this.emit(&app);
                                         } else if let Some(notice) = event
                                             .lines()
@@ -1801,6 +1804,7 @@ impl TeamClient {
             )
             .await?;
         self.accept_snapshot(&ctx, snapshot.clone())?;
+        crate::material_cache::wake(app);
         self.emit(app);
         Ok(snapshot)
     }
@@ -2085,6 +2089,7 @@ impl TeamClient {
         match result {
             Ok(snapshot) => {
                 self.accept_snapshot(&ctx, snapshot)?;
+                crate::material_cache::wake(app);
                 self.emit(app);
                 Ok(())
             }
@@ -2171,11 +2176,12 @@ impl TeamClient {
                 return Err("话术已更新，请刷新后重新触发。".into());
             }
         }
-        let phrase = self.phrase(key, false)?;
+        self.phrase(key, false)?;
         if self.phrase(key, true).is_err() {
             self.prepare(app, key).await?;
-            return Err("素材已下载完成，请重新点击投递；不会自动发送。".into());
         }
+        // 下载可能跨越内容或授权更新；使用重新核验后的路径，不投递下载前的空路径快照。
+        let phrase = self.phrase(key, true)?;
         self.begin_delivery(&ctx, &reference)?;
         Ok(phrase)
     }

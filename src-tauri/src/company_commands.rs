@@ -17,15 +17,20 @@ use tauri::State;
 
 #[tauri::command]
 pub async fn get_company_files(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     session_epoch: u64,
     recycled: bool,
     query: String,
 ) -> Result<CompanyView> {
-    state
+    let view = state
         .teams
         .company_view(session_epoch, recycled, query)
-        .await
+        .await?;
+    if !recycled && !view.offline && view.files.iter().any(|entry| !entry.cached) {
+        crate::material_cache::wake(&app);
+    }
+    Ok(view)
 }
 #[tauri::command]
 pub async fn prepare_company_upload(

@@ -20,14 +20,20 @@ const initial = randomUUID(), password = randomUUID(), workerInitial = randomUUI
 const base = `http://127.0.0.1:${await port()}`;
 const server = spawn(executable, [], { windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_DATA_DIR: path.join(evidence, 'server'), SHANYU_LISTEN: new URL(base).host, SHANYU_ADMIN_USERNAME: 'qa-admin', SHANYU_ADMIN_PASSWORD: initial } });
 let loseUpload = false, uploadCount = 0, downloadCount = 0, holdDownload = false, heldDownload = false, releaseDownload, holdUpload = false, heldUpload = false, releaseUpload, uploadSettled, token, workerToken, app, browser, page, cloud, editor, epoch, libraryId, root, asset, teams = [];
-let holdBatch = false, offlineClient = false, legacyRename = false;
+let holdBatch = false, offlineClient = false, legacyRename = false, rejectDownloads = false;
+const downloadsById = new Map();
 const batchHeld = new Map();
 const proxy = http.createServer((req, res) => {
   if (offlineClient) { res.writeHead(503); res.end(); return; }
   if (legacyRename && req.method === 'PATCH' && /\/company\/files\/[^/]+$/.test(req.url)) { res.writeHead(405); res.end(); return; }
   const lost = loseUpload && req.method === 'PUT' && /\/company\/files\/[^/]+\/content/.test(req.url);
   if (req.method === 'PUT' && /\/company\/files\/[^/]+\/content/.test(req.url)) ++uploadCount;
-  if (req.method === 'GET' && /\/company\/files\/[^/]+\/content/.test(req.url)) ++downloadCount;
+  if (req.method === 'GET' && /\/company\/files\/[^/]+\/content/.test(req.url)) {
+    ++downloadCount;
+    const id = /\/company\/files\/([^/]+)\/content/.exec(req.url)[1];
+    downloadsById.set(id, (downloadsById.get(id) || 0) + 1);
+    if (rejectDownloads) { res.writeHead(503); res.end(); return; }
+  }
   if (holdBatch && req.method === 'PUT' && /\/company\/files\/[^/]+\/content/.test(req.url)) {
     const id = /\/company\/files\/([^/]+)\/content/.exec(req.url)[1], chunks = [];
     res.on('close', () => batchHeld.delete(id)); req.on('data', chunk => chunks.push(chunk));
@@ -106,7 +112,18 @@ async function startClient() {
   const debug = await port(); app = spawn(path.join(repo, 'src-tauri/target/debug/QuickPhrase.exe'), ['--autostart'], { cwd: repo, windowsHide: true, stdio: 'ignore', env: { ...process.env, SHANYU_TEST_DATA_DIR: path.join(evidence, 'client'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debug}` } });
   browser = await until(() => chromium.connectOverCDP(`http://127.0.0.1:${debug}`)); page = await until(() => browser.contexts()[0].pages().find(p => !new URL(p.url()).hash)); await page.locator('.main-window').waitFor();
 }
-const transferSnapshot = () => invoke('get_company_transfers', { sessionEpoch: epoch });
+const transferSnapshot = async () => (await invoke('get_company_transfers', { sessionEpoch: epoch })).filter(task => task.direction === 'upload');
+const companyCached = () => until(async () => (await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' })).files.every(file => file.cached));
+async function clearCompanyCache(id) {
+  await companyCached();
+  const root = path.resolve(evidence, 'client', 'teams');
+  for (const relative of await fs.readdir(root, { recursive: true })) {
+    const parts = relative.split(path.sep);
+    if (!parts.includes('company') || parts.at(-2) !== id) continue;
+    const file = path.resolve(root, relative); assert.ok(file.startsWith(root + path.sep));
+    if ((await fs.lstat(file)).isFile()) await fs.rm(file);
+  }
+}
 async function batchSources(prefix, count) {
   const paths = [];
   for (let i = 0; i < count; i++) { const source = path.join(evidence, `${prefix}-${i}.pdf`); await fs.writeFile(source, `${prefix}源${i}`); paths.push(source); }
@@ -332,7 +349,7 @@ try {
     await files.screenshot({ path: path.join(evidence, 'unified-file-window.png') });
     await files.getByRole('button', { name: '确定关联', exact: true }).click(); await until(() => files.isClosed());
     const link = (await invoke('get_library')).files.find(f => f.cloud?.assetId === asset.assetId); assert.ok(link); assert.equal(link.path, '');
-    const downloaded = downloadCount;
+    const downloaded = downloadsById.get(asset.assetId) || 0;
     legacyRename = true;
     try { await assert.rejects(invoke('rename_company_file', { sessionEpoch: epoch, id: asset.assetId, expectedName: asset.name, name: '新价格表.xlsx' }), /升级服务端/); }
     finally { legacyRename = false; }
@@ -351,7 +368,7 @@ try {
       await invoke('prepare_team_phrase', { id: view.phrases[0].id });
       assert.equal(path.basename((await invoke('get_team_view', { teamId })).phrases[0].segments[0].blocks[0].path), '新价格表.xlsx');
     }
-    assert.equal(downloadCount, downloaded, '改名复用既有缓存，不重复下载');
+    assert.equal(downloadsById.get(asset.assetId) || 0, downloaded, '改名复用既有缓存，不重复下载');
     await invoke('rename_linked_file', { id: link.id, name: '个人显示名' });
     await invoke('rename_company_file', { sessionEpoch: epoch, id: asset.assetId, expectedName: '新价格表.xlsx', name: asset.name });
     assert.equal((await invoke('get_library')).files.find(f => f.id === link.id).name, '个人显示名');
@@ -370,6 +387,7 @@ try {
     const a = await invoke('save_category', { category: { id: '', name: '混合来源', kind: 'file', parentId: null, position: 0, background: '' }, libraryId });
     const b = await invoke('save_category', { category: { id: '', name: '移动目标', kind: 'file', parentId: null, position: 0, background: '' }, libraryId });
     const id = randomUUID(), original = '下载前名称.txt', renamed = '下载中改名.txt';
+    await companyCached(); const downloads = downloadsById.get(id) || 0; holdDownload = true;
     const upload = await fetch(`${base}/api/company/files/${id}/content?${new URLSearchParams({ name: original, size: '3' })}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: 'abc' }); assert.ok(upload.ok);
     await invoke('add_files', { categoryId: a, paths: [source] });
     await invoke('add_cloud_files', { sessionEpoch: epoch, categoryId: a, assetIds: [id], replaceId: null });
@@ -377,8 +395,6 @@ try {
     await invoke('move_linked_files', { ids: [local.id, remote.id], categoryId: b });
     await invoke('reorder_files', { ids: [remote.id, local.id], categoryId: b });
     assert.deepEqual((await invoke('get_library')).files.filter(f => f.categoryId === b).map(f => f.id), [remote.id, local.id]);
-    const downloads = downloadCount;
-    holdDownload = true;
     const pending = invoke('download_company_file', { sessionEpoch: epoch, id }).then(() => null, error => error);
     try {
       await until(() => heldDownload);
@@ -387,7 +403,7 @@ try {
     assert.equal(await pending, null);
     const catalog = await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' });
     assert.ok(catalog.files.some(f => f.assetId === id && f.name === renamed && f.cached));
-    await invoke('download_company_file', { sessionEpoch: epoch, id }); assert.equal(downloadCount, downloads + 1);
+    await invoke('download_company_file', { sessionEpoch: epoch, id }); assert.equal(downloadsById.get(id), downloads + 1);
     await invoke('relink_file', { id: remote.id, categoryId: b, path: source });
     await invoke('add_cloud_files', { sessionEpoch: epoch, categoryId: b, assetIds: [id], replaceId: local.id });
     const switched = (await invoke('get_library')).files;
@@ -457,7 +473,7 @@ try {
     await invoke('prepare_team_phrase', {id:phrase.id});
     const category = await invoke('save_category',{category:{id:'',name:'清理缓存关联',kind:'file',parentId:null,position:0,background:''},libraryId});
     await invoke('add_cloud_files',{sessionEpoch:epoch,categoryId:category,assetIds:[id],replaceId:null});
-    const downloads = downloadCount;
+    const downloads = downloadsById.get(id) || 0;
 
     for(let i=0;i<12;i++) {
       const id=randomUUID(), name=`清空验证${i}.txt`;
@@ -476,7 +492,7 @@ try {
     assert.deepEqual(remaining.files,[]);
     await invoke('team_refresh'); view=await invoke('get_team_view',{teamId:teams[0]}); phrase=view.phrases.find(p=>p.title==='清理缓存验证');
     assert.ok(phrase.ready); assert.equal(await fs.readFile(phrase.segments[0].blocks[0].path,'utf8'),'abc');
-    await invoke('prepare_team_phrase',{id:phrase.id}); assert.equal(downloadCount,downloads);
+    await invoke('prepare_team_phrase',{id:phrase.id}); assert.equal(downloadsById.get(id) || 0,downloads);
     const linked=(await invoke('get_library')).files.find(f=>f.cloud?.assetId===id); assert.equal(linked.missing,false); assert.equal(linked.status,'仅本机缓存');
     const snapshot=await api('GET',`teams/${teams[0]}/snapshot`); assert.ok(snapshot.companyAssetIds.includes(id));
     const unavailable=await fetch(`${base}/api/teams/${teams[0]}/assets/${id}`,{headers:{Authorization:`Bearer ${token}`,'x-team-lifecycle':'1'}}); assert.equal(unavailable.status,404);
@@ -527,22 +543,20 @@ try {
     for (const id of [task.id, staged.id]) { await api('POST', `company/files/${id}/recycle`); await api('DELETE', `company/files/${id}`, { confirmName: task.name }); }
     const current = (await api('GET', 'users')).find(u => u.id === worker); await api('PUT', `users/${worker}`, { companyFilePermissions: { canUpload: false, canRecycle: false, canRestore: false, expectedVersion: current.companyFilePermissions.version } });
     await until(async () => !(await invoke('get_team_status')).user?.companyFilePermissions.canUpload);
-    await cloud.getByRole('button', { name: '返回', exact: true }).click(); await cloud.getByRole('button', { name: '下载管理', exact: true }).click(); await cloud.getByText('已完成', { exact: true }).waitFor(); await verifyProgressLayout(); await cloud.screenshot({ path: path.join(evidence, 'company-download.png') }); await cloud.getByRole('button', { name: '返回', exact: true }).click();
+    await cloud.getByRole('button', { name: '返回', exact: true }).click(); await cloud.getByRole('button', { name: '下载管理', exact: true }).click(); await cloud.getByText('已完成', { exact: true }).first().waitFor(); await verifyProgressLayout(); await cloud.screenshot({ path: path.join(evidence, 'company-download.png') }); await cloud.getByRole('button', { name: '返回', exact: true }).click();
   });
-  await check('重新登录后共享话术按需下载，两共享话术使用同一云文件缓存', async () => {
+  await check('重新登录后自动缓存云文件和共享话术，两共享话术使用同一缓存', async () => {
     await invoke('team_logout'); const admin = await invoke('team_login', { server: clientBase, username: 'qa-admin', password }); epoch = admin.sessionEpoch;
-    assert.equal((await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' })).files[0].cached, false);
+    await until(async () => (await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' })).files.every(file => file.cached));
     const downloads = downloadCount;
     await invoke('save_company_private_phrase', { phrase: draft('退出后复用', root), afterId: null, expectedRevision: null, libraryId, companyFiles: selections() });
     assert.equal(downloadCount, downloads, '已有独立个人副本时无需重新下载本体');
     const paths = [];
     for (const teamId of teams) {
-      let view = await until(() => invoke('get_team_view', { teamId })); assert.equal(view.phrases[0].ready, false);
-      await invoke('prepare_team_phrase', { id: view.phrases[0].id }); view = await invoke('get_team_view', { teamId }); paths.push(view.phrases[0].segments[0].blocks[0].path);
+      const view = await until(async () => { const view = await invoke('get_team_view', { teamId }); return view.phrases[0]?.ready && view; }); paths.push(view.phrases[0].segments[0].blocks[0].path);
       assert.equal(view.phrases[0].ready, true); assert.deepEqual(await fs.readFile(paths.at(-1)), bytes);
-      if (paths.length === 1) break;
     }
-    const other = await invoke('get_team_view', { teamId: teams[1] }); assert.equal(other.phrases[0].ready, true); paths.push(other.phrases[0].segments[0].blocks[0].path); assert.equal(paths[0], paths[1]);
+    assert.equal(paths[0], paths[1]);
     assert.ok((await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' })).files[0].cached);
   });
   await check('上传授权版本变化停止整个旧队列，再授权不自动重传；离线也停止等待任务', async () => {
@@ -579,16 +593,19 @@ try {
     const response = await fetch(`${base}/api/company/files/${task.id}/content`, { headers: { Authorization: `Bearer ${token}` } }); assert.equal(await response.text(), '重启前固化的附件');
   });
   await check('下载等待响应时可取消，旧结果不会登记为完整缓存', async () => {
+    await clearCompanyCache(restarted.assetId);
     holdDownload = true; const pending = invoke('download_company_file', { sessionEpoch: epoch, id: restarted.assetId }).then(() => null, error => error);
     await until(() => heldDownload); await invoke('cancel_company_transfer', { sessionEpoch: epoch, id: restarted.assetId });
     const error = await Promise.race([pending, delay(5000).then(() => { throw new Error('取消等待响应的下载超时。'); })]); assert.match(String(error), /取消/); releaseDownload?.();
     const catalog = await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' }); assert.equal(catalog.files.find(file => file.assetId === restarted.assetId).cached, false);
   });
   await check('切换账号使旧下载失效，迟到响应不能写入新账号缓存', async () => {
+    await clearCompanyCache(restarted.assetId);
     holdDownload = true; const pending = invoke('download_company_file', { sessionEpoch: epoch, id: restarted.assetId }).then(() => null, error => error);
-    await until(() => heldDownload); await invoke('team_logout'); const employee = await invoke('team_login', { server: clientBase, username: 'qa-worker', password: workerPassword }); epoch = employee.sessionEpoch;
+    await until(() => heldDownload); rejectDownloads = true; await invoke('team_logout'); const employee = await invoke('team_login', { server: clientBase, username: 'qa-worker', password: workerPassword }); epoch = employee.sessionEpoch;
     assert.ok(await pending); releaseDownload?.();
     const catalog = await invoke('get_company_files', { sessionEpoch: epoch, recycled: false, query: '' }); assert.equal(catalog.files.find(file => file.assetId === restarted.assetId).cached, false);
+    rejectDownloads = false;
   });
   let accountCopy;
   await check('开启个人同步后保存独立附件，公司原件永久删除不影响本机或私人云副本', async () => {
@@ -607,6 +624,7 @@ try {
     const response = await fetch(`${base}/api/me/private/assets/${privateAsset}`, { headers: { Authorization: `Bearer ${workerToken}` } }); assert.equal(response.status, 200); assert.equal(await response.text(), '重启前固化的附件');
   });
   await check('用户被停用后在途下载失效，私人独立附件仍保留', async () => {
+    await clearCompanyCache(asset.assetId);
     holdDownload = true; const pending = invoke('download_company_file', { sessionEpoch: epoch, id: asset.assetId }).then(() => null, error => error);
     await until(() => heldDownload); await api('PUT', `users/${worker}`, { disabled: true });
     await until(async () => !(await invoke('get_team_status')).user); assert.ok(await pending); releaseDownload?.();

@@ -259,12 +259,11 @@ try {
     if (!verifyIme) { assert.ok(host.draft.includes('yc')); assert.equal(host.draft.replace('yc', ''), '已有草稿：'); }
     await invoke('save_member_shortcut', { id: oldKey, shortcut: 'Ctrl+Shift+F11', sessionEpoch: (await invoke('get_team_status')).sessionEpoch });
   });
-  await check('图片自动缓存、附件按需下载，主搜索与全部搜索都保留成员来源', async () => {
-    // 新增重启／注销回归后默认回到本人分类；图片预加载只针对当前可见分类。
+  await check('同步后图片与附件自动缓存，主搜索与全部搜索都保留成员来源', async () => {
+    // 重启／注销回归后默认回到本人分类；切回成员分类核对后台缓存后的展示。
     await click(page.locator('.category-tabs button').filter({ hasText: /001.*只读/ }));
     await memberView(v => v.phrases[0]?.segments[0].blocks.find(b => b.kind === 'image')?.path);
-    const before = await invoke('get_member_view'); assert.equal(before.phrases[0].ready, false);
-    await invoke('download_member_materials', { ids: [oldKey], attachments: true }); const ready = await memberView(v => v.phrases[0]?.ready);
+    const ready = await memberView(v => v.phrases[0]?.ready);
     savedPath = ready.phrases[0].segments[0].blocks.find(b => b.kind === 'file').path; assert.equal(await fs.readFile(savedPath, 'utf8'), 'member-attachment');
     for (const scope of ['private', 'all']) { const hits = await invoke('search_scoped_content', { query: '成员验收', scope }); assert.equal(hits.length, 1); assert.equal(hits[0].phrase.contentRef.source, 'member'); assert.match(hits[0].sourceLabel, /001/); }
     await until(() => invoke('get_member_view'), v => v.phrases[0].ready); assert.equal((await invoke('get_library')).phrases.length, 1);

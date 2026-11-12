@@ -142,11 +142,10 @@ try {
     assert.equal((await invoke('get_library')).libraryId, ownerLibrary);
   });
   await startClient('device-b');
-  await check('第二设备接入保留相同 ID；图片后台缓存，附件按需下载', async () => {
+  await check('第二设备接入保留相同 ID；同步后图片与附件自动缓存', async () => {
     await invoke('team_login', { server: base, username: 'qa-admin', password });
     await firstEnable(); await synced();
-    const library = await invoke('get_library'); assert.equal(library.phrases[0].id, phraseId); assert.equal(library.phrases[0].rootId, root); assert.ok(library.categories.some(c => c.id === root)); assert.equal(library.files.length, 0); assert.equal(library.privateReady[phraseId], false);
-    await invoke('download_private_materials', { ids: [phraseId], attachments: true });
+    const library = await invoke('get_library'); assert.equal(library.phrases[0].id, phraseId); assert.equal(library.phrases[0].rootId, root); assert.ok(library.categories.some(c => c.id === root)); assert.equal(library.files.length, 0);
     const ready = await until(() => invoke('get_library'), l => l.privateReady[phraseId]);
     const file = ready.phrases[0].segments[0].blocks[2].path; assert.equal(await fs.readFile(file, 'utf8'), 'private-qa-attachment'); assert.notEqual(file, external);
     oldEdit = { phrase: ready.phrases[0], libraryId: ready.libraryId, revision: ready.privateRevisions[`phrase:${phraseId}`] };
