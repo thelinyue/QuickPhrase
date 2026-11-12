@@ -1,5 +1,17 @@
 # 闪语验收记录
 
+## 0.2.15 正式发布核验（2026-11-12）
+
+正式标签 `v0.2.15` 指向 `42449f983d38eed5764c433897ee3ae532dcae6f`。[主分支 CI](https://github.com/thelinyue/QuickPhrase/actions/runs/43124086102)、[标签 CI](https://github.com/thelinyue/QuickPhrase/actions/runs/43124112467)及[正式发布工作流](https://github.com/thelinyue/QuickPhrase/actions/runs/43124114315)全部成功。[公开 Release](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.15)为正式、非草稿、非预发布且是 latest，五项资产均上传完成；未移动既有标签或替换旧资产。本次无闪云服务端发布或生产部署。
+
+五项公开资产全部匿名下载，字节数和 SHA256 与 GitHub 资产记录一致。ZIP 通过浏览器下载地址取得，其余资产通过 GitHub 公共资产 API 跳转取得，不使用下载凭据。产品内置公钥验证 Minisign 清单签名、manifest 和安装器通过，ZIP、安装器和 manifest 均匹配签名清单。manifest 的版本、稳定通道、win-x64 和来源提交一致；匿名读取 GitHub latest API 后取得的 manifest 与固定版本字节相同。ZIP 仅含程序和四份政策文件，程序为 x64，安装器为既有 x86 引导；两者资源版本为 0.2.15／0.2.15.0，Authenticode 状态均为 NotSigned。
+
+本次新构建的隔离 Debug 客户端实际运行版本为 0.2.15，使用独立数据目录，自动缓存与首次投递补齐专项 12 项通过。下载的正式程序及安装器未执行，未升级用户安装版；真实企业微信最终接收、真实服务器网络、安装升级、Windows 10 和多屏 DPI 仍未验收，不能用源码或隔离宿主结果替代。
+
+本机更新线路验证未通过：直连首次连接失败、重试超时，默认及备用代理均超时；安装器的浏览器下载地址也有连接失败。因此 latest 的浏览器下载入口及产品公网更新流程不计为通过，公共 API 资产核验成功不代表这些线路可用。未修改系统代理、DNS 或证书校验。公开资产、二进制、Debug 运行版本和更新线路的独立记录保存在 `.build/release-0.2.15/`；保留已下载的正式资产与 `tools/update-probe.exe`，用于网络排障。
+
+发布及资产核验后清理了客户端 `src-tauri/target`、`dist` 和仅含测试输出的 `.vitest`。删除前逐项核对绝对路径、Git 跟踪文件、数据库／密钥／备份、嵌套仓库、重解析点和运行进程；未发现应保护内容或目录占用。删除文件逻辑大小合计 26,630,175,850 字节，D 盘可用空间实际增加 23,526,752,256 字节（约 21.91 GiB，磁盘差值可能含同期系统写入影响）。保留 `node_modules`、工具链、全局缓存、产品视频与商店图片、历史安装包、数据库、验收与排障材料，以及其他项目和远程环境；清理后 Git 工作区干净。详见 `.build/release-0.2.15/cleanup-report.json`。
+
 ## 0.2.13 正式发布核验（2026-10-31）
 
 正式标签 `v0.2.13` 指向 `3733e78ec2cfcd7c6ac2f20ee3afeb44562c1468`。[主分支CI](https://github.com/thelinyue/QuickPhrase/actions/runs/41193707006)、[标签CI](https://github.com/thelinyue/QuickPhrase/actions/runs/41193706732)及[正式发布工作流](https://github.com/thelinyue/QuickPhrase/actions/runs/41194109810)全部成功。[公开Release](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.13)为正式、非草稿、非预发布且是latest，五项资产均上传完成；没有移动旧标签或替换旧版本资产。
@@ -1293,5 +1305,5 @@ Release不是草稿或预发布，GitHub latest与公共更新清单均指向0.2
 
 - 本次重新执行前端 416 项、Rust 231 项和发布脚本 12 项测试，全部通过；TypeScript、前端构建、Rust 格式、Clippy 和 Windows Debug 构建通过。
 - 以 0.2.15 新构建在独立 Windows 输入桌面重跑[自动缓存与投递专项](../.build/cache-1794441581471/report.json)，12 项全部通过；仅使用隔离宿主和临时 Hub，不触及真实聊天或用户数据。
-- 上一提交的远端 CI 曾在共享话术管理前端测试中失败，本地本次全部通过；以本次发布提交的远端 CI 结果为准。
-- 正式 Release、公开资产、更新源和正式二进制运行验证尚待发布后记录；上述源码与隔离宿主结果不代表用户安装版升级、真实企业微信、真实网络或多屏 DPI 已验收。
+- 上一提交的远端 CI 曾在共享话术管理前端测试中失败，本次发布提交的主分支、标签及正式发布流程检查全部通过。
+- 正式 Release、公开资产、更新源和二进制核验结果见文首；上述源码与隔离宿主结果不代表用户安装版升级、真实企业微信、真实网络或多屏 DPI 已验收。
