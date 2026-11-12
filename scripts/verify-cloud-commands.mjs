@@ -68,6 +68,55 @@ try {
   await invoke('plugin:webview|create_webview_window', { options: { label: 'company-files', url: 'index.html#company-files', title: '闪云隔离验收:company-files', width: 1000, height: 650, x: -20000, y: -20000, focus: false, skipTaskbar: true, decorations: false } });
   cloud = await until(() => browser.contexts()[0].pages().find(p => p.url().includes('#company-files')));
   await cloud.getByText('闪云中心', { exact: true }).waitFor();
+  await check('首次目录点阵真实渲染、隐藏模块停帧、减少动态效果静止，空目录与后续搜索不重播', async () => {
+    // 只延迟隔离客户端的真实 IPC 回执，返回内容仍由 Rust 和隔离 Hub 生成。
+    await cloud.addInitScript(() => {
+      const original = window.fetch.bind(window), raf = window.requestAnimationFrame.bind(window), cancel = window.cancelAnimationFrame.bind(window);
+      const qa = window.__cloudLoadingQA = { hold: new Set(['get_company_files', 'get_cloud_commands']), pending: {}, frames: new Set() };
+      window.requestAnimationFrame = callback => { const id = raf(time => { qa.frames.delete(id); callback(time); }); qa.frames.add(id); return id; };
+      window.cancelAnimationFrame = id => { qa.frames.delete(id); cancel(id); };
+      window.fetch = async (input, init) => {
+        const url = new URL(typeof input === 'string' ? input : input.url), command = url.hostname === 'ipc.localhost' ? decodeURIComponent(url.pathname.slice(1)) : '';
+        const held = qa.hold.has(command), response = await original(input, init);
+        if (held) await new Promise(resolve => { (qa.pending[command] ??= []).push(resolve); });
+        return response;
+      };
+    });
+    await cloud.reload(); await cloud.getByText('闪云中心', { exact: true }).waitFor();
+    await until(() => cloud.evaluate(() => window.__cloudLoadingQA.pending.get_company_files?.length && window.__cloudLoadingQA.pending.get_cloud_commands?.length));
+    const release = command => cloud.evaluate(command => {
+      const qa = window.__cloudLoadingQA; qa.hold.delete(command); qa.pending[command]?.forEach(resolve => resolve()); delete qa.pending[command];
+    }, command);
+    const frames = () => cloud.evaluate(() => window.__cloudLoadingQA.frames.size);
+    const dots = module => cloud.locator(`#cloud-${module}-panel .cloud-loading-grid i`).evaluateAll(elements => elements.map(el => el.style.cssText).join('|'));
+    assert.equal(await cloud.getByRole('status').textContent(), '正在读取文件目录…'); await until(async () => await frames() === 1);
+    for (const theme of ['default','green','blue','black','pink','lavender','orange']) {
+      await cloud.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+      const size = await cloud.locator('#cloud-files-panel .cloud-loading-grid').boundingBox(); assert.equal(size.width, 120); assert.equal(size.height, 120);
+      assert.equal(await cloud.locator('.cloud-loading:visible').count(), 1);
+    }
+    await cloud.evaluate(() => { document.documentElement.dataset.theme = 'default'; });
+    await cloud.screenshot({ path: path.join(evidence, 'files-initial-loading.png') });
+    await cloud.getByRole('tab', { name: '云命令', exact: true }).click();
+    const paused = await dots('files'); await delay(100); assert.equal(await dots('files'), paused); await until(async () => await frames() === 1);
+    assert.equal(await cloud.getByRole('status').textContent(), '正在加载命令…');
+    await cloud.emulateMedia({ reducedMotion: 'reduce' }); await until(async () => await frames() === 0);
+    const reduced = await dots('commands'); await delay(100); assert.equal(await dots('commands'), reduced);
+    await cloud.screenshot({ path: path.join(evidence, 'commands-initial-loading-reduced.png') });
+    await cloud.emulateMedia({ reducedMotion: 'no-preference' }); await until(async () => await frames() === 1);
+    await release('get_cloud_commands'); await cloud.getByText('暂无云命令', { exact: true }).waitFor(); await until(async () => await frames() === 0);
+    await release('get_company_files'); await cloud.getByRole('tab', { name: '云文件', exact: true }).click(); await cloud.getByText('暂无云文件', { exact: true }).waitFor();
+    for (const [module, command, search] of [['files', 'get_company_files', '搜索云文件'], ['commands', 'get_cloud_commands', '搜索云命令']]) {
+      await cloud.getByRole('tab', { name: module === 'files' ? '云文件' : '云命令', exact: true }).click();
+      await cloud.evaluate(command => window.__cloudLoadingQA.hold.add(command), command);
+      await cloud.getByRole('textbox', { name: search, exact: true }).fill('加载状态验收');
+      await until(() => cloud.evaluate(command => window.__cloudLoadingQA.pending[command]?.length, command));
+      assert.equal(await cloud.locator('.cloud-loading:visible').count(), 0); await release(command);
+      await cloud.getByText(module === 'files' ? '没有匹配的文件' : '没有匹配的命令', { exact: true }).waitFor();
+      await cloud.getByRole('textbox', { name: search, exact: true }).fill('');
+    }
+    await cloud.getByRole('tab', { name: '云文件', exact: true }).click();
+  });
   await cloud.evaluate(() => {
     const original = window.fetch.bind(window); window.__cloudCloseQA = { confirmations: [], cancelNext: false };
     window.fetch = async (input, init) => {
@@ -147,16 +196,42 @@ try {
   });
   await check('默认与最小窗口、七套主题、长正文和滚动表单布局', async () => {
     const longBody = body + 'echo ' + 'x'.repeat(5000) + '\n' + body.repeat(30);
-    command = await api('PUT',`cloud/commands/${command.id}`,{ name: command.name,category: command.category,description: command.description,body: longBody,expectedRevision: command.revision });
+    command = await api('PUT',`cloud/commands/${command.id}`,{ name: '用于验证分栏调整的很长中文命令名称'.repeat(3),category: command.category,description: command.description,body: longBody,expectedRevision: command.revision });
     await until(async () => await cloud.locator('.command-code code').textContent() === longBody);
     assert.ok(await cloud.locator('.command-code pre').evaluate(el => el.scrollWidth > el.clientWidth));
     await resize(1000, 650);
+    const separator = cloud.getByRole('separator', { name: '调整命令列表宽度', exact: true });
+    const sizes = () => cloud.locator('.commands-workspace').evaluate(el => ({ width: el.clientWidth, list: el.querySelector('.commands-list').getBoundingClientRect().width, detail: el.querySelector('.command-detail').getBoundingClientRect().width }));
     for (const theme of ['default','green','blue','black','pink','lavender','orange']) {
       await cloud.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
       const layout = await cloud.locator('.commands-workspace').evaluate(el => ({ columns: getComputedStyle(el).gridTemplateColumns.split(' ').length, overflow: document.documentElement.scrollWidth > innerWidth }));
       assert.equal(layout.columns,2); assert.equal(layout.overflow,false);
+      await separator.focus(); await separator.press('Home'); assert.ok(Math.abs((await sizes()).list - 240) < 1);
+      await separator.press('End'); assert.ok((await sizes()).detail >= 319.5);
+      const focus = await separator.evaluate(el => ({ outline: getComputedStyle(el).outlineStyle, background: getComputedStyle(el).backgroundColor, opacity: getComputedStyle(el.querySelector('svg')).opacity }));
+      assert.equal(focus.outline, 'none'); assert.notEqual(focus.background, 'rgba(0, 0, 0, 0)');
+      await separator.press('Escape');
     }
     await cloud.evaluate(() => { document.documentElement.dataset.theme = 'default'; });
+    let initial = await sizes(); assert.ok(Math.abs(initial.list - initial.width * .34) < 1);
+    await separator.press('ArrowRight'); assert.ok(Math.abs((await sizes()).list - initial.list - 16) < 1);
+    await separator.press('Shift+ArrowRight'); assert.ok(Math.abs((await sizes()).list - initial.list - 64) < 1);
+    const selected = await cloud.locator('.command-list-row.selected').textContent();
+    await cloud.getByRole('tab', { name: '云文件', exact: true }).click(); await cloud.getByRole('tab', { name: '云命令', exact: true }).click();
+    assert.ok(Math.abs((await sizes()).list - initial.list - 64) < 1); assert.equal(await cloud.locator('.command-list-row.selected').textContent(), selected);
+    await separator.dblclick(); initial = await sizes(); assert.ok(Math.abs(initial.list - initial.width * .34) < 1);
+    const edge = await separator.boundingBox(), x = edge.x + edge.width / 2, y = edge.y + edge.height / 2;
+    await cloud.mouse.move(x, y); await cloud.mouse.down(); await cloud.mouse.move(x + 100, y);
+    assert.ok(Math.abs((await sizes()).list - initial.list - 100) < 1);
+    await separator.press('Escape'); await cloud.mouse.up(); assert.ok(Math.abs((await sizes()).list - initial.list) < 1);
+    await cloud.emulateMedia({ reducedMotion: 'reduce' });
+    await cloud.mouse.move(x, y); await cloud.mouse.down(); await cloud.mouse.move(2000, y);
+    assert.ok((await sizes()).detail >= 319.5); assert.equal(await separator.locator('path').getAttribute('d'), 'M12 10 Q12 40 12 70');
+    await cloud.mouse.up(); await cloud.emulateMedia({ reducedMotion: 'no-preference' }); await separator.focus(); await separator.press('Escape');
+    await resize(900, 650); assert.ok(await separator.isVisible());
+    const boundary = await separator.boundingBox(); await cloud.mouse.move(boundary.x + 6, boundary.y + boundary.height / 2); await cloud.mouse.down();
+    await resize(899, 650); assert.equal(await separator.isVisible(), false); assert.equal(await cloud.locator('.commands-workspace').getAttribute('data-resizing'), null); await cloud.mouse.up();
+    await resize(1000, 650); await separator.hover();
     await cloud.screenshot({ path: path.join(evidence,'commands-default.png') }); await resize(760,480);
     await cloud.locator('.command-list-row').first().click(); await cloud.getByRole('button',{ name: '返回列表',exact: true }).waitFor();
     assert.ok(await cloud.locator('.command-detail').isVisible()); assert.equal(await cloud.locator('.commands-list').isVisible(),false);

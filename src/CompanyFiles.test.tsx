@@ -31,6 +31,29 @@ beforeEach(() => {
   vi.mocked(call).mockImplementation(async command => command === 'get_company_transfers' || command === 'clear_company_transfers' ? [] : command === 'get_file_icon' ? '/icons/xlsx.png' : { version: 1, files: [file], uploads: [] });
 });
 afterEach(() => { cleanup(); callbacks.clear(); vi.clearAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it('首次文件目录使用点阵，空目录结束首次状态，搜索不会重新播放点阵', async () => {
+  let resolve!: (value: unknown) => void;
+  vi.mocked(call).mockImplementation(async command => command === 'get_company_files' ? new Promise(done => { resolve = done; }) : []);
+  render(<CompanyFilesWindow />); expect(screen.getByRole('status').textContent).toBe('正在读取文件目录…');
+  await act(async () => resolve({ version: 1, files: [], uploads: [] }));
+  expect(screen.getByText('暂无云文件')).toBeTruthy(); expect(screen.queryByRole('status')).toBeNull();
+  fireEvent.change(screen.getByRole('textbox', { name: '搜索云文件' }), { target: { value: '未找到' } });
+  expect(screen.queryByRole('status')).toBeNull(); expect(screen.getByText('正在加载…')).toBeTruthy();
+  await act(async () => resolve({ version: 1, files: [], uploads: [] })); expect(screen.getByText('没有匹配的文件')).toBeTruthy();
+});
+
+it('首次文件目录失败停止点阵，刷新可以重试，不可读取账号不显示加载动画', async () => {
+  let resolve!: (value: unknown) => void, reject!: (reason: Error) => void, reads = 0;
+  vi.mocked(call).mockImplementation(async command => command === 'get_company_files' && ++reads <= 2 ? new Promise((done, fail) => { resolve = done; reject = fail; }) : command === 'get_company_transfers' ? [] : { version: 1, files: [], uploads: [] });
+  const view = render(<CompanyFilesWindow />);
+  await act(async () => reject(new Error('目录读取失败，请重试')));
+  expect(screen.getByText('读取失败，请刷新重试')).toBeTruthy(); expect(screen.queryByRole('status')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '刷新' })); await screen.findByRole('status');
+  const old = resolve; status = { ...status, sessionEpoch: 2, companyFiles: false }; view.rerender(<CompanyFilesWindow />);
+  expect(screen.queryByRole('status')).toBeNull();
+  await act(async () => old({ version: 1, files: [file], uploads: [] })); expect(screen.queryByText(file.name)).toBeNull();
+});
 it('无共享话术用户可查看下载云文件，不能管理文件', async () => {
   render(<CompanyFilesWindow />); await screen.findByText(file.name); expect(screen.queryByRole('button', { name: '上传新文件' })).toBeNull(); expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '下载' })); await waitFor(() => expect(call).toHaveBeenCalledWith('download_company_file', { sessionEpoch: 1, id: 'cloud' }));

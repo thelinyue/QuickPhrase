@@ -35,6 +35,35 @@ afterEach(() => { cleanup(); events.clear(); vi.clearAllMocks(); });
 async function openCommands() { fireEvent.click(screen.getByRole('tab', { name: '云命令' })); await screen.findByRole('button', { name: /安装工具.*Linux/ }); await screen.findByRole('button', { name: '复制命令' }); }
 function maintainer() { status = { ...status, user: { ...viewer, cloudCommandPermissions: { canUse: true, canManage: true, version: 1 } } }; }
 
+it('首次目录等待显示点阵，空目录也结束首次状态，后续筛选只用普通加载文案', async () => {
+  let resolve!: (view: CloudCommandsView) => void;
+  vi.mocked(call).mockImplementation(async (name, args) => name === 'get_cloud_commands' ? new Promise<CloudCommandsView>(done => { resolve = done; }) : api(name, args));
+  render(<CloudCenter />); fireEvent.click(screen.getByRole('tab', { name: '云命令' }));
+  expect(screen.getByRole('status').textContent).toBe('正在加载命令…');
+  expect(screen.getByRole('status').closest('[aria-busy="true"]')).toBeNull();
+  await act(async () => resolve({ commands: [], categories: [], total: 0 }));
+  expect(screen.getByText('暂无云命令')).toBeTruthy(); expect(screen.queryByRole('status')).toBeNull();
+  fireEvent.change(screen.getByRole('textbox', { name: '搜索云命令' }), { target: { value: '未找到' } });
+  expect(screen.getByText('正在加载命令…')).toBeTruthy(); expect(screen.queryByRole('status')).toBeNull();
+  await act(async () => resolve({ commands: [], categories: [], total: 0 })); expect(screen.getByText('没有匹配的命令')).toBeTruthy();
+});
+
+it('首次读取失败停止点阵，重试继续等待；断网及旧会话回执不能恢复点阵或正文', async () => {
+  let reject!: (error: Error) => void, resolve!: (view: CloudCommandsView) => void;
+  vi.mocked(call).mockImplementation(async (name, args) => name === 'get_cloud_commands' ? new Promise<CloudCommandsView>((done, fail) => { resolve = done; reject = fail; }) : api(name, args));
+  const view = render(<CloudCenter />); fireEvent.click(screen.getByRole('tab', { name: '云命令' }));
+  await act(async () => reject(new Error('连接超时，请重试')));
+  expect(screen.getByText('加载失败，请刷新重试')).toBeTruthy(); expect(screen.queryByRole('status')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '刷新' })); await screen.findByRole('status');
+  const old = resolve;
+  status = { ...status, offline: true }; view.rerender(<CloudCenter />); expect(screen.queryByRole('status')).toBeNull();
+  await act(async () => old({ commands: [command], categories: [], total: 1 })); expect(screen.queryByText(command.name)).toBeNull();
+  status = { ...status, sessionEpoch: 2, offline: false }; view.rerender(<CloudCenter />);
+  fireEvent.click(screen.getByRole('tab', { name: '云命令' })); expect(screen.getByRole('status').textContent).toBe('正在加载命令…');
+  await act(async () => resolve({ commands: [command], categories: [], total: 1 })); await screen.findByRole('button', { name: '复制命令' });
+  expect(screen.queryByRole('status')).toBeNull();
+});
+
 it('默认云文件，未授权普通账号不显示命令入口，旧服务端仅向管理员提示升级', async () => {
   status = { ...status, user: { ...viewer, cloudCommandPermissions: undefined } };
   const view = render(<CloudCenter />); expect(screen.getByText('闪云中心')).toBeTruthy(); expect(screen.queryByRole('tab', { name: '云命令' })).toBeNull();

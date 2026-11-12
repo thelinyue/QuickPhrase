@@ -11,8 +11,19 @@
 .cloud-module-more button:hover:not(:disabled) { background: var(--theme-hover); }
 .command-list-row:hover:not(:disabled) { background: var(--theme-hover); }
 .commands-content > .company-toolbar select { max-width: 180px; }
-.commands-workspace { display: grid; grid-template-columns: minmax(240px, 34%) minmax(0, 1fr); flex: 1; min-height: 0; border: 1px solid var(--theme-line); border-radius: var(--theme-radius); overflow: hidden; }
+.commands-workspace { position: relative; display: grid; grid-template-columns: clamp(240px, var(--command-list-width, 34%), calc(100% - 320px)) minmax(320px, 1fr); flex: 1; min-height: 0; border: 1px solid var(--theme-line); border-radius: var(--theme-radius); overflow: hidden; }
 .commands-list { min-width: 0; overflow-y: auto; border-right: 1px solid var(--theme-line); background: var(--theme-panel); }
+/* 12 DIP 热区叠在两列交界处，不占用第三列；聚焦只改变表面和把手颜色。 */
+.command-splitter { position: absolute; z-index: 1; left: var(--command-list-width, 34%); top: 0; bottom: 0; width: 12px; transform: translateX(-50%); cursor: col-resize; touch-action: none; outline: none; color: var(--theme-muted); }
+.command-splitter svg { position: absolute; width: 24px; height: 80px; left: -6px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: 0; transition: opacity 130ms; overflow: visible; }
+.command-splitter path { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; }
+.command-splitter:hover svg, .command-splitter:focus-visible svg, .commands-workspace[data-resizing] .command-splitter svg { opacity: 1; }
+.command-splitter:focus-visible { background: var(--theme-hover); color: var(--theme-accent); }
+.commands-workspace[data-resizing] { user-select: none; cursor: col-resize; }
+.commands-workspace[data-resizing] .command-splitter { color: var(--theme-accent); }
+.cloud-loading-grid { display: grid; grid-template: repeat(20, 6px) / repeat(20, 6px); place-items: center; width: 120px; height: 120px; color: var(--theme-muted); }
+.cloud-loading-grid i { display: block; width: 4px; height: 4px; border-radius: 50%; background: currentColor; transform: scale(.333); opacity: .25; }
+@media (prefers-reduced-motion: reduce) { .command-splitter svg { transition: none; } }
 .command-list-row { width: 100%; display: block; padding: 14px 12px; border: 0; border-bottom: 1px solid var(--theme-line); border-radius: 0; text-align: left; background: transparent; height: auto; color: var(--theme-text); }
 .command-list-row.selected { background: var(--theme-selection); box-shadow: inset 3px 0 var(--blue); }
 .command-list-row > span { display: flex; align-items: center; gap: var(--space-2); }
@@ -53,6 +64,7 @@
 .cloud-permissions td small { display: block; color: var(--theme-muted); line-height: 1.7; }
 @media (max-width: 899px) {
   .commands-workspace { display: flex; }
+  .command-splitter { display: none; }
   .commands-list { width: 100%; border: 0; }
   .command-detail { display: none; width: 100%; }
   .commands-show-detail .commands-list { display: none; }

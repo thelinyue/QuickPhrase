@@ -5,6 +5,8 @@ import { AccountNotice } from './AccountControls';
 import { IconButton, Button, FormDialog, DialogHeader, DialogWindowClose, Icon, type DialogSpec } from './ui';
 import { useNotices } from './notices';
 import { useCloseGuard, useModalClose } from './close';
+import { CloudLoading } from './CloudLoading';
+import { CommandSplitter } from './CommandSplitter';
 import type { CloudCommand, CloudCommandDraft, CloudCommandSummary, CloudCommandsView, TeamStatus } from './types';
 
 export const canUseCloudCommands = (s: TeamStatus) => !!s.cloudCommands && !!s.user && !s.user.disabled && !s.user.mustChangePassword && (!!s.user.admin || !!s.user.cloudCommandPermissions?.canUse);
@@ -12,7 +14,7 @@ const canManage = (s: TeamStatus) => canUseCloudCommands(s) && (!!s.user?.admin 
 const blank: CloudCommandDraft = { name: '', category: '', description: '', body: '', expectedRevision: null };
 const date = (seconds: number) => new Date(seconds * 1000).toLocaleString('zh-CN', { hour12: false });
 
-export function CloudCommands({ status }: { status: TeamStatus }) {
+export function CloudCommands({ status, active = true }: { status: TeamStatus; active?: boolean }) {
   const epoch = status.sessionEpoch || 0, permissionVersion = status.user?.cloudCommandPermissions?.version || 0;
   const [query, setQuery] = useState(''), [category, setCategory] = useState<string | null>(null), [recycled, setRecycled] = useState(false);
   const [offset, setOffset] = useState(0), [size, setSize] = useState(10), [view, setView] = useState<CloudCommandsView | null>(null);
@@ -21,6 +23,7 @@ export function CloudCommands({ status }: { status: TeamStatus }) {
   const [editing, setEditing] = useState<{ id: string | null; draft: CloudCommandDraft } | null>(null), [action, setAction] = useState<DialogSpec | null>(null);
   const [detailRevision, setDetailRevision] = useState(0);
   const catalogSequence = useRef(0), detailSequence = useRef(0), busyRef = useRef(false), listRef = useRef<HTMLDivElement>(null), scrollTop = useRef(0);
+  const workspace = useRef<HTMLDivElement>(null), loadedEpoch = useRef<number | null>(null);
   const latest = useRef({ epoch, status, permissionVersion }); latest.current = { epoch, status, permissionVersion };
   useCloseGuard({ busy: () => busyRef.current });
   const notices = useNotices(), online = canUseCloudCommands(status) && !status.offline, manage = canManage(status);
@@ -38,7 +41,7 @@ export function CloudCommands({ status }: { status: TeamStatus }) {
     try {
       const next = await call<CloudCommandsView>('get_cloud_commands', { sessionEpoch: epoch, query: { q: query, category, recycled, offset, limit: size } });
       if (request !== catalogSequence.current || currentFilter.current !== filter) return;
-      loaded.current = filter; setView(next);
+      loaded.current = filter; loadedEpoch.current = epoch; setView(next);
       if (offset && offset >= next.total) { setOffset(Math.max(0, Math.ceil(next.total / size) - 1) * size); return; }
       setSelected(previous => next.commands.some(c => c.id === previous) ? previous : next.commands[0]?.id || '');
       setDetailRevision(n => n + 1);
@@ -92,10 +95,10 @@ export function CloudCommands({ status }: { status: TeamStatus }) {
     {!online && <p className="company-message" role="alert">云命令仅在线可用，连接中断后不显示旧目录或复制正文。请重连后刷新。</p>}
     {error && <p className="company-message" role="alert">{error}</p>}
     <AccountNotice message={notices.current?.message || ''} error={notices.current?.kind !== 'success'} clear={() => notices.current && notices.dismiss(notices.current.id)} />
-    <div className={`commands-workspace${mobileDetail && visibleDetail ? ' commands-show-detail' : ''}`}>
-      <div className="commands-list" ref={listRef} aria-label="命令列表" onScroll={e => { scrollTop.current = e.currentTarget.scrollTop; }}>
+    <div className={`commands-workspace${mobileDetail && visibleDetail ? ' commands-show-detail' : ''}`} ref={workspace}>
+      <div className="commands-list" id="cloud-command-list" ref={listRef} aria-label="命令列表" onScroll={e => { scrollTop.current = e.currentTarget.scrollTop; }}>
         {catalog?.commands.map(c => <Button variant="ghost" className={`command-list-row${selected === c.id ? ' selected' : ''}`} key={c.id} aria-pressed={selected === c.id} onClick={() => { setSelected(c.id); setMobileDetail(true); }}><span><strong>{c.name}</strong><small>{c.category || '未分类'}</small></span><p>{c.description || '暂无说明'}</p></Button>)}
-        {!catalog?.commands.length && <div className="company-empty"><Icon name="document" /><p>{loading ? '正在加载命令…' : error ? '加载失败，请刷新重试' : !online ? '联网后可查看云命令' : query || category != null ? '没有匹配的命令' : recycled ? '命令回收站为空' : '暂无云命令'}</p></div>}
+        {!catalog?.commands.length && (loading && online && loadedEpoch.current !== epoch ? <CloudLoading label="正在加载命令…" active={active} /> : <div className="company-empty"><Icon name="document" /><p>{loading && online ? '正在加载命令…' : error ? '加载失败，请刷新重试' : !online ? '联网后可查看云命令' : query || category != null ? '没有匹配的命令' : recycled ? '命令回收站为空' : '暂无云命令'}</p></div>)}
       </div>
       <article className="command-detail" aria-label="命令详情">{visibleDetail ? <>
         <Button variant="secondary" className="command-back" onClick={() => { const top = scrollTop.current; setMobileDetail(false); requestAnimationFrame(() => { if (listRef.current) listRef.current.scrollTop = top; }); }}><Icon name="back" />返回列表</Button>
@@ -105,6 +108,7 @@ export function CloudCommands({ status }: { status: TeamStatus }) {
         <p className="command-risk">授权不代表脚本经过安全审查。请核对来源和参数，再自行在目标终端运行；已复制的文本无法收回。</p>
         <footer>维护人：{visibleDetail.maintainerName || '未知'}<span>更新于 {date(visibleDetail.updatedAt)}</span></footer>
       </> : <div className="company-empty"><Icon name="document" /><p>{loading ? '正在读取…' : '选择命令，阅读详情后复制'}</p></div>}</article>
+      <CommandSplitter workspace={workspace} active={active} />
     </div>
     <div className="company-pagination"><span>共 {catalog?.total || 0} 条 · 第 {Math.min(page + 1, pages)} / {pages} 页</span><IconButton aria-label="命令上一页" disabled={!catalog || page === 0} onClick={() => setOffset(offset - size)}>‹</IconButton><IconButton aria-label="命令下一页" disabled={!catalog || page + 1 >= pages} onClick={() => setOffset(offset + size)}>›</IconButton><select aria-label="命令每页条数" value={size} onChange={e => resetFilter(() => setSize(Number(e.target.value)))}>{[10,20,50].map(n => <option key={n} value={n}>{n}条/页</option>)}</select></div>
     {editing && <CommandEditor key={`${editing.id}:${epoch}`} draft={editing.draft} categories={catalog?.categories || []} online={online && manage} close={async () => { if (!busyRef.current) setEditing(null); }} changed={draft => setEditing(previous => previous && { ...previous, draft })} save={async draft => {

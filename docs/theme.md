@@ -99,6 +99,14 @@
 
 复用 `Feedback`／`AccountNotice` 和现有鹦鹉插画。成功短暂显示，失败保留至明确关闭；悬停、聚焦或展开详情时不自动关闭。长信息默认紧凑截断、按需展开，不能挤占主操作。加载、读取失败、真正空数据和搜索无结果分别表达；不能在读取失败时展示“空库”。
 
+### 闪云目录与分栏
+
+- 云文件、云命令在当前账号会话首次成功取得目录前的真实请求中使用 `CloudLoading`：120×120 DIP、20×20 点阵配中文 `role="status"` 文案，使用主题辅助文字色。空目录也结束首次状态，失败后刷新可重试；后续筛选和刷新使用普通文案，上传下载保留真实进度。隐藏模块、后台页面暂停动画；减少动态效果时显示静态点阵。
+- 云命令在 900 DIP 及以上保留双栏，默认列表 34%，列表／正文最小宽度分别为 240／320 DIP。交界处叠放 12 DIP 分隔条，弹性仅作用于把手；悬停、聚焦和拖动时显现，焦点使用主题浅底和主色。900 DIP 以下沿用列表／详情切换。
+- 左右键调整 16 DIP，Shift＋左右键调整 48 DIP，Home／End 到达边界；双击或非拖动时 Esc 恢复默认，拖动时 Esc／指针取消恢复拖动前比例。松手、失焦、丢失捕获和窄窗切换结束拖动。比例仅在当前窗口内保留，缩放时按比例限制于合法范围。
+
+实现裁剪自 LeiBox 的 [Elastic Panel Resize](https://leibox.pantoria.cn/docs/animations/elastic-panel-resize) 与 [Dot Grid Loader](https://leibox.pantoria.cn/docs/animations/ai-generating) 完整 React 源包；前者为 LeiBox 独立 DOM／SVG 重建，设计参考为 [Alvish](https://x.com/alvish/status/2111084319716647114/video/1)，原作者源码未提供。保留来源声明与署名，目录不授予设计参考的额外许可。接入只使用已有 React 依赖。
+
 ## 样式分层
 
 `src/styles.css` 是唯一入口，加载顺序固定为：

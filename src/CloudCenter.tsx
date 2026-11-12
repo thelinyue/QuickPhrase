@@ -25,7 +25,7 @@ export function CloudCenter() {
     {status.user?.admin && <Button onClick={() => setPermissionsEpoch(epoch)}><Icon name="shield" />权限管理</Button>}</div>
     {status.user?.admin && !status.cloudCommands && <p className="company-message">当前闪云版本不支持云命令，升级服务端后可用；云文件不受影响。</p>}
     <div className="cloud-module" role="tabpanel" id="cloud-files-panel" aria-labelledby="cloud-files-tab" hidden={active !== 'files'}><CompanyFilesPanel active={active === 'files'} /></div>
-    {commands && <div className="cloud-module" role="tabpanel" id="cloud-commands-panel" aria-labelledby="cloud-commands-tab" hidden={active !== 'commands'}><CloudCommands key={epoch} status={status} /></div>}
+    {commands && <div className="cloud-module" role="tabpanel" id="cloud-commands-panel" aria-labelledby="cloud-commands-tab" hidden={active !== 'commands'}><CloudCommands key={epoch} status={status} active={active === 'commands'} /></div>}
     {permissionsEpoch === epoch && status.user?.admin && <CloudPermissions key={epoch} status={status} version={version} close={() => setPermissionsEpoch(current => current === epoch ? null : current)} />}
   </section>;
 }
