@@ -1,6 +1,11 @@
 * { box-sizing: border-box; border-radius: 0; }
 html, body, #root { margin: 0; width: 100%; height: 100%; overflow: hidden; }
 :root { font-family: var(--font-ui); font-size: var(--font-body); color: var(--theme-text); }
+/* 普通界面不产生浏览器文字选区；正文按用途开放，按钮即使位于正文内也保持不可选。 */
+body, button, select { user-select: none; }
+input, textarea, [contenteditable="true"], .rich-segment,
+pre, code, .phrase-preview-segment > div, .recycle-content,
+.feedback-message, .validation-error, .account-notice > span, .dock-notice-detail { user-select: text; }
 [hidden] { display: none !important; }
 button, input, select, textarea { font: inherit; }
 :focus { outline: none; }

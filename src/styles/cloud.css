@@ -20,6 +20,8 @@
 .command-splitter:hover svg, .command-splitter:focus-visible svg, .commands-workspace[data-resizing] .command-splitter svg { opacity: 1; }
 .command-splitter:focus-visible { background: var(--theme-hover); color: var(--theme-accent); }
 .commands-workspace[data-resizing] { user-select: none; cursor: col-resize; }
+/* 正文显式允许复制，拖动分栏时也需覆盖子节点，防止跨列产生文字选区。 */
+.commands-workspace[data-resizing] * { user-select: none; }
 .commands-workspace[data-resizing] .command-splitter { color: var(--theme-accent); }
 .cloud-loading-grid { display: grid; grid-template: repeat(20, 6px) / repeat(20, 6px); place-items: center; width: 120px; height: 120px; color: var(--theme-muted); }
 .cloud-loading-grid i { display: block; width: 4px; height: 4px; border-radius: 50%; background: currentColor; transform: scale(.333); opacity: .25; }
