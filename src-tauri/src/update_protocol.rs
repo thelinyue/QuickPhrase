@@ -1,4 +1,4 @@
-//! GitHub 更新协议：代理仅改写固定官方地址，所有可执行内容由内置公钥认证。
+//! 商店优先更新协议：官方回退仅改写固定 GitHub 地址，所有可执行内容由内置公钥认证。
 //! latest 是不可信的发现线索，固定版本的清单、说明和安装器验证后才交给界面。
 use futures_util::StreamExt;
 use reqwest::{Client, Url};
@@ -13,6 +13,8 @@ pub type Result<T> = std::result::Result<T, String>;
 pub const RELEASES: &str = "https://github.com/thelinyue/QuickPhrase/releases";
 pub const PUBLIC_KEY: &str = include_str!("../update.pub");
 pub const MAX_INSTALLER: u64 = 512 * 1024 * 1024;
+#[path = "update_store.rs"]
+mod store;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -20,6 +22,7 @@ pub struct Config {
     pub automatic: bool,
     pub route: String,
     pub custom_proxy: String,
+    pub store_url: String,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -27,11 +30,16 @@ impl Default for Config {
             automatic: true,
             route: "default".into(),
             custom_proxy: String::new(),
+            store_url: "http://192.168.101.104:9863".into(),
         }
     }
 }
 impl Config {
     pub fn normalize(mut self) -> Result<Self> {
+        self.store_url = self.store_url.trim().trim_end_matches('/').to_string();
+        if !self.store_url.is_empty() {
+            store::root(&self.store_url)?;
+        }
         if !["default", "backup", "custom", "direct"].contains(&self.route.as_str()) {
             return Err("请选择有效的 GitHub 下载线路。".into());
         }
@@ -107,6 +115,7 @@ impl Manifest {
 pub struct Release {
     pub manifest: Manifest,
     pub hash: String,
+    pub store: Option<String>,
 }
 pub fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -153,7 +162,11 @@ pub fn verify_metadata(
         .get(manifest.installer().as_str())
         .ok_or("更新校验清单缺少安装器。")?
         .clone();
-    Ok(Release { manifest, hash })
+    Ok(Release {
+        manifest,
+        hash,
+        store: None,
+    })
 }
 
 pub fn client() -> Result<Client> {
@@ -198,6 +211,35 @@ pub async fn bytes(client: &Client, url: &str, limit: usize) -> Result<Vec<u8>> 
     Ok(result)
 }
 pub async fn check(config: &Config, current: &str) -> Result<Option<Release>> {
+    check_using(config, current, PUBLIC_KEY, || {
+        check_github(config, current)
+    })
+    .await
+}
+async fn check_using<F, Fut>(
+    config: &Config,
+    current: &str,
+    key: &str,
+    fallback: F,
+) -> Result<Option<Release>>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<Option<Release>>>,
+{
+    if !config.store_url.trim().is_empty() {
+        match store::release_with_key(&config.store_url, None, key).await {
+            Ok(release) => {
+                return Ok((release.manifest.version()?
+                    > Version::parse(current).map_err(|_| "当前应用版本无效。")?)
+                .then_some(release))
+            }
+            Err(error) if error.retryable => {}
+            Err(error) => return Err(error.message),
+        }
+    }
+    fallback().await
+}
+async fn check_github(config: &Config, current: &str) -> Result<Option<Release>> {
     let client = client()?;
     let discovery = bytes(
         &client,
@@ -248,6 +290,18 @@ pub async fn download(
     cancel: &CancellationToken,
     mut progress: impl FnMut(u64, Option<u64>),
 ) -> Result<()> {
+    if let Some(root) = &release.store {
+        match store::download(root, release, path, cancel, &mut progress).await {
+            Ok(()) => return Ok(()),
+            Err(error) if error.retryable && !cancel.is_cancelled() => {
+                let verified = fixed_release(&client()?, config, &release.manifest.version).await?;
+                if verified.hash != release.hash {
+                    return Err("官方同版本安装器与商店不一致，已停止下载。".into());
+                }
+            }
+            Err(error) => return Err(error.message),
+        }
+    }
     let client = client()?;
     let original = format!(
         "{RELEASES}/download/v{}/{}",
@@ -260,6 +314,17 @@ pub async fn download(
         .error_for_status()
         .map_err(network_error)?;
     save_download(response, path, cancel, &release.hash, &mut progress).await
+}
+
+pub async fn refresh(config: &Config, release: &Release) -> Result<Release> {
+    if let Some(root) = &release.store {
+        match store::release(root, Some(&release.manifest.version)).await {
+            Ok(verified) => return Ok(verified),
+            Err(error) if error.retryable => {}
+            Err(error) => return Err(error.message),
+        }
+    }
+    fixed_release(&client()?, config, &release.manifest.version).await
 }
 
 /// 响应读取与落盘共用实现，网络验收与故障测试均经过实际流式校验。
@@ -380,6 +445,113 @@ mod tests {
             .url("https://github.com/attacker/release")
             .is_err());
     }
+    #[tokio::test]
+    async fn store_is_authoritative_and_fallback_is_restricted() {
+        use std::io::{BufRead, Write};
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        fn serve(
+            status: u16,
+            files: HashMap<String, Vec<u8>>,
+            requests: usize,
+        ) -> (String, std::thread::JoinHandle<()>) {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}/prefix", listener.local_addr().unwrap());
+            let worker = std::thread::spawn(move || {
+                for _ in 0..requests {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+                    let mut request = String::new();
+                    reader.read_line(&mut request).unwrap();
+                    loop {
+                        let mut line = String::new();
+                        reader.read_line(&mut line).unwrap();
+                        if line == "\r\n" || line.is_empty() {
+                            break;
+                        }
+                    }
+                    let path = request.split_whitespace().nth(1).unwrap();
+                    let body = files
+                        .get(path)
+                        .cloned()
+                        .unwrap_or_else(|| b"invalid".to_vec());
+                    write!(
+                        stream,
+                        "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .unwrap();
+                    stream.write_all(&body).unwrap();
+                }
+            });
+            (url, worker)
+        }
+        let (key, sums, signature, manifest) = fixture();
+        let metadata = serde_json::to_vec(&serde_json::json!({"app_id":"quickphrase","version":"1.2.3","platform":"windows","arch":"x64","installer":{"name":"QuickPhrase-Setup-1.2.3-x64.exe","url":"./1.2.3/QuickPhrase-Setup-1.2.3-x64.exe","size":9,"sha256":sha256(b"installer")},"verification":{"type":"minisign-sha256sums","files":[{"name":"SHA256SUMS.txt","url":"./1.2.3/SHA256SUMS.txt"},{"name":"SHA256SUMS.txt.minisig","url":"./1.2.3/SHA256SUMS.txt.minisig"},{"name":"release-manifest.json","url":"./1.2.3/release-manifest.json"}]}})).unwrap();
+        let prefix = "/prefix/api/updates/v1/quickphrase/";
+        let files = HashMap::from([
+            (
+                format!("{prefix}latest?platform=windows&arch=x64"),
+                metadata,
+            ),
+            (format!("{prefix}1.2.3/SHA256SUMS.txt"), sums),
+            (format!("{prefix}1.2.3/SHA256SUMS.txt.minisig"), signature),
+            (format!("{prefix}1.2.3/release-manifest.json"), manifest),
+        ]);
+        for current in ["1.0.0", "2.0.0"] {
+            let (url, worker) = serve(200, files.clone(), 4);
+            let config = Config {
+                store_url: url,
+                ..Default::default()
+            };
+            let result = check_using(&config, current, &key, || async {
+                panic!("有效商店响应不得查询官方")
+            })
+            .await
+            .unwrap();
+            assert_eq!(result.is_some(), current == "1.0.0");
+            worker.join().unwrap();
+        }
+        for (status, fallback_allowed) in [(403, false), (404, false), (200, false), (503, true)] {
+            let (url, worker) = serve(status, HashMap::new(), 1);
+            let count = Arc::new(AtomicUsize::new(0));
+            let captured = count.clone();
+            let result = check_using(
+                &Config {
+                    store_url: url,
+                    ..Default::default()
+                },
+                "1.0.0",
+                &key,
+                || async move {
+                    captured.fetch_add(1, Ordering::SeqCst);
+                    Ok(None)
+                },
+            )
+            .await;
+            assert_eq!(count.load(Ordering::SeqCst), usize::from(fallback_allowed));
+            assert_eq!(result.is_ok(), fallback_allowed);
+            worker.join().unwrap();
+        }
+        let (url, worker) = serve(200, files, 4);
+        assert!(check_using(
+            &Config {
+                store_url: url,
+                ..Default::default()
+            },
+            "1.0.0",
+            PUBLIC_KEY,
+            || async { panic!("验签失败不能回退") }
+        )
+        .await
+        .is_err());
+        worker.join().unwrap();
+    }
     #[test]
     fn signature_authenticates_both_manifest_and_installer() {
         let (key, sums, sig, manifest) = fixture();
@@ -442,6 +614,54 @@ mod tests {
             let _ = socket.write_all(body);
         });
         (url, thread)
+    }
+    #[tokio::test]
+    async fn store_download_keeps_transport_failures_separate_from_integrity_and_cancel() {
+        let (key, sums, signature, manifest) = fixture();
+        let release = verify_metadata(&key, &sums, &signature, &manifest, "1.2.3").unwrap();
+        for (body, declared, retryable) in [
+            (&b"installer"[..], 9, None),
+            (&b"evil"[..], 4, Some(false)),
+            (&b"cut"[..], 99, Some(true)),
+        ] {
+            let (url, worker) = server(body, declared, 10);
+            let directory = tempfile::tempdir().unwrap();
+            let result = store::download(
+                &url,
+                &release,
+                &directory.path().join("setup.exe"),
+                &CancellationToken::new(),
+                &mut |_, _| {},
+            )
+            .await;
+            if let Some(retryable) = retryable {
+                assert_eq!(result.err().unwrap().retryable, retryable);
+            } else {
+                assert!(result.is_ok());
+            }
+            worker.join().unwrap();
+        }
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let directory = tempfile::tempdir().unwrap();
+        let error = store::download(
+            &format!("http://{}", listener.local_addr().unwrap()),
+            &release,
+            &directory.path().join("setup.exe"),
+            &cancel,
+            &mut |_, _| {},
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(!error.retryable);
+        assert!(error.message.contains("已取消"));
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
     }
     #[tokio::test]
     async fn stream_download_checks_bytes_cancellation_truncation_and_disk_error() {

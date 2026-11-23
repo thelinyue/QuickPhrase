@@ -4,7 +4,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { call, openWindow } from './api';
 import { Button, FormDialog } from './ui';
 
-export interface UpdateConfig { automatic: boolean; route: 'default' | 'backup' | 'custom' | 'direct'; customProxy: string }
+export interface UpdateConfig { automatic: boolean; route: 'default' | 'backup' | 'custom' | 'direct'; customProxy: string; storeUrl?: string }
 export interface UpdateStatus {
   manualInstallAvailable?: boolean;
   config: UpdateConfig; phase: 'idle' | 'checking' | 'available' | 'current' | 'downloading' | 'ready' | 'installing' | 'error';
@@ -50,6 +50,7 @@ export function UpdateSettings() {
     <h2 className="settings-heading">软件更新</h2>
     {config && <fieldset disabled={busy} className="update-config">
       <label><input type="checkbox" checked={config.automatic} onChange={e => setDraft({ ...config, automatic: e.target.checked })} />自动检查更新，手动下载安装</label>
+      <label>工具商店<input type="url" aria-label="工具商店" value={config.storeUrl ?? ''} placeholder="http://192.168.101.104:9863" onChange={e => setDraft({ ...config, storeUrl: e.target.value })}/></label>
       <label>下载线路<select aria-label="下载线路" value={config.route} onChange={e => setDraft({ ...config, route: e.target.value as UpdateConfig['route'] })}>
         <option value="default">默认代理 · gh-proxy.com</option><option value="backup">备用代理 · ghfast.top</option><option value="custom">自定义代理</option><option value="direct">不使用 GitHub 代理</option>
       </select></label>

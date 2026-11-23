@@ -254,10 +254,9 @@ pub fn download_update(app: tauri::AppHandle) -> Result<Status> {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let download = async {
-            let client = protocol::client()?;
             let verified = tokio::select! { biased;
                 _ = cancel.cancelled() => return Err("下载已取消。".into()),
-                result = protocol::fixed_release(&client, &config, &release.manifest.version) => result?,
+                result = protocol::refresh(&config, &release) => result?,
             };
             if verified.hash != release.hash {
                 return Err("该版本安装器已变化，请重新检查更新。".to_string());
