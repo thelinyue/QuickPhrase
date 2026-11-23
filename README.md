@@ -167,7 +167,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps
 
 默认仍只生成安装器。候选构建可加 `-Version 0.2.15-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.15`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.15` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
 
-GitHub 自动 CI 执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.15-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
+普通推送不触发 CI；PR 检查、手动运行及发布流程调用 CI 时执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.15-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
 
 检测到已验证的新版本后，右下角“闪语”显示“新”角标；悬停提示当前版本和最新版本，点击进入关于页查看并手动升级。不在顶部增加提醒栏，下载中或选择稍后安装时仍可从此进入。
 
