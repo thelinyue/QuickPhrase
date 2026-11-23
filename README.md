@@ -167,7 +167,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps
 
 默认仍只生成安装器。候选构建可加 `-Version 0.2.15-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.15`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.15` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
 
-普通推送不触发 CI；PR 检查、手动运行及发布流程调用 CI 时执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.15-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
+普通推送不触发 CI；PR 检查、手动运行及发布流程调用 CI 时执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.16-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
+
+正式 Release 发布成功后，独立“同步工具商店”任务按该 Release ID 通知商店下载、验签并切换版本，每 10 秒查询、最多等待 30 分钟。一次性配置仓库 Variable `TOOL_STORE_URL`（最终公网 HTTPS 商店根地址，支持子路径）及 Secret `TOOL_STORE_API_KEY`（在商店闪语的“发布自动同步”面板生成）。密钥仅授权 `quickphrase` 发布同步，不进入客户端。失败仅重试同步任务，或运行 `gh workflow run sync-tool-store.yml --ref master -f tag=vX.Y.Z` 补同步已有正式版，不重新构建或覆盖发布资产。商店定时同步保留。客户端继续使用默认局域网地址；外网浏览与下载需登录，本次不增加客户端外网认证。接口和 AI 接入模板以工具商店提供的 `/api/updates/v1/integration.md` 为准。
 
 检测到已验证的新版本后，右下角“闪语”显示“新”角标；悬停提示当前版本和最新版本，点击进入关于页查看并手动升级。不在顶部增加提醒栏，下载中或选择稍后安装时仍可从此进入。
 

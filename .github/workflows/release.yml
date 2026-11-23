@@ -7,7 +7,7 @@ on:
       version:
         description: Stable SemVer
         required: true
-        default: 0.2.15
+        default: 0.2.16
 
 permissions:
   contents: read
@@ -116,3 +116,11 @@ jobs:
           $notes = Join-Path 'docs/releases' "v$env:RELEASE_VERSION.md"
           gh release create "v$env:RELEASE_VERSION" @assets --verify-tag --title "闪语 QuickPhrase v$env:RELEASE_VERSION" --notes-file $notes
           if ($LASTEXITCODE -ne 0) { throw 'GitHub Release 发布失败；未覆盖已有标签或资产。' }
+
+  sync-tool-store:
+    needs: publish-release
+    uses: ./.github/workflows/sync-tool-store.yml
+    with:
+      tag: v${{ inputs.version }}
+    secrets:
+      TOOL_STORE_API_KEY: ${{ secrets.TOOL_STORE_API_KEY }}

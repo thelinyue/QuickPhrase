@@ -1,0 +1,42 @@
+name: 同步工具商店
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已发布的正式标签（仅同步，不重新构建或发布）
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    secrets:
+      TOOL_STORE_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: 通知商店并等待归档验收
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOOL_STORE_URL: ${{ vars.TOOL_STORE_URL }}
+          TOOL_STORE_API_KEY: ${{ secrets.TOOL_STORE_API_KEY }}
+          TOOL_STORE_TAG: ${{ inputs.tag }}
+        run: python scripts/sync_tool_store.py --app-id quickphrase
+      - name: 记录同步失败
+        if: failure()
+        run: echo '工具商店未完成同步；GitHub 正式版不回滚。修正配置或网络后，仅重试本任务或手动运行“同步工具商店”。' >> "$GITHUB_STEP_SUMMARY"
