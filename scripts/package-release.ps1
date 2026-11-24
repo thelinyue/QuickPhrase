@@ -19,13 +19,10 @@ foreach ($asset in @($program, $installer)) {
 $revision = & git -C $repo rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw '无法读取发布来源提交。' }
 $output = Join-Path $repo "artifacts\release\$Version"
-$archive = Join-Path $output "QuickPhrase-$Version-win-x64.zip"
 $setup = Join-Path $output "QuickPhrase-Setup-$Version-x64.exe"
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-$policies = @('LICENSE', 'PRIVACY.md', 'SECURITY.md', 'CODE_SIGNING.md') | ForEach-Object { Join-Path $repo $_ }
-Compress-Archive -LiteralPath (@($program) + $policies) -DestinationPath $archive -CompressionLevel Optimal -Force
 Copy-Item -LiteralPath $installer -Destination $setup -Force
-$assets = @($archive, $setup)
+$assets = @($setup)
 $notesVersion = $Version -replace '-rc\.\d+$', ''
 $notesPath = Join-Path $repo "docs\releases\v$notesVersion.md"
 if (-not (Test-Path -LiteralPath $notesPath -PathType Leaf)) { throw '缺少当前版本发布说明。' }

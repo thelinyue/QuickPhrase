@@ -14,7 +14,7 @@
 
 客户端只读取 `thelinyue/QuickPhrase` 的 Release 文件，不调用 GitHub API。`releases/latest/download/release-manifest.json` 仅用于发现版本；显示新版说明之前，重新读取固定 `v版本` 下的清单、签名和 manifest，并核对版本、平台、正式通道与资产名。所有实际下载固定到已选版本，不能因 latest 变化混用资产；当前或较旧版本不触发下载。
 
-既有 `SHA256SUMS.txt` 覆盖安装器、ZIP和 `release-manifest.json`，由 Minisign 生成 `SHA256SUMS.txt.minisig`。产品公钥保存在 `src-tauri/update.pub` 并嵌入程序。客户端先验证清单签名，再核对文件SHA256，安装前再次读取安装包校验，并在Windows保持禁止写入／删除的读取句柄直到进程创建成功。缺少签名、签名错误、文件变化均禁止安装。
+后续发布仅提供安装器及更新所需的配套文件，不再提供免安装 ZIP；`release-manifest.json` 的 artifacts 只列安装器。既有 `SHA256SUMS.txt` 覆盖安装器和 `release-manifest.json`，由 Minisign 生成 `SHA256SUMS.txt.minisig`。产品公钥保存在 `src-tauri/update.pub` 并嵌入程序。客户端先验证清单签名，再核对文件SHA256，安装前再次读取安装包校验，并在Windows保持禁止写入／删除的读取句柄直到进程创建成功。缺少签名、签名错误、文件变化均禁止安装。
 
 签名用于防止第三方代理同时替换安装包和校验清单，不等于Windows Authenticode代码签名。代理可能缓存旧版或不可用；签名不能保证代理总能提供最新版本。历史无签名资产保持原样，不允许应用内安装；首个带更新能力的版本仍需从现有下载入口安装，之后的新签名版本才能通过应用内升级。
 
@@ -33,7 +33,7 @@
 
 私钥与密码不得进入仓库、日志或客户端。首次配置使用 `cargo run --manifest-path src-tauri/Cargo.toml --example update-sign -- generate <受限密钥目录>`，密码从 `QUICKPHRASE_UPDATE_KEY_PASSWORD` 环境变量读取；生成后仅将 `update.pub` 复制到 `src-tauri/update.pub`。保管加密私钥及密码的独立备份，不覆盖已使用的密钥。丢失或更换密钥会影响已安装客户端识别后续更新，必须先安排可信迁移版本。
 
-本地打包前在当前进程注入上述两个环境变量，再执行既有 `scripts/package-release.ps1`。脚本从 `docs/releases/v版本.md` 读取更新说明写入manifest，候选版本沿用对应稳定版本说明；生成原有资产及签名，并以产品公钥验证签名。密钥缺失或不匹配时打包失败，不产生可发布更新包。正式版及候选工作流上传签名文件，仍不覆盖旧标签或资产。
+本地打包前在当前进程注入上述两个环境变量，再执行既有 `scripts/package-release.ps1`。脚本从 `docs/releases/v版本.md` 读取更新说明写入manifest，候选版本沿用对应稳定版本说明；生成安装器、manifest、SHA256 清单及签名，并以产品公钥验证签名。密钥缺失或不匹配时打包失败，不产生可发布更新包。正式版及候选工作流上传这四项文件，仍不覆盖旧标签或资产。
 
 ## 验证命令
 

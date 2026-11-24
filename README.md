@@ -4,9 +4,9 @@
 
 Windows 10（1607+）／11 x64 本地话术工具，使用 Tauri 2、Rust、React／TypeScript。界面和名称已于 2026-10-10 确认，当前版本为 0.2.15。
 
-正式下载：[v0.2.15 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.15) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.15/QuickPhrase-Setup-0.2.15-x64.exe) · [免安装 ZIP](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.15/QuickPhrase-0.2.15-win-x64.zip)。安装器和程序未代码签名；[闪云公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
+正式下载：[v0.2.15 发布说明与校验清单](https://github.com/thelinyue/QuickPhrase/releases/tag/v0.2.15) · [Windows x64 安装器](https://github.com/thelinyue/QuickPhrase/releases/download/v0.2.15/QuickPhrase-Setup-0.2.15-x64.exe)。安装器和程序未代码签名；[闪云公开镜像](https://github.com/users/thelinyue/packages/container/package/quickphrase-hub)及[可复制的 Compose 部署配置](docs/team-sharing.md)已提供。
 
-0.2.1统一英文名称 QuickPhrase；0.2.3新增在线更新、数据目录迁移、搜索历史、使用指引与云文件批量上传。0.2.4完善主题、账号管理、底部搜索，并新增贴边隐藏及最小化悬浮窗。0.2.5优化悬浮窗双击与隐藏菜单、贴边隐藏及搜索刷新。0.2.6完善常用短语菜单与底部布局，主搜索改为覆盖浮层，并支持拼音匹配与清空记录确认。0.2.7修复贴边误弹出与收回、解除吸附跨屏跳转和升级尺寸变化，完善自适应预览、成员个人快捷键及底栏升级角标。0.2.8新增本机MCP、统一文件关联和云文件改名，优化设置局部保存、全局混合搜索及紧凑快捷键候选。0.2.11改进快捷键目标同步与成员绑定恢复，并新增问题诊断。普通用户使用安装器安装和升级；ZIP供免安装启动，需预装WebView2，用户数据仍保存于用户目录。0.2.0的历史下载文件保留原名。
+0.2.1统一英文名称 QuickPhrase；0.2.3新增在线更新、数据目录迁移、搜索历史、使用指引与云文件批量上传。0.2.4完善主题、账号管理、底部搜索，并新增贴边隐藏及最小化悬浮窗。0.2.5优化悬浮窗双击与隐藏菜单、贴边隐藏及搜索刷新。0.2.6完善常用短语菜单与底部布局，主搜索改为覆盖浮层，并支持拼音匹配与清空记录确认。0.2.7修复贴边误弹出与收回、解除吸附跨屏跳转和升级尺寸变化，完善自适应预览、成员个人快捷键及底栏升级角标。0.2.8新增本机MCP、统一文件关联和云文件改名，优化设置局部保存、全局混合搜索及紧凑快捷键候选。0.2.11改进快捷键目标同步与成员绑定恢复，并新增问题诊断。后续版本仅提供安装器安装和升级，不再提供免安装 ZIP；用户数据仍保存于用户目录。0.2.0的历史下载文件保留原名。
 
 设置 → 关于新增 GitHub 在线更新：默认自动检查、手动下载安装，可选择默认／备用代理、自定义地址或直连；更新清单和安装包验证通过后才允许安装。免安装版更新时转为安装版并保留原文件夹。首次使用在线更新需要先手动安装0.2.3；发布密钥配置见[在线更新](docs/online-update.md)。
 
@@ -165,7 +165,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps
 
 脚本运行 Tauri `build --no-bundle`，下载并校验微软 WebView2 引导程序的签名，然后调用 ISCC。可通过 `INNOSETUP_ISCC` 或 `-InnoCompiler` 指定编译器路径；`-SkipInstall` 复用已安装的 npm 依赖。当前正式版本为0.2.15，产物为 `artifacts/QuickPhrase-Setup-0.2.15-x64.exe`，主程序为 `QuickPhrase.exe`；新安装默认使用当前用户的 `Programs\QuickPhrase`，升级沿用原安装目录，无需管理员权限。已发布0.2.0的下载文件仍使用原 `Shanyu` 名称。
 
-默认仍只生成安装器。候选构建可加 `-Version 0.2.15-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.15`，从当前对应版本的程序和安装器生成 `artifacts/release/0.2.15` 下的 ZIP、安装器、原有 SHA256 清单、manifest及更新签名（需配置签名环境变量，见在线更新文档）。ZIP 需要本机已安装 WebView2。
+默认仍只生成安装器。候选构建可加 `-Version 0.2.15-rc.1`，版本通过临时 Tauri 配置传入，不修改源码或锁文件；设置页显示实际应用版本。需要发布资产时另行运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version 0.2.15`，校验当前对应版本的程序和安装器后，在 `artifacts/release/0.2.15` 下生成安装器、`SHA256SUMS.txt`、`release-manifest.json` 和 `SHA256SUMS.txt.minisig`（需配置签名环境变量，见在线更新文档）。manifest 只列安装器，SHA256 清单覆盖安装器和 manifest。正式版和候选版均不生成或上传免安装 ZIP；Actions 下载时自动生成的外层归档仅用于传输这些发布文件。
 
 普通推送不触发 CI；PR 检查、手动运行及发布流程调用 CI 时执行单测、静态检查与 Debug 构建。候选和正式发布均只允许手动触发并复用 CI：候选从 `master` 构建 `0.2.16-rc.N`，仅上传 Actions artifact；正式发布在 `master` 手动触发，各阶段均检出对应版本标签，源码版本、标签与提交必须一致。两条流程不再要求人工确认开关；真实验收结果及环境缺口如实记录于验收记录，自动检查不代表未验证环境已经通过。工作流不会覆盖既有标签或 Release。
 
